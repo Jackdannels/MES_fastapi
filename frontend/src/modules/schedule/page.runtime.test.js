@@ -100,8 +100,9 @@ const installStorageFetchMock = () => {
   fetchMock = vi.fn(async (input, options = {}) => {
     const url = String(input);
     const method = options.method ?? "GET";
+    const pathname = new URL(url, "http://localhost").pathname;
 
-    if (url.endsWith("/api/storage") && method === "GET") {
+    if (pathname === "/api/storage" && method === "GET") {
       return {
         ok: true,
         status: 200,
@@ -109,7 +110,7 @@ const installStorageFetchMock = () => {
       };
     }
 
-    if (url.endsWith("/api/storage") && method === "PUT") {
+    if (pathname === "/api/storage" && method === "PUT") {
       const updates = JSON.parse(options.body ?? "{}");
       Object.entries(updates).forEach(([key, value]) => {
         if (Array.isArray(value)) {

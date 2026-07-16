@@ -31,6 +31,8 @@ const NORMAL_STAGING_LABEL = "放置暂存间";
 const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "实验后外观检测间存放";
 const WITHDRAWAL_HISTORY_ACTIONS = new Set(["撤回出库", "实验任务撤回", "任务切换撤回"]);
+const PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS = new Set(["任务比对", "样品安装", "实验确认", "开始实验", "实验开始"]);
+const ACTIVE_EXPERIMENT_RUN_TRAY_STATUSES = new Set(["已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", "实验中"]);
 const PRE_STAGING_STATUSES = new Set(["送至暂存间", "已到达暂存间"]);
 const EXPLICIT_STAGING_INBOUND_STATUSES = new Set(["送至暂存间", POST_EXPERIMENT_STAGING_SENT_STATUS]);
 const PRE_APPEARANCE_STATUSES = new Set([APPEARANCE_SENT_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS]);
@@ -741,6 +743,43 @@ const trayHasLabStockOutAtOrAfter = ({ config, context, events, timestamp }) => 
       return false;
     }
     return parseTimeValue(event?.time) >= timestamp;
+  });
+};
+
+const trayHasNewerAxisLabActivity = ({ experimentRunTrays, samples, taskCode, trayCode, timestamp }) => {
+  const matchingSamples = asArray(samples).filter((sample) => (
+    normalizeText(sample?.task_code) === taskCode
+    && asArray(sample?.trays).some((tray) => normalizeText(tray?.tray_code) === trayCode)
+  ));
+  const latestLifecycleEvent = matchingSamples
+    .flatMap((sample) => asArray(sample?.history))
+    .map((entry) => ({
+      action: normalizeText(entry?.action),
+      time: parseCompletedEventTimeValue(entry?.time || entry?.updated_at || entry?.updatedAt),
+    }))
+    .filter((entry) => (
+      entry.time > 0
+      && entry.time > timestamp
+      && (PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS.has(entry.action) || WITHDRAWAL_HISTORY_ACTIONS.has(entry.action))
+    ))
+    .sort((left, right) => left.time - right.time)
+    .at(-1);
+  if (latestLifecycleEvent && PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS.has(latestLifecycleEvent.action)) {
+    return true;
+  }
+
+  return asArray(experimentRunTrays).some((entry) => {
+    if (
+      normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) !== taskCode
+      || normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo) !== trayCode
+      || !ACTIVE_EXPERIMENT_RUN_TRAY_STATUSES.has(normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status))
+    ) {
+      return false;
+    }
+    const startedAt = parseCompletedEventTimeValue(
+      entry?.started_at || entry?.startedAt || entry?.created_at || entry?.createdAt || entry?.updated_at || entry?.updatedAt,
+    );
+    return timestamp === Number.MAX_SAFE_INTEGER || startedAt === 0 || startedAt >= timestamp;
   });
 };
 
@@ -1495,7 +1534,14 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       const isPartialAxisInbound =
         config.key === "staging"
         && partialAxisCompletionTime > 0
-        && !latestLabStockOutAfterPartialAxisCompletion;
+        && !latestLabStockOutAfterPartialAxisCompletion
+        && !trayHasNewerAxisLabActivity({
+          experimentRunTrays,
+          samples,
+          taskCode: normalizeText(row.taskCode),
+          trayCode: normalizeText(row.trayCode),
+          timestamp: partialAxisCompletionTime,
+        });
       const explicitAppearanceInboundStatus =
         hasPreAppearanceInboundStatus(effectiveStatuses)
         && (config.key === "appearance" || !latestEventDispatchesToCurrentRoom);

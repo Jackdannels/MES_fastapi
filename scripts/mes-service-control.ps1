@@ -46,7 +46,10 @@ function Test-MesHttpReady([string]$Url) {
 
 function Stop-ProcessTree($ProcessId) {
     if (Test-ProcessAlive $ProcessId) {
-        & taskkill.exe /PID $ProcessId /T /F | Out-Null
+        # A sibling process tree can exit between the liveness check and taskkill.
+        # Port release is verified separately, so this benign race must not leak
+        # an error into the launcher's JSON response.
+        & taskkill.exe /PID $ProcessId /T /F 2>$null | Out-Null
     }
 }
 
@@ -65,7 +68,7 @@ function Get-MesCommandPids($ProcessMap, [string]$LauncherSessionId = "") {
         if (-not $commandLine -or [string]$_.Name -notmatch "(?i)^cmd\.exe$") { return $false }
         if ($sessionMarker) { return $commandLine -like "*$sessionMarker*" }
         return $commandLine -like "*$ProjectRoot*" -and (
-            $commandLine -like "*scripts\run_local.py*" -or $commandLine -like "*npm run dev*"
+            $commandLine -like "*scripts\run_local.py*" -or $commandLine -like "*npm run dev*" -or $commandLine -like "*npm run serve:public*"
         )
     } | Select-Object -ExpandProperty ProcessId -Unique)
 }
@@ -94,6 +97,16 @@ function Stop-TrackedMesProcess($ProcessId) {
     Stop-ProcessTree $ProcessId
 }
 
+function Wait-ProcessesExited($ProcessIds, [int]$TimeoutSeconds = 5) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $alive = @($ProcessIds | Where-Object { $_ -and (Test-ProcessAlive $_) })
+        if ($alive.Count -eq 0) { return $true }
+        Start-Sleep -Milliseconds 100
+    } while ((Get-Date) -lt $deadline)
+    return $false
+}
+
 function Wait-MesPortsReleased {
     $deadline = (Get-Date).AddSeconds(10)
     do {
@@ -110,12 +123,18 @@ function Stop-MesSystem {
     $state = Read-State
     $processMap = Get-ProcessMap
     $listenerPids = if ($IgnorePortListeners) { @() } else { @(Get-ListenerPids $backendPort) + @(Get-ListenerPids $frontendPort) | Select-Object -Unique }
-    @($state.browserPid, $state.backendCommandPid, $state.frontendCommandPid) | ForEach-Object { Stop-TrackedMesProcess $_ }
-    Get-MesCommandPids $processMap $state.launcherSessionId | ForEach-Object { Stop-ProcessTree $_ }
-    Get-ParentCommandPids $processMap $listenerPids | ForEach-Object { Stop-ProcessTree $_ }
+    $commandPids = @(
+        @($state.backendCommandPid, $state.frontendCommandPid)
+        @(Get-MesCommandPids $processMap $state.launcherSessionId)
+        @(Get-ParentCommandPids $processMap $listenerPids)
+    ) | Where-Object { $_ } | Select-Object -Unique
+    Stop-TrackedMesProcess $state.browserPid
     if (-not $IgnorePortListeners) {
         $listenerPids | ForEach-Object { Stop-ProcessTree $_ }
         Wait-MesPortsReleased
+    }
+    if (-not (Wait-ProcessesExited $commandPids)) {
+        $commandPids | ForEach-Object { Stop-TrackedMesProcess $_ }
     }
     if (Test-Path -LiteralPath $StateFile) { Remove-Item -LiteralPath $StateFile -Force }
     return @{ status = "stopped"; message = "MES系统已关闭" }
@@ -129,7 +148,7 @@ function Start-MesSystem {
     if (-not (Test-Path -LiteralPath $startScript)) { throw "未找到启动脚本: $startScript" }
     $stateDirectory = Split-Path -Parent $StateFile
     if ($stateDirectory) { New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $startScript -DisableAutoOpenBrowser -StateFile $StateFile
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $startScript -Production -DisableAutoOpenBrowser -StateFile $StateFile
 
     $backendReadyUrl = "http://127.0.0.1:$backendPort/api/storage"
     $frontendReadyUrl = "http://127.0.0.1:$frontendPort/"

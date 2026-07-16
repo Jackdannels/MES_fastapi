@@ -5,7 +5,8 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import App from "./App.vue";
 import { getNavigationModules } from "@/modules";
 
-const { routeState, routerPush, routerReplace, logoutSessionMock, switchSessionModuleMock, loadSnapshotMock, storageRefreshOptions } = vi.hoisted(() => ({
+const { authSessionState, routeState, routerPush, routerReplace, logoutSessionMock, switchSessionModuleMock, loadSnapshotMock, storageRefreshOptions } = vi.hoisted(() => ({
+  authSessionState: { current: { module: "central" } },
   routeState: {
     meta: { module: "central", title: "任务/托盘总览" },
     name: "task-overview",
@@ -40,7 +41,7 @@ vi.mock("@/auth", () => ({
     staging: "/staging-management",
     laboratory: "/laboratory",
   })[moduleKey] || "/",
-  readAuthSession: () => ({ module: "central" }),
+  readAuthSession: () => authSessionState.current,
   switchSessionModule: switchSessionModuleMock,
 }));
 
@@ -117,6 +118,7 @@ describe("App runtime boundary", () => {
     loadSnapshotMock.mockReset();
     loadSnapshotMock.mockResolvedValue({ "mes.tasks": [], "mes.experiments": [] });
     storageRefreshOptions.current = null;
+    authSessionState.current = { module: "central" };
     vi.useRealTimers();
     vi.clearAllMocks();
   });
@@ -210,6 +212,19 @@ describe("App runtime boundary", () => {
     expect(wrapper.text()).not.toContain("中控中心");
     expect(wrapper.text()).not.toContain("新建任务");
     expect(wrapper.text()).not.toContain("查看排程");
+  });
+
+  test("hides logout and module switching controls for fixed terminals", async () => {
+    authSessionState.current = { module: "staging", terminal_auth: true, terminal_id: "STAGING-PC-01" };
+    reactiveRoute.meta = { module: "staging", title: "暂存间系统" };
+    reactiveRoute.name = "staging-management";
+    reactiveRoute.path = "/staging-management";
+
+    mountApp();
+    await nextTick();
+
+    expect(wrapper.find('[data-testid="app-logout"]').exists()).toBe(false);
+    expect(wrapper.findComponent({ name: "ModuleExitDialog" }).exists()).toBe(false);
   });
 
   test("renders appearance routes with the shared error sample handling action", async () => {

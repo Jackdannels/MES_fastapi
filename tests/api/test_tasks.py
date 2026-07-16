@@ -160,6 +160,24 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
     assert len(remaining.json()[0]["experiment_codes"]) == 2
 
 
+def test_list_tasks_reads_only_the_task_collection(monkeypatch):
+    client = build_client(
+        monkeypatch,
+        tasks=[{"id": "TASK-1", "code": "TASK-1", "status": "待排程"}],
+    )
+    storage = client.app.state.storage
+
+    def fail_if_full_snapshot_is_loaded():
+        raise AssertionError("list_tasks must not load the full storage snapshot")
+
+    storage.read_all = fail_if_full_snapshot_is_loaded
+
+    response = client.get("/api/tasks")
+
+    assert response.status_code == 200
+    assert [task["code"] for task in response.json()] == ["TASK-1"]
+
+
 def test_delete_task_rejects_running_experiment(monkeypatch):
     client = build_client(
         monkeypatch,
@@ -2120,7 +2138,10 @@ def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and
     assert storage.read("mes.experiment_run_steps") == []
     assert storage.read("mes.staging_events") == []
     assert storage.read("mes.conflicts") == []
-    assert storage.read("mes.devices") == [{"id": "device-1", "code": "LAB-001", "name": "振动一室"}]
+    preserved_devices = storage.read("mes.devices")
+    assert [(device["id"], device["code"], device["name"]) for device in preserved_devices] == [
+        ("device-1", "LAB-001", "振动一室")
+    ]
     assert storage.read_all()["mes.meta"] == {"schema_version": 2}
 
     from app.api.routes import tasks as tasks_route

@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, Request, Response
@@ -9,6 +10,8 @@ from fastapi import HTTPException, Request, Response
 from app.core.config import settings
 
 SIGNING_SALT = "auth-session"
+TERMINAL_TICKET_SIGNING_SALT = "fixed-terminal-ticket"
+TERMINAL_TICKET_LIFETIME = timedelta(seconds=60)
 
 
 def require_session_secret() -> str:
@@ -93,6 +96,44 @@ def dump_auth_session(session: dict) -> str:
     return f"{payload_token}.{signature}"
 
 
+def dump_terminal_ticket(terminal: dict, *, now: datetime | None = None) -> str:
+    issued_at = (now or current_utc()).astimezone(timezone.utc)
+    payload = {
+        "terminal_id": str(terminal.get("terminal_id") or "").strip(),
+        "module": str(terminal.get("module") or "").strip(),
+        "lab_name": str(terminal.get("lab_name") or "").strip(),
+        "issued_at": format_utc(issued_at),
+        "expires_at": format_utc(issued_at + TERMINAL_TICKET_LIFETIME),
+        "nonce": secrets.token_urlsafe(12),
+    }
+    payload_token = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).decode("ascii")
+    signature = _sign_payload(payload_token, salt=TERMINAL_TICKET_SIGNING_SALT)
+    return f"{payload_token}.{signature}"
+
+
+def load_terminal_ticket(token: str, *, now: datetime | None = None) -> dict:
+    require_session_secret()
+    try:
+        payload_token, signature = token.rsplit(".", 1)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="Invalid terminal ticket") from exc
+    expected_signature = _sign_payload(payload_token, salt=TERMINAL_TICKET_SIGNING_SALT)
+    if not hmac.compare_digest(signature, expected_signature):
+        raise HTTPException(status_code=401, detail="Invalid terminal ticket")
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(payload_token.encode("ascii")))
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=401, detail="Invalid terminal ticket") from exc
+    if not isinstance(payload, dict) or not str(payload.get("terminal_id") or "").strip():
+        raise HTTPException(status_code=401, detail="Invalid terminal ticket")
+    expires_at = parse_utc(str(payload.get("expires_at") or ""))
+    if (now or current_utc()).astimezone(timezone.utc) > expires_at:
+        raise HTTPException(status_code=401, detail="Terminal ticket expired")
+    return payload
+
+
 def load_auth_session(token: str) -> dict:
     require_session_secret()
     try:
@@ -139,8 +180,8 @@ def require_auth_session(request: Request) -> dict:
     return load_auth_session(token)
 
 
-def _sign_payload(payload_token: str) -> str:
-    message = f"{SIGNING_SALT}:{payload_token}".encode("utf-8")
+def _sign_payload(payload_token: str, *, salt: str = SIGNING_SALT) -> str:
+    message = f"{salt}:{payload_token}".encode("utf-8")
     secret = require_session_secret().encode("utf-8")
     digest = hmac.new(secret, message, hashlib.sha256).digest()
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")

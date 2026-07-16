@@ -1,6 +1,6 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { createServer, request as httpRequest } from "node:http";
-import { request as httpsRequest } from "node:https";
+import { Agent as HttpAgent, createServer, request as httpRequest } from "node:http";
+import { Agent as HttpsAgent, request as httpsRequest } from "node:https";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +8,8 @@ const frontendRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const distRoot = join(frontendRoot, "dist");
 const backendTarget = new URL(process.env.BACKEND_TARGET || "http://127.0.0.1:8000");
 const proxyPrefixes = ["/api", "/auth"];
+const httpAgent = new HttpAgent({ keepAlive: true, maxSockets: 100 });
+const httpsAgent = new HttpsAgent({ keepAlive: true, maxSockets: 100 });
 
 function readArg(name, fallback) {
   const index = process.argv.indexOf(`--${name}`);
@@ -32,10 +34,15 @@ const contentTypes = {
 };
 
 function sendText(response, statusCode, text) {
+  if (response.headersSent) {
+    if (!response.writableEnded) {
+      response.destroy();
+    }
+    return;
+  }
   response.writeHead(statusCode, {
     "content-type": "text/plain; charset=utf-8",
     "content-length": Buffer.byteLength(text),
-    connection: "close",
   });
   response.end(text);
 }
@@ -49,7 +56,6 @@ function publicResponseHeaders(headers) {
   delete nextHeaders.te;
   delete nextHeaders.trailer;
   delete nextHeaders.upgrade;
-  nextHeaders.connection = "close";
   return nextHeaders;
 }
 
@@ -73,6 +79,7 @@ function proxyRequest(clientRequest, clientResponse) {
     target,
     {
       method: clientRequest.method,
+      agent: target.protocol === "https:" ? httpsAgent : httpAgent,
       headers: {
         ...clientRequest.headers,
         host: target.host,
@@ -114,7 +121,6 @@ const server = createServer((request, response) => {
     "content-type": contentTypes[extname(staticPath)] || "application/octet-stream",
     "content-length": fileSize,
     "cache-control": staticPath.endsWith("index.html") ? "no-store" : "public, max-age=31536000, immutable",
-    connection: "close",
   });
   createReadStream(staticPath).pipe(response);
 });

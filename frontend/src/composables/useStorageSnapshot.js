@@ -72,7 +72,11 @@ function useStorageSnapshot(keys) {
 
   return {
     loadSnapshot: async (options = {}) => {
-      const loadedKeys = Array.from(new Set([...requestedKeys, ...RECONCILIATION_KEYS]));
+      const shouldReconcileScheduleExceptions = options?.reconcileScheduleExceptions === true;
+      const loadedKeys = Array.from(new Set([
+        ...requestedKeys,
+        ...(shouldReconcileScheduleExceptions ? RECONCILIATION_KEYS : []),
+      ]));
       const fallbackSnapshot = options?.fallbackSnapshot || {};
       const markerBeforeRead = readSnapshotUpdateMarker();
       const rawSnapshot = await readStorageSnapshot(loadedKeys, { normalizeMissing: false });
@@ -92,7 +96,9 @@ function useStorageSnapshot(keys) {
           requestedKeys.map((key) => [key, Array.isArray(snapshot?.[key]) ? snapshot[key] : []]),
         );
       }
-      const reconciled = reconcileScheduleExceptions(snapshot);
+      const reconciled = shouldReconcileScheduleExceptions
+        ? reconcileScheduleExceptions(snapshot)
+        : { changed: false, snapshot, updates: {} };
       if (reconciled.changed) {
         const markerBeforeWrite = readSnapshotUpdateMarker();
         if (markerBeforeWrite !== markerBeforeRead) {

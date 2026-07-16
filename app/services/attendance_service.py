@@ -358,8 +358,18 @@ class MySQLAttendanceRepository:
 
     def _rows(self, cursor: Any) -> list[dict[str, Any]]:
         rows = cursor.fetchall()
+        if rows and isinstance(rows[0], dict):
+            return [dict(row) for row in rows]
         columns = [column[0] for column in (cursor.description or [])]
         return [dict(zip(columns, row)) for row in rows]
+
+    @staticmethod
+    def _first_value(row: Any, default: Any = None) -> Any:
+        if isinstance(row, dict):
+            return next(iter(row.values()), default)
+        if isinstance(row, (list, tuple)) and row:
+            return row[0]
+        return default
 
     def _row(self, cursor: Any) -> dict[str, Any] | None:
         rows = self._rows(cursor)
@@ -679,7 +689,7 @@ class MySQLAttendanceRepository:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT COUNT(*) FROM biz_lab_work_interval")
                 row = cursor.fetchone()
-                count = int((row or [0])[0] or 0)
+                count = int(self._first_value(row, 0) or 0)
                 cursor.execute("DELETE FROM biz_lab_work_interval")
             connection.commit()
         return count
@@ -735,7 +745,7 @@ class MySQLAttendanceRepository:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT COUNT(*) FROM biz_lab_operation_log")
                 row = cursor.fetchone()
-                count = int((row or [0])[0] or 0)
+                count = int(self._first_value(row, 0) or 0)
                 cursor.execute("DELETE FROM biz_lab_operation_log")
             connection.commit()
         return count
@@ -750,7 +760,7 @@ class MySQLAttendanceRepository:
                 cursor.execute("SELECT lab_name FROM md_lab WHERE lab_code = %s LIMIT 1", (normalized,))
                 row = cursor.fetchone()
         if row:
-            return normalize_text(row[0])
+            return normalize_text(self._first_value(row, ""))
         for default_lab in DEFAULT_LABS:
             if normalize_text(default_lab.get("lab_code")) == normalized:
                 return normalize_text(default_lab.get("lab_name"))

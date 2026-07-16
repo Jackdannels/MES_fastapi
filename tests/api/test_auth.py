@@ -1,7 +1,22 @@
 from datetime import datetime, timedelta, timezone
 
 import app.api.auth_session as auth_session
+import pytest
 from app.core.config import settings
+from app.services.fixed_terminal_auth import (
+    FixedTerminalAuthService,
+    InMemoryFixedTerminalRepository,
+    set_fixed_terminal_auth_service_for_tests,
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_fixed_terminal_auth_service():
+    set_fixed_terminal_auth_service_for_tests(
+        FixedTerminalAuthService(repository=InMemoryFixedTerminalRepository())
+    )
+    yield
+    set_fixed_terminal_auth_service_for_tests(None)
 
 
 def set_auth_time(monkeypatch, moment):
@@ -76,6 +91,100 @@ def test_login_accepts_laboratory_module(client):
 
     assert response.status_code == 200
     assert response.json()["module"] == "laboratory"
+
+
+def test_fixed_terminal_register_ticket_and_consume_enters_bound_staging_module(client):
+    registration = client.post(
+        "/auth/terminal/register",
+        json={
+            "username": settings.DEMO_USER,
+            "password": settings.DEMO_PASSWORD,
+            "terminal_id": "STAGING-PC-01",
+            "terminal_name": "暂存间终端",
+            "module": "staging",
+            "lab_name": "",
+        },
+    )
+
+    assert registration.status_code == 200
+    registered = registration.json()
+    assert registered["target"] == "/staging-management"
+    assert registered["terminalSecret"]
+
+    ticket_response = client.post(
+        "/auth/terminal/ticket",
+        json={
+            "terminal_id": registered["terminalId"],
+            "terminal_secret": registered["terminalSecret"],
+        },
+    )
+    assert ticket_response.status_code == 200
+
+    consume = client.get(
+        "/auth/terminal/consume",
+        params={"ticket": ticket_response.json()["ticket"]},
+        follow_redirects=False,
+    )
+    assert consume.status_code == 302
+    assert consume.headers["location"] == "/staging-management"
+    assert consume.cookies.get("mes_session")
+
+    session = client.get("/auth/session")
+    assert session.status_code == 200
+    assert session.json()["module"] == "staging"
+    assert session.json()["terminal_auth"] is True
+    assert session.json()["terminal_id"] == "STAGING-PC-01"
+
+    switch = client.post("/auth/switch-module", json={"module": "central"})
+    assert switch.status_code == 403
+    assert switch.json() == {"detail": "Fixed terminal cannot switch module"}
+
+
+def test_fixed_terminal_laboratory_ticket_redirects_to_bound_lab(client):
+    registration = client.post(
+        "/auth/terminal/register",
+        json={
+            "username": settings.DEMO_USER,
+            "password": settings.DEMO_PASSWORD,
+            "terminal_id": "IMPACT-PC-02",
+            "terminal_name": "冲击二室终端",
+            "module": "laboratory",
+            "lab_name": "冲击二室",
+        },
+    )
+    ticket_response = client.post(
+        "/auth/terminal/ticket",
+        json={
+            "terminal_id": registration.json()["terminalId"],
+            "terminal_secret": registration.json()["terminalSecret"],
+        },
+    )
+
+    consume = client.get(
+        "/auth/terminal/consume",
+        params={"ticket": ticket_response.json()["ticket"]},
+        follow_redirects=False,
+    )
+
+    assert consume.status_code == 302
+    assert consume.headers["location"] == "/laboratory?lab=%E5%86%B2%E5%87%BB%E4%BA%8C%E5%AE%A4"
+    assert client.get("/auth/session").json()["lab_name"] == "冲击二室"
+
+
+def test_fixed_terminal_registration_rejects_invalid_admin_credentials(client):
+    response = client.post(
+        "/auth/terminal/register",
+        json={
+            "username": "bad",
+            "password": "bad",
+            "terminal_id": "STAGING-PC-01",
+            "terminal_name": "暂存间终端",
+            "module": "staging",
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid credentials"}
 
 
 def test_login_sets_secure_cookie_when_debug_is_disabled(client, monkeypatch):

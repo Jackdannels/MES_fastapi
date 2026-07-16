@@ -257,6 +257,23 @@ describe("devices model", () => {
     );
   });
 
+  test("keeps a future planned maintenance device available even if its stored status was set early", () => {
+    const rows = buildDeviceRows(
+      [
+        {
+          code: "冲击一室",
+          maintenance_start_at: "2099-03-20T08:00",
+          maintenance_type: "计划保养",
+          status: "保养",
+        },
+      ],
+      [],
+      new Date("2099-03-19T09:00:00"),
+    );
+
+    expect(rows[0]).toEqual(expect.objectContaining({ status: "空闲" }));
+  });
+
   test("returns a planned maintenance device to available after its maintenance window", () => {
     const rows = buildDeviceRows(
       [

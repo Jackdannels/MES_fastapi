@@ -11,7 +11,7 @@ Describe "MES service controller" {
     It "starts titled backend and frontend tabs through Windows Terminal when available" {
         $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
 
-        $startScript | Should Match '(?s)\$terminalProcess = Start-Process -FilePath \$windowsTerminal\.Source.*?"new-tab", "--title", ''"MES Backend"'', "cmd\.exe", "/k", \$backendCommand.*?"new-tab", "--title", ''"MES Frontend"'', "cmd\.exe", "/k", \$frontendCommand'
+        $startScript | Should Match '(?s)\$terminalProcess = Start-Process -FilePath \$windowsTerminal\.Source.*?"new-tab", "--title", ''"MES Backend"'', "cmd\.exe", \$terminalCommandSwitch, \$backendTerminalCommand.*?"new-tab", "--title", ''"MES Frontend"'', "cmd\.exe", \$terminalCommandSwitch, \$frontendTerminalCommand'
         $startScript | Should Match '\$backendProcess = \$terminalProcess'
         $startScript | Should Match '\$frontendProcess = \$terminalProcess'
     }
@@ -23,7 +23,21 @@ Describe "MES service controller" {
         $startScript | Should Match "\x27`"MES Frontend`"\x27"
     }
 
-    It "adds the backend no-color switch only on the cmd fallback path" {
+    It "tracks the real backend and frontend command processes inside visible production tabs" {
+        $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
+
+        $startScript | Should Match '(?s)if \(\$Production\) \{.*?MES_LAUNCHER_SESSION=\$launcherSessionId.*?scripts\\run_local\.py.*?npm run serve:public.*?Get-Process -Id \$backendCommandProcess\.ProcessId.*?Get-Process -Id \$frontendCommandProcess\.ProcessId'
+    }
+
+    It "lets production terminal commands exit successfully after their service process stops" {
+        $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
+
+        $startScript | Should Match '\$terminalCommandSwitch = if \(\$Production\) \{ "/c" \} else \{ "/k" \}'
+        $startScript | Should Match '\$backendTerminalCommand = if \(\$Production\) \{ "\$backendCommand & exit /b 0" \}'
+        $startScript | Should Match '\$frontendTerminalCommand = if \(\$Production\) \{ "\$frontendCommand & exit /b 0" \}'
+    }
+
+    It "disables backend colors only on the cmd fallback path" {
         $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
 
         $startScript | Should Match '(?s)if \(-not \$windowsTerminal\) \{\s*\$backendCommand \+= " --no-use-colors"\s*\}'
@@ -48,9 +62,11 @@ Describe "MES service controller" {
 
         $controllerSource | Should Match 'function Get-MesCommandPids'
         $controllerSource | Should Match 'function Get-ParentCommandPids'
+        $controllerSource | Should Match 'function Wait-ProcessesExited'
         $controllerSource | Should Match 'function Wait-MesPortsReleased'
         $controllerSource | Should Match 'Get-MesCommandPids \$processMap \$state\.launcherSessionId'
         $controllerSource | Should Match 'Get-ParentCommandPids \$processMap \$listenerPids'
+        $controllerSource | Should Match 'Wait-ProcessesExited \$commandPids'
     }
 
     It "keeps launcher actions asynchronous while a command is running" {

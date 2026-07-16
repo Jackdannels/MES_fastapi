@@ -86,6 +86,8 @@ describe("storageApi", () => {
     const firstRead = readStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.samples]);
     const secondRead = readStorageSnapshot([STORAGE_KEYS.samples, STORAGE_KEYS.tasks]);
 
+    await Promise.resolve();
+
     resolveResponse({
       ok: true,
       json: async () => ({
@@ -103,6 +105,25 @@ describe("storageApi", () => {
       [STORAGE_KEYS.tasks]: [{ code: "T-1" }],
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("coalesces different same-tick key sets into one scoped remote request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        [STORAGE_KEYS.samples]: [{ code: "S-1" }],
+        [STORAGE_KEYS.tasks]: [{ code: "T-1" }],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const taskRead = readStorageSnapshot([STORAGE_KEYS.tasks]);
+    const sampleRead = readStorageSnapshot([STORAGE_KEYS.samples]);
+
+    await expect(taskRead).resolves.toEqual({ [STORAGE_KEYS.tasks]: [{ code: "T-1" }] });
+    await expect(sampleRead).resolves.toEqual({ [STORAGE_KEYS.samples]: [{ code: "S-1" }] });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("keys=mes.samples%2Cmes.tasks");
   });
 
   test("rejects when remote storage is unavailable instead of falling back to local storage", async () => {
@@ -457,6 +478,37 @@ describe("storageApi", () => {
     });
 
     unsubscribe();
+    expect(instances[0].close).toHaveBeenCalledTimes(1);
+  });
+
+  test("shares one EventSource across page-level storage subscribers", () => {
+    const instances = [];
+    class MockEventSource {
+      constructor() {
+        this.listeners = {};
+        this.close = vi.fn();
+        instances.push(this);
+      }
+
+      addEventListener(type, listener) {
+        this.listeners[type] = listener;
+      }
+    }
+    window.EventSource = MockEventSource;
+    const firstListener = vi.fn();
+    const secondListener = vi.fn();
+
+    const unsubscribeFirst = subscribeStorageSnapshotUpdates(firstListener);
+    const unsubscribeSecond = subscribeStorageSnapshotUpdates(secondListener);
+
+    expect(instances).toHaveLength(1);
+    instances[0].listeners.message({ data: JSON.stringify({ keys: [STORAGE_KEYS.tasks] }) });
+    expect(firstListener).toHaveBeenCalledTimes(1);
+    expect(secondListener).toHaveBeenCalledTimes(1);
+
+    unsubscribeFirst();
+    expect(instances[0].close).not.toHaveBeenCalled();
+    unsubscribeSecond();
     expect(instances[0].close).toHaveBeenCalledTimes(1);
   });
 });

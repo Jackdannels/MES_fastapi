@@ -143,15 +143,17 @@ const isScheduleExperimentRunning = (schedule, device, samples = [], experimentT
 // 根据实际实验运行状态和维护标记推导设备当前状态。
 function resolveDeviceStatus(device, schedules, samples = [], experimentTrays = [], now = serverNowDate(), experimentRuns = []) {
   const storedStatus = normalizeText(device?.status);
+  const current = parseDate(now) || serverNowDate();
+  const maintenanceStart = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
   if (isDeviceInMaintenanceWindow(device, now)) {
     return maintenanceTypeToSafetyStatus(device?.maintenance_type ?? device?.maintenanceType);
   }
   const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
-  const current = parseDate(now) || serverNowDate();
   if ([REPAIR_DEVICE_STATUS, CARE_DEVICE_STATUS].includes(storedStatus) && maintenanceEnd && maintenanceEnd < current) {
     return IDLE_DEVICE_STATUS;
   }
-  const safetyStatus = normalizeSafetyStatus(storedStatus);
+  const futurePlan = isPlannedMaintenanceType(device?.maintenance_type ?? device?.maintenanceType) && maintenanceStart && maintenanceStart > current;
+  const safetyStatus = normalizeSafetyStatus(futurePlan && [REPAIR_DEVICE_STATUS, CARE_DEVICE_STATUS].includes(storedStatus) ? DEFAULT_DEVICE_STATUS : storedStatus);
   if (safetyStatus !== DEFAULT_DEVICE_STATUS) {
     return safetyStatus;
   }

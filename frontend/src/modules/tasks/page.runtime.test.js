@@ -15,6 +15,7 @@ const EXPERIMENT_SAMPLES_KEY = "mes.experiment_samples";
 const TASKS_ENDPOINT = buildApiUrl("/api/tasks", getFrontendApiBaseUrl());
 const TASKS_RESET_ENDPOINT = buildApiUrl("/api/tasks/reset", getFrontendApiBaseUrl());
 const STORAGE_ENDPOINT = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
+const isStorageGetUrl = (url) => url === STORAGE_ENDPOINT || url.startsWith(`${STORAGE_ENDPOINT}?`);
 const MASTER_TEST_TYPES_ENDPOINT = buildApiUrl("/api/master/test-types", getFrontendApiBaseUrl());
 const buildTaskEndpoint = (taskId) => buildApiUrl(`/api/tasks/${taskId}`, getFrontendApiBaseUrl());
 const buildCurrentMonthFirstTaskCode = () =>
@@ -206,7 +207,7 @@ const createTasksPageFetchMock = ({
       });
     }
 
-    if (url === STORAGE_ENDPOINT && method === "GET") {
+    if (isStorageGetUrl(url) && method === "GET") {
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -2047,7 +2048,7 @@ describe("TasksPage runtime", () => {
           json: async () => JSON.parse(options.body ?? "{}"),
         });
       }
-      if (url === STORAGE_ENDPOINT && method === "GET") {
+      if (isStorageGetUrl(url) && method === "GET") {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -2371,7 +2372,7 @@ describe("TasksPage runtime", () => {
                 ],
         });
       }
-      if (url === STORAGE_ENDPOINT) {
+      if (isStorageGetUrl(url)) {
         return Promise.resolve({
           ok: true,
           json: async () => ({

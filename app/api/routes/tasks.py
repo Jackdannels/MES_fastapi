@@ -103,8 +103,7 @@ def is_returned_task(task: dict[str, Any]) -> bool:
 
 
 def load_tasks(include_archived: bool = False) -> list[dict[str, Any]]:
-    snapshot = load_snapshot()
-    tasks = snapshot.get("mes.tasks", [])
+    tasks = get_storage_backend().read("mes.tasks")
     task_list = [dict(task) for task in tasks] if isinstance(tasks, list) else []
     if include_archived:
         return task_list

@@ -1142,7 +1142,7 @@ function useSchedulePage() {
   const loadSchedulePage = async ({ resetForm: shouldResetForm = true } = {}) => {
     try {
       const [snapshot, loadedMasterLabs] = await Promise.all([
-        loadSnapshot({ fallbackSnapshot: buildSnapshotFallback() }),
+        loadSnapshot({ fallbackSnapshot: buildSnapshotFallback(), reconcileScheduleExceptions: true }),
         readMasterLabs().catch(() => []),
       ]);
       masterLabs.value = Array.isArray(loadedMasterLabs) ? loadedMasterLabs : [];

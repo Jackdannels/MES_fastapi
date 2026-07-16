@@ -6,10 +6,43 @@ const API_BASE_URL = getFrontendApiBaseUrl();
 const SNAPSHOT_UPDATED_STORAGE_KEY = "mes:snapshot-updated-at";
 const SNAPSHOT_UPDATED_EVENT = "mes:snapshot-updated";
 const STORAGE_EVENTS_ENDPOINT = buildApiUrl("/api/storage/events", API_BASE_URL);
-const pendingSnapshotReads = new Map();
+const queuedSnapshotReadKeys = new Set();
+const queuedSnapshotReads = [];
+let snapshotReadBatchScheduled = false;
+const storageUpdateListeners = new Set();
+let storageEventSource = null;
 
-function fetchStorageSnapshot() {
-  return fetch(buildApiUrl("/api/storage", API_BASE_URL), {
+function dispatchRemoteStorageUpdate(payload) {
+  storageUpdateListeners.forEach((listener) => {
+    try {
+      listener(payload);
+    } catch {
+      // One page listener must not prevent the remaining subscribers from refreshing.
+    }
+  });
+}
+
+function ensureStorageEventSource() {
+  if (storageEventSource || typeof window === "undefined" || typeof window.EventSource !== "function") {
+    return;
+  }
+  storageEventSource = new window.EventSource(STORAGE_EVENTS_ENDPOINT, { withCredentials: true });
+  storageEventSource.addEventListener("message", (event) => {
+    try {
+      dispatchRemoteStorageUpdate(JSON.parse(String(event?.data || "{}")));
+    } catch {
+      dispatchRemoteStorageUpdate({});
+    }
+  });
+  storageEventSource.addEventListener("error", () => {
+    // EventSource reconnects automatically; page-level handlers keep the last good snapshot until then.
+  });
+}
+
+function fetchStorageSnapshot(keys = []) {
+  const requestedKeys = Array.from(new Set((Array.isArray(keys) ? keys : []).filter(Boolean))).sort();
+  const query = requestedKeys.length ? `?keys=${encodeURIComponent(requestedKeys.join(","))}` : "";
+  return fetch(buildApiUrl(`/api/storage${query}`, API_BASE_URL), {
     headers: { Accept: "application/json" },
     credentials: "include",
   }).then((response) => {
@@ -20,35 +53,48 @@ function fetchStorageSnapshot() {
   });
 }
 
-function readStorageSnapshot(keys, options = {}) {
-  const requestedKeys = Array.isArray(keys) ? keys : [];
-  const normalizeMissing = options.normalizeMissing !== false;
-  const requestKey = JSON.stringify([...new Set(requestedKeys)].sort());
-  if (!pendingSnapshotReads.has(requestKey)) {
-    const pendingRead = fetchStorageSnapshot().then(
-      (payload) => {
-        pendingSnapshotReads.delete(requestKey);
-        return payload;
-      },
-      (error) => {
-        pendingSnapshotReads.delete(requestKey);
-        throw error;
-      },
-    );
-    pendingSnapshotReads.set(requestKey, pendingRead);
-  }
-  return pendingSnapshotReads.get(requestKey).then((payload) =>
-    Object.fromEntries(
-      requestedKeys.map((key) => [
-        key,
-        Array.isArray(payload?.[key]) || !normalizeMissing ? payload?.[key] : [],
-      ]),
-    ),
+function projectSnapshot(payload, requestedKeys, normalizeMissing) {
+  return Object.fromEntries(
+    requestedKeys.map((key) => [
+      key,
+      Array.isArray(payload?.[key]) || !normalizeMissing ? payload?.[key] : [],
+    ]),
   );
 }
 
+async function flushSnapshotReadBatch() {
+  snapshotReadBatchScheduled = false;
+  const batchRequests = queuedSnapshotReads.splice(0, queuedSnapshotReads.length);
+  const batchKeys = Array.from(queuedSnapshotReadKeys);
+  queuedSnapshotReadKeys.clear();
+  if (!batchRequests.length) {
+    return;
+  }
+  try {
+    const payload = await fetchStorageSnapshot(batchKeys);
+    batchRequests.forEach(({ normalizeMissing, requestedKeys, resolve }) => {
+      resolve(projectSnapshot(payload, requestedKeys, normalizeMissing));
+    });
+  } catch (error) {
+    batchRequests.forEach(({ reject }) => reject(error));
+  }
+}
+
+function readStorageSnapshot(keys, options = {}) {
+  const requestedKeys = Array.from(new Set(Array.isArray(keys) ? keys.filter(Boolean) : []));
+  const normalizeMissing = options.normalizeMissing !== false;
+  requestedKeys.forEach((key) => queuedSnapshotReadKeys.add(key));
+  const result = new Promise((resolve, reject) => {
+    queuedSnapshotReads.push({ normalizeMissing, reject, requestedKeys, resolve });
+  });
+  if (!snapshotReadBatchScheduled) {
+    snapshotReadBatchScheduled = true;
+    queueMicrotask(flushSnapshotReadBatch);
+  }
+  return result;
+}
+
 async function writeStorageUpdates(updates, options = {}) {
-  pendingSnapshotReads.clear();
   const rawPayload = updates && typeof updates === "object" ? updates : {};
   const payload = Object.fromEntries(Object.entries(rawPayload));
   const source = String(options?.source || "").trim();
@@ -114,7 +160,6 @@ function storageTrayActionBody(action = {}) {
 }
 
 async function writeStorageTrayAction(action, options = {}) {
-  pendingSnapshotReads.clear();
   const source = String(options?.source || "").trim();
   const requestId = String(options?.requestId || "").trim();
   const headers = {
@@ -158,7 +203,6 @@ async function writeStorageTrayAction(action, options = {}) {
 }
 
 async function writeStorageSchedulePatch(patch, options = {}) {
-  pendingSnapshotReads.clear();
   const source = String(options?.source || "").trim();
   const requestId = String(options?.requestId || "").trim();
   const headers = {
@@ -240,19 +284,19 @@ function subscribeStorageSnapshotUpdates(listener) {
   if (typeof window === "undefined" || typeof window.EventSource !== "function" || typeof listener !== "function") {
     return () => {};
   }
-  const source = new window.EventSource(STORAGE_EVENTS_ENDPOINT, { withCredentials: true });
-  source.addEventListener("message", (event) => {
-    try {
-      listener(JSON.parse(String(event?.data || "{}")));
-    } catch {
-      listener({});
-    }
-  });
-  source.addEventListener("error", () => {
-    // EventSource reconnects automatically; page-level handlers keep the last good snapshot until then.
-  });
+  storageUpdateListeners.add(listener);
+  ensureStorageEventSource();
+  let subscribed = true;
   return () => {
-    source.close();
+    if (!subscribed) {
+      return;
+    }
+    subscribed = false;
+    storageUpdateListeners.delete(listener);
+    if (storageUpdateListeners.size === 0 && storageEventSource) {
+      storageEventSource.close();
+      storageEventSource = null;
+    }
   };
 }
 

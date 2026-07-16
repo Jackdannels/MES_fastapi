@@ -79,7 +79,7 @@ describe("useStorageSnapshot", () => {
     const { useStorageSnapshot } = await import("./useStorageSnapshot");
     const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.conflicts]);
 
-    await loadSnapshot();
+    await loadSnapshot({ reconcileScheduleExceptions: true });
 
     expect(window.localStorage.getItem(SNAPSHOT_UPDATED_STORAGE_KEY)).toContain("\"reason\":\"reset\"");
     expect(writeStorageUpdates).not.toHaveBeenCalled();
@@ -91,7 +91,7 @@ describe("useStorageSnapshot", () => {
     const { useStorageSnapshot } = await import("./useStorageSnapshot");
     const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.schedules, STORAGE_KEYS.conflicts]);
 
-    const snapshot = await loadSnapshot();
+    const snapshot = await loadSnapshot({ reconcileScheduleExceptions: true });
 
     expect(snapshot[STORAGE_KEYS.schedules]).toEqual([]);
     expect(snapshot[STORAGE_KEYS.conflicts]).toEqual([

@@ -3485,6 +3485,8 @@ describe("LaboratoryPage runtime", () => {
         id: "schedule-salt",
         task_code: "SYLU-2026-04-301",
         experiment_code: "SYLU-2026-04-301-B",
+        sub_experiment_code: "SYLU-2026-04-301-B-AXIS-002",
+        axis_batch_no: "002",
         device: "盐雾试验室",
         start_at: "2026-04-02T09:30:00.000Z",
         end_at: "2026-04-02T11:00:00.000Z",
@@ -3537,7 +3539,12 @@ describe("LaboratoryPage runtime", () => {
     );
     const withdrawCall = fetch.mock.calls.find(([input]) => String(input).includes("/api/laboratory/tasks/SYLU-2026-04-301/experiments/SYLU-2026-04-301-B/withdraw-current"));
     expect(withdrawCall).toBeDefined();
-    expect(JSON.parse(withdrawCall[1]?.body || "{}").trayCodes).toEqual(["TP-301-B"]);
+    expect(JSON.parse(withdrawCall[1]?.body || "{}")).toMatchObject({
+      axisBatchNo: "002",
+      scheduleId: "schedule-salt",
+      subExperimentCode: "SYLU-2026-04-301-B-AXIS-002",
+      trayCodes: ["TP-301-B"],
+    });
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();

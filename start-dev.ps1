@@ -7,6 +7,7 @@ param(
     [int]$FrontendWaitTimeoutSeconds = 90,
     [int]$BrowserWaitTimeoutSeconds = 120,
     [switch]$DisableAutoOpenBrowser,
+    [switch]$Production,
     [string]$StateFile = "",
     [switch]$DryRun
 )
@@ -108,7 +109,8 @@ $frontendNetworkUrl = "http://${frontendNetworkHost}:$FrontendPort/"
 $launcherSessionId = [Guid]::NewGuid().ToString("N")
 
 if ($condaBat) {
-    $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py --reload --host $BackendHost --port $BackendPort"
+    $backendReloadArgument = if ($Production) { "" } else { " --reload" }
+    $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py$backendReloadArgument --host $BackendHost --port $BackendPort"
 } else {
     $backendCommand = "echo Unable to find conda.bat. Please install Anaconda/Miniconda or add conda to PATH. && echo Expected environment: $CondaEnv"
 }
@@ -132,7 +134,15 @@ exit 1
 "@
 
 $encodedFrontendWait = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($frontendWaitScript))
-$frontendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedFrontendWait && cd /d `"$FrontendRoot`" && npm run dev -- --host $FrontendHost --port $FrontendPort"
+$frontendRunCommand = if ($Production) {
+    "npm run build && npm run serve:public -- --host $FrontendHost --port $FrontendPort"
+} else {
+    "npm run dev -- --host $FrontendHost --port $FrontendPort"
+}
+$frontendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedFrontendWait && cd /d `"$FrontendRoot`" && $frontendRunCommand"
+$terminalCommandSwitch = if ($Production) { "/c" } else { "/k" }
+$backendTerminalCommand = if ($Production) { "$backendCommand & exit /b 0" } else { $backendCommand }
+$frontendTerminalCommand = if ($Production) { "$frontendCommand & exit /b 0" } else { $frontendCommand }
 
 $browserOpenScript = @"
 `$deadline = (Get-Date).AddSeconds($BrowserWaitTimeoutSeconds)
@@ -179,14 +189,37 @@ if ($DryRun) {
 
 if ($windowsTerminal) {
     $terminalProcess = Start-Process -FilePath $windowsTerminal.Source `
-        -ArgumentList "-w", "new", "new-tab", "--title", '"MES Backend"', "cmd.exe", "/k", $backendCommand, ";", "new-tab", "--title", '"MES Frontend"', "cmd.exe", "/k", $frontendCommand `
+        -ArgumentList "-w", "new", "new-tab", "--title", '"MES Backend"', "cmd.exe", $terminalCommandSwitch, $backendTerminalCommand, ";", "new-tab", "--title", '"MES Frontend"', "cmd.exe", $terminalCommandSwitch, $frontendTerminalCommand `
         -WorkingDirectory $ProjectRoot `
         -PassThru
-    $backendProcess = $terminalProcess
-    $frontendProcess = $terminalProcess
+    if ($Production) {
+        # Windows Terminal may reuse an existing host process. Track the cmd.exe
+        # process inside each tab by session marker so Stop/Restart closes the
+        # visible backend and frontend tabs instead of relying on the host PID.
+        $commandDeadline = (Get-Date).AddSeconds(10)
+        $backendCommandProcess = $null
+        $frontendCommandProcess = $null
+        do {
+            $sessionCommands = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+                $_.Name -match "(?i)^cmd\.exe$" -and [string]$_.CommandLine -like "*MES_LAUNCHER_SESSION=$launcherSessionId*"
+            })
+            $backendCommandProcess = $sessionCommands | Where-Object { [string]$_.CommandLine -like "*scripts\run_local.py*" } | Select-Object -First 1
+            $frontendCommandProcess = $sessionCommands | Where-Object { [string]$_.CommandLine -like "*npm run serve:public*" } | Select-Object -First 1
+            if ($backendCommandProcess -and $frontendCommandProcess) { break }
+            Start-Sleep -Milliseconds 100
+        } while ((Get-Date) -lt $commandDeadline)
+        if (-not $backendCommandProcess -or -not $frontendCommandProcess) {
+            throw "Unable to identify MES backend/frontend terminal command processes."
+        }
+        $backendProcess = Get-Process -Id $backendCommandProcess.ProcessId
+        $frontendProcess = Get-Process -Id $frontendCommandProcess.ProcessId
+    } else {
+        $backendProcess = $terminalProcess
+        $frontendProcess = $terminalProcess
+    }
 } else {
-    $backendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $backendCommand -WorkingDirectory $ProjectRoot -PassThru
-    $frontendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/k", $frontendCommand -WorkingDirectory $FrontendRoot -PassThru
+    $backendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList $terminalCommandSwitch, "title MES Backend && $backendTerminalCommand" -WorkingDirectory $ProjectRoot -PassThru
+    $frontendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList $terminalCommandSwitch, "title MES Frontend && $frontendTerminalCommand" -WorkingDirectory $FrontendRoot -PassThru
 }
 if ($StateFile) {
     $stateDirectory = Split-Path -Parent $StateFile

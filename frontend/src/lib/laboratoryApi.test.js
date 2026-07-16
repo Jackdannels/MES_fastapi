@@ -84,8 +84,11 @@ describe("laboratoryApi", () => {
     }));
 
     await withdrawCurrentLaboratoryExperiment({
+      axisBatchNo: "002",
       experimentCode: "EXP-A",
       reason: "试验间内撤回当前实验任务",
+      scheduleId: "SCHEDULE-002",
+      subExperimentCode: "EXP-A-AXIS-002",
       taskCode: "TASK-001",
       trayCodes: ["TP-001"],
     });
@@ -98,7 +101,10 @@ describe("laboratoryApi", () => {
       },
       credentials: "include",
       body: JSON.stringify({
+        axisBatchNo: "002",
         reason: "试验间内撤回当前实验任务",
+        scheduleId: "SCHEDULE-002",
+        subExperimentCode: "EXP-A-AXIS-002",
         trayCodes: ["TP-001"],
       }),
     });

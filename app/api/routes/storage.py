@@ -1,10 +1,10 @@
+import asyncio
 import json
-import queue
 import threading
 from datetime import datetime
 from typing import Any, Dict
 
-from fastapi import APIRouter, Body, Header, HTTPException
+from fastapi import APIRouter, Body, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from app.core.axis_codes import canonical_axis_code, sort_axis_codes
@@ -67,6 +67,8 @@ STAGING_STOCK_IN_BLOCKED_CURRENT_STATUSES = {
     "实验进行中",
     "实验中",
 }
+PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS = {"任务比对", "样品安装", "实验确认", "开始实验", "实验开始"}
+PARTIAL_AXIS_REENTRY_RESET_ACTIONS = {"撤回出库", "实验任务撤回", "任务切换撤回"}
 LAB_MAINTENANCE_BLOCKED_STATUSES = {
     LAB_DISPATCHED_STATUS,
     LAB_ARRIVED_STATUS,
@@ -94,7 +96,7 @@ SCHEDULE_LOCKED_FIELDS = {
     "start_at",
     "task_code",
 }
-_STORAGE_UPDATE_SUBSCRIBERS: set[queue.Queue[dict[str, Any]]] = set()
+_STORAGE_UPDATE_SUBSCRIBERS: set[tuple[asyncio.AbstractEventLoop, asyncio.Queue[dict[str, Any]]]] = set()
 _STORAGE_UPDATE_SUBSCRIBERS_LOCK = threading.Lock()
 
 
@@ -636,9 +638,29 @@ def _device_is_unavailable(device: Any) -> bool:
     now = now_business_datetime()
     if any(keyword in status for keyword in ["停用", "禁用", "不可用"]):
         return True
-    if any(keyword in status for keyword in ["维修", "保养"]) and not (end_at and end_at < now):
-        return True
-    return bool(start_at and start_at <= now and (not end_at or now <= end_at))
+    if start_at:
+        return bool(start_at <= now and (not end_at or now <= end_at))
+    return any(keyword in status for keyword in ["维修", "保养"])
+
+
+def _normalize_future_maintenance_device_statuses(updates: dict[str, Any]) -> dict[str, Any]:
+    devices = updates.get("mes.devices")
+    if not isinstance(devices, list):
+        return updates
+    now = now_business_datetime()
+    normalized_devices = []
+    for device in devices:
+        if not isinstance(device, dict):
+            normalized_devices.append(device)
+            continue
+        next_device = dict(device)
+        start_at = _parse_datetime(device.get("maintenance_start_at") or device.get("maintenanceStartAt"))
+        maintenance_type = _normalize_text(device.get("maintenance_type") or device.get("maintenanceType"))
+        status = _normalize_text(device.get("status"))
+        if start_at and start_at > now and maintenance_type.startswith("计划") and any(keyword in status for keyword in ["维修", "保养"]):
+            next_device["status"] = "可用"
+        normalized_devices.append(next_device)
+    return {**updates, "mes.devices": normalized_devices}
 
 
 def _find_unavailable_device(devices: Any, lab_name: str) -> dict[str, Any] | None:
@@ -1031,16 +1053,122 @@ def _normal_staging_reentry_is_partial_axis_batch(
 ) -> bool:
     if not isinstance(sample, dict) or not isinstance(tray, dict):
         return False
-    return tray_has_scoped_partial_axis_batch_completion(
-        task_code=_normalize_text(sample.get("task_code") or sample.get("task_no")),
-        tray_code=_tray_code(tray),
-        experiments=[item for item in _as_list(experiments) if isinstance(item, dict)],
-        experiment_runs=[item for item in _as_list(experiment_runs) if isinstance(item, dict)],
-        experiment_run_steps=[item for item in _as_list(experiment_run_steps) if isinstance(item, dict)],
-        experiment_trays=[item for item in _as_list(experiment_trays) if isinstance(item, dict)],
-        experiment_run_trays=[item for item in _as_list(experiment_run_trays) if isinstance(item, dict)],
-        schedules=[item for item in _as_list(schedules) if isinstance(item, dict)],
+    normalized_experiments = [item for item in _as_list(experiments) if isinstance(item, dict)]
+    normalized_experiment_runs = [item for item in _as_list(experiment_runs) if isinstance(item, dict)]
+    normalized_experiment_run_steps = [item for item in _as_list(experiment_run_steps) if isinstance(item, dict)]
+    normalized_experiment_trays = [item for item in _as_list(experiment_trays) if isinstance(item, dict)]
+    normalized_experiment_run_trays = [item for item in _as_list(experiment_run_trays) if isinstance(item, dict)]
+    normalized_schedules = [item for item in _as_list(schedules) if isinstance(item, dict)]
+    task_code = _normalize_text(sample.get("task_code") or sample.get("task_no"))
+    tray_code = _tray_code(tray)
+    if not tray_has_scoped_partial_axis_batch_completion(
+        task_code=task_code,
+        tray_code=tray_code,
+        experiments=normalized_experiments,
+        experiment_runs=normalized_experiment_runs,
+        experiment_run_steps=normalized_experiment_run_steps,
+        experiment_trays=normalized_experiment_trays,
+        experiment_run_trays=normalized_experiment_run_trays,
+        schedules=normalized_schedules,
+    ):
+        return False
+    return not _partial_axis_reentry_has_newer_lab_activity(
+        sample=sample,
+        task_code=task_code,
+        tray_code=tray_code,
+        experiment_runs=normalized_experiment_runs,
+        experiment_run_trays=normalized_experiment_run_trays,
     )
+
+
+def _partial_axis_reentry_has_newer_lab_activity(
+    *,
+    sample: dict[str, Any],
+    task_code: str,
+    tray_code: str,
+    experiment_runs: list[dict[str, Any]],
+    experiment_run_trays: list[dict[str, Any]],
+) -> bool:
+    run_by_no = {_run_no(run): run for run in experiment_runs if _run_no(run)}
+    completion_times: list[datetime] = []
+    for relation in experiment_run_trays:
+        if (
+            _task_code(relation) != task_code
+            or _normalize_text(relation.get("tray_code") or relation.get("tray_no")) != tray_code
+            or not _is_completed_status(relation.get("status") or relation.get("run_tray_status"))
+        ):
+            continue
+        run = run_by_no.get(_run_no(relation), {})
+        for value in (
+            relation.get("ended_at"),
+            relation.get("endedAt"),
+            relation.get("updated_at"),
+            relation.get("updatedAt"),
+            run.get("ended_at"),
+            run.get("endedAt"),
+            run.get("updated_at"),
+            run.get("updatedAt"),
+        ):
+            if parsed := _parse_datetime(value):
+                completion_times.append(parsed)
+
+    for entry in _as_list(sample.get("history")):
+        if not isinstance(entry, dict):
+            continue
+        status_text = " ".join(
+            (_normalize_text(entry.get("status")), _normalize_text(entry.get("detail")))
+        )
+        if "部分完成" not in status_text or "轴" not in status_text:
+            continue
+        if parsed := _parse_datetime(entry.get("time") or entry.get("updated_at") or entry.get("updatedAt")):
+            completion_times.append(parsed)
+
+    latest_completion_time = max(completion_times) if completion_times else None
+    lifecycle_events: list[tuple[datetime, str]] = []
+    if latest_completion_time is not None:
+        for entry in _as_list(sample.get("history")):
+            if not isinstance(entry, dict):
+                continue
+            action = _normalize_text(entry.get("action"))
+            if action not in PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS | PARTIAL_AXIS_REENTRY_RESET_ACTIONS:
+                continue
+            event_time = _parse_datetime(entry.get("time") or entry.get("updated_at") or entry.get("updatedAt"))
+            if event_time is not None and event_time > latest_completion_time:
+                lifecycle_events.append((event_time, action))
+    if lifecycle_events:
+        latest_action = max(lifecycle_events, key=lambda item: item[0])[1]
+        if latest_action in PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS:
+            return True
+
+    for relation in experiment_run_trays:
+        if (
+            _task_code(relation) != task_code
+            or _normalize_text(relation.get("tray_code") or relation.get("tray_no")) != tray_code
+            or _normalize_text(relation.get("status") or relation.get("run_tray_status"))
+            not in STAGING_STOCK_IN_BLOCKED_CURRENT_STATUSES
+        ):
+            continue
+        run = run_by_no.get(_run_no(relation), {})
+        started_at = next(
+            (
+                parsed
+                for value in (
+                    relation.get("started_at"),
+                    relation.get("startedAt"),
+                    relation.get("created_at"),
+                    relation.get("createdAt"),
+                    run.get("started_at"),
+                    run.get("startedAt"),
+                    run.get("created_at"),
+                    run.get("createdAt"),
+                )
+                if (parsed := _parse_datetime(value)) is not None
+            ),
+            None,
+        )
+        if latest_completion_time is None or started_at is None or started_at >= latest_completion_time:
+            return True
+    return False
 
 
 def _tray_axis_aware_experiments_are_completed(
@@ -1516,31 +1644,43 @@ def publish_storage_update(keys: list[str], *, source: str = "", request_id: str
         payload["requestId"] = request_id
     with _STORAGE_UPDATE_SUBSCRIBERS_LOCK:
         subscribers = list(_STORAGE_UPDATE_SUBSCRIBERS)
-    for subscriber in subscribers:
-        try:
-            subscriber.put_nowait(payload)
-        except queue.Full:
+    def enqueue(subscriber_queue: asyncio.Queue[dict[str, Any]]) -> None:
+        if subscriber_queue.full():
             try:
-                subscriber.get_nowait()
-                subscriber.put_nowait(payload)
-            except queue.Empty:
+                subscriber_queue.get_nowait()
+            except asyncio.QueueEmpty:
                 pass
+        try:
+            subscriber_queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            pass
+
+    for subscriber_loop, subscriber_queue in subscribers:
+        if subscriber_loop.is_closed():
+            continue
+        try:
+            subscriber_loop.call_soon_threadsafe(enqueue, subscriber_queue)
+        except RuntimeError:
+            # The client may disconnect between the closed-loop check and delivery.
+            continue
 
 
 def _format_sse(payload: dict[str, Any]) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _storage_update_event_stream():
-    subscriber: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=20)
+async def _storage_update_event_stream():
+    subscriber_loop = asyncio.get_running_loop()
+    subscriber_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=20)
+    subscriber = (subscriber_loop, subscriber_queue)
     with _STORAGE_UPDATE_SUBSCRIBERS_LOCK:
         _STORAGE_UPDATE_SUBSCRIBERS.add(subscriber)
     try:
         yield ": connected\n\n"
         while True:
             try:
-                payload = subscriber.get(timeout=15)
-            except queue.Empty:
+                payload = await asyncio.wait_for(subscriber_queue.get(), timeout=15)
+            except asyncio.TimeoutError:
                 yield ": keepalive\n\n"
                 continue
             yield _format_sse(payload)
@@ -1550,8 +1690,17 @@ def _storage_update_event_stream():
 
 
 @router.get("")
-def read_all() -> Dict[str, Any]:
+def read_all(keys: str = Query(default="")) -> Dict[str, Any]:
     storage = get_storage_backend()
+    requested_keys = list(dict.fromkeys(
+        key.strip() for key in keys.split(",") if key.strip() in STORAGE_KEYS
+    ))
+    if requested_keys:
+        if hasattr(storage, "read_many"):
+            return storage.read_many(requested_keys)
+        return {key: storage.read(key) for key in requested_keys}
+    if keys.strip():
+        return {}
     return storage.read_all()
 
 
@@ -1703,6 +1852,7 @@ def write_key(key: str, payload: Any = Body(...)) -> Dict[str, bool]:
     with acquire_laboratory_storage_commit_lock():
         snapshot = storage.read_all()
         updates = merge_concurrent_storage_updates(snapshot, {key: payload})
+        updates = _normalize_future_maintenance_device_statuses(updates)
         _validate_storage_update(storage, updates, snapshot)
         storage.write(key, updates[key])
     publish_storage_update([key])
@@ -1722,6 +1872,7 @@ def write_many(
     with acquire_laboratory_storage_commit_lock():
         snapshot = storage.read_all()
         updates = merge_concurrent_storage_updates(snapshot, updates)
+        updates = _normalize_future_maintenance_device_statuses(updates)
         _validate_storage_update(storage, updates, snapshot)
         storage.write_many(updates)
     source = str(update_source or "").strip()

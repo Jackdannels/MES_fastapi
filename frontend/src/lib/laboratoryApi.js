@@ -7,7 +7,15 @@ const readErrorMessage = async (response) => {
   return payload?.detail || payload?.message || `请求失败（${response.status}）`;
 };
 
-const withdrawCurrentLaboratoryExperiment = async ({ taskCode, experimentCode, reason = "", trayCodes = [] }) => {
+const withdrawCurrentLaboratoryExperiment = async ({
+  axisBatchNo = "",
+  experimentCode,
+  reason = "",
+  scheduleId = "",
+  subExperimentCode = "",
+  taskCode,
+  trayCodes = [],
+}) => {
   const normalizedTaskCode = String(taskCode || "").trim();
   const normalizedExperimentCode = String(experimentCode || "").trim();
   if (!normalizedTaskCode || !normalizedExperimentCode) {
@@ -26,7 +34,10 @@ const withdrawCurrentLaboratoryExperiment = async ({ taskCode, experimentCode, r
       },
       credentials: "include",
       body: JSON.stringify({
+        axisBatchNo,
         reason,
+        scheduleId,
+        subExperimentCode,
         trayCodes: Array.isArray(trayCodes) ? trayCodes : [],
       }),
     },

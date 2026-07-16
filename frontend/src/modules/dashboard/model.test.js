@@ -360,6 +360,28 @@ describe("dashboard model", () => {
     ]);
   });
 
+  test("does not show future planned care as active before its start time", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [],
+      experiments: [],
+      streams: [],
+      devices: [
+        {
+          code: "冲击一室",
+          maintenance_start_at: "2026-07-18T13:00:00+08:00",
+          maintenance_type: "计划保养",
+          status: "保养",
+        },
+      ],
+      schedules: [],
+      now: Date.parse("2026-07-16T13:00:00+08:00"),
+    });
+
+    expect(viewModel.deviceItems[0]).toEqual(
+      expect.objectContaining({ status: "可用", dotClass: "timeline-dot--available" }),
+    );
+  });
+
   test("backfills the second hot-humid room in dashboard device status for legacy ledgers", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [],

@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import Settings, settings
@@ -37,6 +38,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
     if configured_settings.SERVE_WEB_APP and web_routes.FRONTEND_ASSETS_DIR.exists():
         app.mount("/assets", StaticFiles(directory=str(web_routes.FRONTEND_ASSETS_DIR)), name="assets")

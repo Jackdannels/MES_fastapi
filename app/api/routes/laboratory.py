@@ -73,6 +73,9 @@ class LaboratoryWithdrawRequest(BaseModel):
     reason: str = ""
     operation_id: str = Field(default="", alias="operationId")
     tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
+    schedule_id: str = Field(default="", alias="scheduleId")
+    sub_experiment_code: str = Field(default="", alias="subExperimentCode")
+    axis_batch_no: int | str | None = Field(default=None, alias="axisBatchNo")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -993,6 +996,9 @@ def completed_axis_tray_codes(
     task_code: str,
     experiment_code: str,
     experiment_name: str,
+    schedule_id: str = "",
+    sub_experiment_code: str = "",
+    axis_batch_no: int | str | None = None,
 ) -> list[str]:
     """Return selected trays that already contain progress for the current experiment.
 
@@ -1002,6 +1008,17 @@ def completed_axis_tray_codes(
     """
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
+    normalized_schedule_id = normalize_text(schedule_id)
+    normalized_sub_experiment_code = normalize_text(sub_experiment_code)
+
+    def normalized_axis_batch_key(value: Any) -> str:
+        normalized = normalize_text(value)
+        if normalized.isdigit():
+            return str(int(normalized))
+        return normalized
+
+    normalized_axis_batch_no = normalized_axis_batch_key(axis_batch_no)
+    has_batch_scope = bool(normalized_schedule_id or normalized_sub_experiment_code or normalized_axis_batch_no)
     selected_codes = {
         normalize_text(tray_code)
         for _sample, tray_codes in sample_matches
@@ -1012,20 +1029,74 @@ def completed_axis_tray_codes(
         return []
 
     blocked_codes: set[str] = set()
-    for sample, tray_codes in sample_matches:
-        matched_codes = {normalize_text(tray_code) for tray_code in tray_codes if normalize_text(tray_code)}
-        if status_has_current_experiment_progress(sample.get("status"), experiment_name):
-            blocked_codes.update(matched_codes)
-        for tray in as_list(sample.get("trays")):
-            tray_code = normalize_text(tray.get("tray_code"))
-            if tray_code in matched_codes and status_has_current_experiment_progress(tray.get("status"), experiment_name):
-                blocked_codes.add(tray_code)
-        for entry in as_list(sample.get("history")):
-            parsed = parse_experiment_history_detail(entry.get("detail"), normalized_task_code)
-            if parsed and parsed["experimentName"] == normalize_text(experiment_name) and status_has_current_experiment_progress(
-                parsed["status"], experiment_name
-            ):
+    if not has_batch_scope:
+        for sample, tray_codes in sample_matches:
+            matched_codes = {normalize_text(tray_code) for tray_code in tray_codes if normalize_text(tray_code)}
+            if status_has_current_experiment_progress(sample.get("status"), experiment_name):
                 blocked_codes.update(matched_codes)
+            for tray in as_list(sample.get("trays")):
+                tray_code = normalize_text(tray.get("tray_code"))
+                if tray_code in matched_codes and status_has_current_experiment_progress(tray.get("status"), experiment_name):
+                    blocked_codes.add(tray_code)
+            for entry in as_list(sample.get("history")):
+                parsed = parse_experiment_history_detail(entry.get("detail"), normalized_task_code)
+                if parsed and parsed["experimentName"] == normalize_text(experiment_name) and status_has_current_experiment_progress(
+                    parsed["status"], experiment_name
+                ):
+                    blocked_codes.update(matched_codes)
+
+    schedules_by_id = {
+        normalize_text(schedule.get("id") or schedule.get("schedule_id") or schedule.get("scheduleId")): schedule
+        for schedule in snapshot["schedules"]
+        if normalize_text(schedule.get("id") or schedule.get("schedule_id") or schedule.get("scheduleId"))
+    }
+    runs_by_no = {
+        normalize_text(run.get("run_no") or run.get("runNo") or run.get("id")): run
+        for run in snapshot["experiment_runs"]
+        if normalize_text(run.get("run_no") or run.get("runNo") or run.get("id"))
+    }
+
+    def record_matches_batch_scope(record: dict[str, Any], run: dict[str, Any] | None = None) -> bool:
+        if not has_batch_scope:
+            return True
+        related_run = run or {}
+        record_schedule_id = normalize_text(
+            record.get("schedule_id")
+            or record.get("scheduleId")
+            or record.get("schedule_no")
+            or related_run.get("schedule_id")
+            or related_run.get("scheduleId")
+            or related_run.get("schedule_no")
+        )
+        schedule = schedules_by_id.get(record_schedule_id, {})
+        record_sub_experiment_code = normalize_text(
+            record.get("sub_experiment_code")
+            or record.get("subExperimentCode")
+            or related_run.get("sub_experiment_code")
+            or related_run.get("subExperimentCode")
+            or schedule.get("sub_experiment_code")
+            or schedule.get("subExperimentCode")
+        )
+        record_axis_batch_no = normalized_axis_batch_key(
+            record.get("axis_batch_no")
+            or record.get("axisBatchNo")
+            or related_run.get("axis_batch_no")
+            or related_run.get("axisBatchNo")
+            or schedule.get("axis_batch_no")
+            or schedule.get("axisBatchNo")
+        )
+        matched_identifier = False
+        for requested, actual in (
+            (normalized_schedule_id, record_schedule_id),
+            (normalized_sub_experiment_code, record_sub_experiment_code),
+            (normalized_axis_batch_no, record_axis_batch_no),
+        ):
+            if not requested or not actual:
+                continue
+            matched_identifier = True
+            if requested != actual:
+                return False
+        return matched_identifier
 
     tray_codes_by_run: dict[str, set[str]] = {}
     for relation in snapshot["experiment_run_trays"]:
@@ -1038,6 +1109,9 @@ def completed_axis_tray_codes(
         if tray_code not in selected_codes:
             continue
         run_no = normalize_text(relation.get("run_no") or relation.get("runNo"))
+        related_run = runs_by_no.get(run_no, {})
+        if not record_matches_batch_scope(relation, related_run):
+            continue
         if run_no:
             tray_codes_by_run.setdefault(run_no, set()).add(tray_code)
         if normalize_text(relation.get("status") or relation.get("run_tray_status")) in COMPLETED_EXPERIMENT_STATUSES:
@@ -1048,6 +1122,7 @@ def completed_axis_tray_codes(
             normalize_text(run.get("task_code") or run.get("task_no")) != normalized_task_code
             or normalize_text(run.get("experiment_code") or run.get("experiment_no")) != normalized_experiment_code
             or normalize_text(run.get("status")) not in COMPLETED_EXPERIMENT_STATUSES
+            or not record_matches_batch_scope(run, run)
         ):
             continue
         blocked_codes.update(tray_codes_by_run.get(normalize_text(run.get("run_no") or run.get("runNo") or run.get("id")), set()))
@@ -1055,7 +1130,10 @@ def completed_axis_tray_codes(
     for step in snapshot["experiment_run_steps"]:
         if normalize_text(step.get("status")) not in COMPLETED_EXPERIMENT_STATUSES:
             continue
-        blocked_codes.update(tray_codes_by_run.get(normalize_text(step.get("run_no") or step.get("runNo")), set()))
+        run_no = normalize_text(step.get("run_no") or step.get("runNo"))
+        if not record_matches_batch_scope(step, runs_by_no.get(run_no, {})):
+            continue
+        blocked_codes.update(tray_codes_by_run.get(run_no, set()))
 
     return sorted(blocked_codes)
 
@@ -1297,6 +1375,9 @@ def withdraw_current_experiment(
                 task_code=normalized_task_code,
                 experiment_code=normalized_experiment_code,
                 experiment_name=current_experiment_name,
+                schedule_id=request.schedule_id,
+                sub_experiment_code=request.sub_experiment_code,
+                axis_batch_no=request.axis_batch_no,
             )
             if progressed_tray_codes:
                 joined_tray_codes = "、".join(progressed_tray_codes)

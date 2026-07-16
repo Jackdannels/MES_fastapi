@@ -13,6 +13,7 @@ def test_module_registry_preserves_expected_route_surfaces():
         "/health",
         "/api/master",
         "/api/tasks",
+        "/api/task-history",
         "/person",
         "/customer",
         "/companydepartment",
@@ -34,6 +35,8 @@ def test_module_registry_preserves_expected_route_surfaces():
         "/api/storage",
         "/yt_barcode",
         "/yt_object",
+        "/api/attendance",
+        "/api/system",
         "/api/mq",
         "/api/laboratory",
     ]

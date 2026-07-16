@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict
 
+from app.db.mysql_pool import get_mysql_connection_pool
+
 
 CREATE_STORAGE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS app_storage_snapshot (
@@ -23,28 +25,18 @@ class MySQLConnectionSettings:
     password: str
     database: str
     charset: str = "utf8mb4"
+    pool_size: int = 20
+    pool_timeout_seconds: float = 5.0
 
 
 class MySQLSnapshotRepository:
     def __init__(self, connection_settings: MySQLConnectionSettings) -> None:
         self._connection_settings = connection_settings
+        self._connection_pool = get_mysql_connection_pool(connection_settings)
         self._initialized = False
 
     def _connect(self):
-        try:
-            import pymysql
-        except ImportError as exc:
-            raise RuntimeError("pymysql is required for the MySQL storage backend") from exc
-
-        return pymysql.connect(
-            host=self._connection_settings.host,
-            port=self._connection_settings.port,
-            user=self._connection_settings.user,
-            password=self._connection_settings.password,
-            database=self._connection_settings.database,
-            charset=self._connection_settings.charset,
-            autocommit=False,
-        )
+        return self._connection_pool.acquire()
 
     def _ensure_table(self) -> None:
         if self._initialized:

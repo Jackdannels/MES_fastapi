@@ -1,3 +1,4 @@
+import asyncio
 from copy import deepcopy
 import threading
 
@@ -103,6 +104,21 @@ def test_storage_persists_device_maintenance_records(monkeypatch):
     assert storage.read("mes.maintenance_records") == records
 
 
+def test_future_planned_maintenance_does_not_make_device_unavailable_early():
+    from app.api.routes import storage as storage_route
+
+    device = {
+        "code": "冲击一室",
+        "maintenance_start_at": "2099-03-20 08:00:00",
+        "maintenance_type": "计划保养",
+        "status": "保养",
+    }
+
+    assert storage_route._device_is_unavailable(device) is False
+    normalized = storage_route._normalize_future_maintenance_device_statuses({"mes.devices": [device]})
+    assert normalized["mes.devices"][0]["status"] == "可用"
+
+
 def build_client(monkeypatch, payloads=None):
     from app.api.routes import storage as storage_route
 
@@ -122,6 +138,33 @@ def build_client_with_storage(monkeypatch, storage):
     app = FastAPI()
     app.include_router(storage_route.router)
     return TestClient(app), storage
+
+
+def test_storage_reads_only_requested_snapshot_keys(monkeypatch):
+    client, _storage = build_client(
+        monkeypatch,
+        {
+            "mes.tasks": [{"code": "TASK-001"}],
+            "mes.samples": [{"code": "SAMPLE-001"}],
+        },
+    )
+
+    response = client.get("/api/storage?keys=mes.tasks")
+
+    assert response.status_code == 200
+    assert response.json() == {"mes.tasks": [{"code": "TASK-001"}]}
+
+
+def test_storage_invalid_requested_keys_do_not_fall_back_to_full_snapshot(monkeypatch):
+    client, _storage = build_client(
+        monkeypatch,
+        {"mes.tasks": [{"code": "TASK-001"}]},
+    )
+
+    response = client.get("/api/storage?keys=unknown.collection")
+
+    assert response.status_code == 200
+    assert response.json() == {}
 
 
 def test_storage_rejects_lab_arrival_when_tray_was_not_dispatched_from_transfer_area(monkeypatch):
@@ -2518,15 +2561,16 @@ def test_storage_schedule_patch_rejects_schedule_inside_maintenance_window(monke
 def test_storage_update_event_stream_yields_published_keys():
     from app.api.routes import storage as storage_route
 
-    stream = storage_route._storage_update_event_stream()
-    try:
-        assert next(stream) == ": connected\n\n"
+    async def exercise_stream():
+        stream = storage_route._storage_update_event_stream()
+        try:
+            assert await anext(stream) == ": connected\n\n"
+            storage_route.publish_storage_update(["mes.samples"], source="staging-management", request_id="write-1")
+            return await anext(stream)
+        finally:
+            await stream.aclose()
 
-        storage_route.publish_storage_update(["mes.samples"], source="staging-management", request_id="write-1")
-
-        event = next(stream)
-    finally:
-        stream.close()
+    event = asyncio.run(exercise_stream())
 
     assert event.startswith("data: ")
     assert '"keys": ["mes.samples"]' in event
@@ -2971,6 +3015,129 @@ def test_storage_allows_post_staging_stock_in_when_axis_batch_completed(monkeypa
 
     assert response.status_code == 200
     assert storage.read("mes.samples") == attempted
+
+
+def test_storage_partial_axis_reentry_is_blocked_only_after_a_newer_lab_attempt():
+    from app.api.routes.storage import _normal_staging_reentry_is_partial_axis_batch
+
+    task_code = "TASK-PARTIAL-REENTRY"
+    experiment_code = f"{task_code}-A"
+    tray_code = f"{task_code}-TP-001"
+    first_sub_code = f"{experiment_code}-AXIS-001"
+    second_sub_code = f"{experiment_code}-AXIS-002"
+    sample = {
+        "code": f"{task_code}-SP-001",
+        "task_code": task_code,
+        "status": "实验进行中",
+        "flow_status": "实验进行中",
+        "trays": [{"tray_code": tray_code, "status": "实验进行中"}],
+        "history": [
+            {
+                "action": "实验完成",
+                "status": "冲击试验部分完成 1/2轴",
+                "detail": f"{task_code} / 冲击试验 / 冲击试验部分完成 1/2轴",
+                "time": "2026-07-16 10:00:00",
+            }
+        ],
+    }
+    tray = sample["trays"][0]
+    experiments = [
+        {
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "experiment_name": "冲击试验",
+            "axis_codes": ["x+", "x-"],
+        }
+    ]
+    schedules = [
+        {
+            "id": "schedule-axis-001",
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "sub_experiment_code": first_sub_code,
+            "axis_codes": ["x+"],
+            "status": "实验已完成",
+        },
+        {
+            "id": "schedule-axis-002",
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "sub_experiment_code": second_sub_code,
+            "axis_codes": ["x-"],
+            "status": "已排程",
+        },
+    ]
+    experiment_runs = [
+        {
+            "run_no": "run-axis-001",
+            "schedule_id": "schedule-axis-001",
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "sub_experiment_code": first_sub_code,
+            "axis_codes": ["x+"],
+            "status": "实验已完成",
+            "ended_at": "2026-07-16 10:00:00",
+        }
+    ]
+    experiment_run_trays = [
+        {
+            "run_no": "run-axis-001",
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "sub_experiment_code": first_sub_code,
+            "tray_code": tray_code,
+            "run_tray_status": "实验已完成",
+            "ended_at": "2026-07-16 10:00:00",
+        }
+    ]
+    arguments = {
+        "sample": sample,
+        "tray": tray,
+        "experiments": experiments,
+        "experiment_runs": experiment_runs,
+        "experiment_run_steps": [],
+        "experiment_trays": [{"task_code": task_code, "experiment_code": experiment_code, "tray_code": tray_code}],
+        "experiment_run_trays": experiment_run_trays,
+        "schedules": schedules,
+    }
+
+    assert _normal_staging_reentry_is_partial_axis_batch(**arguments) is True
+
+    sample["history"].insert(
+        0,
+        {"action": "任务比对", "status": "已到达实验室", "time": "2026-07-16 10:01:00"},
+    )
+    assert _normal_staging_reentry_is_partial_axis_batch(**arguments) is False
+
+    sample["history"].insert(
+        0,
+        {"action": "实验任务撤回", "status": "冲击试验部分完成 1/2轴", "time": "2026-07-16 10:02:00"},
+    )
+    assert _normal_staging_reentry_is_partial_axis_batch(**arguments) is True
+
+    experiment_runs.append(
+        {
+            "run_no": "run-axis-002",
+            "schedule_id": "schedule-axis-002",
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "sub_experiment_code": second_sub_code,
+            "status": "实验进行中",
+            "started_at": "2026-07-16 10:03:00",
+        }
+    )
+    experiment_run_trays.append(
+        {
+            "run_no": "run-axis-002",
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "sub_experiment_code": second_sub_code,
+            "tray_code": tray_code,
+            "run_tray_status": "实验进行中",
+            "started_at": "2026-07-16 10:03:00",
+        }
+    )
+    assert _normal_staging_reentry_is_partial_axis_batch(**arguments) is False
 
 
 def test_storage_allows_live_shaped_axis_batch_reentry_after_lab_dispatch(monkeypatch):

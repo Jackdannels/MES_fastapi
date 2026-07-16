@@ -4165,7 +4165,7 @@ def test_sync_progress_statuses_reads_existing_run_tray_relation_column(monkeypa
     backend._sync_progress_statuses(SyncCursor())
 
 
-def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) -> None:
+def test_read_all_is_read_only_and_does_not_backfill_legacy_unscheduled_since(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
         _DummySnapshotRepository(),
@@ -4233,9 +4233,9 @@ def test_read_all_backfills_missing_unscheduled_since_and_persists(monkeypatch) 
 
     snapshot = backend.read_all()
 
-    assert snapshot["mes.experiments"][0]["unscheduled_since"] == "2026-03-17 17:00:00"
-    assert repaired == {"TASK-001-A": datetime(2026, 3, 17, 17, 0)}
-    assert connection.commit_count == 2
+    assert snapshot["mes.experiments"][0]["unscheduled_since"] == ""
+    assert repaired == {}
+    assert connection.commit_count == 0
 
 
 def test_read_all_includes_experiment_run_steps(monkeypatch) -> None:

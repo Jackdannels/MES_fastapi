@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     MYSQL_DATABASE: str = "mes_single_branch"
     MYSQL_AUTO_INIT_SCHEMA: bool = False
     MYSQL_AUTO_SEED_DEMO: bool = False
+    MYSQL_POOL_SIZE: int = 20
+    MYSQL_POOL_TIMEOUT_SECONDS: float = 5.0
 
     MQTT_ENABLED: bool = False
     MQTT_HOST: str = "127.0.0.1"

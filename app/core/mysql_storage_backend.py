@@ -30,6 +30,7 @@ from app.core.mysql_storage_codecs import (
     parse_varchar_length,
 )
 from app.core.mysql_storage_schema import ensure_schema_extensions
+from app.db.mysql_pool import get_mysql_connection_pool
 from app.core.mysql_storage_master_readers import (
     list_labs as list_master_labs,
     list_test_types as list_master_test_types,
@@ -168,27 +169,14 @@ class MySQLMesStorageBackend(StorageBackend):
         snapshot_repository: MySQLSnapshotRepository,
     ) -> None:
         self._connection_settings = connection_settings
+        self._connection_pool = get_mysql_connection_pool(connection_settings, dict_cursor=True)
         self._snapshot_repository = snapshot_repository
-        self._lock = Lock()
+        self._schema_lock = Lock()
+        self._write_lock = Lock()
         self._schema_initialized = False
 
     def _connect(self):
-        try:
-            import pymysql
-            from pymysql.cursors import DictCursor
-        except ImportError as exc:
-            raise RuntimeError("pymysql is required for the MySQL storage backend") from exc
-
-        return pymysql.connect(
-            host=self._connection_settings.host,
-            port=self._connection_settings.port,
-            user=self._connection_settings.user,
-            password=self._connection_settings.password,
-            database=self._connection_settings.database,
-            charset=self._connection_settings.charset,
-            autocommit=False,
-            cursorclass=DictCursor,
-        )
+        return self._connection_pool.acquire()
 
     def list_test_types(self) -> list[dict[str, Any]]:
         return list_master_test_types(self)
@@ -197,7 +185,10 @@ class MySQLMesStorageBackend(StorageBackend):
         return list_master_labs(self)
 
     def _ensure_schema_extensions(self) -> None:
-        ensure_schema_extensions(self)
+        if self._schema_initialized:
+            return
+        with self._schema_lock:
+            ensure_schema_extensions(self)
 
     def _deserialize_snapshot_payloads(self, payloads: Dict[str, str]) -> Dict[str, Any]:
         return deserialize_snapshot_payloads(payloads, SNAPSHOT_STORAGE_KEYS, STORAGE_META_KEY, _normalize_value)
@@ -381,125 +372,82 @@ class MySQLMesStorageBackend(StorageBackend):
         if snapshot_updates:
             self._snapshot_repository.write_many(snapshot_updates)
 
-    def read_all(self) -> Dict[str, Any]:
-        with self._lock:
-            self._ensure_schema_extensions()
-            snapshot_values = self._deserialize_snapshot_payloads(self._snapshot_repository.read_all())
+    def read_many(self, keys: Iterable[str]) -> Dict[str, Any]:
+        requested_keys = list(dict.fromkeys(
+            key for key in keys if key in STORAGE_KEYS or key == STORAGE_META_KEY
+        ))
+        if not requested_keys:
+            return {}
+
+        self._ensure_schema_extensions()
+        requested_set = set(requested_keys)
+        snapshot_needed = bool(
+            requested_set.intersection(SNAPSHOT_STORAGE_KEYS)
+            or "mes.samples" in requested_set
+        )
+        snapshot_values = self._deserialize_snapshot_payloads(self._snapshot_repository.read_all()) if snapshot_needed else {}
+        data: Dict[str, Any] = {
+            key: snapshot_values.get(
+                key,
+                {"schema_version": CURRENT_SCHEMA_VERSION} if key == STORAGE_META_KEY else [],
+            )
+            for key in requested_keys
+            if key in SNAPSHOT_STORAGE_KEYS or key == STORAGE_META_KEY
+        }
+
+        relational_keys = requested_set.intersection(RELATIONAL_STORAGE_KEYS)
+        if relational_keys:
             with self._connect() as connection:
                 with connection.cursor() as cursor:
-                    self._normalize_legacy_status_columns(cursor)
-                    connection.commit()
-                    tasks = self._load_tasks(cursor)
-                    schedules = self._load_schedules(cursor)
-                    experiments = self._load_experiments(cursor)
-                    experiment_runs = self._load_experiment_runs(cursor)
-                    experiment_run_trays = self._load_experiment_run_trays(cursor)
-                    experiment_run_steps = self._load_experiment_run_steps(cursor)
-                    experiment_trays = self._load_experiment_trays(cursor)
-                    experiment_samples = self._load_experiment_samples(cursor)
-                    samples = self._load_samples(
-                        cursor,
-                        snapshot_values.get("mes.staging_events"),
-                        schedules=schedules,
-                        experiment_trays=experiment_trays,
-                    )
-                    experiments, repaired = self._backfill_unscheduled_since_for_reads(
-                        cursor,
-                        tasks=tasks,
-                        schedules=schedules,
-                        experiments=experiments,
-                        experiment_trays=experiment_trays,
-                        experiment_samples=experiment_samples,
-                        samples=samples,
-                    )
-                    if repaired:
-                        connection.commit()
-                    data = {
-                        "mes.tasks": tasks,
-                        "mes.schedules": schedules,
-                        "mes.devices": self._load_devices(cursor),
-                        "mes.streams": self._load_streams(cursor),
-                        "mes.samples": samples,
-                        "mes.experiments": experiments,
-                        "mes.experiment_runs": experiment_runs,
-                        "mes.experiment_run_trays": experiment_run_trays,
-                        "mes.experiment_run_steps": experiment_run_steps,
-                        "mes.experiment_trays": experiment_trays,
-                        "mes.experiment_samples": experiment_samples,
-                    }
-            data.update(snapshot_values)
-            for key in STORAGE_KEYS:
-                data.setdefault(key, [])
-            data.setdefault(STORAGE_META_KEY, {"schema_version": CURRENT_SCHEMA_VERSION})
-            return normalize_storage_payload(data)
+                    loaded: Dict[str, Any] = {}
+
+                    def load(key: str) -> Any:
+                        if key in loaded:
+                            return loaded[key]
+                        loaders = {
+                            "mes.tasks": self._load_tasks,
+                            "mes.schedules": self._load_schedules,
+                            "mes.devices": self._load_devices,
+                            "mes.streams": self._load_streams,
+                            "mes.experiments": self._load_experiments,
+                            "mes.experiment_runs": self._load_experiment_runs,
+                            "mes.experiment_run_trays": self._load_experiment_run_trays,
+                            "mes.experiment_run_steps": self._load_experiment_run_steps,
+                            "mes.experiment_trays": self._load_experiment_trays,
+                            "mes.experiment_samples": self._load_experiment_samples,
+                        }
+                        if key == "mes.samples":
+                            loaded[key] = self._load_samples(
+                                cursor,
+                                snapshot_values.get("mes.staging_events"),
+                                schedules=load("mes.schedules"),
+                                experiment_trays=load("mes.experiment_trays"),
+                            )
+                        else:
+                            loaded[key] = loaders[key](cursor)
+                        return loaded[key]
+
+                    for key in requested_keys:
+                        if key in RELATIONAL_STORAGE_KEYS:
+                            data[key] = load(key)
+
+        return {key: data.get(key, []) for key in requested_keys}
+
+    def read_all(self) -> Dict[str, Any]:
+        data = self.read_many([*STORAGE_KEYS, STORAGE_META_KEY])
+        data.setdefault(STORAGE_META_KEY, {"schema_version": CURRENT_SCHEMA_VERSION})
+        return normalize_storage_payload(data)
 
     def read(self, key: str) -> Any:
         if key not in STORAGE_KEYS:
             return []
-        with self._lock:
-            self._ensure_schema_extensions()
-            if key in SNAPSHOT_STORAGE_KEYS:
-                snapshot_values = self._deserialize_snapshot_payloads(self._snapshot_repository.read_all())
-                return snapshot_values.get(key, [])
-            with self._connect() as connection:
-                with connection.cursor() as cursor:
-                    self._normalize_legacy_status_columns(cursor)
-                    connection.commit()
-                    tasks = self._load_tasks(cursor)
-                    schedules = self._load_schedules(cursor)
-                    snapshot_values = self._deserialize_snapshot_payloads(self._snapshot_repository.read_all())
-                    experiments = self._load_experiments(cursor)
-                    experiment_runs = self._load_experiment_runs(cursor)
-                    experiment_run_trays = self._load_experiment_run_trays(cursor)
-                    experiment_run_steps = self._load_experiment_run_steps(cursor)
-                    experiment_trays = self._load_experiment_trays(cursor)
-                    experiment_samples = self._load_experiment_samples(cursor)
-                    samples = self._load_samples(
-                        cursor,
-                        snapshot_values.get("mes.staging_events"),
-                        schedules=schedules,
-                        experiment_trays=experiment_trays,
-                    )
-                    experiments, repaired = self._backfill_unscheduled_since_for_reads(
-                        cursor,
-                        tasks=tasks,
-                        schedules=schedules,
-                        experiments=experiments,
-                        experiment_trays=experiment_trays,
-                        experiment_samples=experiment_samples,
-                        samples=samples,
-                    )
-                    if repaired:
-                        connection.commit()
-                    if key == "mes.tasks":
-                        return tasks
-                    if key == "mes.schedules":
-                        return schedules
-                    if key == "mes.devices":
-                        return self._load_devices(cursor)
-                    if key == "mes.streams":
-                        return self._load_streams(cursor)
-                    if key == "mes.samples":
-                        return samples
-                    if key == "mes.experiments":
-                        return experiments
-                    if key == "mes.experiment_runs":
-                        return experiment_runs
-                    if key == "mes.experiment_run_trays":
-                        return experiment_run_trays
-                    if key == "mes.experiment_run_steps":
-                        return experiment_run_steps
-                    if key == "mes.experiment_trays":
-                        return experiment_trays
-                    if key == "mes.experiment_samples":
-                        return experiment_samples
-            return []
+        return self.read_many([key]).get(key, [])
 
     def write(self, key: str, value: Any) -> None:
         self.write_many({key: value})
 
     def write_many(self, updates: Dict[str, Any]) -> None:
-        with self._lock:
+        with self._write_lock:
             normalized_updates = {
                 key: (
                     _normalize_value(key, value if isinstance(value, dict) else {})

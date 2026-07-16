@@ -966,6 +966,8 @@ def get_storage_backend() -> StorageBackend:
             user=settings.MYSQL_USER,
             password=settings.MYSQL_PASSWORD,
             database=settings.MYSQL_DATABASE,
+            pool_size=settings.MYSQL_POOL_SIZE,
+            pool_timeout_seconds=settings.MYSQL_POOL_TIMEOUT_SECONDS,
         )
         repository = MySQLSnapshotRepository(connection_settings)
         _storage_backend = MySQLMesStorageBackend(

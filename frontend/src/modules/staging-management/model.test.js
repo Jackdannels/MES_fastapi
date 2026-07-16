@@ -4064,7 +4064,7 @@ describe("staging-management model", () => {
     }));
   });
 
-  test("allows staging stock-in after a partial axis run completes without marking the experiment terminal", () => {
+  test("allows partial-axis staging until a newer axis attempt is compared or started", () => {
     const snapshot = createSnapshot();
     const taskCode = "SYLU-2026-06-021";
     const trayCode = `${taskCode}-TP-001`;
@@ -4143,6 +4143,7 @@ describe("staging-management model", () => {
         sub_experiment_code: firstSubExperimentCode,
         tray_code: trayCode,
         run_tray_status: "实验已完成",
+        ended_at: "2026-06-21 10:00:00",
       },
     ];
     snapshot[STORAGE_KEYS.experiment_run_steps] = [
@@ -4167,7 +4168,9 @@ describe("staging-management model", () => {
           quantity: 1,
         },
       ],
-      history: [],
+      history: [
+        { action: "实验完成", detail: `${taskCode} / 振动试验 / 振动试验部分完成 2/6轴`, status: "振动试验部分完成 2/6轴", time: "2026-06-21 10:00:00" },
+      ],
     });
     snapshot[STORAGE_KEYS.staging_events].push(
       {
@@ -4201,6 +4204,42 @@ describe("staging-management model", () => {
     expect(scanDetail).toEqual(expect.objectContaining({
       found: true,
       status: "待入库",
+    }));
+
+    snapshot[STORAGE_KEYS.samples].at(-1).history.unshift(
+      { action: "任务比对", detail: `${taskCode} / 振动试验 / 已到达实验室`, status: "已到达实验室", time: "2026-06-21 10:01:00" },
+    );
+    const comparedRows = buildZancunRowsFromSnapshot(snapshot, { now: "2026-06-21 10:01:01", room: "staging" });
+    const comparedRow = comparedRows.find((item) => item.trayCode === trayCode);
+    expect(comparedRow).toEqual(expect.objectContaining({
+      inboundKind: "",
+      isPartialAxisInbound: false,
+    }));
+    expect(buildZancunInventorySections(comparedRows, { room: "staging" }).plannedInboundRows.map((item) => item.trayCode)).not.toContain(trayCode);
+
+    snapshot[STORAGE_KEYS.samples].at(-1).history.unshift(
+      { action: "实验任务撤回", detail: `${taskCode} / 振动试验 / 撤回至部分完成`, status: "振动试验部分完成 2/6轴", time: "2026-06-21 10:02:00" },
+    );
+    const withdrawnRows = buildZancunRowsFromSnapshot(snapshot, { now: "2026-06-21 10:02:01", room: "staging" });
+    expect(withdrawnRows.find((item) => item.trayCode === trayCode)).toEqual(expect.objectContaining({
+      inboundKind: "allowed",
+      isPartialAxisInbound: true,
+      status: "待入库",
+    }));
+
+    snapshot[STORAGE_KEYS.experiment_run_trays].push({
+      run_no: "RUN-VIB-REMAINING",
+      task_code: taskCode,
+      experiment_code: vibrationExperimentCode,
+      sub_experiment_code: secondSubExperimentCode,
+      tray_code: trayCode,
+      run_tray_status: "实验进行中",
+      started_at: "2026-06-21 10:03:00",
+    });
+    const runningRows = buildZancunRowsFromSnapshot(snapshot, { now: "2026-06-21 10:03:01", room: "staging" });
+    expect(runningRows.find((item) => item.trayCode === trayCode)).toEqual(expect.objectContaining({
+      inboundKind: "",
+      isPartialAxisInbound: false,
     }));
   });
 

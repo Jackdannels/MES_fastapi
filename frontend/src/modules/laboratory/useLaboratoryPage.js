@@ -1264,9 +1264,11 @@ function useLaboratoryPage(options = {}) {
       return null;
     }
     return {
+      axisBatchNo: normalizeText(task?.axis_batch_no || task?.axisBatchNo),
       experimentCode,
       experimentName: normalizeText(task?.experimentName),
       scheduleId: normalizeText(task?.id || task?.scheduleId || task?.schedule_id),
+      subExperimentCode: resolveSubExperimentCode(task),
       taskCode,
       taskId: normalizeText(task?.taskId || task?.task_id || task?.taskCode),
       taskName: normalizeText(task?.taskName || task?.name),
@@ -1851,8 +1853,11 @@ function useLaboratoryPage(options = {}) {
       clearLaboratoryMqError();
       clearHostlessTimers();
       const withdrawResult = await withdrawCurrentLaboratoryExperiment({
+        axisBatchNo: target.axisBatchNo,
         experimentCode: target.experimentCode,
         reason: "试验间内撤回当前实验任务",
+        scheduleId: target.scheduleId,
+        subExperimentCode: target.subExperimentCode,
         taskCode: target.taskCode,
         trayCodes: target.trayCodes,
       });

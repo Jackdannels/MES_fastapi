@@ -2,7 +2,29 @@ from datetime import datetime, timezone
 
 import app.api.routes.attendance as attendance_route
 import app.api.routes.laboratory as laboratory_route
-from app.services.attendance_service import AttendanceService, InMemoryAttendanceRepository, set_attendance_service_for_tests
+from app.services.attendance_service import (
+    AttendanceService,
+    InMemoryAttendanceRepository,
+    MySQLAttendanceRepository,
+    set_attendance_service_for_tests,
+)
+
+
+def test_mysql_attendance_repository_accepts_dict_cursor_rows_and_scalar_results():
+    class DictCursor:
+        description = (("id",), ("username",), ("employee_name",))
+
+        @staticmethod
+        def fetchall():
+            return [{"id": 1, "username": "zhangsan", "employee_name": "张三"}]
+
+    repository = MySQLAttendanceRepository()
+
+    assert repository._rows(DictCursor()) == [
+        {"id": 1, "username": "zhangsan", "employee_name": "张三"}
+    ]
+    assert repository._first_value({"COUNT(*)": 6}, 0) == 6
+    assert repository._first_value({"lab_name": "冲击一室"}, "") == "冲击一室"
 
 
 def test_attendance_login_opens_active_lab_session(client):

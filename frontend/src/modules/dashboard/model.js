@@ -226,7 +226,23 @@ function runTrayIsRunning(relation) {
   return RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status));
 }
 
-function computeDeviceStatus(device, schedules, samples, experimentTrays, experimentRuns, experimentRunTrays = [], returnedTaskCodes = new Set()) {
+function resolveTimedDeviceStatus(device, now) {
+  const status = normalizeDeviceStatus(device?.status);
+  const startAt = Date.parse(String(device?.maintenance_start_at ?? device?.maintenanceStartAt ?? ""));
+  const endAt = Date.parse(String(device?.maintenance_end_at ?? device?.maintenanceEndAt ?? ""));
+  const current = Number.isFinite(Number(now)) ? Number(now) : Date.parse(String(now ?? ""));
+  if (!Number.isFinite(startAt) || !Number.isFinite(current)) {
+    return status;
+  }
+  if (current < startAt || (Number.isFinite(endAt) && current > endAt)) {
+    return [DEVICE_STATUS_REPAIR, DEVICE_STATUS_CARE].includes(status) ? DEVICE_STATUS_AVAILABLE : status;
+  }
+  return normalizeText(device?.maintenance_type ?? device?.maintenanceType).includes("保养")
+    ? DEVICE_STATUS_CARE
+    : DEVICE_STATUS_REPAIR;
+}
+
+function computeDeviceStatus(device, schedules, samples, experimentTrays, experimentRuns, experimentRunTrays = [], returnedTaskCodes = new Set(), now = serverNowMs()) {
   const experimentRunList = Array.isArray(experimentRuns) ? experimentRuns : [];
   const experimentRunTrayList = Array.isArray(experimentRunTrays) ? experimentRunTrays : [];
   const runByNo = buildRunByNo(experimentRunList);
@@ -250,7 +266,7 @@ function computeDeviceStatus(device, schedules, samples, experimentTrays, experi
     return DEVICE_STATUS_WORKING;
   }
   if (experimentRunList.length > 0) {
-    return normalizeDeviceStatus(device?.status);
+    return resolveTimedDeviceStatus(device, now);
   }
   const matchedSchedules = (Array.isArray(schedules) ? schedules : []).filter(
     (entry) => scheduleMatchesLab(entry, device)
@@ -264,7 +280,7 @@ function computeDeviceStatus(device, schedules, samples, experimentTrays, experi
   if (runningSchedule) {
     return DEVICE_STATUS_WORKING;
   }
-  return normalizeDeviceStatus(device?.status);
+  return resolveTimedDeviceStatus(device, now);
 }
 
 function normalizeDeviceStatus(status) {
@@ -384,7 +400,7 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
 
   // 设备列表同样只输出页面摘要卡片会展示的标识和状态。
   const deviceItems = deviceList.map((device) => {
-    const deviceStatus = computeDeviceStatus(device, scheduleList, sampleList, experimentTrayList, experimentRunList, experimentRunTrayList, returnedTaskCodes);
+    const deviceStatus = computeDeviceStatus(device, scheduleList, sampleList, experimentTrayList, experimentRunList, experimentRunTrayList, returnedTaskCodes, now);
     return {
       code: normalizeText(device?.code) || "-",
       dotClass: resolveDeviceDotClass(deviceStatus),

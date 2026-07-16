@@ -62,7 +62,9 @@
           </button>
           <button class="action-btn secondary" type="button" @click="refreshPage">刷新</button>
           <span class="header-actions-before-logout"></span>
-          <button class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
+          <template v-if="!isFixedTerminal">
+            <button class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
+          </template>
         </div>
       </header>
       <RouterView />
@@ -105,7 +107,9 @@
           >
             出错样品处理
           </button>
-          <button class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
+          <template v-if="!isFixedTerminal">
+            <button class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
+          </template>
         </div>
       </header>
       <RouterView />
@@ -113,7 +117,7 @@
   </div>
 
   <ModuleExitDialog
-    v-if="!isAuthLayout && !isBareModule"
+    v-if="!isAuthLayout && !isBareModule && !isFixedTerminal"
     :current-module="currentModule"
     :current-lab-name="currentLabName"
     :open="exitDialogOpen"
@@ -174,6 +178,7 @@ const isStagingModule = computed(() => currentModule.value === "staging");
 const isAppearanceModule = computed(() => currentModule.value === "appearance");
 const isStorageRoomModule = computed(() => isStagingModule.value || isAppearanceModule.value);
 const isLaboratoryModule = computed(() => currentModule.value === "laboratory");
+const isFixedTerminal = computed(() => Boolean(readAuthSession()?.terminal_auth));
 const centralNavigation = computed(() => getNavigationModules("central"));
 const moduleNavigation = computed(() => getNavigationModules(currentModule.value));
 const showTaskResetAction = computed(() => isCentralModule.value && route.name === "tasks");

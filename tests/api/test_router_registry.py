@@ -29,6 +29,8 @@ def test_api_router_registry_exposes_expected_prefixes():
         "/api/storage",
         "/yt_barcode",
         "/yt_object",
+        "/api/attendance",
+        "/api/system",
         "/api/mq",
         "/api/laboratory",
     ]
