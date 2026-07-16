@@ -1,4 +1,5 @@
 import { parseBusinessDateTimeToMs } from "@/lib/dateTime";
+import { serverNowDate } from "@/lib/serverClock";
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const firstNonEmptyArray = (...values) => {
@@ -25,7 +26,7 @@ const addDays = (date, days) => {
   return next;
 };
 const startOfLocalDay = (value) => {
-  const date = parseDate(value) || new Date();
+  const date = parseDate(value) || serverNowDate();
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 const overlaps = (startA, endA, startB, endB) => startA < endB && endA > startB;

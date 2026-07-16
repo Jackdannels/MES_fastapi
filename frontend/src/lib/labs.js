@@ -30,6 +30,29 @@ const LAB_TEST_MAP = Object.freeze({
   霉菌试验室: "霉菌试验",
 });
 
+const LAB_CODE_BY_NAME = Object.freeze({
+  冲击一室: "LAB_IMPACT_1",
+  冲击二室: "LAB_IMPACT_2",
+  振动一室: "LAB_VIBRATION_1",
+  振动二室: "LAB_VIBRATION_2",
+  四综合实验室: "LAB_COMPREHENSIVE",
+  温度冲击一室: "LAB_TEMP_SHOCK_1",
+  温度冲击二室: "LAB_TEMP_SHOCK_2",
+  高低温湿热一室: "LAB_HOT_HUMID",
+  高低温湿热二室: "LAB_HOT_HUMID_2",
+  盐雾试验室: "LAB_SALT",
+  霉菌试验室: "LAB_MOLD",
+});
+
+const LAB_NAME_BY_CODE = Object.freeze(
+  Object.fromEntries(Object.entries(LAB_CODE_BY_NAME).map(([name, code]) => [code, name])),
+);
+
+function resolveLaboratoryDisplayName(value) {
+  const normalizedValue = String(value ?? "").trim();
+  return LAB_NAME_BY_CODE[normalizedValue] || normalizedValue;
+}
+
 const TEST_PREFIX_MAP = Object.freeze({
   冲击试验: "CJ",
   振动试验: "ZD",
@@ -52,4 +75,13 @@ function getLabsForTestType(testType) {
   return labs.length ? labs : [...TEST_LABS];
 }
 
-export { LAB_LOCATIONS, LAB_TEST_MAP, TEST_LABS, TEST_PREFIX_MAP, getLabsForTestType };
+export {
+  LAB_CODE_BY_NAME,
+  LAB_LOCATIONS,
+  LAB_NAME_BY_CODE,
+  LAB_TEST_MAP,
+  TEST_LABS,
+  TEST_PREFIX_MAP,
+  getLabsForTestType,
+  resolveLaboratoryDisplayName,
+};

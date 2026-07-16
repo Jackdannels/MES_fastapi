@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.services import mq_publisher
 from app.services import mq_runtime
 from app.services import mq_subscriber
+from app.services import fixture_installations
 from app.services.attendance_service import AttendanceService, InMemoryAttendanceRepository, set_attendance_service_for_tests
 from app.services.mq_event_processor import (
     MySQLMqEventRepository,
@@ -41,7 +42,7 @@ def build_client(monkeypatch):
     return TestClient(app), published
 
 
-def test_fixture_install_endpoint_publishes_minimal_payload(monkeypatch):
+def test_fixture_install_endpoint_requires_install_id_trays_and_experiment(monkeypatch):
     client, published = build_client(monkeypatch)
 
     response = client.post(
@@ -54,20 +55,92 @@ def test_fixture_install_endpoint_publishes_minimal_payload(monkeypatch):
         },
     )
 
+    assert response.status_code == 422
+    assert published == []
+
+
+def test_fixture_install_endpoint_registers_install_id_and_trays_before_publishing(monkeypatch):
+    client, published = build_client(monkeypatch)
+    pending = []
+    monkeypatch.setattr(mq_route, "register_pending_fixture_installation", lambda **kwargs: pending.append(kwargs))
+    monkeypatch.setattr(mq_route, "mark_fixture_installation_failed", lambda fixture_install_id: None)
+
+    response = client.post(
+        "/api/mq/laboratory/fixture-install",
+        json={
+            "task_code": "SYLU-2026-07-003",
+            "lab_code": "LAB_VIBRATION_1",
+            "experiment_code": "SYLU-2026-07-003-C",
+            "sample_count": 12,
+            "fixture_install_id": "fixture-install-20260715-001",
+            "tray_codes": ["SYLU-2026-07-003-TP-001"],
+        },
+    )
+
     assert response.status_code == 200
-    assert response.json()["ok"] is True
-    assert published == [
+    assert pending == [
         {
-            "command": "INSTALL_FIXTURE",
-                "payload": {
-                    "task_code": "SYLU-2026-03-001",
-                    "lab_code": "LAB_SALT",
-                    "experiment_code": "",
-                    "sample_type": "",
-                    "sample_count": 8,
-                },
+            "fixture_install_id": "fixture-install-20260715-001",
+            "task_code": "SYLU-2026-07-003",
+            "experiment_code": "SYLU-2026-07-003-C",
+            "lab_code": "LAB_VIBRATION_1",
+            "tray_codes": ["SYLU-2026-07-003-TP-001"],
         }
     ]
+    assert published[0]["payload"] == {
+        "task_code": "SYLU-2026-07-003",
+        "lab_code": "LAB_VIBRATION_1",
+        "experiment_code": "SYLU-2026-07-003-C",
+        "sample_type": "",
+        "sample_count": 12,
+        "fixture_install_id": "fixture-install-20260715-001",
+        "tray_codes": ["SYLU-2026-07-003-TP-001"],
+    }
+
+
+def test_find_fixture_installation_accepts_mysql_tuple_rows(monkeypatch):
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, _statement, _params=None):
+            return None
+
+        def fetchall(self):
+            return [
+                (
+                    "fixture-install-current",
+                    "SYLU-2026-08-001-TP-001",
+                    "SYLU-2026-08-001",
+                    "SYLU-2026-08-001-A",
+                    "LAB_IMPACT_1",
+                    "PENDING",
+                )
+            ]
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+    monkeypatch.setattr(fixture_installations, "get_connection", lambda: FakeConnection())
+
+    assert fixture_installations.find_fixture_installation("fixture-install-current") == {
+        "fixture_install_id": "fixture-install-current",
+        "task_code": "SYLU-2026-08-001",
+        "experiment_code": "SYLU-2026-08-001-A",
+        "lab_code": "LAB_IMPACT_1",
+        "status": "PENDING",
+        "tray_codes": ["SYLU-2026-08-001-TP-001"],
+    }
 
 
 def test_fixture_install_endpoint_rejects_sample_count_above_task_limit(monkeypatch):
@@ -632,6 +705,21 @@ def test_create_app_starts_mqtt_subscriber_only_when_enabled(monkeypatch):
     assert calls == [("shutdown", "mqtt")]
 
 
+def test_create_app_restarts_and_stops_auto_upper_computer_simulator(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(app_main, "restart_upper_computer_simulator_auto_mode", lambda settings: calls.append(("restart", settings.MQTT_ENABLED)))
+    monkeypatch.setattr(app_main, "stop_upper_computer_simulator", lambda settings: calls.append(("stop_upper", settings.MQTT_ENABLED)))
+    monkeypatch.setattr(mq_runtime.MqttRuntimeController, "set_mode", lambda self, mode: calls.append(("set_mode", mode)))
+    monkeypatch.setattr(mq_runtime.MqttRuntimeController, "shutdown", lambda self: calls.append(("shutdown", self.mode)))
+
+    app = app_main.create_app(Settings(MQTT_ENABLED=True, UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=True))
+    with TestClient(app):
+        pass
+
+    assert calls == [("restart", True), ("set_mode", "mqtt"), ("shutdown", "mqtt"), ("stop_upper", True)]
+
+
 def test_interface_mode_endpoint_starts_subscriber_and_rejects_unsupported_mode():
     calls = []
 
@@ -1020,7 +1108,7 @@ class FakeMqEventRepository:
                 break
 
 
-def test_process_fixture_ready_records_event_and_returns_ack():
+def test_process_fixture_ready_rejects_event_without_fixture_install_id():
     repository = FakeMqEventRepository()
 
     ack = process_laboratory_event(
@@ -1032,30 +1120,88 @@ def test_process_fixture_ready_records_event_and_returns_ack():
             "success_id": "PLC-OK-001",
             "fixture_ready_at": "2026-05-16 09:31:00",
         },
+        received_at="2026-05-16 09:31:00",
         repository=repository,
     )
 
     assert ack["message_type"] == "EVENT_ACK"
     assert ack["correlation_id"] == "HOST-FIXTURE_READY-LAB_SALT-2026-05-16 09:31:00"
-    assert ack["status"] == "PROCESSED"
-    assert repository.messages[0]["message_type"] == "FIXTURE_READY"
-    assert repository.events == [
+    assert ack["status"] == "REJECTED"
+    assert ack["error_code"] == "FIXTURE_INSTALL_ID_REQUIRED"
+    assert repository.messages == []
+    assert repository.events == []
+
+
+def test_process_fixture_ready_marks_only_the_matching_pending_installation(monkeypatch):
+    repository = FakeMqEventRepository()
+    installation = {
+        "fixture_install_id": "fixture-install-new",
+        "task_code": "SYLU-2026-07-003",
+        "experiment_code": "SYLU-2026-07-003-C",
+        "lab_code": "LAB_VIBRATION_1",
+        "status": "PENDING",
+        "tray_codes": ["SYLU-2026-07-003-TP-001"],
+    }
+    applied = []
+    marked_ready = []
+    monkeypatch.setattr("app.services.mq_event_processor.find_fixture_installation", lambda fixture_install_id: installation)
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.apply_pending_fixture_ready",
+        lambda matched_installation, occurred_at: applied.append((matched_installation, occurred_at)),
+    )
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.mark_fixture_installation_ready",
+        lambda fixture_install_id: marked_ready.append(fixture_install_id) or True,
+    )
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_VIBRATION_1/events/fixture-ready",
         {
-            "event_type": "FIXTURE_READY",
-            "task_no": "SYLU-2026-03-001",
-            "experiment_no": "",
-            "sub_experiment_code": "SYLU-2026-03-001-A-AXIS-Z",
-            "lab_code": "LAB_SALT",
-            "success_id": "PLC-OK-001",
-            "event_time": "2026-05-16 09:31:00",
-            "message_id": "HOST-FIXTURE_READY-LAB_SALT-2026-05-16 09:31:00",
-            "message_log_id": 1,
-            "payload": repository.messages[0]["payload"],
-        }
-    ]
+            "lab_code": "LAB_VIBRATION_1",
+            "fixture_install_id": "fixture-install-new",
+            "fixture_ready_at": "2026-07-15 19:52:08",
+        },
+        received_at="2026-07-15 19:52:08",
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.events[0]["task_no"] == "SYLU-2026-07-003"
+    assert repository.events[0]["experiment_no"] == "SYLU-2026-07-003-C"
+    assert applied == [(installation, "2026-07-15 19:52:08")]
+    assert marked_ready == ["fixture-install-new"]
 
 
-def test_process_fixture_ready_resolves_task_from_lab_code_without_host_task_code():
+def test_process_fixture_ready_rejects_a_superseded_installation_id(monkeypatch):
+    repository = FakeMqEventRepository()
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.find_fixture_installation",
+        lambda fixture_install_id: {
+            "fixture_install_id": fixture_install_id,
+            "task_code": "SYLU-2026-07-003",
+            "experiment_code": "SYLU-2026-07-003-C",
+            "lab_code": "LAB_VIBRATION_1",
+            "status": "SUPERSEDED",
+            "tray_codes": ["SYLU-2026-07-003-TP-001"],
+        },
+    )
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_VIBRATION_1/events/fixture-ready",
+        {
+            "lab_code": "LAB_VIBRATION_1",
+            "fixture_install_id": "fixture-install-old",
+            "fixture_ready_at": "2026-07-15 19:52:08",
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "REJECTED"
+    assert ack["error_code"] == "FIXTURE_INSTALL_ID_INACTIVE"
+    assert repository.messages == []
+
+
+def test_process_fixture_ready_does_not_resolve_context_without_fixture_install_id():
     repository = FakeMqEventRepository()
 
     ack = process_laboratory_event(
@@ -1065,21 +1211,16 @@ def test_process_fixture_ready_resolves_task_from_lab_code_without_host_task_cod
             "success_sig": "PLC-OK-001",
             "fixture_ready_at": "2026-05-16 09:31:00",
         },
+        received_at="2026-05-16 09:31:00",
         repository=repository,
     )
 
-    assert ack["status"] == "PROCESSED"
-    assert repository.events[0]["task_no"] == "SYLU-2026-03-001"
-    assert repository.events[0]["experiment_no"] == "SYLU-2026-03-001-A"
-    assert repository.events[0]["payload"] == {
-        "lab_code": "LAB_SALT",
-        "success_sig": "PLC-OK-001",
-        "fixture_ready_at": "2026-05-16 09:31:00",
-    }
-    assert repository.events[0]["success_id"] == "PLC-OK-001"
+    assert ack["status"] == "REJECTED"
+    assert ack["error_code"] == "FIXTURE_INSTALL_ID_REQUIRED"
+    assert repository.context_payloads == []
 
 
-def test_process_fixture_ready_resolves_non_salt_lab_context_without_host_task_code():
+def test_process_fixture_ready_rejects_non_salt_event_without_fixture_install_id():
     repository = FakeMqEventRepository()
 
     ack = process_laboratory_event(
@@ -1092,15 +1233,9 @@ def test_process_fixture_ready_resolves_non_salt_lab_context_without_host_task_c
         repository=repository,
     )
 
-    assert ack["status"] == "PROCESSED"
-    assert repository.events[0]["task_no"] == "SYLU-2026-06-002"
-    assert repository.events[0]["experiment_no"] == "SYLU-2026-06-002-C"
-    assert repository.events[0]["lab_code"] == "LAB_IMPACT_1"
-    assert repository.events[0]["payload"] == {
-        "lab_code": "LAB_IMPACT_1",
-        "success_id": "PLC-OK-IMPACT",
-        "fixture_ready_at": "2026-06-03 09:31:00",
-    }
+    assert ack["status"] == "REJECTED"
+    assert ack["error_code"] == "FIXTURE_INSTALL_ID_REQUIRED"
+    assert repository.context_payloads == []
 
 
 def test_process_duplicate_message_returns_ack_without_duplicate_event():
@@ -1114,6 +1249,7 @@ def test_process_duplicate_message_returns_ack_without_duplicate_event():
             "success_id": "PLC-OK-001",
             "fixture_ready_at": "2026-05-16 09:31:00",
         },
+        received_at="2026-05-16 09:31:00",
         repository=repository,
     )
 
@@ -1132,6 +1268,7 @@ def test_process_experiment_started_starts_ready_context_even_when_active_run_ex
             "lab_code": "LAB_SALT",
             "started_at": "2026-05-16 10:00:00",
         },
+        received_at="2026-05-16 10:00:00",
         repository=repository,
     )
 
@@ -1265,6 +1402,7 @@ def test_process_experiment_started_creates_run_from_ready_lab_context_when_no_a
             "lab_code": "LAB_SALT",
             "started_at": "2026-05-16 10:00:00",
         },
+        received_at="2026-05-16 10:00:00",
         repository=repository,
     )
 
@@ -1317,6 +1455,7 @@ def test_process_experiment_started_and_ended_updates_attendance_work_interval()
             "lab_code": "LAB_SALT",
             "started_at": "2026-07-03T08:00:00Z",
         },
+        received_at="2026-07-03T08:00:00Z",
         repository=repository,
     )
     active_session = service.read_lab_session("盐雾试验室")
@@ -1333,6 +1472,7 @@ def test_process_experiment_started_and_ended_updates_attendance_work_interval()
             "lab_code": "LAB_SALT",
             "ended_at": "2026-07-03T08:05:00Z",
         },
+        received_at="2026-07-03T08:05:00Z",
         repository=repository,
     )
     current_time["value"] = datetime(2026, 7, 3, 8, 10, 0, tzinfo=timezone.utc)
@@ -1375,6 +1515,7 @@ def test_process_experiment_started_creates_run_from_non_salt_ready_context():
             "lab_code": "LAB_IMPACT_1",
             "started_at": "2026-06-03 10:00:00",
         },
+        received_at="2026-06-03 10:00:00",
         repository=repository,
     )
 
@@ -3700,6 +3841,7 @@ def test_process_experiment_ended_marks_active_run_by_lab_code():
             "lab_code": "LAB_SALT",
             "ended_at": "2026-05-16 11:00:00",
         },
+        received_at="2026-05-16 11:00:00",
         repository=repository,
     )
 
@@ -3708,6 +3850,25 @@ def test_process_experiment_ended_marks_active_run_by_lab_code():
     assert repository.events[0]["task_no"] == "SYLU-2026-03-001"
     assert repository.events[0]["experiment_no"] == "SYLU-2026-03-001-A"
     assert repository.events[0]["sub_experiment_code"] == "SYLU-2026-03-001-A-AXIS-Y"
+
+
+def test_process_experiment_ended_uses_mes_receive_time_as_business_time(monkeypatch):
+    repository = FakeMqEventRepository()
+    monkeypatch.setattr("app.services.mq_event_processor.now_iso", lambda: "2026-07-16 11:30:00")
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-ended",
+        {
+            "lab_code": "LAB_SALT",
+            "ended_at": "2000-01-01 00:00:00",
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.ended[0][1] == "2026-07-16 11:30:00"
+    assert repository.events[0]["event_time"] == "2026-07-16 11:30:00"
+    assert repository.events[0]["payload"]["ended_at"] == "2000-01-01 00:00:00"
 
 
 def test_process_experiment_ended_prefers_active_run_over_payload_experiment_code():
@@ -3721,6 +3882,7 @@ def test_process_experiment_ended_prefers_active_run_over_payload_experiment_cod
             "experiment_code": "SYLU-2026-03-001-OLD",
             "ended_at": "2026-05-16 11:00:00",
         },
+        received_at="2026-05-16 11:00:00",
         repository=repository,
     )
 
@@ -3743,6 +3905,7 @@ def test_process_experiment_ended_passes_axis_fields_to_run_completion():
             "axis_code": "y+",
             "next_axis_code": "x-",
         },
+        received_at="2026-05-16 11:00:00",
         repository=repository,
     )
 
@@ -3765,6 +3928,7 @@ def test_process_axis_continuation_does_not_finish_attendance_work_interval(monk
             "axis_code": "y+",
             "next_axis_code": "x-",
         },
+        received_at="2026-05-16 11:00:00",
         repository=repository,
     )
 
@@ -3783,6 +3947,7 @@ def test_process_experiment_ended_passes_payload_sub_experiment_code_to_run_comp
             "ended_at": "2026-05-16 11:00:00",
             "sub_experiment_code": "SYLU-2026-03-001-A-AXIS-Z",
         },
+        received_at="2026-05-16 11:00:00",
         repository=repository,
     )
 

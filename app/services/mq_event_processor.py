@@ -8,6 +8,13 @@ from app.core.storage_backend import get_storage_backend, normalize_storage_payl
 from app.db.session import get_connection
 from app.services.attendance_service import get_attendance_service, should_finish_work_interval_for_completion
 from app.services.experiment_segments import record_sub_experiment_code
+from app.services.fixture_installations import (
+    PENDING as FIXTURE_INSTALL_PENDING,
+    READY as FIXTURE_INSTALL_READY,
+    apply_pending_fixture_ready,
+    find_fixture_installation,
+    mark_fixture_installation_ready,
+)
 from app.services.laboratory_axis_steps import complete_storage_laboratory_axis_step
 from app.services.laboratory_completion import (
     complete_storage_laboratory_experiment,
@@ -34,12 +41,6 @@ EVENT_TYPE_BY_TOPIC_SUFFIX = {
     "experiment-started": "EXPERIMENT_STARTED",
     "experiment-ended": "EXPERIMENT_ENDED",
     "experiment-result": "EXPERIMENT_RESULT",
-}
-EVENT_TIME_KEYS = {
-    "FIXTURE_READY": ("fixture_ready_at",),
-    "EXPERIMENT_STARTED": ("started_at",),
-    "EXPERIMENT_ENDED": ("ended_at",),
-    "EXPERIMENT_RESULT": ("result_at",),
 }
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -119,10 +120,6 @@ def first_text(payload: dict[str, Any], *keys: str) -> str:
         if value:
             return value
     return ""
-
-
-def event_time(payload: dict[str, Any], message_type: str) -> str:
-    return first_text(payload, *EVENT_TIME_KEYS.get(message_type, ())) or now_iso()
 
 
 def generated_message_id(message_type: str, lab_code: str, occurred_at: str) -> str:
@@ -790,6 +787,7 @@ def process_laboratory_event(
     payload: dict[str, Any],
     *,
     repository: MqEventRepository | None = None,
+    received_at: str = "",
 ) -> dict[str, Any]:
     repo = repository or MySQLMqEventRepository()
     message_type = normalize_text(payload.get("message_type") or payload.get("event")) or event_type_from_topic(topic)
@@ -798,12 +796,35 @@ def process_laboratory_event(
     lab_code = first_text(payload, "lab_code") or topic_lab_code(topic)
     if not lab_code:
         raise ValueError("lab_code is required")
-    occurred_at = event_time(payload, message_type)
+    # MES receive time is the authoritative business timestamp. The original
+    # upper-computer timestamp remains in payload_json for auditing.
+    occurred_at = normalize_text(received_at) or now_iso()
     message_id = first_text(payload, "message_id") or generated_message_id(message_type, lab_code, occurred_at)
     if repo.message_exists(message_id):
         return build_ack(message_id, "DUPLICATE")
 
     context = None
+    fixture_installation = None
+    fixture_install_id = ""
+    if message_type == "FIXTURE_READY":
+        fixture_install_id = first_text(payload, "fixture_install_id", "fixtureInstallId")
+        if not fixture_install_id:
+            return build_ack(message_id, "REJECTED", "FIXTURE_INSTALL_ID_REQUIRED", "fixture-ready 必须携带 fixture_install_id")
+        fixture_installation = find_fixture_installation(fixture_install_id)
+        if not fixture_installation:
+            return build_ack(message_id, "REJECTED", "FIXTURE_INSTALL_ID_INVALID", "fixture_install_id 不存在")
+        if fixture_installation["status"] not in {FIXTURE_INSTALL_PENDING, FIXTURE_INSTALL_READY}:
+            return build_ack(message_id, "REJECTED", "FIXTURE_INSTALL_ID_INACTIVE", "fixture_install_id 已失效")
+        for field, payload_key in (("lab_code", "lab_code"), ("task_code", "task_code"), ("experiment_code", "experiment_code")):
+            received_value = first_text(payload, payload_key, "labCode" if field == "lab_code" else "taskCode" if field == "task_code" else "experimentCode")
+            if received_value and received_value != fixture_installation[field]:
+                return build_ack(message_id, "REJECTED", "FIXTURE_INSTALL_CONTEXT_MISMATCH", "fixture_install_id 上下文不匹配")
+        if lab_code != fixture_installation["lab_code"]:
+            return build_ack(message_id, "REJECTED", "FIXTURE_INSTALL_CONTEXT_MISMATCH", "fixture_install_id 上下文不匹配")
+        context = {
+            "task_no": fixture_installation["task_code"],
+            "experiment_no": fixture_installation["experiment_code"],
+        }
     payload_run_no = first_text(payload, "run_no", "runNo")
     payload_sub_experiment_code = first_text(payload, "sub_experiment_code", "subExperimentCode", "sub_experiment_no", "subExperimentNo")
     payload_axis_code = first_text(payload, "axis_code", "axisCode")
@@ -814,10 +835,6 @@ def process_laboratory_event(
     if message_type == "EXPERIMENT_RESULT" and payload_run_no:
         run = repo.find_run_by_no(payload_run_no)
     created_run_from_context = False
-    if message_type == "FIXTURE_READY" and not first_text(payload, "task_code"):
-        context = repo.find_current_context_by_lab(lab_code, ["工装夹具安装"])
-        if not context:
-            raise ValueError(f"fixture install context is required for lab_code: {lab_code}")
     if message_type == "EXPERIMENT_STARTED":
         context = repo.find_current_context_by_lab(lab_code, ["实验准备就绪"], payload)
         if context:
@@ -836,14 +853,18 @@ def process_laboratory_event(
         raise ValueError(f"experiment run is required for lab_code: {lab_code}")
     context_task_no = normalize_text((run or {}).get("task_no")) or normalize_text((context or {}).get("task_no"))
     authoritative_context = created_run_from_context or message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"}
-    if authoritative_context:
+    if fixture_installation:
+        task_no = fixture_installation["task_code"]
+    elif authoritative_context:
         task_no = context_task_no or first_text(payload, "task_code")
     else:
         task_no = first_text(payload, "task_code") or context_task_no
     if not task_no:
         raise ValueError("task_code is required")
     context_experiment_no = normalize_text((run or {}).get("experiment_no")) or normalize_text((context or {}).get("experiment_no"))
-    if authoritative_context:
+    if fixture_installation:
+        experiment_no = fixture_installation["experiment_code"]
+    elif authoritative_context:
         experiment_no = context_experiment_no or first_text(payload, "experiment_code")
     else:
         experiment_no = first_text(payload, "experiment_code") or context_experiment_no
@@ -888,7 +909,10 @@ def process_laboratory_event(
             event_record["run_no"] = run_no
         repo.record_event(event_record)
 
-    if message_type == "EXPERIMENT_STARTED":
+    if message_type == "FIXTURE_READY" and fixture_installation and fixture_installation["status"] == FIXTURE_INSTALL_PENDING:
+        apply_pending_fixture_ready(fixture_installation, occurred_at)
+        mark_fixture_installation_ready(fixture_install_id)
+    elif message_type == "EXPERIMENT_STARTED":
         if not created_run_from_context:
             repo.mark_run_started(run_no, occurred_at)
         get_attendance_service().start_work_interval(

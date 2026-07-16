@@ -1,4 +1,5 @@
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
+import { serverNowDate } from "@/lib/serverClock";
 import {
   APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
   POST_EXPERIMENT_STAGING_STOCKED_STATUS,
@@ -352,7 +353,7 @@ function buildStagingSamplesView(input = {}) {
   });
   const latestEventByTray = buildLatestStagingEventByTray(input.stagingEvents || input.staging_events);
   const storageSnapshot = buildStorageSnapshot(input);
-  const storageNow = input.now || new Date();
+  const storageNow = input.now || serverNowDate();
   const stagingRowByKey = buildStorageRowMap(buildZancunRowsFromSnapshot(storageSnapshot, { now: storageNow, room: "staging" }));
   const appearanceRowByKey = buildStorageRowMap(buildZancunRowsFromSnapshot(storageSnapshot, { now: storageNow, room: "appearance" }));
   const usedSystemTrayCount = countUsedSystemTrays({ latestEventByTray, samples });

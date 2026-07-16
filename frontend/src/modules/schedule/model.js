@@ -3,6 +3,7 @@ import { getLabsForTestType, TEST_LABS, TEST_PREFIX_MAP } from "@/lib/labs.js";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { collectExperimentTypes } from "@/lib/experimentTypes";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { serverNowDate } from "@/lib/serverClock";
 import { filterActiveTasks } from "@/lib/taskArchive";
 import { resolveLabRef, resolveScheduleLabCode, scheduleMatchesLab } from "@/lib/labIdentity";
 import {
@@ -354,27 +355,27 @@ const buildExperimentCandidates = ({ taskCode, experiments, tasks }) => {
   return taskList.flatMap((task) => buildFallbackExperimentsForTask(task));
 };
 
-const isDeviceInMaintenanceWindow = (device, now = new Date()) => {
+const isDeviceInMaintenanceWindow = (device, now = serverNowDate()) => {
   const startAt = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
   const endAt = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
-  const current = parseDate(now) || new Date();
+  const current = parseDate(now) || serverNowDate();
   return Boolean(startAt && startAt <= current && (!endAt || current <= endAt));
 };
 
-const isExpiredMaintenanceWindow = (device, now = new Date()) => {
+const isExpiredMaintenanceWindow = (device, now = serverNowDate()) => {
   const endAt = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
-  const current = parseDate(now) || new Date();
+  const current = parseDate(now) || serverNowDate();
   return Boolean(endAt && endAt < current);
 };
 
 const isActiveMaintenanceDeviceStatus = (status) =>
   status === DEVICE_STATUS_UPKEEP || status === DEVICE_STATUS_REPAIR;
 
-const resolveDeviceUnavailableReason = (device, now = new Date()) => {
+const resolveDeviceUnavailableReason = (device, now = serverNowDate()) => {
   const status = normalizeText(device?.status);
   const maintenanceStart = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
   const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
-  const current = parseDate(now) || new Date();
+  const current = parseDate(now) || serverNowDate();
   if (status === DEVICE_STATUS_DISABLED || status.includes("停用") || status.includes("禁用")) {
     return "disabled";
   }
@@ -397,11 +398,11 @@ const resolveDeviceUnavailableReason = (device, now = new Date()) => {
   return "";
 };
 
-const isDeviceUnavailableForSchedule = (device, now = new Date()) => {
+const isDeviceUnavailableForSchedule = (device, now = serverNowDate()) => {
   return Boolean(resolveDeviceUnavailableReason(device, now));
 };
 
-const deviceMaintenanceOverlapsSchedule = (device, startAt, endAt, now = new Date()) => {
+const deviceMaintenanceOverlapsSchedule = (device, startAt, endAt, now = serverNowDate()) => {
   const maintenanceStart = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
   const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
   if (isExpiredMaintenanceWindow(device, now)) {
@@ -410,7 +411,7 @@ const deviceMaintenanceOverlapsSchedule = (device, startAt, endAt, now = new Dat
   return Boolean(maintenanceStart && startAt && endAt && maintenanceStart < endAt && (!maintenanceEnd || maintenanceEnd > startAt));
 };
 
-const resolveDeviceScheduleBlockMessage = ({ device, endAt = null, now = new Date(), startAt = null }) => {
+const resolveDeviceScheduleBlockMessage = ({ device, endAt = null, now = serverNowDate(), startAt = null }) => {
   const reason = resolveDeviceUnavailableReason(device, now)
     || (deviceMaintenanceOverlapsSchedule(device, startAt, endAt, now) ? "maintenance" : "");
   if (reason === "disabled") {
@@ -484,7 +485,7 @@ const resolveScheduleTaskStatusArgs = (samplesOrNow, nowMaybe, experimentTraysMa
   if (Array.isArray(samplesOrNow)) {
     return {
       experimentTrays: Array.isArray(experimentTraysMaybe) ? experimentTraysMaybe : [],
-      now: parseDate(nowMaybe) || new Date(),
+      now: parseDate(nowMaybe) || serverNowDate(),
       samples: samplesOrNow,
     };
   }
@@ -492,14 +493,14 @@ const resolveScheduleTaskStatusArgs = (samplesOrNow, nowMaybe, experimentTraysMa
   if (samplesOrNow instanceof Date || typeof samplesOrNow === "number" || typeof samplesOrNow === "string") {
     return {
       experimentTrays: Array.isArray(nowMaybe) ? nowMaybe : [],
-      now: parseDate(samplesOrNow) || new Date(),
+      now: parseDate(samplesOrNow) || serverNowDate(),
       samples: [],
     };
   }
 
   return {
     experimentTrays: Array.isArray(experimentTraysMaybe) ? experimentTraysMaybe : [],
-    now: parseDate(nowMaybe) || new Date(),
+    now: parseDate(nowMaybe) || serverNowDate(),
     samples: [],
   };
 };
@@ -1245,7 +1246,7 @@ function analyzeTaskTrayConflict({ candidate, schedules, experiments, experiment
 }
 
 // 构建看板页签使用的主排程表格行。
-function buildScheduleRows({ schedules, tasks, experiments, samples = [], experimentTrays = [], now = new Date() }) {
+function buildScheduleRows({ schedules, tasks, experiments, samples = [], experimentTrays = [], now = serverNowDate() }) {
   const { activeTasks } = buildActiveTaskContext(tasks, samples);
   const taskList = Array.isArray(tasks) && tasks.length > 0 ? activeTasks : [];
   const taskByCode = new Map(taskList.map((task) => [normalizeText(task?.code), task]));
@@ -1354,7 +1355,7 @@ function buildConflictRows({ schedules, tasks = [], samples = [], experiments = 
 }
 
 // 按设备和时间窗口构建可直接用于甘特图的行数据。
-function buildGanttRows({ schedules, experiments = [], experimentTrays = [], samples = [], tasks = [], devices = [], masterLabs = [], days = 3, filterDevice = "", selectedTaskCode = "", startDate = new Date(), now = new Date() }) {
+function buildGanttRows({ schedules, experiments = [], experimentTrays = [], samples = [], tasks = [], devices = [], masterLabs = [], days = 3, filterDevice = "", selectedTaskCode = "", startDate = serverNowDate(), now = serverNowDate() }) {
   const experimentTrayMap = buildExperimentTrayMap(experimentTrays);
   const experimentNameByCode = buildExperimentNameMap(experiments);
   const trayExperimentCodeMap = buildTrayExperimentCodeMap(experimentTrays);
@@ -1664,7 +1665,7 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
 }
 
 // 构建留样面板中等待暂存的任务和样品行数据。
-function buildRetentionInternalRows({ tasks, schedules, now = new Date() }) {
+function buildRetentionInternalRows({ tasks, schedules, now = serverNowDate() }) {
   const taskByCode = new Map((Array.isArray(tasks) ? tasks : []).map((task) => [normalizeText(task?.code), task]));
   const nonRetentionCodes = new Set(
     (Array.isArray(schedules) ? schedules : [])
@@ -1769,7 +1770,7 @@ function buildLabOptions({ testType, selectedDevice = "", masterLabs = [] }) {
 }
 
 // 根据当前时钟计算留样时间状态标签。
-function resolveRetentionTimeState(now = new Date()) {
+function resolveRetentionTimeState(now = serverNowDate()) {
   const current = new Date(now.getTime());
   const timeValue = toLocalTimeValue(current);
   const morningStart = parseDate(`${toLocalDateValue(current)}T${SLOT_RANGES.morning.start}:00`);
@@ -1794,7 +1795,7 @@ function resolveRetentionTimeState(now = new Date()) {
 }
 
 // 构建排程看板上方展示的汇总卡片。
-function buildSummaryCards({ schedules, tasks = [], samples = [], experiments = [], experimentTrays = [], now = new Date() }) {
+function buildSummaryCards({ schedules, tasks = [], samples = [], experiments = [], experimentTrays = [], now = serverNowDate() }) {
   const rows = buildScheduleRows({ schedules, tasks, samples, experiments, experimentTrays, now });
   const conflictRows = buildConflictRows({ schedules, tasks, samples, experiments, experimentTrays });
   return {
@@ -1806,7 +1807,7 @@ function buildSummaryCards({ schedules, tasks = [], samples = [], experiments = 
 }
 
 // 持久化辅助逻辑会在更新排程时同步任务和数据流状态。
-function syncTaskStatuses(tasks, schedules, now = new Date(), samples = [], experimentTrays = []) {
+function syncTaskStatuses(tasks, schedules, now = serverNowDate(), samples = [], experimentTrays = []) {
   return (Array.isArray(tasks) ? tasks : []).map((task) => ({
     ...task,
     // 任务状态完全以当前排程快照重新计算，避免手工同步多处状态。
@@ -1946,7 +1947,7 @@ function buildExperimentOptions({ taskCode, experiments, experimentRunSteps = []
     });
 }
 
-function ensureStreamForSchedule(streams, schedule, now = new Date()) {
+function ensureStreamForSchedule(streams, schedule, now = serverNowDate()) {
   const nextStreams = Array.isArray(streams) ? streams.map((stream) => ({ ...stream })) : [];
   const taskCode = normalizeText(schedule?.task_code);
   const existing = nextStreams.find((stream) => normalizeText(stream?.task_code) === taskCode);
@@ -2008,7 +2009,7 @@ function createScheduleRecord({
   tasks,
   schedules,
   streams,
-  now = new Date(),
+  now = serverNowDate(),
   samples = [],
   experimentTrays = [],
 }) {
@@ -2164,7 +2165,7 @@ function updateScheduleRecord({
   tasks,
   schedules,
   streams,
-  now = new Date(),
+  now = serverNowDate(),
   samples = [],
 }) {
   const scheduleId = normalizeText(form?.id);
@@ -2262,7 +2263,7 @@ function deleteScheduleRecord({
   tasks,
   schedules,
   streams,
-  now = new Date(),
+  now = serverNowDate(),
 }) {
   const removedSchedule = (Array.isArray(schedules) ? schedules : []).find(
     (schedule) => normalizeText(schedule?.id) === normalizeText(scheduleId),

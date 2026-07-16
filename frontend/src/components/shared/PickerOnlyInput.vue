@@ -48,6 +48,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, useAttrs, watch } from "vue";
+import { serverNowDate } from "@/lib/serverClock";
 
 defineOptions({
   inheritAttrs: false,
@@ -80,7 +81,7 @@ const props = defineProps({
 const emit = defineEmits(["update:modelValue"]);
 const attrs = useAttrs();
 const calendarOpen = ref(false);
-const calendarCursor = ref(new Date());
+const calendarCursor = ref(serverNowDate());
 const weekdays = Object.freeze(["周一", "周二", "周三", "周四", "周五", "周六", "周日"]);
 
 const inputClass = computed(() => attrs.class);
@@ -99,7 +100,7 @@ const displayValue = computed(() => {
 });
 const calendarYear = computed(() => calendarCursor.value.getFullYear());
 const calendarMonth = computed(() => calendarCursor.value.getMonth());
-const todayValue = computed(() => toDateValue(new Date()));
+const todayValue = computed(() => toDateValue(serverNowDate()));
 
 const formatHint = computed(() => {
   if (props.type === "datetime-local") {
@@ -134,7 +135,7 @@ function toDateValue(date) {
 const resolveCalendarCursor = () =>
   parseDateValue(props.modelValue)
   || parseDateValue(props.initialCalendarDate)
-  || new Date();
+  || serverNowDate();
 
 const calendarDays = computed(() => {
   const firstOfMonth = new Date(calendarYear.value, calendarMonth.value, 1);

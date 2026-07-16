@@ -6,6 +6,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
+import { serverNowDate } from "@/lib/serverClock";
 import { readMasterTestTypes } from "@/lib/masterDataApi";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -26,7 +27,7 @@ const TASK_HIGHLIGHT_CLASS = "is-highlighted";
 const TASK_HIGHLIGHT_DURATION_MS = 2200;
 
 // 为默认日期筛选控件生成稳定的 yyyy-mm-dd 值。
-function getTodayDateValue(now = new Date()) {
+function getTodayDateValue(now = serverNowDate()) {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
@@ -42,7 +43,7 @@ function filterTaskOverviewRows({
   timeFilter,
   customStartDate,
   customEndDate,
-  now = new Date(),
+  now = serverNowDate(),
 }) {
   const rowList = Array.isArray(rows) ? rows : [];
   const query = String(keyword || "").trim().toLowerCase();

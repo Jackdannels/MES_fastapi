@@ -5135,6 +5135,26 @@ describe("samplesFlowModel", () => {
     expect(view.totalPages).toBe(1);
   });
 
+  test("buildSamplesFlowView displays and searches laboratory codes by Chinese name", () => {
+    const view = buildSamplesFlowView({
+      samples: [
+        {
+          code: "SP-LAB-NAME",
+          task_code: "TASK-LAB-NAME",
+          status: "已到达实验室",
+          location: "LAB_COMPREHENSIVE",
+          trays: [{ tray_code: "TP-LAB-NAME", status: "已到达实验室", quantity: 1 }],
+        },
+      ],
+      filters: { query: "四综合实验室", taskCode: "", status: "" },
+      page: 1,
+      pageSize: 8,
+    });
+
+    expect(view.rows).toHaveLength(1);
+    expect(view.rows[0].location).toBe("四综合实验室");
+  });
+
   test("submitSamplesBatchIntake writes location owner and status to matching samples", () => {
     const result = submitSamplesBatchIntake({
       samples: [{ code: "SP-001", task_code: "SZH-1", status: "运输中", location: "", owner: "" }],

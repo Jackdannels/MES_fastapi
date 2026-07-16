@@ -1,3 +1,4 @@
+import { serverNowDate } from "@/lib/serverClock";
 import {
   SLOT_RANGES,
   addDays,
@@ -67,8 +68,8 @@ const buildPlannedDurationFormState = (plannedHours) => {
 };
 
 // 手动排程默认落在“当前时刻之后最近一个合法时段”。
-const resolveLegalManualScheduleState = (now = new Date()) => {
-  const current = parseDate(now) || new Date();
+const resolveLegalManualScheduleState = (now = serverNowDate()) => {
+  const current = parseDate(now) || serverNowDate();
   const currentHour = current.getHours();
 
   if (currentHour < 12) {
@@ -91,7 +92,7 @@ const resolveLegalManualScheduleState = (now = new Date()) => {
   };
 };
 
-function buildManualTimeSlotOptions({ device = "", now = new Date(), scheduleDate = "", schedules = [] } = {}) {
+function buildManualTimeSlotOptions({ device = "", now = serverNowDate(), scheduleDate = "", schedules = [] } = {}) {
   const selectedDate = normalizeText(scheduleDate) || toLocalDateValue(now);
   return [
     {
@@ -110,7 +111,7 @@ function buildManualTimeSlotOptions({ device = "", now = new Date(), scheduleDat
 }
 
 // 阻止用户把手动排程放到已经过去的非法时间片。
-const isManualScheduleSelectionLegal = (form, now = new Date()) => {
+const isManualScheduleSelectionLegal = (form, now = serverNowDate()) => {
   const selectedDate = normalizeText(form?.schedule_date);
   const selectedSlot = normalizeText(form?.time_slot) || "morning";
   if (!selectedDate || selectedSlot === "custom") {
@@ -136,7 +137,7 @@ const isManualScheduleSelectionLegal = (form, now = new Date()) => {
 };
 
 // 表单工厂用于统一手动创建和编辑状态的数据结构。
-function createManualScheduleForm(now = new Date()) {
+function createManualScheduleForm(now = serverNowDate()) {
   const legalState = resolveLegalManualScheduleState(now);
   return {
     axis_batch_no: "",
@@ -245,7 +246,7 @@ function buildScheduleRescheduleForm(schedule, now = null) {
 }
 
 // 解析手动排程操作实际使用的开始和结束时间。
-function resolveScheduleTimes(form, now = new Date(), schedules = []) {
+function resolveScheduleTimes(form, now = serverNowDate(), schedules = []) {
   const dateValue = normalizeText(form?.schedule_date);
   if (!dateValue) {
     return { error: "Invalid schedule date" };
@@ -278,7 +279,7 @@ function resolveScheduleTimes(form, now = new Date(), schedules = []) {
       return { error: "Custom start time required" };
     }
     const customStartAt = parseDate(`${dateValue}T${startTime}:00`);
-    const earliestCustomStart = truncateToMinute(now) || new Date();
+    const earliestCustomStart = truncateToMinute(now) || serverNowDate();
     if (!customStartAt || customStartAt < earliestCustomStart) {
       return { error: "自定义开始时间不能早于当前时间" };
     }

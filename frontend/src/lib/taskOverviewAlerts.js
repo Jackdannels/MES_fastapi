@@ -1,4 +1,5 @@
 import { resolveTransferConfirmedAt } from "./transferArrivalTime";
+import { serverNowMs } from "./serverClock";
 import { TRANSFER_STATUS_ARRIVED, isTransferArrivedStatus, normalizeTaskStatusLabel } from "./statusNormalization";
 
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
@@ -60,7 +61,7 @@ const hasFormalScheduleForExperiment = (schedules, experiment) =>
       normalizeText(entry?.experiment_code) === normalizeText(experiment?.experiment_code),
   );
 
-const listOverdueWaitingExperiments = (tasks, experiments, schedules, now = Date.now(), samples = []) => {
+const listOverdueWaitingExperiments = (tasks, experiments, schedules, now = serverNowMs(), samples = []) => {
   const taskByCode = new Map((Array.isArray(tasks) ? tasks : []).map((task) => [normalizeText(task?.code), task]));
   const samplesByTaskCode = buildSamplesByTaskCode(samples);
 
@@ -88,10 +89,10 @@ const listOverdueWaitingExperiments = (tasks, experiments, schedules, now = Date
     });
 };
 
-const hasOverdueWaitingExperiment = (tasks, experiments, schedules, now = Date.now(), samples = []) =>
+const hasOverdueWaitingExperiment = (tasks, experiments, schedules, now = serverNowMs(), samples = []) =>
   listOverdueWaitingExperiments(tasks, experiments, schedules, now, samples).length > 0;
 
-const findFirstOverdueWaitingTaskCode = (tasks, experiments, schedules, now = Date.now(), samples = []) =>
+const findFirstOverdueWaitingTaskCode = (tasks, experiments, schedules, now = serverNowMs(), samples = []) =>
   normalizeText(listOverdueWaitingExperiments(tasks, experiments, schedules, now, samples)[0]?.task_code);
 
 export { findFirstOverdueWaitingTaskCode, hasOverdueWaitingExperiment };

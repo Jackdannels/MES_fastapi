@@ -1,5 +1,6 @@
 // 负责任务受理页的新增、筛选、编辑和持久化流程。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { serverNowDate } from "@/lib/serverClock";
 import { useRoute } from "vue-router";
 
 import { useDialogState } from "@/composables/useDialogState";
@@ -215,7 +216,7 @@ function useTasksPage() {
     const nextCode = buildTaskCode(
       intakeForm.value.test_type,
       rawTasks.value,
-      intakeForm.value.due_at || intakeForm.value.arrival_at || new Date(),
+      intakeForm.value.due_at || intakeForm.value.arrival_at || serverNowDate(),
     );
     intakeForm.value.code = nextCode;
   };

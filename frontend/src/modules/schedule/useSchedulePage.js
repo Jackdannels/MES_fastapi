@@ -6,6 +6,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { serverNowDate } from "@/lib/serverClock";
 import {
   analyzeTaskTrayConflict,
   AXIS_CODE_OPTIONS,
@@ -83,7 +84,7 @@ function useSchedulePage() {
   const editWarning = ref("");
   const scheduleSearch = ref("");
   const conflictSearch = ref("");
-  const now = ref(new Date());
+  const now = ref(serverNowDate());
   const ganttWindowOffsetDays = ref(0);
 
   const scheduleDrawer = useDialogState();
@@ -799,7 +800,7 @@ function useSchedulePage() {
 
   const syncRetentionClock = () => {
     // 页面上的当前时间、留样默认时间和合法性检查都跟随秒级时钟更新。
-    now.value = new Date();
+    now.value = serverNowDate();
     syncManualScheduleLegality();
   };
 

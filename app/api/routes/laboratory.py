@@ -222,6 +222,7 @@ def apply_laboratory_operation(
     request: LaboratoryOperationRequest = Body(default_factory=LaboratoryOperationRequest),
 ) -> dict[str, Any]:
     storage = get_storage_backend()
+    occurred_at = now_business_text()
     resource_keys = operation_resource_keys(
         lab_code=request.lab_code,
         lab_name=request.lab_name,
@@ -239,7 +240,7 @@ def apply_laboratory_operation(
                 sub_experiment_code=request.sub_experiment_code,
                 lab_name=request.lab_name,
                 tray_codes=request.tray_codes,
-                occurred_at=request.occurred_at,
+                occurred_at=occurred_at,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1125,6 +1126,7 @@ def start_current_experiment(
 ) -> dict[str, Any]:
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
+    started_at = now_business_text()
     initial_snapshot = read_snapshot()
     initial_lab_name = start_lab_name(
         initial_snapshot,
@@ -1167,7 +1169,7 @@ def start_current_experiment(
                     lab_name=lab_name,
                     schedule_id=request.schedule_id,
                     tray_codes=request.tray_codes,
-                    started_at=request.started_at,
+                    started_at=started_at,
                     planned_hours=request.planned_hours,
                     planned_end_at=request.planned_end_at,
                     axis_codes=request.axis_codes,
@@ -1185,7 +1187,7 @@ def start_current_experiment(
                 task_code=normalized_task_code,
                 experiment_code=normalized_experiment_code,
                 source="api",
-                started_at=result.get("startedAt") or request.started_at,
+                started_at=result.get("startedAt") or started_at,
             )
             return {
                 "attendanceSession": attendance_service.read_lab_session(lab_name),
@@ -1203,6 +1205,7 @@ def complete_current_experiment(
 ) -> dict[str, Any]:
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
+    completed_at = now_business_text()
     initial_snapshot = read_snapshot()
     initial_tray_codes = request.tray_codes
     resource_keys = operation_resource_keys(
@@ -1225,7 +1228,7 @@ def complete_current_experiment(
                         run_no=request.run_no,
                         axis_code=request.axis_code,
                         next_axis_code=request.next_axis_code,
-                        completed_at=request.completed_at,
+                        completed_at=completed_at,
                     )
                 else:
                     result = complete_storage_laboratory_experiment(
@@ -1235,7 +1238,7 @@ def complete_current_experiment(
                         sub_experiment_code=request.sub_experiment_code,
                         run_no=request.run_no,
                         tray_codes=request.tray_codes,
-                        completed_at=request.completed_at,
+                        completed_at=completed_at,
                     )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1244,7 +1247,7 @@ def complete_current_experiment(
                 get_attendance_service().finish_work_interval(
                     run_no=request.run_no,
                     lab_name=resolve_lab_name(snapshot, normalized_task_code, normalized_experiment_code),
-                    ended_at=request.completed_at,
+                    ended_at=completed_at,
                 )
             return {
                 "ok": True,

@@ -2,6 +2,7 @@
 import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes } from "@/lib/experimentTypes";
 import { DEFAULT_AXIS_CODES, formatAxisCodeLabel, normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { serverNowDate, serverNowMs } from "@/lib/serverClock";
 import { RUNNING_TASK_DELETE_MESSAGE, taskHasRunningExperiment } from "@/lib/runningExperimentGuards";
 import { filterActiveTasks } from "@/lib/taskArchive";
 import {
@@ -135,12 +136,12 @@ const isLegacyTemporaryStagingSchedule = (value) => normalizeText(value).include
 const resolveBuildTaskRowsArgs = (samplesOrNow, nowMaybe) => {
   if (Array.isArray(samplesOrNow)) {
     return {
-      now: Number.isFinite(nowMaybe) ? nowMaybe : Date.now(),
+      now: Number.isFinite(nowMaybe) ? nowMaybe : serverNowMs(),
       samples: samplesOrNow,
     };
   }
   return {
-    now: Number.isFinite(samplesOrNow) ? samplesOrNow : Date.now(),
+    now: Number.isFinite(samplesOrNow) ? samplesOrNow : serverNowMs(),
     samples: [],
   };
 };
@@ -149,13 +150,13 @@ const resolveBuildTaskRowCollections = (samplesOrNow, experimentsOrNow, nowMaybe
   if (Array.isArray(samplesOrNow)) {
     return {
       experiments: Array.isArray(experimentsOrNow) ? experimentsOrNow : [],
-      now: Number.isFinite(nowMaybe) ? nowMaybe : Date.now(),
+      now: Number.isFinite(nowMaybe) ? nowMaybe : serverNowMs(),
       samples: samplesOrNow,
     };
   }
   return {
     experiments: [],
-    now: Number.isFinite(samplesOrNow) ? samplesOrNow : Date.now(),
+    now: Number.isFinite(samplesOrNow) ? samplesOrNow : serverNowMs(),
     samples: [],
   };
 };
@@ -209,7 +210,7 @@ const fromDateTimeLocalValue = (value) => {
 
 const formatBeijingDateTime = (value) => formatLocalDateTime(value, { includeSeconds: false });
 
-const buildDefaultDueAt = (now = new Date()) => formatBeijingDateTime(new Date(now.getTime() + 72 * 60 * 60 * 1000));
+const buildDefaultDueAt = (now = serverNowDate()) => formatBeijingDateTime(new Date(now.getTime() + 72 * 60 * 60 * 1000));
 
 // 任务页表格和标签共用状态样式类映射。
 const statusClass = (value) => {
@@ -484,17 +485,17 @@ function buildFilterOptions(rows) {
 const resolveTaskCodeDate = (referenceValue) => {
   const raw = normalizeText(referenceValue);
   if (!raw) {
-    return new Date();
+    return serverNowDate();
   }
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) {
-    return new Date();
+    return serverNowDate();
   }
   return parsed;
 };
 
 // 所有新任务统一按 SYLU-YYYY-MM-NNN 递增，不再按旧实验前缀分流。
-function buildTaskCode(testType, tasks, referenceValue = new Date()) {
+function buildTaskCode(testType, tasks, referenceValue = serverNowDate()) {
   const codeDate = resolveTaskCodeDate(referenceValue);
   const year = codeDate.getFullYear();
   const month = String(codeDate.getMonth() + 1).padStart(2, "0");
@@ -617,9 +618,10 @@ function createTaskRecord(form, tasks) {
     selectedTestTypes.length > 0 ? "" : form?.test_type,
   );
   // 优先使用表单中已有任务号，否则按试验类型自动生成，再兜底为时间戳编号。
+  const currentDate = serverNowDate();
   const taskCode = normalizeText(form?.code)
-    || buildTaskCode(testTypeSummary, tasks, form?.due_at || form?.arrival_at || new Date())
-    || `SYLU-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${Date.now().toString().slice(-3)}`;
+    || buildTaskCode(testTypeSummary, tasks, form?.due_at || form?.arrival_at || currentDate)
+    || `SYLU-${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-${serverNowMs().toString().slice(-3)}`;
   return {
     id: createId("task"),
     code: taskCode,

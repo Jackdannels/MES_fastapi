@@ -15,6 +15,9 @@ def ensure_schema_extensions(backend: Any) -> None:
             cursor.execute("SHOW COLUMNS FROM biz_task LIKE 'transfer_status'")
             if cursor.fetchone() is None:
                 cursor.execute("ALTER TABLE biz_task ADD COLUMN transfer_status VARCHAR(30) NULL AFTER task_status")
+            cursor.execute("SHOW COLUMNS FROM biz_tray LIKE 'fixture_ready'")
+            if cursor.fetchone() is None:
+                cursor.execute("ALTER TABLE biz_tray ADD COLUMN fixture_ready TINYINT NOT NULL DEFAULT 0 AFTER test_state")
             cursor.execute("SHOW COLUMNS FROM biz_task LIKE 'tray_limit'")
             if cursor.fetchone() is None:
                 cursor.execute("ALTER TABLE biz_task ADD COLUMN tray_limit INT NULL AFTER sample_count")
@@ -367,6 +370,25 @@ def ensure_schema_extensions(backend: Any) -> None:
                   UNIQUE KEY uk_biz_experiment_event_message (message_id),
                   KEY idx_biz_experiment_event_task_exp (task_no, experiment_no),
                   KEY idx_biz_experiment_event_time (event_type, event_time)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS biz_fixture_install_pending (
+                  fixture_install_id VARCHAR(100) NOT NULL,
+                  tray_no VARCHAR(80) NOT NULL,
+                  task_no VARCHAR(50) NOT NULL,
+                  experiment_no VARCHAR(50) NOT NULL,
+                  lab_code VARCHAR(50) NOT NULL,
+                  status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+                  requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  ready_at DATETIME NULL,
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  PRIMARY KEY (fixture_install_id, tray_no),
+                  KEY idx_biz_fixture_install_pending_match (task_no, experiment_no, lab_code, tray_no, status),
+                  KEY idx_biz_fixture_install_pending_status (status, requested_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """
             )

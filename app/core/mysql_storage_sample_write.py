@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
 from typing import Any, Dict
 
 from app.core.storage_backend import normalize_experiment_detail_text, normalize_experiment_status_text
 from app.core.mysql_storage_codecs import (
-    FIXTURE_READY_COMPAT_MESSAGE_PREFIX,
     SAMPLE_META_PREFIX,
     STORAGE_MARKER,
     TRAY_META_PREFIX,
@@ -100,6 +98,7 @@ def build_sample_tray_write_state(
                     "load_qty": 0,
                     "tray_status": "ACTIVE",
                     "test_state": normalize_text(tray.get("status")) or normalize_text(sample.get("status")),
+                    "fixture_ready": parse_fixture_ready_flag(tray.get("fixture_ready", tray.get("fixtureReady"))),
                     "bind_time": parse_storage_datetime(tray.get("created_at")) or parse_storage_datetime(sample.get("updated_at")),
                     "remark": TRAY_META_PREFIX,
                     "target_lab": normalize_text(tray.get("target_lab") or tray.get("targetLab")),
@@ -109,6 +108,9 @@ def build_sample_tray_write_state(
             target_lab = normalize_text(tray.get("target_lab") or tray.get("targetLab"))
             if target_lab:
                 tray_defs[tray_code]["target_lab"] = target_lab
+            tray_defs[tray_code]["fixture_ready"] = tray_defs[tray_code]["fixture_ready"] or parse_fixture_ready_flag(
+                tray.get("fixture_ready", tray.get("fixtureReady"))
+            )
             quantity = parse_int_value(tray.get("quantity")) or 1
             tray_defs[tray_code]["samples"].append((sample_code, quantity, tray))
             tray_defs[tray_code]["load_qty"] += quantity
@@ -243,6 +245,7 @@ def upsert_tray_rows(cursor, tray_defs: Dict[str, dict[str, Any]], sample_task_i
                 "load_qty": tray["load_qty"],
                 "tray_status": tray["tray_status"],
                 "test_state": tray["test_state"],
+                "fixture_ready": 1 if tray["fixture_ready"] else 0,
                 "bind_time": tray["bind_time"],
                 "remark": TRAY_META_PREFIX,
             }
@@ -251,12 +254,12 @@ def upsert_tray_rows(cursor, tray_defs: Dict[str, dict[str, Any]], sample_task_i
         """
         INSERT INTO biz_tray (
           tray_no, tray_type, task_id, current_temp_room_id, current_lab_id, current_equipment_id,
-          temp_position_no, capacity, load_qty, tray_status, test_state, bind_time, in_temp_room_time,
+          temp_position_no, capacity, load_qty, tray_status, test_state, fixture_ready, bind_time, in_temp_room_time,
           out_temp_room_time, current_barcode_id, unbind_time, last_barcode_print_time, current_owner_id,
           remark
         ) VALUES (
           %(tray_no)s, %(tray_type)s, %(task_id)s, NULL, %(current_lab_id)s, NULL,
-          NULL, %(capacity)s, %(load_qty)s, %(tray_status)s, %(test_state)s, %(bind_time)s, NULL,
+          NULL, %(capacity)s, %(load_qty)s, %(tray_status)s, %(test_state)s, %(fixture_ready)s, %(bind_time)s, NULL,
           NULL, NULL, NULL, NULL, NULL,
           %(remark)s
         )
@@ -268,6 +271,7 @@ def upsert_tray_rows(cursor, tray_defs: Dict[str, dict[str, Any]], sample_task_i
           load_qty = VALUES(load_qty),
           tray_status = VALUES(tray_status),
           test_state = VALUES(test_state),
+          fixture_ready = VALUES(fixture_ready),
           bind_time = VALUES(bind_time),
           remark = VALUES(remark)
         """,
@@ -369,109 +373,11 @@ def replace_samples(cursor, samples: list[dict[str, Any]]) -> None:
     )
     insert_tray_item_rows(cursor, tray_item_rows)
 
-    delete_managed_fixture_ready_events(cursor, managed_samples)
-    insert_fixture_ready_events(cursor, build_fixture_ready_events(managed_samples))
-
     update_sample_primary_tray_ids(cursor, sample_primary_tray_id)
 
     insert_sample_history_event_rows(
         cursor,
         build_sample_history_event_rows(managed_samples, sample_id_map, sample_task_id_map),
-    )
-
-
-def delete_managed_fixture_ready_events(cursor, managed_samples: list[dict[str, Any]]) -> None:
-    managed_task_nos = sorted(
-        {
-            normalize_text(sample.get("task_code"))
-            for sample in managed_samples
-            if normalize_text(sample.get("task_code"))
-        }
-    )
-    if not managed_task_nos:
-        return
-    placeholders = ", ".join(["%s"] * len(managed_task_nos))
-    cursor.execute(
-        f"""
-        DELETE FROM biz_experiment_event
-        WHERE event_type = 'FIXTURE_READY'
-          AND message_id LIKE %s
-          AND task_no IN ({placeholders})
-        """,
-        [f"{FIXTURE_READY_COMPAT_MESSAGE_PREFIX}%", *managed_task_nos],
-    )
-
-
-def build_fixture_ready_events(managed_samples: list[dict[str, Any]]) -> Dict[tuple[str, str], dict[str, Any]]:
-    fixture_ready_events: Dict[tuple[str, str], dict[str, Any]] = {}
-    for sample in managed_samples:
-        task_no = normalize_text(sample.get("task_code"))
-        if not task_no:
-            continue
-        for tray in sample.get("trays") or []:
-            if not parse_fixture_ready_flag(tray.get("fixture_ready", tray.get("fixtureReady"))):
-                continue
-            tray_code = normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo"))
-            if not tray_code:
-                continue
-            experiment_no = normalize_text(
-                tray.get("target_experiment_code")
-                or tray.get("targetExperimentCode")
-                or tray.get("experiment_code")
-                or tray.get("experimentCode")
-                or tray.get("experiment_no")
-                or tray.get("experimentNo")
-            )
-            event_time = (
-                parse_storage_datetime(tray.get("updated_at"))
-                or parse_storage_datetime(sample.get("updated_at"))
-                or current_beijing_datetime()
-            )
-            current = fixture_ready_events.get((task_no, tray_code))
-            if current is None or event_time > current["event_time"]:
-                fixture_ready_events[(task_no, tray_code)] = {
-                    "event_time": event_time,
-                    "experiment_no": experiment_no,
-                    "tray_code": tray_code,
-                }
-    return fixture_ready_events
-
-
-def insert_fixture_ready_events(cursor, fixture_ready_events: Dict[tuple[str, str], dict[str, Any]]) -> None:
-    if not fixture_ready_events:
-        return
-    cursor.executemany(
-        """
-        INSERT INTO biz_experiment_event (
-          event_type, task_no, experiment_no, lab_code, success_id, event_time,
-          message_id, message_log_id, payload_json
-        ) VALUES (
-          'FIXTURE_READY', %(task_no)s, %(experiment_no)s, NULL, NULL, %(event_time)s,
-          %(message_id)s, NULL, %(payload_json)s
-        )
-        ON DUPLICATE KEY UPDATE
-          event_time = VALUES(event_time),
-          payload_json = VALUES(payload_json)
-        """,
-        [
-            {
-                "task_no": task_no,
-                "experiment_no": event["experiment_no"] or None,
-                "event_time": event["event_time"],
-                "message_id": f"{FIXTURE_READY_COMPAT_MESSAGE_PREFIX}{task_no}:{tray_code}",
-                "payload_json": json.dumps(
-                    {
-                        "source": "frontend_fixture_countdown",
-                        "taskNo": task_no,
-                        "experimentNo": event["experiment_no"],
-                        "experimentCode": event["experiment_no"],
-                        "trayCode": tray_code,
-                    },
-                    ensure_ascii=False,
-                ),
-            }
-            for (task_no, tray_code), event in fixture_ready_events.items()
-        ],
     )
 
 

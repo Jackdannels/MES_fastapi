@@ -56,7 +56,6 @@ from app.core.demo_data_reset import reset_demo_data
 
 def test_mysql_storage_backend_reexports_extracted_codecs() -> None:
     codec_names = [
-        "FIXTURE_READY_COMPAT_MESSAGE_PREFIX",
         "RETENTION_KEYWORD",
         "SAMPLE_META_PREFIX",
         "STORAGE_MARKER",
@@ -328,16 +327,13 @@ def test_load_experiments_reads_dispatched_axis_codes() -> None:
 
 def test_mysql_storage_backend_reexports_extracted_sample_write_helpers() -> None:
     sample_write_names = [
-        "build_fixture_ready_events",
         "build_managed_sample_write_rows",
         "build_sample_history_event_rows",
         "build_sample_tray_write_state",
         "build_tray_item_rows",
         "clear_existing_sample_links",
-        "delete_managed_fixture_ready_events",
         "delete_missing_managed_samples",
         "delete_missing_managed_trays",
-        "insert_fixture_ready_events",
         "insert_sample_history_event_rows",
         "insert_tray_item_rows",
         "load_sample_identity_maps",
@@ -2833,7 +2829,7 @@ def test_build_storage_sample_item_preserves_fixture_ready_marker() -> None:
     assert storage_item["trays"][0]["fixtureReady"] is True
 
 
-def test_load_samples_marks_task_trays_fixture_ready_from_mqtt_event() -> None:
+def test_load_samples_marks_task_trays_fixture_ready_from_tray_column() -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
         _DummySnapshotRepository(),
@@ -2874,7 +2870,8 @@ def test_load_samples_marks_task_trays_fixture_ready_from_mqtt_event() -> None:
                         "quantity": 1,
                         "status": "工装夹具安装",
                         "test_state": "",
-                        "tray_status": "",
+                            "tray_status": "",
+                            "fixture_ready": 1,
                         "created_at": "2026-03-17 09:00:00",
                         "updated_at": "2026-03-17 09:00:00",
                     }
@@ -2895,7 +2892,7 @@ def test_load_samples_marks_task_trays_fixture_ready_from_mqtt_event() -> None:
     assert samples[0]["trays"][0]["fixtureReady"] is True
 
 
-def test_load_samples_scopes_frontend_fixture_ready_event_to_payload_tray() -> None:
+def test_load_samples_reads_fixture_ready_per_tray_column() -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
         _DummySnapshotRepository(),
@@ -2954,7 +2951,8 @@ def test_load_samples_scopes_frontend_fixture_ready_event_to_payload_tray() -> N
                         "quantity": 1,
                         "status": "工装夹具安装",
                         "test_state": "",
-                        "tray_status": "",
+                            "tray_status": "",
+                            "fixture_ready": 1,
                         "created_at": "2026-03-17 09:00:00",
                         "updated_at": "2026-03-17 09:00:00",
                     },
@@ -2966,7 +2964,8 @@ def test_load_samples_scopes_frontend_fixture_ready_event_to_payload_tray() -> N
                         "quantity": 1,
                         "status": "工装夹具安装",
                         "test_state": "",
-                        "tray_status": "",
+                            "tray_status": "",
+                            "fixture_ready": 0,
                         "created_at": "2026-03-17 09:00:00",
                         "updated_at": "2026-03-17 09:00:00",
                     },
@@ -2995,7 +2994,7 @@ def test_load_samples_scopes_frontend_fixture_ready_event_to_payload_tray() -> N
     assert trays_by_sample["SYLU-2026-03-003-SP-002"]["fixture_ready"] is False
 
 
-def test_load_samples_scopes_fixture_ready_event_to_matching_experiment() -> None:
+def test_load_samples_does_not_infer_fixture_ready_from_event_experiment() -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
         _DummySnapshotRepository(),
@@ -3074,7 +3073,7 @@ def test_load_samples_scopes_fixture_ready_event_to_matching_experiment() -> Non
     assert samples[0]["trays"][0]["fixtureReady"] is False
 
 
-def test_load_samples_ignores_stale_fixture_ready_before_latest_install() -> None:
+def test_load_samples_does_not_infer_fixture_ready_from_event_time() -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
         _DummySnapshotRepository(),
@@ -3263,7 +3262,7 @@ def test_replace_samples_binds_dispatched_tray_to_target_lab() -> None:
     assert tray_call[0]["current_lab_id"] == 8
 
 
-def test_replace_samples_persists_fixture_ready_as_compat_experiment_event() -> None:
+def test_replace_samples_persists_fixture_ready_on_tray() -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
         _DummySnapshotRepository(),
@@ -3319,16 +3318,14 @@ def test_replace_samples_persists_fixture_ready_as_compat_experiment_event() -> 
         ],
     )
 
-    assert any("DELETE FROM biz_experiment_event" in sql for sql, _params in cursor.execute_calls)
-    fixture_event_rows = next(
+    tray_upsert_rows = next(
         rows
         for sql, rows in cursor.executemany_calls
-        if "INSERT INTO biz_experiment_event" in sql
+        if "INSERT INTO biz_tray" in sql
     )
-    assert fixture_event_rows[0]["task_no"] == "SYLU-2026-03-003"
-    assert fixture_event_rows[0]["message_id"] == "FRONTEND_STORAGE:FIXTURE_READY:SYLU-2026-03-003:SYLU-2026-03-003-TP-001"
-    assert "frontend_fixture_countdown" in fixture_event_rows[0]["payload_json"]
-    assert "SYLU-2026-03-003-TP-001" in fixture_event_rows[0]["payload_json"]
+    assert tray_upsert_rows[0]["tray_no"] == "SYLU-2026-03-003-TP-001"
+    assert tray_upsert_rows[0]["fixture_ready"] == 1
+    assert not any("biz_experiment_event" in sql for sql, _params in cursor.execute_calls)
 
 
 def test_replace_schedules_backfills_task_id_from_task_no() -> None:

@@ -136,6 +136,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
 import { findFirstOverdueWaitingTaskCode, hasOverdueWaitingExperiment } from "@/lib/taskOverviewAlerts";
+import { serverNowMs } from "@/lib/serverClock";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { MODULE_LABELS } from "@/lib/moduleCatalog";
 import { getNavigationModules } from "@/modules";
@@ -200,7 +201,7 @@ const refreshTaskOverviewAlert = async () => {
     snapshot[STORAGE_KEYS.tasks],
     snapshot[STORAGE_KEYS.experiments],
     snapshot[STORAGE_KEYS.schedules],
-    Date.now(),
+    serverNowMs(),
     snapshot[STORAGE_KEYS.samples],
   );
   pendingScheduleExceptionCount.value = (Array.isArray(snapshot[STORAGE_KEYS.conflicts]) ? snapshot[STORAGE_KEYS.conflicts] : [])
@@ -231,7 +232,7 @@ const handleCentralNavClick = async (navItem, event) => {
     snapshot[STORAGE_KEYS.tasks],
     snapshot[STORAGE_KEYS.experiments],
     snapshot[STORAGE_KEYS.schedules],
-    Date.now(),
+    serverNowMs(),
     snapshot[STORAGE_KEYS.samples],
   );
 

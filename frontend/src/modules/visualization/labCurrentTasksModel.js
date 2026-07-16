@@ -1,5 +1,6 @@
 import { labIdentityMatches } from "@/lib/labIdentity";
 import { parseBusinessDateTimeToMs } from "@/lib/dateTime";
+import { serverNowMs } from "@/lib/serverClock";
 import { buildDeviceRows } from "@/modules/devices/model";
 import { buildLaboratoryWorkbenchView } from "@/modules/laboratory/model";
 import { formatDateTime } from "@/modules/schedule/sharedModel";
@@ -305,7 +306,7 @@ function buildLabCurrentTaskMatrixView(input = {}) {
   const labNames = asArray(input.labNames)
     .map((lab) => normalizeText(lab?.name || lab?.code || lab))
     .filter((labName) => isExperimentRoomName(labName) && !excludedRoomIdentities.has(labName));
-  const now = input.now instanceof Date ? input.now : new Date(parseTime(input.now) || Date.now());
+  const now = input.now instanceof Date ? input.now : new Date(parseTime(input.now) || serverNowMs());
   const snapshot = {
     devices: asArray(input.devices),
     experimentRuns: asArray(input.experimentRuns || input.experiment_runs),

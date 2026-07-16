@@ -14,6 +14,7 @@ import {
 } from "@/lib/attendanceApi";
 import { buildQrCodeSvg, buildSvgImageDataUrl } from "@/lib/qrCode";
 import { formatBusinessDateKey } from "@/lib/dateTime";
+import { serverNowDate, serverNowMs } from "@/lib/serverClock";
 import { TEST_LABS } from "@/lib/labs";
 import { buildSystemPageState, createEmployeeForm, createEmployeeRow, EMPTY_EMPLOYEE_FORM } from "./model";
 
@@ -32,7 +33,7 @@ const createAdminActionFields = () => ({
 
 const createOperationLogFilters = () => ({
   ...DEFAULT_ADMIN_CREDENTIALS,
-  date: formatBusinessDateKey(new Date()),
+  date: formatBusinessDateKey(serverNowDate()),
   employeeName: "",
   employeeNames: [],
   labName: "",
@@ -59,7 +60,7 @@ function useSystemPage() {
   const employeeRows = ref(systemState.employeeRows);
   const summaryCards = ref(systemState.summaryCards);
   const settings = ref(systemState.settings);
-  const workTimeTickMs = ref(Date.now());
+  const workTimeTickMs = ref(serverNowMs());
   let workTimeTickTimer = null;
   let workTimeRefreshTimer = null;
 
@@ -446,7 +447,7 @@ function useSystemPage() {
   onMounted(() => {
     void loadEmployees();
     workTimeTickTimer = window.setInterval(() => {
-      workTimeTickMs.value = Date.now();
+      workTimeTickMs.value = serverNowMs();
     }, WORK_TIME_TICK_INTERVAL_MS);
     workTimeRefreshTimer = window.setInterval(() => {
       void loadEmployees();

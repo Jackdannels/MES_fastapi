@@ -6,6 +6,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTableControls } from "@/composables/useTableControls";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { serverNowDate } from "@/lib/serverClock";
 import { labIdentityMatches, scheduleMatchesLab } from "@/lib/labIdentity";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
@@ -50,7 +51,7 @@ const parseTime = (value) => {
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : null;
 };
-const toBusinessDateTimeValue = (value = new Date()) => formatLocalDateTime(value);
+const toBusinessDateTimeValue = (value = serverNowDate()) => formatLocalDateTime(value);
 const MAINTENANCE_RECORD_STATUS = "已结束";
 
 const maintenanceRecordType = (value) => (normalizeText(value).includes("保养") ? "保养" : "维修");
@@ -119,7 +120,7 @@ function useDevicesPage() {
   const runningRepairChoiceModal = useDialogState();
   const pointModal = useDialogState();
   const runningRepairChoiceDetail = ref(null);
-  const now = ref(new Date());
+  const now = ref(serverNowDate());
   let deviceClockTimer = null;
   let flushPendingStorageRefresh = () => false;
 
@@ -201,7 +202,7 @@ function useDevicesPage() {
     });
   };
 
-  const buildTimedMaintenanceStatusUpdates = (currentDate = new Date()) => {
+  const buildTimedMaintenanceStatusUpdates = (currentDate = serverNowDate()) => {
     const current = currentDate instanceof Date ? currentDate.getTime() : Date.parse(String(currentDate || ""));
     if (!Number.isFinite(current)) {
       return null;
@@ -244,7 +245,7 @@ function useDevicesPage() {
     return changed ? { devices: nextDevices, maintenanceRecords: nextMaintenanceRecords } : null;
   };
 
-  const syncTimedMaintenanceStatuses = async (currentDate = new Date()) => {
+  const syncTimedMaintenanceStatuses = async (currentDate = serverNowDate()) => {
     const updates = buildTimedMaintenanceStatusUpdates(currentDate);
     if (!updates) {
       return;
@@ -663,7 +664,7 @@ function useDevicesPage() {
   };
 
   const persistMaintenancePlan = async ({ conflictingSchedules = [], deviceCode, form }) => {
-    const timestamp = toBusinessDateTimeValue(new Date());
+    const timestamp = toBusinessDateTimeValue(serverNowDate());
     const updates = buildMaintenancePlanUpdates({ conflictingSchedules, deviceCode, form, timestamp });
     rawConflicts.value = updates[STORAGE_KEYS.conflicts];
     rawDevices.value = updates[STORAGE_KEYS.devices];
@@ -742,7 +743,7 @@ function useDevicesPage() {
     if (!deviceCode) {
       return;
     }
-    const timestamp = toBusinessDateTimeValue(new Date());
+    const timestamp = toBusinessDateTimeValue(serverNowDate());
     const form = { ...maintenancePlanForm.value };
     const runningSchedules = findRunningSchedulesForDevice(deviceCode);
     if (runningSchedules.length > 0) {
@@ -798,7 +799,7 @@ function useDevicesPage() {
       runningRepairChoiceModal.close();
       return;
     }
-    const timestamp = toBusinessDateTimeValue(new Date());
+    const timestamp = toBusinessDateTimeValue(serverNowDate());
     const updates = buildRunningRepairUpdates({
       form: {
         ...detail.form,
@@ -829,7 +830,7 @@ function useDevicesPage() {
     if (!deviceCode || !canSetDeviceAvailable.value) {
       return;
     }
-    const endedAt = new Date();
+    const endedAt = serverNowDate();
     const nextMaintenanceRecords = [
       buildMaintenanceRecord({
         device: rawDevices.value.find((device) => normalizeText(device?.code) === deviceCode),
@@ -854,7 +855,7 @@ function useDevicesPage() {
       return;
     }
     if (detail.mode === "deviceStatus") {
-      const timestamp = toBusinessDateTimeValue(new Date());
+      const timestamp = toBusinessDateTimeValue(serverNowDate());
       const updates = buildUnavailableDeviceStatusUpdates({
         conflictingSchedules: detail.conflictingSchedules,
         form: detail.form,
@@ -961,7 +962,7 @@ function useDevicesPage() {
   );
 
   const syncDeviceClock = () => {
-    const currentDate = new Date();
+    const currentDate = serverNowDate();
     now.value = currentDate;
     void syncTimedMaintenanceStatuses(currentDate);
   };

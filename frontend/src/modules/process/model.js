@@ -1,6 +1,7 @@
 import { aggregateTaskStatusFromSamples } from "@/modules/tasks/model";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
 import { formatBusinessDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
+import { serverNowMs } from "@/lib/serverClock";
 import { scheduleMatchesLab } from "@/lib/labIdentity";
 import {
   EXPERIMENT_STATUS_COMPLETED,
@@ -290,7 +291,7 @@ const buildProcessLabCards = (
   experimentRunSteps = [],
 ) => {
   const sampleList = Array.isArray(samplesOrNow) ? samplesOrNow : [];
-  const now = Array.isArray(samplesOrNow) ? (Number.isFinite(nowMaybe) ? nowMaybe : Date.now()) : samplesOrNow ?? Date.now();
+  const now = Array.isArray(samplesOrNow) ? (Number.isFinite(nowMaybe) ? nowMaybe : serverNowMs()) : samplesOrNow ?? serverNowMs();
   const labList = Array.isArray(labs) ? labs : [];
   const taskList = Array.isArray(tasks) ? tasks : [];
   const scheduleList = Array.isArray(schedules) ? schedules : [];

@@ -1,6 +1,8 @@
 import { aggregateTaskStatusFromSamples, buildTaskStatusLabel } from "@/modules/tasks/model";
 import { buildExperimentTypeSummary } from "@/lib/experimentTypes";
 import { scheduleTargetsStorageArea } from "@/lib/labIdentity";
+import { resolveLaboratoryDisplayName } from "@/lib/labs";
+import { serverNowMs } from "@/lib/serverClock";
 import { filterActiveTasks, isReturnedTrayStatus } from "@/lib/taskArchive";
 import {
   EXPERIMENT_STATUS_COMPLETED as EXPERIMENT_COMPLETED_STATUS,
@@ -377,7 +379,7 @@ function buildTaskRows({
   experimentTrays = [],
   scheduledLabel,
   unscheduledLabel,
-  now = Date.now(),
+  now = serverNowMs(),
 }) {
   const sampleList = Array.isArray(samples) ? samples : [];
   const taskList = filterActiveTasks(tasks, sampleList);
@@ -696,7 +698,7 @@ function buildTrayOverviewRows({
       if (!trayCode || trayMap.has(trayMapKey)) {
         return;
       }
-      const location = summarizeUniqueTexts([sample?.location]);
+      const location = summarizeUniqueTexts([resolveLaboratoryDisplayName(sample?.location)]);
       const status = normalizeLifecycleStatus(location, normalizeText(tray?.status) || normalizeText(sample?.status));
       if (
         isReturnedTrayStatus(status)

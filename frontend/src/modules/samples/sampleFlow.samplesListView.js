@@ -1,3 +1,4 @@
+import { resolveLaboratoryDisplayName } from "@/lib/labs";
 import { normalizeText } from "./sampleFlow.shared";
 import { normalizeSampleRecord } from "./sampleFlow.status";
 import { getSampleTrayList } from "./sampleFlow.trayScope";
@@ -18,7 +19,10 @@ function buildSamplesFlowView(input = {}) {
   const selectedTaskCode = normalizeText(filters.taskCode);
   const selectedStatus = normalizeText(filters.status);
 
-  const normalizedSamples = samples.map((sample) => normalizeSampleRecord(sample));
+  const normalizedSamples = samples.map((sample) => normalizeSampleRecord({
+    ...sample,
+    location: resolveLaboratoryDisplayName(sample?.location),
+  }));
   const rows = normalizedSamples
     .filter((sample) => {
       if (selectedTaskCode && normalizeText(sample.task_code) !== selectedTaskCode) {

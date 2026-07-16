@@ -1,4 +1,5 @@
 import { SAMPLE_FLOW_STEPS, normalizeLifecycleStatus } from "@/modules/samples/samplesFlowModel";
+import { serverNowMs } from "@/lib/serverClock";
 
 const RETURNED_STATUS = "厂家收回";
 const TASK_STATUS_FLOW_STEPS = [
@@ -517,7 +518,7 @@ const matchesDateWindow = (task, days, now) => {
     return true;
   }
   const taskTime = parseTimeValue(task.updatedAt);
-  const nowTime = parseTimeValue(now) || Date.now();
+  const nowTime = parseTimeValue(now) || serverNowMs();
   if (!taskTime) {
     return false;
   }

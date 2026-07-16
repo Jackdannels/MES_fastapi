@@ -13,7 +13,9 @@ async function postLaboratoryMqCommand(path, payload) {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(`Failed to publish laboratory MQ command: ${response.status} ${response.statusText}`);
+    const errorPayload = await response.json().catch(() => ({}));
+    const detail = String(errorPayload?.detail || "").trim();
+    throw new Error(`Failed to publish laboratory MQ command: ${detail || `${response.status} ${response.statusText}`}`);
   }
   const result = await response.json();
   if (result?.published === false) {

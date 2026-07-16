@@ -529,6 +529,8 @@ def test_attendance_clear_all_sessions_preserves_personnel_accounts():
 
 
 def test_api_experiment_start_and_complete_updates_attendance_work_interval(monkeypatch):
+    business_times = iter(["2026-07-03 09:00:00", "2026-07-03 09:05:00"])
+    monkeypatch.setattr(laboratory_route, "now_business_text", lambda: next(business_times))
     current_time = {"value": datetime(2026, 7, 3, 9, 0, 0, tzinfo=timezone.utc)}
     service = AttendanceService(
         repository=InMemoryAttendanceRepository(),

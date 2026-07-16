@@ -1,6 +1,7 @@
 import { STORAGE_KEYS } from "./storageKeys";
 import { resolveTransferConfirmedAt } from "./transferArrivalTime";
 import { formatLocalDateTime } from "./dateTime";
+import { serverNowDate } from "./serverClock";
 import { normalizeAxisCodes } from "./axisCodes";
 import {
   EXPERIMENT_STATUS_COMPLETED,
@@ -327,7 +328,7 @@ const buildScheduleExceptionDetail = (schedule, experiments, now) => {
 const buildExceptionId = (scheduleId) => `schedule-exception-${scheduleId || Date.now()}`;
 
 function reconcileScheduleExceptions(snapshot = {}, options = {}) {
-  const now = parseDate(options.now) || new Date();
+  const now = parseDate(options.now) || serverNowDate();
   const working = cloneSnapshotArrays(snapshot);
   const schedules = working[STORAGE_KEYS.schedules];
   const tasks = working[STORAGE_KEYS.tasks];

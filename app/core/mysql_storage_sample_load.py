@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, Iterable
 
 from app.core.storage_backend import normalize_experiment_status_text
-from app.core.mysql_storage_codecs import SAMPLE_META_PREFIX, normalize_text, parse_storage_datetime
+from app.core.mysql_storage_codecs import SAMPLE_META_PREFIX, normalize_text
 from app.core.mysql_storage_mappers import build_storage_sample_item
 
 
@@ -36,7 +35,7 @@ def load_samples(
     cursor.execute(
         f"""
         SELECT ti.sample_id, t.task_no, tr.tray_no AS tray_code, s.sample_no AS sample_code, ti.quantity, ti.status,
-               tr.test_state, tr.tray_status, ti.created_at, ti.updated_at
+               tr.test_state, tr.tray_status, tr.fixture_ready, ti.created_at, ti.updated_at
         FROM biz_tray_item ti
         JOIN biz_tray tr ON tr.tray_id = ti.tray_id
         JOIN biz_sample s ON s.sample_id = ti.sample_id
@@ -47,88 +46,10 @@ def load_samples(
         sample_ids,
     )
     tray_rows = cursor.fetchall()
-    task_nos = sorted({normalize_text(row.get("task_no")) for row in sample_rows if normalize_text(row.get("task_no"))})
-    tray_experiment_codes_by_task_tray: Dict[tuple[str, str], set[str]] = {}
-    for relation in experiment_trays or []:
-        task_no = normalize_text(
-            relation.get("task_code")
-            or relation.get("task_no")
-            or relation.get("taskNo")
-        )
-        tray_code = normalize_text(
-            relation.get("tray_code")
-            or relation.get("trayCode")
-            or relation.get("tray_no")
-            or relation.get("trayNo")
-        )
-        experiment_no = normalize_text(
-            relation.get("experiment_code")
-            or relation.get("experiment_no")
-            or relation.get("experimentCode")
-            or relation.get("experimentNo")
-        )
-        if task_no and tray_code and experiment_no:
-            tray_experiment_codes_by_task_tray.setdefault((task_no, tray_code), set()).add(experiment_no)
-    fixture_ready_events_by_task: Dict[str, list[dict[str, Any]]] = {}
-    if task_nos:
-        task_placeholders = ", ".join(["%s"] * len(task_nos))
-        cursor.execute(
-            f"""
-            SELECT task_no, experiment_no, event_time, payload_json
-            FROM biz_experiment_event
-            WHERE event_type = 'FIXTURE_READY'
-              AND task_no IN ({task_placeholders})
-            ORDER BY event_time DESC
-            """,
-            task_nos,
-        )
-        for row in cursor.fetchall():
-            task_no = normalize_text(row.get("task_no"))
-            event_time = parse_storage_datetime(row.get("event_time"))
-            if not task_no or event_time is None:
-                continue
-            payload = {}
-            payload_json = row.get("payload_json")
-            if isinstance(payload_json, str) and normalize_text(payload_json):
-                try:
-                    decoded_payload = json.loads(payload_json)
-                    if isinstance(decoded_payload, dict):
-                        payload = decoded_payload
-                except json.JSONDecodeError:
-                    payload = {}
-            fixture_ready_events_by_task.setdefault(task_no, []).append(
-                {
-                    "event_time": event_time,
-                    "experiment_no": normalize_text(row.get("experiment_no") or payload.get("experimentNo") or payload.get("experimentCode")),
-                    "tray_code": normalize_text(payload.get("trayCode") or payload.get("tray_code") or payload.get("trayNo") or payload.get("tray_no")),
-                }
-            )
     tray_map: Dict[int, list[dict[str, Any]]] = {}
     for row in tray_rows:
-        task_no = normalize_text(row.get("task_no"))
-        tray_code = normalize_text(row.get("tray_code"))
-        tray_updated_at = parse_storage_datetime(row.get("updated_at")) or parse_storage_datetime(row.get("created_at"))
         tray_status = normalize_experiment_status_text(row.get("status") or row.get("test_state") or row.get("tray_status"))
-        fixture_ready_time = next(
-            (
-                event["event_time"]
-                for event in fixture_ready_events_by_task.get(task_no, [])
-                if (
-                    (not event["tray_code"] or event["tray_code"] == tray_code)
-                    and (
-                        not event["experiment_no"]
-                        or not tray_experiment_codes_by_task_tray.get((task_no, tray_code))
-                        or event["experiment_no"] in tray_experiment_codes_by_task_tray.get((task_no, tray_code), set())
-                    )
-                )
-            ),
-            None,
-        )
-        if (
-            tray_status == "工装夹具安装"
-            and fixture_ready_time is not None
-            and (tray_updated_at is None or fixture_ready_time >= tray_updated_at)
-        ):
+        if tray_status == "工装夹具安装" and bool(row.get("fixture_ready")):
             row["fixture_ready"] = True
             row["fixtureReady"] = True
         tray_map.setdefault(row["sample_id"], []).append(row)

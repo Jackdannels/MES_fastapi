@@ -105,6 +105,9 @@ def sample_with_history(status, location, history, tray_code="TP-501"):
 
 
 def test_laboratory_complete_experiment_updates_storage_through_common_endpoint(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    monkeypatch.setattr(laboratory_route, "now_business_text", lambda: "2026-05-19 10:00:00")
     sample = sample_with_history(
         "实验进行中",
         "盐雾试验室",
@@ -127,7 +130,7 @@ def test_laboratory_complete_experiment_updates_storage_through_common_endpoint(
 
     response = client.post(
         "/api/laboratory/tasks/TASK-501/experiments/EXP-A/complete",
-        json={"runNo": "RUN-501", "trayCodes": ["TP-501"], "completedAt": "2026-05-19T10:00:00"},
+        json={"runNo": "RUN-501", "trayCodes": ["TP-501"], "completedAt": "2000-01-01T00:00:00"},
     )
 
     assert response.status_code == 200
@@ -216,6 +219,9 @@ def test_laboratory_axis_complete_passes_sub_experiment_code_to_shared_service(m
 
 
 def test_laboratory_start_experiment_updates_ready_hot_humid_second_lab_through_common_endpoint(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    monkeypatch.setattr(laboratory_route, "now_business_text", lambda: "2026-06-06 15:00:00")
     sample = sample_with_history("实验准备就绪", "高低温湿热二室", [], tray_code="TP-HH2-501")
     sample["trays"][0]["target_lab"] = "高低温湿热二室"
     sample["trays"][0]["target_experiment_code"] = "EXP-D"
@@ -393,6 +399,9 @@ def test_laboratory_complete_experiment_keeps_schedule_running_until_all_trays_f
 
 
 def test_laboratory_complete_experiment_infers_batch_trays_from_run_tray_relations_when_tray_codes_omitted(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    monkeypatch.setattr(laboratory_route, "now_business_text", lambda: "2026-05-19 10:00:00")
     payloads = base_payloads(
         [
             sample_with_history("实验进行中", "盐雾试验室", [], tray_code="TP-501"),

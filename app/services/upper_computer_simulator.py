@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import subprocess
 import sys
 import threading
@@ -108,12 +110,67 @@ def _start_simulator_process(app_settings: Settings) -> None:
     )
 
 
-def ensure_upper_computer_simulator_auto_mode(app_settings: Settings) -> dict[str, Any]:
+def _simulator_process_ids(app_settings: Settings) -> list[int]:
+    if not sys.platform.startswith("win"):
+        return []
+    script = (
+        f"$port = {int(app_settings.UPPER_COMPUTER_SIMULATOR_PORT)}; "
+        "$listener = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | "
+        "Select-Object -First 1; "
+        "if ($listener) { $listener.OwningProcess }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", script],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [int(pid) for pid in re.findall(r"\d+", result.stdout) if int(pid) != os.getpid()]
+
+
+def stop_upper_computer_simulator(app_settings: Settings) -> None:
+    if not app_settings.UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE:
+        return
+    simulator_running = _can_read_state(app_settings)
+    try:
+        _json_request(f"{str(app_settings.UPPER_COMPUTER_SIMULATOR_URL).rstrip('/')}/api/disconnect", method="POST", timeout=2.0)
+    except Exception:
+        pass
+    if not simulator_running:
+        return
+    for process_id in _simulator_process_ids(app_settings):
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process_id), "/T", "/F"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
+
+
+def ensure_upper_computer_simulator_auto_mode(
+    app_settings: Settings,
+    *,
+    force_restart: bool = False,
+) -> dict[str, Any]:
     if not app_settings.UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE:
         return {"enabled": False, "started": False, "connected": False, "reason": "disabled"}
 
     started = False
-    if not _can_read_state(app_settings):
+    if force_restart:
+        stop_upper_computer_simulator(app_settings)
+        if not app_settings.UPPER_COMPUTER_SIMULATOR_AUTO_START:
+            raise RuntimeError("模拟上位机未启用自动启动")
+        _start_simulator_process(app_settings)
+        started = True
+    elif not _can_read_state(app_settings):
         if not app_settings.UPPER_COMPUTER_SIMULATOR_AUTO_START:
             raise RuntimeError("模拟上位机未启动")
         _start_simulator_process(app_settings)
@@ -158,3 +215,7 @@ def ensure_upper_computer_simulator_auto_mode(app_settings: Settings) -> dict[st
         "url": app_settings.UPPER_COMPUTER_SIMULATOR_URL,
         "page_url": page_url,
     }
+
+
+def restart_upper_computer_simulator_auto_mode(app_settings: Settings) -> dict[str, Any]:
+    return ensure_upper_computer_simulator_auto_mode(app_settings, force_restart=True)

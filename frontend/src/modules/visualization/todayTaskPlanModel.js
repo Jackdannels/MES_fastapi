@@ -1,4 +1,5 @@
 import { scheduleTargetsStorageArea } from "@/lib/labIdentity";
+import { serverNowDate } from "@/lib/serverClock";
 import { toLocalDateValue } from "@/modules/schedule/model";
 import {
   asArray,
@@ -100,7 +101,7 @@ const countSamplesForTrays = ({ samples, taskCode, trayCodes }) => {
 };
 
 function buildTodayTaskPlanView(input = {}) {
-  const now = parseDate(input.now) || new Date();
+  const now = parseDate(input.now) || serverNowDate();
   const tasks = asArray(input.tasks);
   const samples = asArray(input.samples);
   const schedules = asArray(input.schedules)

@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from app.core.config import Settings, settings
 from app.modules.registry import API_ROUTERS
 from app.services.mq_runtime import MqttRuntimeController
+from app.services.upper_computer_simulator import restart_upper_computer_simulator_auto_mode, stop_upper_computer_simulator
 from app.web import routes as web_routes
 
 
@@ -18,9 +19,13 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     async def lifespan(_app: FastAPI):
         _app.state.mq_runtime = mq_runtime
         try:
+            if configured_settings.MQTT_ENABLED and configured_settings.UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE:
+                restart_upper_computer_simulator_auto_mode(configured_settings)
+                mq_runtime.set_mode("mqtt")
             yield
         finally:
             mq_runtime.shutdown()
+            stop_upper_computer_simulator(configured_settings)
 
     app = FastAPI(title=configured_settings.APP_NAME, debug=configured_settings.DEBUG, lifespan=lifespan)
     app.state.mq_runtime = mq_runtime

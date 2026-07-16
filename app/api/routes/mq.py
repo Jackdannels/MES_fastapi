@@ -6,6 +6,7 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator
 from app.core.axis_codes import sort_axis_codes
 from app.core.config import settings
 from app.services.mq_event_processor import generated_run_no, process_laboratory_event
+from app.services.fixture_installations import mark_fixture_installation_failed, normalize_tray_codes, register_pending_fixture_installation
 from app.services.mq_publisher import publish_laboratory_command
 from app.services.mq_runtime import default_mq_runtime
 
@@ -20,11 +21,19 @@ class FixtureInstallRequest(BaseModel):
     experiment_code: str = ""
     sample_type: str = ""
     sample_count: int = Field(ge=0, le=MAX_SAMPLE_COUNT)
+    fixture_install_id: str = Field(default="", validation_alias=AliasChoices("fixture_install_id", "fixtureInstallId"))
+    tray_codes: list[str] = Field(default_factory=list, validation_alias=AliasChoices("tray_codes", "trayCodes"))
 
     @field_validator("task_code", "lab_code", "experiment_code", "sample_type", mode="before")
     @classmethod
     def trim_text(cls, value: Any) -> str:
         return str(value or "").strip()
+
+    @field_validator("tray_codes", mode="before")
+    @classmethod
+    def normalize_trays(cls, value: Any) -> list[str]:
+        raw_values = value.replace("，", ",").split(",") if isinstance(value, str) else value
+        return normalize_tray_codes(raw_values)
 
 
 class ReadyRequest(BaseModel):
@@ -95,11 +104,40 @@ def publish_fixture_install(request: FixtureInstallRequest) -> dict[str, Any]:
         "experiment_code": request.experiment_code,
         "sample_type": request.sample_type,
         "sample_count": request.sample_count,
+        "fixture_install_id": request.fixture_install_id,
+        "tray_codes": request.tray_codes,
     }
+    missing_fields = [
+        field_name
+        for field_name, value in (
+            ("fixture_install_id", request.fixture_install_id),
+            ("tray_codes", request.tray_codes),
+            ("experiment_code", request.experiment_code),
+        )
+        if not value
+    ]
+    if missing_fields:
+        raise HTTPException(
+            status_code=422,
+            detail=f"夹具安装命令缺少：{', '.join(missing_fields)}。请刷新实验室页面后重新下发。",
+        )
+    try:
+        register_pending_fixture_installation(
+            fixture_install_id=request.fixture_install_id,
+            task_code=request.task_code,
+            experiment_code=request.experiment_code,
+            lab_code=request.lab_code,
+            tray_codes=request.tray_codes,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"夹具安装待确认记录创建失败：{exc}") from exc
     try:
         result = publish_laboratory_command("INSTALL_FIXTURE", payload)
     except RuntimeError as exc:
+        mark_fixture_installation_failed(request.fixture_install_id)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not result.get("published"):
+        mark_fixture_installation_failed(request.fixture_install_id)
     return {"ok": True, "payload": payload, **result}
 
 

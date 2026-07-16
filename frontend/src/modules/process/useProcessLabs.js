@@ -5,6 +5,7 @@ import { PROCESS_LABS, buildProcessLabCards, scheduleExperimentIsCompleted } fro
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { getLabHostInterfaceCapabilities } from "@/lib/labHostInterfaceCapabilities";
 import { parseBusinessDateTimeToMs } from "@/lib/dateTime";
+import { serverNowMs } from "@/lib/serverClock";
 import { scheduleMatchesLab } from "@/lib/labIdentity";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -245,7 +246,7 @@ function useProcessLabs(options = {}) {
   const taskDrawerOpen = ref(false);
 
   const findTaskByCode = (taskCode) => tasks.value.find((item) => normalizeText(item?.code) === taskCode) || null;
-  const currentTimeValue = () => (Number.isFinite(now) ? now : Date.now());
+  const currentTimeValue = () => (Number.isFinite(now) ? now : serverNowMs());
   const findProcessLabByName = (labName) =>
     processLabs.value.find((lab) => normalizeText(lab?.name) === normalizeText(labName)) || { name: labName };
   const getLabSchedules = (labName) =>

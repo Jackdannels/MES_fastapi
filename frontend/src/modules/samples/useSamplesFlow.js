@@ -6,6 +6,7 @@ import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { formatLocalDateTime } from "@/lib/dateTime.js";
+import { serverNowDate } from "@/lib/serverClock.js";
 import { readTasks, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import {
   DETAIL_STATUS_OPTIONS,
@@ -417,7 +418,7 @@ function useSamplesFlow() {
   };
 
   const submitBatch = async () => {
-    const now = new Date();
+    const now = serverNowDate();
     const nowIso = formatLocalDateTime(now);
     const arrivalTime = formatLocalDateTime(now);
     const result = submitSamplesBatchIntake({

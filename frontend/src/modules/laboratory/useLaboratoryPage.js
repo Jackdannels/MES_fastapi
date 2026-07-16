@@ -24,6 +24,7 @@ import {
 } from "@/lib/attendanceApi";
 import { canonicalAxisCode, normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
+import { serverNowDate } from "@/lib/serverClock";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
@@ -94,6 +95,7 @@ const isResettableTrayStatus = (status) => {
 };
 const formatErrorMessage = (error) => normalizeText(error?.message || error) || "未知错误";
 const generateExperimentRunNo = () => `run-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
+const generateFixtureInstallId = () => `fixture-install-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const stepAxisCode = (step) => canonicalAxisCode(step?.axis_code || step?.axisCode);
 const stepRunNo = (step) => normalizeText(step?.run_no || step?.runNo);
 const stepStatus = (step) => normalizeText(step?.status || step?.step_status || step?.stepStatus);
@@ -258,7 +260,7 @@ function useLaboratoryPage(options = {}) {
   const attendanceSubmitting = ref(false);
   const attendanceLogoutPromptOpen = ref(false);
   const attendanceLogoutCountdown = ref(ATTENDANCE_LOGOUT_COUNTDOWN_SECONDS);
-  const tickNow = ref(now || new Date());
+  const tickNow = ref(now || serverNowDate());
   let tickTimer = null;
   let runningModalRestoreTimer = null;
   let completedRunningModalAutoCloseTimer = null;
@@ -320,7 +322,7 @@ function useLaboratoryPage(options = {}) {
     }),
   );
 
-  const summary = computed(() => buildLaboratorySummary(view.value.scheduleRows, now || new Date()));
+  const summary = computed(() => buildLaboratorySummary(view.value.scheduleRows, now || serverNowDate()));
   const currentTask = computed(() => view.value.currentTask);
   const selectedTask = computed(() => view.value.selectedTask);
   const checklist = computed(() => buildLaboratoryChecklist(currentTask.value));
@@ -1171,7 +1173,7 @@ function useLaboratoryPage(options = {}) {
     void nextTick().then(syncHeaderActionTarget);
     if (typeof window !== "undefined") {
       tickTimer = window.setInterval(() => {
-        tickNow.value = now || new Date();
+        tickNow.value = now || serverNowDate();
       }, 1000);
       window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
       window.addEventListener("pointerdown", handleRunningModalActivity, true);
@@ -1335,15 +1337,28 @@ function useLaboratoryPage(options = {}) {
       void load();
     },
   );
-  const buildFixtureInstallPayload = () => {
+  const buildFixtureInstallPayload = ({ trayCodes = [] } = {}) => {
     const comparedRows = getCurrentTaskTrayRowsByStatus(LAB_COMPARE_STATUS);
     const targetTrayRows = comparedRows.length > 0 ? comparedRows : getCurrentTaskTrayRowsByStatus(LAB_INSTALL_STATUS);
+    const stepTrayCodes = [
+      ...trayCodes,
+      ...targetTrayRows.map((row) => String(row?.trayCode || "").trim()),
+    ].map((trayCode) => String(trayCode || "").trim()).filter(Boolean);
+    const resolvedTrayCodes = Array.from(new Set(
+      stepTrayCodes.length > 0
+        ? stepTrayCodes
+        : (Array.isArray(currentTask.value?.trayCodes) ? currentTask.value.trayCodes : [])
+          .map((trayCode) => String(trayCode || "").trim())
+          .filter(Boolean),
+    ));
     return {
       experiment_code: currentTask.value?.experimentCode || "",
+      fixture_install_id: generateFixtureInstallId(),
       lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
       sample_count: countTrayRowSamples(targetTrayRows),
       sample_type: "",
       task_code: currentTask.value?.taskCode || "",
+      tray_codes: resolvedTrayCodes,
     };
   };
   const buildReadyPayload = () => {
@@ -1703,10 +1718,10 @@ function useLaboratoryPage(options = {}) {
       installModalOpen.value = false;
       return;
     }
-    const payload = buildFixtureInstallPayload();
     const targetTaskCode = currentTask.value?.taskCode || "";
     const isResend = !actionState.value.canInstallSample && canResendFixtureInstall.value;
     const targetTrayCodes = getCurrentTaskTrayCodesByStatus(isResend ? LAB_INSTALL_STATUS : LAB_COMPARE_STATUS);
+    const payload = buildFixtureInstallPayload({ trayCodes: targetTrayCodes });
     const persistOperation = isResend ? Promise.resolve() : persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
     installModalOpen.value = false;
     if (isHostlessMqttLab()) {

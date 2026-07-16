@@ -3,6 +3,7 @@ import { withRequiredLabDevices } from "@/lib/deviceLedger";
 import { LAB_LOCATIONS, LAB_TEST_MAP, TEST_PREFIX_MAP } from "@/lib/labs.js";
 import { labIdentityMatches, scheduleMatchesLab } from "@/lib/labIdentity";
 import { isExperimentRunningStatus } from "@/lib/statusNormalization";
+import { serverNowDate } from "@/lib/serverClock";
 
 const DEFAULT_DEVICE_STATUS = "可用";
 const IDLE_DEVICE_STATUS = "空闲";
@@ -59,10 +60,10 @@ const parseDate = (value) => {
   return Number.isFinite(parsed) ? new Date(parsed) : null;
 };
 
-const isDeviceInMaintenanceWindow = (device, now = new Date()) => {
+const isDeviceInMaintenanceWindow = (device, now = serverNowDate()) => {
   const startAt = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
   const endAt = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
-  const current = parseDate(now) || new Date();
+  const current = parseDate(now) || serverNowDate();
   return Boolean(startAt && startAt <= current && (!endAt || current <= endAt));
 };
 
@@ -140,13 +141,13 @@ const isScheduleExperimentRunning = (schedule, device, samples = [], experimentT
 };
 
 // 根据实际实验运行状态和维护标记推导设备当前状态。
-function resolveDeviceStatus(device, schedules, samples = [], experimentTrays = [], now = new Date(), experimentRuns = []) {
+function resolveDeviceStatus(device, schedules, samples = [], experimentTrays = [], now = serverNowDate(), experimentRuns = []) {
   const storedStatus = normalizeText(device?.status);
   if (isDeviceInMaintenanceWindow(device, now)) {
     return maintenanceTypeToSafetyStatus(device?.maintenance_type ?? device?.maintenanceType);
   }
   const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
-  const current = parseDate(now) || new Date();
+  const current = parseDate(now) || serverNowDate();
   if ([REPAIR_DEVICE_STATUS, CARE_DEVICE_STATUS].includes(storedStatus) && maintenanceEnd && maintenanceEnd < current) {
     return IDLE_DEVICE_STATUS;
   }
@@ -183,7 +184,7 @@ function resolveStatusClass(status) {
 }
 
 // 将存储中的设备记录转换成设备页表格行。
-function buildDeviceRows(devices, schedules, now = new Date(), samples = [], experimentTrays = [], experimentRuns = []) {
+function buildDeviceRows(devices, schedules, now = serverNowDate(), samples = [], experimentTrays = [], experimentRuns = []) {
   void now;
   const deviceList = withRequiredLabDevices(devices);
   return deviceList.map((device, index) => {

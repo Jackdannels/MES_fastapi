@@ -16,7 +16,6 @@ from app.core.storage_backend import (
     normalize_experiment_status_text,
 )
 from app.core.mysql_storage_codecs import (
-    FIXTURE_READY_COMPAT_MESSAGE_PREFIX,
     RETENTION_KEYWORD,
     SAMPLE_META_PREFIX,
     STORAGE_MARKER,
@@ -66,15 +65,12 @@ from app.core.mysql_storage_replacers import (
 )
 from app.core.mysql_storage_sample_write import (
     build_managed_sample_write_rows,
-    build_fixture_ready_events,
     build_sample_tray_write_state,
     build_sample_history_event_rows,
     build_tray_item_rows,
     clear_existing_sample_links,
-    delete_managed_fixture_ready_events,
     delete_missing_managed_samples,
     delete_missing_managed_trays,
-    insert_fixture_ready_events,
     insert_sample_history_event_rows,
     insert_tray_item_rows,
     load_sample_identity_maps,

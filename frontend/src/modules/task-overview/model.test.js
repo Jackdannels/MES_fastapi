@@ -338,6 +338,25 @@ describe("taskOverviewModel", () => {
     expect(rows[0].lab).toBeUndefined();
   });
 
+  test("buildTrayOverviewRows displays laboratory codes as Chinese names", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [{ code: "TASK-LAB-NAME", test_type: "冲击试验" }],
+      samples: [
+        {
+          code: "SAMPLE-LAB-NAME",
+          task_code: "TASK-LAB-NAME",
+          location: "LAB_IMPACT_2",
+          status: "已到达实验室",
+          trays: [{ tray_code: "TRAY-LAB-NAME", status: "已到达实验室" }],
+        },
+      ],
+      totalSlots: 1,
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows[0].currentLocation).toBe("冲击二室");
+  });
+
   test("buildTrayOverviewRows keeps each tray directed to its own target lab instead of the task latest schedule", () => {
     const rows = buildTrayOverviewRows({
       tasks: [{ code: "TASK-MULTI-LAB", test_type: "冲击试验 / 温度冲击试验 / 振动试验", status: "已排程" }],

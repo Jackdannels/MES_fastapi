@@ -1,3 +1,5 @@
+import { serverNowDate } from "./serverClock.js";
+
 const pad2 = (value) => String(value ?? "").padStart(2, "0");
 const LOCAL_DATE_TIME_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::(\d{2}))?$/;
 const TIMEZONE_SUFFIX_PATTERN = /[zZ]|[+-]\d{2}:?\d{2}$/;
@@ -68,7 +70,7 @@ function formatBusinessDateTime(value, { includeSeconds = false } = {}) {
 }
 
 // 业务时间统一按北京时间本地字符串输出，不携带时区。
-function formatLocalDateTime(value = new Date(), { includeSeconds = true } = {}) {
+function formatLocalDateTime(value = serverNowDate(), { includeSeconds = true } = {}) {
   if (typeof value === "string") {
     const normalized = value.trim();
     const localMatch = normalized.match(LOCAL_DATE_TIME_PATTERN);

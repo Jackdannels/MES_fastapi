@@ -5,6 +5,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { buildDashboardViewModel } from "./model";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { serverNowMs } from "@/lib/serverClock";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 
 const DASHBOARD_TASK_PAGE_SIZE = 8;
@@ -25,7 +26,7 @@ function useDashboardPage() {
   ]);
 
   const currentPage = ref(1);
-  const now = ref(Date.now());
+  const now = ref(serverNowMs());
   const rawDevices = ref([]);
   const rawExperiments = ref([]);
   const rawExperimentRuns = ref([]);
@@ -137,7 +138,7 @@ function useDashboardPage() {
   onMounted(() => {
     void loadDashboard();
     dashboardTimer = window.setInterval(() => {
-      now.value = Date.now();
+      now.value = serverNowMs();
     }, 1000);
     window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
   });

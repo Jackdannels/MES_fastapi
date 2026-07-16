@@ -1,4 +1,5 @@
 import { scheduleTargetsStorageArea } from "@/lib/labIdentity";
+import { serverNowDate } from "@/lib/serverClock";
 import {
   formatBusinessDateKey,
   formatBusinessDateTime,
@@ -100,9 +101,9 @@ const getLatestMorningScheduleEnd = (dateValue, schedules = [], device = "") => 
   return latestEnd;
 };
 
-const resolveFixedSlotStartAt = ({ dateValue, device = "", now = new Date(), schedules = [], slot }) => {
+const resolveFixedSlotStartAt = ({ dateValue, device = "", now = serverNowDate(), schedules = [], slot }) => {
   const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
-  const current = truncateToMinute(now) || new Date();
+  const current = truncateToMinute(now) || serverNowDate();
   let earliestStart = buildSlotBoundary(dateValue, range.start);
   const slotEnd = buildSlotBoundary(dateValue, range.end);
 
@@ -127,7 +128,7 @@ const resolveFixedSlotStartAt = ({ dateValue, device = "", now = new Date(), sch
   return truncateToMinute(earliestStart);
 };
 
-const buildFixedSlotLabel = ({ dateValue, device = "", now = new Date(), schedules = [], slot }) => {
+const buildFixedSlotLabel = ({ dateValue, device = "", now = serverNowDate(), schedules = [], slot }) => {
   const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
   const prefix = slot === "afternoon" ? "下午" : "上午";
   const earliestStart = resolveFixedSlotStartAt({ dateValue, device, now, schedules, slot });

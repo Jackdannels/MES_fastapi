@@ -6,6 +6,7 @@ import {
 } from "@/modules/samples/samplesFlowModel";
 import { resolveLabDestinationName } from "@/modules/samples/sampleFlow.experimentHelpers";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
+import { serverNowDate, serverNowMs } from "@/lib/serverClock";
 import {
   formatBusinessDateKey,
   formatBusinessDateTime,
@@ -3036,7 +3037,7 @@ function buildLaboratoryWorkbenchView({
   experimentRunTrays = [],
   experimentTrays = [],
   samples = [],
-  now = new Date(),
+  now = serverNowDate(),
   selectedTaskCode = "",
   selectedTrayCode = "",
   labName = SALT_SPRAY_LAB,
@@ -3069,7 +3070,7 @@ function buildLaboratoryWorkbenchView({
     .sort((left, right) => (toTime(left.startAt) || 0) - (toTime(right.startAt) || 0));
 
   const labRef = { code: labCode, name: labName };
-  const nowTime = now instanceof Date ? now.getTime() : toTime(now) || Date.now();
+  const nowTime = now instanceof Date ? now.getTime() : toTime(now) || serverNowMs();
   const scheduleRows = allScheduleRows.filter((row) => scheduleMatchesLab(row, labRef));
   const currentCandidateRows = scheduleRows.filter((row) => rowCanBeCurrentLaboratoryTask(row));
   const operationTask =
@@ -3336,7 +3337,7 @@ function buildLaboratoryWorkbenchView({
     && normalizeText(operationTask.experimentCode) === normalizeText(currentTask.experimentCode);
   const runningExperiment = buildRunningExperimentView({
     currentTask: operationTaskMatchesCurrentTask || !selectedKey ? (operationTask || currentTask) : currentTask,
-    now: now instanceof Date ? now : new Date(toTime(now) || Date.now()),
+    now: now instanceof Date ? now : new Date(toTime(now) || serverNowMs()),
   });
 
   return {
@@ -3356,7 +3357,7 @@ function buildLaboratoryWorkbenchView({
   };
 }
 
-function buildLaboratorySummary(scheduleRows = [], now = new Date()) {
+function buildLaboratorySummary(scheduleRows = [], now = serverNowDate()) {
   const todayKey = formatDateKey(now);
   const nowTime = now instanceof Date ? now.getTime() : toTime(now);
   const todayRows = asArray(scheduleRows).filter((row) => formatDateKey(row?.startAt) === todayKey);

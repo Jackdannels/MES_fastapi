@@ -1,5 +1,6 @@
 import { buildApiUrl, getFrontendApiBaseUrl } from "./lib/apiBase.js";
 import { formatLocalDateTime } from "./lib/dateTime.js";
+import { serverNowMs } from "./lib/serverClock.js";
 import { MODULE_ROUTES } from "./lib/moduleCatalog.js";
 
 const AUTH_STORAGE_KEY = "mes_auth_session_v1";
@@ -54,7 +55,7 @@ function writeAuthSession(session) {
   window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
   lastAuthSessionProbe = {
     session,
-    timestamp: Date.now(),
+    timestamp: serverNowMs(),
   };
 }
 
@@ -65,7 +66,7 @@ function clearAuthSession() {
   window.localStorage.removeItem(AUTH_STORAGE_KEY);
   lastAuthSessionProbe = {
     session: null,
-    timestamp: Date.now(),
+    timestamp: serverNowMs(),
   };
 }
 
@@ -86,7 +87,7 @@ function isAuthenticated() {
 }
 
 async function fetchAuthSession() {
-  const now = Date.now();
+  const now = serverNowMs();
   if (lastAuthSessionProbe.session !== NO_SESSION_PROBE_RESULT && now - lastAuthSessionProbe.timestamp < SESSION_PROBE_DEDUP_MS) {
     return lastAuthSessionProbe.session;
   }
@@ -118,7 +119,7 @@ async function fetchAuthSession() {
       if (cachedSession) {
         lastAuthSessionProbe = {
           session: cachedSession,
-          timestamp: Date.now(),
+          timestamp: serverNowMs(),
         };
         return cachedSession;
       }

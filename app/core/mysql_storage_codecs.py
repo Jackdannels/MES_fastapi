@@ -11,7 +11,6 @@ from app.core.time_utils import format_business_datetime, now_business_datetime,
 STORAGE_MARKER = "FRONTEND_STORAGE"
 SAMPLE_META_PREFIX = f"{STORAGE_MARKER}:SAMPLE:"
 TRAY_META_PREFIX = f"{STORAGE_MARKER}:TRAY"
-FIXTURE_READY_COMPAT_MESSAGE_PREFIX = f"{STORAGE_MARKER}:FIXTURE_READY:"
 RETENTION_KEYWORD = "暂存间"
 SAMPLE_TASK_CODE_PATTERN = re.compile(r"^(?P<task_code>.+)-SP-\d+$")
 

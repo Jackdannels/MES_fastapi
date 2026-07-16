@@ -1,5 +1,6 @@
 // 将持久化的总览数据整理成卡片、列表行和状态标签，供页面渲染使用。
 import { withRequiredLabDevices } from "@/lib/deviceLedger";
+import { serverNowMs } from "@/lib/serverClock";
 import { isScheduleExperimentRunning } from "@/modules/devices/model";
 import { labIdentityMatches, scheduleMatchesLab, scheduleTargetsStorageArea } from "@/lib/labIdentity";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
@@ -303,7 +304,7 @@ function resolveDeviceDotClass(status) {
 }
 
 // 生成中控总览页组合函数直接消费的完整视图模型。
-function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, experimentRuns, experimentRunTrays, samples, experimentTrays, conflicts, now = Date.now() }) {
+function buildDashboardViewModel({ tasks, schedules, devices, streams, experiments, experimentRuns, experimentRunTrays, samples, experimentTrays, conflicts, now = serverNowMs() }) {
   const sampleList = Array.isArray(samples) ? samples : [];
   const returnedTaskCodes = new Set(
     [

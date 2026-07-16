@@ -4,6 +4,7 @@ import {
   requiresPreExperimentAppearanceStorage,
 } from "@/modules/samples/sampleFlow.constants";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { serverNowDate } from "@/lib/serverClock";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { getLabsForTestType } from "@/lib/labs";
 import { resolveScheduleLabCode } from "@/lib/labIdentity";
@@ -1587,11 +1588,11 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         status = "";
       }
       const stockInToday = events.some(
-        (event) => normalizeText(event?.action) === "stock_in" && toDateKey(event?.time) === toDateKey(options.now || new Date()),
+        (event) => normalizeText(event?.action) === "stock_in" && toDateKey(event?.time) === toDateKey(options.now || serverNowDate()),
       );
       const stockOutToday =
         normalizeText(lastEvent?.action) === "stock_out"
-        && toDateKey(lastEvent?.time) === toDateKey(options.now || new Date());
+        && toDateKey(lastEvent?.time) === toDateKey(options.now || serverNowDate());
 
       const targetDestinations = resolveTrayTargetDestinations({
         experiments,
@@ -1680,7 +1681,7 @@ function buildZancunMetrics(input = {}) {
   const rowList = Array.isArray(input) ? input : asArray(input.rows);
   const config = resolveStorageRoomConfig(Array.isArray(input) ? "staging" : input.room);
   const stagingEvents = Array.isArray(input) ? [] : asArray(input.stagingEvents);
-  const todayKey = toDateKey(Array.isArray(input) ? new Date() : (input.now || new Date()));
+  const todayKey = toDateKey(Array.isArray(input) ? serverNowDate() : (input.now || serverNowDate()));
   const stockedInToday = new Set();
   const latestEventsByTray = new Map();
 

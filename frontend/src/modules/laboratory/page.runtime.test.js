@@ -3863,13 +3863,15 @@ describe("LaboratoryPage runtime", () => {
 
     const fixtureInstallCall = await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
     expect(fixtureInstallCall).toBeDefined();
-    expect(JSON.parse(String(fixtureInstallCall[1].body))).toEqual({
+    expect(JSON.parse(String(fixtureInstallCall[1].body))).toEqual(expect.objectContaining({
       experiment_code: "SYLU-2026-04-101-A",
+      fixture_install_id: expect.stringMatching(/^fixture-install-/),
       lab_code: "LAB_SALT",
       sample_count: 1,
       sample_type: "",
       task_code: "SYLU-2026-04-101",
-    });
+      tray_codes: ["TP-001"],
+    }));
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "工装夹具安装",
       status: "工装夹具安装",

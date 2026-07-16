@@ -238,6 +238,7 @@ import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefre
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { listLaboratoryAttendanceSessions } from "@/lib/attendanceApi";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { serverNowDate } from "@/lib/serverClock";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { resolveVisualFlowStepTitle, visualFlowStepClass } from "./flowStepState";
@@ -401,7 +402,7 @@ const labPickerGroup = ref("");
 const manualLabSelection = ref(false);
 const labRandomSeed = ref(Math.random());
 const scheduleWindowOffsetDays = ref(0);
-const currentNow = ref(new Date());
+const currentNow = ref(serverNowDate());
 let clockTimer = null;
 let attendanceRefreshTimer = null;
 const SCREEN_STAGE_WIDTH = 1920;
@@ -429,7 +430,7 @@ const labScreens = computed(() => {
 });
 const scheduleView = computed(() => {
   const snapshot = rawSnapshot.value || {};
-  const anchorDate = new Date();
+  const anchorDate = serverNowDate();
   anchorDate.setDate(anchorDate.getDate() + scheduleWindowOffsetDays.value);
   return buildLabScheduleThreeDayView({
     labNames: labNames.value,
@@ -704,7 +705,7 @@ const refreshViewportSize = () => {
   };
 };
 const refreshVisualizationClock = () => {
-  currentNow.value = new Date();
+  currentNow.value = serverNowDate();
 };
 
 const buildLabTaskOptions = (lab) => {

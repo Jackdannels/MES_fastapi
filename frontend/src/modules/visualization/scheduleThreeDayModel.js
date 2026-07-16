@@ -1,5 +1,6 @@
 import { buildConflictRows, buildGanttRows, toLocalDateValue } from "@/modules/schedule/model";
 import { scheduleTargetsStorageArea } from "@/lib/labIdentity";
+import { serverNowDate } from "@/lib/serverClock";
 import { addDays, asArray, normalizeText, overlaps, parseDate, startOfLocalDay } from "./sharedModel";
 
 const formatMonthDay = (date) => `${date.getMonth() + 1}/${date.getDate()}`;
@@ -41,7 +42,7 @@ const normalizeScheduleSlot = (slot) => ({
 });
 
 function buildLabScheduleThreeDayView(input = {}) {
-  const now = parseDate(input.now) || new Date();
+  const now = parseDate(input.now) || serverNowDate();
   const days = buildThreeDayList(now);
   const windowStart = days[0].date;
   const windowEnd = addDays(days[0].date, 3);
