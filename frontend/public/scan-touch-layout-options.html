@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>扫码触控区三方案预览</title>
+  <style>
+    :root {
+      --page: #e8edf2;
+      --screen: #050a0d;
+      --panel: rgba(10, 20, 25, 0.94);
+      --panel-raised: rgba(15, 28, 34, 0.98);
+      --line: rgba(75, 184, 169, 0.28);
+      --line-strong: rgba(75, 216, 194, 0.56);
+      --text: #f2fbfa;
+      --muted: #92aaa8;
+      --in: #45d7b2;
+      --in-rgb: 69, 215, 178;
+      --out: #ff8d7c;
+      --out-rgb: 255, 141, 124;
+      --focus: #67e8f9;
+      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 360px;
+      color: #17212b;
+      background: var(--page);
+    }
+
+    button { font: inherit; }
+
+    .preview-page {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 12px;
+      padding: 14px;
+    }
+
+    .preview-toolbar {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) auto auto;
+      align-items: center;
+      gap: 16px;
+      width: min(1600px, 100%);
+      margin: 0 auto;
+    }
+
+    .preview-title h1 { margin: 0; font-size: 20px; }
+    .preview-title p { margin: 4px 0 0; color: #52606d; font-size: 13px; }
+
+    .switch-group {
+      display: flex;
+      gap: 6px;
+      padding: 5px;
+      border: 1px solid #cbd5df;
+      border-radius: 12px;
+      background: #f8fafc;
+    }
+
+    .switch-group button {
+      min-height: 44px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 8px;
+      color: #415160;
+      background: transparent;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .switch-group button[aria-pressed="true"] {
+      color: #f8fafc;
+      background: #162b33;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+    }
+
+    .stage-wrap {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }
+
+    .screen {
+      width: min(100%, calc((100vh - 94px) * 16 / 9));
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border: 1px solid rgba(38, 116, 109, 0.8);
+      border-radius: 10px;
+      color: var(--text);
+      background: var(--screen);
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.26);
+    }
+
+    .board {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 12px;
+      padding: 16px;
+      background:
+        linear-gradient(rgba(69, 215, 178, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(69, 215, 178, 0.035) 1px, transparent 1px),
+        radial-gradient(circle at 50% 0%, rgba(30, 91, 84, 0.22), transparent 42%),
+        #050a0d;
+      background-size: 38px 38px, 38px 38px, auto, auto;
+    }
+
+    .app-header {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(11, 20, 26, 0.92);
+    }
+
+    .app-header h2 { margin: 0; font-size: clamp(18px, 1.45vw, 28px); }
+    .app-header span { color: var(--muted); font-size: 12px; }
+
+    .console {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 10px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(8, 16, 21, 0.95);
+    }
+
+    .console-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .console-head strong { font-size: 15px; }
+    .metric {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 8px;
+      min-height: 42px;
+      padding: 8px 16px;
+      border: 1px solid rgba(var(--in-rgb), 0.26);
+      border-radius: 8px;
+      color: var(--in);
+      background: rgba(var(--in-rgb), 0.08);
+    }
+    .metric b { color: var(--text); font-size: 24px; }
+
+    .inventory {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .inventory-panel {
+      min-width: 0;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 8px;
+      padding: 12px;
+      border: 1px solid rgba(104, 155, 159, 0.24);
+      border-radius: 7px;
+      background: rgba(15, 27, 33, 0.76);
+    }
+
+    .inventory-panel header {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 13px;
+    }
+
+    .inventory-panel header span { color: var(--muted); }
+
+    .slots { display: grid; grid-template-rows: repeat(3, 1fr); gap: 7px; min-height: 0; }
+    .slot {
+      min-height: 0;
+      border: 1px dashed rgba(95, 143, 147, 0.22);
+      border-radius: 6px;
+      background: rgba(13, 23, 29, 0.74);
+    }
+
+    .action-stage { min-height: 148px; }
+
+    .action-deck {
+      height: 100%;
+      padding: 10px;
+      border: 1px solid rgba(100, 171, 166, 0.26);
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(19, 35, 41, 0.98), rgba(9, 17, 22, 0.98));
+      box-shadow: inset 0 1px rgba(255, 255, 255, 0.035), 0 14px 28px rgba(0, 0, 0, 0.18);
+    }
+
+    .touch-action {
+      position: relative;
+      min-width: 0;
+      min-height: 84px;
+      overflow: hidden;
+      border: 1px solid;
+      border-radius: 12px;
+      color: var(--text);
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: filter 180ms ease, box-shadow 180ms ease, transform 120ms ease;
+    }
+
+    .touch-action:hover { filter: brightness(1.12); }
+    .touch-action:active { transform: scale(0.985); filter: brightness(1.22); }
+    .touch-action:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+    .touch-action.inbound {
+      border-color: rgba(var(--in-rgb), 0.72);
+      background: linear-gradient(135deg, rgba(var(--in-rgb), 0.28), rgba(var(--in-rgb), 0.1));
+      box-shadow: inset 0 0 0 1px rgba(var(--in-rgb), 0.08);
+    }
+    .touch-action.outbound {
+      border-color: rgba(var(--out-rgb), 0.7);
+      background: linear-gradient(135deg, rgba(var(--out-rgb), 0.26), rgba(var(--out-rgb), 0.085));
+      box-shadow: inset 0 0 0 1px rgba(var(--out-rgb), 0.07);
+    }
+
+    .icon-box {
+      width: 52px;
+      height: 52px;
+      display: inline-grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .icon-box svg { width: 32px; height: 32px; fill: none; stroke: currentColor; stroke-width: 2; }
+    .inbound .icon-box { color: var(--in); }
+    .outbound .icon-box { color: var(--out); }
+
+    .action-title { display: block; font-size: clamp(20px, 1.7vw, 30px); font-weight: 800; line-height: 1.1; }
+    .action-help { display: block; margin-top: 6px; color: #afc1c1; font-size: clamp(11px, 0.8vw, 14px); }
+
+    /* 方案 A：统一容器内左右双按钮 */
+    .scheme-a .action-deck { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .scheme-a .touch-action {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      padding: 18px 28px;
+      text-align: left;
+    }
+
+    /* 方案 B：上下全宽操作条 */
+    .scheme-b .action-stage { min-height: 176px; }
+    .scheme-b .action-deck { display: grid; grid-template-rows: 1fr 1fr; gap: 10px; }
+    .scheme-b .touch-action {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 18px;
+      padding: 12px 22px;
+      text-align: left;
+    }
+    .scheme-b .action-hint { color: #d4e4e2; font-size: 13px; font-weight: 700; }
+
+    /* 方案 C：模式选择 + 单一超大执行按钮 */
+    .scheme-c .action-stage { min-height: 176px; }
+    .scheme-c .mode-console {
+      height: 100%;
+      display: grid;
+      grid-template-columns: 230px minmax(0, 1fr);
+      gap: 12px;
+      padding: 10px;
+      border: 1px solid rgba(100, 171, 166, 0.26);
+      border-radius: 10px;
+      background: linear-gradient(180deg, rgba(19, 35, 41, 0.98), rgba(9, 17, 22, 0.98));
+    }
+    .mode-choices { display: grid; grid-template-rows: 1fr 1fr; gap: 8px; }
+    .mode-choice {
+      min-height: 64px;
+      border: 1px solid rgba(122, 166, 166, 0.3);
+      border-radius: 10px;
+      color: #b7c8c7;
+      background: rgba(15, 29, 35, 0.88);
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+    }
+    .mode-choice[aria-pressed="true"][data-mode="in"] { border-color: var(--in); color: var(--text); background: rgba(var(--in-rgb), 0.2); }
+    .mode-choice[aria-pressed="true"][data-mode="out"] { border-color: var(--out); color: var(--text); background: rgba(var(--out-rgb), 0.18); }
+    .mode-choice:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+    .scheme-c .primary-scan {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 18px 28px;
+      text-align: left;
+    }
+    .scheme-c[data-mode="out"] .primary-scan {
+      border-color: rgba(var(--out-rgb), 0.72);
+      background: linear-gradient(135deg, rgba(var(--out-rgb), 0.3), rgba(var(--out-rgb), 0.09));
+    }
+    .scheme-c[data-mode="out"] .primary-scan .icon-box { color: var(--out); }
+
+    .scheme-label {
+      position: absolute;
+      left: 24px;
+      bottom: 20px;
+      z-index: 2;
+      padding: 5px 10px;
+      border-radius: 999px;
+      color: #d6e7e5;
+      background: rgba(8, 15, 19, 0.82);
+      font-size: 11px;
+      pointer-events: none;
+    }
+
+    .screen { position: relative; }
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: 22px;
+      z-index: 8;
+      padding: 11px 18px;
+      border: 1px solid rgba(var(--in-rgb), 0.52);
+      border-radius: 9px;
+      color: var(--text);
+      background: rgba(8, 24, 27, 0.96);
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.36);
+      opacity: 0;
+      transform: translate(-50%, 12px);
+      transition: opacity 180ms ease, transform 180ms ease;
+      pointer-events: none;
+    }
+    .toast.is-open { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 920px) {
+      .preview-toolbar { grid-template-columns: 1fr; gap: 8px; }
+      .switch-group { width: 100%; overflow-x: auto; }
+      .switch-group button { flex: 1 0 auto; }
+      .screen { width: 100%; aspect-ratio: auto; min-height: 720px; }
+      .board { height: auto; min-height: 720px; }
+      .inventory { grid-template-columns: 1fr; }
+      .inventory-panel:first-child { display: none; }
+      .scheme-a .action-deck { grid-template-columns: 1fr; }
+      .scheme-c .mode-console { grid-template-columns: 1fr; }
+      .scheme-c .mode-choices { grid-template-columns: 1fr 1fr; grid-template-rows: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+    <symbol id="scan-in" viewBox="0 0 32 32">
+      <path d="M6 4H3v5M26 4h3v5M6 28H3v-5M26 28h3v-5" />
+      <path d="M9 10h14v12H9zM16 7v9m0 0-4-4m4 4 4-4" />
+    </symbol>
+    <symbol id="scan-out" viewBox="0 0 32 32">
+      <path d="M6 4H3v5M26 4h3v5M6 28H3v-5M26 28h3v-5" />
+      <path d="M9 10h14v12H9zM16 25v-9m0 0-4 4m4-4 4 4" />
+    </symbol>
+  </svg>
+
+  <main class="preview-page">
+    <header class="preview-toolbar">
+      <div class="preview-title">
+        <h1>扫码触控操作区 · 三方案预览</h1>
+        <p>三种方案仅调整底部操作区，点击按钮可体验按压反馈。</p>
+      </div>
+      <nav class="switch-group" aria-label="选择房间">
+        <button type="button" data-room="appearance" aria-pressed="true">外观检测间</button>
+        <button type="button" data-room="staging" aria-pressed="false">暂存间</button>
+      </nav>
+      <nav class="switch-group" aria-label="选择预览方案">
+        <button type="button" data-scheme="a" aria-pressed="true">方案 A · 左右双大按钮</button>
+        <button type="button" data-scheme="b" aria-pressed="false">方案 B · 上下全宽按钮</button>
+        <button type="button" data-scheme="c" aria-pressed="false">方案 C · 单一执行按钮</button>
+      </nav>
+    </header>
+
+    <section class="stage-wrap">
+      <div class="screen">
+        <div class="board scheme-a" id="board" data-mode="in">
+          <header class="app-header">
+            <h2 id="system-title">外观检测间系统</h2>
+            <span>触控操作预览 · 标准流程</span>
+          </header>
+
+          <section class="console">
+            <header class="console-head">
+              <strong id="console-title">外观检测间控制台</strong>
+              <div class="metric"><span id="metric-label">外观检测间中托盘数量</span><b>0</b><span>盘</span></div>
+            </header>
+
+            <div class="inventory">
+              <article class="inventory-panel">
+                <header><strong id="current-title">外观检测间样品</strong><span>当前在库 0</span></header>
+                <div class="slots"><div class="slot"></div><div class="slot"></div><div class="slot"></div></div>
+              </article>
+              <article class="inventory-panel">
+                <header><strong>计划入库</strong><span>待入库 0</span></header>
+                <div class="slots"><div class="slot"></div><div class="slot"></div><div class="slot"></div></div>
+              </article>
+            </div>
+
+            <div class="action-stage" id="action-stage"></div>
+          </section>
+          <span class="scheme-label" id="scheme-label">方案 A · 统一操作区 / 左右双大按钮</span>
+        </div>
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+
+  <template id="scheme-a-template">
+    <div class="action-deck">
+      <button class="touch-action inbound" type="button" data-action="扫码入库">
+        <span class="icon-box"><svg aria-hidden="true"><use href="#scan-in"></use></svg></span>
+        <span><span class="action-title">扫码入库</span><span class="action-help">扫描待入库托盘编号</span></span>
+      </button>
+      <button class="touch-action outbound" type="button" data-action="扫码出库">
+        <span class="icon-box"><svg aria-hidden="true"><use href="#scan-out"></use></svg></span>
+        <span><span class="action-title">扫码出库</span><span class="action-help">扫描待出库托盘编号</span></span>
+      </button>
+    </div>
+  </template>
+
+  <template id="scheme-b-template">
+    <div class="action-deck">
+      <button class="touch-action inbound" type="button" data-action="扫码入库">
+        <span class="icon-box"><svg aria-hidden="true"><use href="#scan-in"></use></svg></span>
+        <span><span class="action-title">扫码入库</span><span class="action-help">托盘到达后，点击此处开始连续扫码</span></span>
+        <span class="action-hint">整行均可点击</span>
+      </button>
+      <button class="touch-action outbound" type="button" data-action="扫码出库">
+        <span class="icon-box"><svg aria-hidden="true"><use href="#scan-out"></use></svg></span>
+        <span><span class="action-title">扫码出库</span><span class="action-help">托盘离开前，点击此处选择目标并扫码</span></span>
+        <span class="action-hint">整行均可点击</span>
+      </button>
+    </div>
+  </template>
+
+  <template id="scheme-c-template">
+    <div class="mode-console">
+      <div class="mode-choices" aria-label="选择扫码作业类型">
+        <button class="mode-choice" type="button" data-mode="in" aria-pressed="true">入库模式</button>
+        <button class="mode-choice" type="button" data-mode="out" aria-pressed="false">出库模式</button>
+      </div>
+      <button class="touch-action inbound primary-scan" type="button" data-action="扫码入库">
+        <span class="icon-box"><svg aria-hidden="true"><use href="#scan-in"></use></svg></span>
+        <span><span class="action-title">开始扫码入库</span><span class="action-help">当前模式：入库 · 点击后进入连续扫码</span></span>
+      </button>
+    </div>
+  </template>
+
+  <script>
+    const board = document.querySelector("#board");
+    const actionStage = document.querySelector("#action-stage");
+    const schemeLabel = document.querySelector("#scheme-label");
+    const toast = document.querySelector("#toast");
+    let toastTimer = 0;
+
+    const schemeMeta = {
+      a: "方案 A · 统一操作区 / 左右双大按钮",
+      b: "方案 B · 统一操作区 / 上下全宽按钮",
+      c: "方案 C · 模式选择 / 单一超大执行按钮",
+    };
+
+    const renderScheme = (scheme) => {
+      const safeScheme = ["a", "b", "c"].includes(scheme) ? scheme : "a";
+      board.classList.remove("scheme-a", "scheme-b", "scheme-c");
+      board.classList.add(`scheme-${safeScheme}`);
+      board.dataset.mode = "in";
+      actionStage.replaceChildren(document.querySelector(`#scheme-${safeScheme}-template`).content.cloneNode(true));
+      schemeLabel.textContent = schemeMeta[safeScheme];
+      document.querySelectorAll("[data-scheme]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.scheme === safeScheme));
+      });
+      const url = new URL(window.location.href);
+      url.searchParams.set("scheme", safeScheme);
+      history.replaceState({}, "", url);
+    };
+
+    const setRoom = (room) => {
+      const isStaging = room === "staging";
+      document.querySelector("#system-title").textContent = isStaging ? "暂存间系统" : "外观检测间系统";
+      document.querySelector("#console-title").textContent = isStaging ? "暂存间控制台" : "外观检测间控制台";
+      document.querySelector("#metric-label").textContent = isStaging ? "暂存间中托盘数量" : "外观检测间中托盘数量";
+      document.querySelector("#current-title").textContent = isStaging ? "暂存间样品" : "外观检测间样品";
+      document.querySelectorAll("[data-room]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.room === (isStaging ? "staging" : "appearance")));
+      });
+      const url = new URL(window.location.href);
+      url.searchParams.set("room", isStaging ? "staging" : "appearance");
+      history.replaceState({}, "", url);
+    };
+
+    const setMode = (mode) => {
+      const isOut = mode === "out";
+      board.dataset.mode = isOut ? "out" : "in";
+      document.querySelectorAll(".mode-choice").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.mode === (isOut ? "out" : "in")));
+      });
+      const primary = document.querySelector(".primary-scan");
+      if (!primary) return;
+      primary.classList.toggle("inbound", !isOut);
+      primary.classList.toggle("outbound", isOut);
+      primary.dataset.action = isOut ? "扫码出库" : "扫码入库";
+      primary.querySelector("use").setAttribute("href", isOut ? "#scan-out" : "#scan-in");
+      primary.querySelector(".action-title").textContent = isOut ? "开始扫码出库" : "开始扫码入库";
+      primary.querySelector(".action-help").textContent = isOut
+        ? "当前模式：出库 · 点击后选择目标并连续扫码"
+        : "当前模式：入库 · 点击后进入连续扫码";
+    };
+
+    const showToast = (message) => {
+      clearTimeout(toastTimer);
+      toast.textContent = `${message}：已触发预览`;
+      toast.classList.add("is-open");
+      toastTimer = window.setTimeout(() => toast.classList.remove("is-open"), 1800);
+    };
+
+    document.addEventListener("click", (event) => {
+      const schemeButton = event.target.closest("[data-scheme]");
+      if (schemeButton) return renderScheme(schemeButton.dataset.scheme);
+      const roomButton = event.target.closest("[data-room]");
+      if (roomButton) return setRoom(roomButton.dataset.room);
+      const modeButton = event.target.closest(".mode-choice");
+      if (modeButton) return setMode(modeButton.dataset.mode);
+      const actionButton = event.target.closest("[data-action]");
+      if (actionButton) showToast(actionButton.dataset.action);
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    renderScheme(params.get("scheme") || "a");
+    setRoom(params.get("room") || "appearance");
+  </script>
+</body>
+</html>

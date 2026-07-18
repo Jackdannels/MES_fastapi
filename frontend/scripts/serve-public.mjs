@@ -18,6 +18,7 @@ function readArg(name, fallback) {
 
 const host = readArg("host", process.env.HOST || "0.0.0.0");
 const port = Number(readArg("port", process.env.PORT || "5173"));
+const publicUrl = String(process.env.FRONTEND_PUBLIC_URL || "").trim();
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -126,6 +127,9 @@ const server = createServer((request, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`MES public frontend: http://${host}:${port}`);
-  console.log(`Proxying /api and /auth to ${backendTarget.origin}`);
+  console.log("MES public frontend");
+  console.log(`  Local:   http://127.0.0.1:${port}`);
+  if (publicUrl) console.log(`  Network: ${publicUrl}`);
+  console.log(`  Binding: http://${host}:${port}`);
+  console.log(`  Proxy:   ${backendTarget.origin}`);
 });

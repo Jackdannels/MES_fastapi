@@ -373,6 +373,7 @@ function buildExperimentStatusLabel(displayStatus, trayProgress) {
 // 构建任务视图模式下展示的任务卡片数据。
 function buildTaskRows({
   tasks,
+  externalIntakes = [],
   experiments,
   samples,
   schedules,
@@ -385,6 +386,14 @@ function buildTaskRows({
   const taskList = filterActiveTasks(tasks, sampleList);
   const experimentList = Array.isArray(experiments) ? experiments : [];
   const scheduleList = Array.isArray(schedules) ? schedules : [];
+  const acceptedAtByTaskCode = new Map(
+    (Array.isArray(externalIntakes) ? externalIntakes : [])
+      .map((intake) => [
+        normalizeText(intake?.accepted_task_code || intake?.code),
+        normalizeText(intake?.accepted_at),
+      ])
+      .filter(([taskCode, acceptedAt]) => taskCode && acceptedAt),
+  );
   const taskMap = new Map();
   const knownTaskCodes = new Set();
   const experimentsByTaskCode = new Map();
@@ -433,13 +442,17 @@ function buildTaskRows({
     }
     knownTaskCodes.add(code);
     const taskExperiments = (experimentsByTaskCode.get(code) || []).slice().sort((left, right) => compareText(left.experimentCode, right.experimentCode));
+    const source = normalizeText(task?.source);
+    const acceptedAt = normalizeText(task?.accepted_at) || acceptedAtByTaskCode.get(code) || "";
     taskMap.set(code, {
       taskCode: code,
       taskType: normalizeText(task?.test_type || task?.name),
       taskStatus: normalizeTaskStatus(task?.status),
       transfer_status: normalizeText(task?.transfer_status),
       plannedCount: Number.isFinite(Number(task?.sample_count)) ? Number(task.sample_count) : "",
-      timeValue: normalizeText(task?.arrival_at || task?.created_at || task?.due_at),
+      timeValue: source === "外部委托" || acceptedAt
+        ? acceptedAt
+        : normalizeText(task?.created_at),
       sampleCodes: [],
       trays: [],
       returnedTrays: [],
@@ -504,9 +517,6 @@ function buildTaskRows({
     }
     if (!row.taskStatus) {
       row.taskStatus = normalizeTaskStatus(entry?.status);
-    }
-    if (!row.timeValue) {
-      row.timeValue = normalizeText(entry?.start_at || entry?.created_at);
     }
   });
 

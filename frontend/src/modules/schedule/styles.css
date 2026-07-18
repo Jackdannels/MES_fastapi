@@ -749,6 +749,46 @@
   cursor: default;
 }
 
+.gantt-slot--mixed {
+  position: relative;
+  padding: 0;
+  border-color: var(--border);
+  background: rgba(19, 26, 34, 0.9);
+  color: var(--text);
+  cursor: default;
+}
+
+.gantt-slot-content--mixed {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: rgba(19, 26, 34, 0.9);
+}
+
+.gantt-slot-content--mixed .gantt-task-item {
+  min-height: 100%;
+  font-size: 13px;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.gantt-maintenance-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 1px 4px;
+  overflow: hidden;
+  border: 1px solid rgba(231, 183, 95, 0.46);
+  background: rgba(231, 183, 95, 0.2);
+  color: var(--accent-2);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
 .gantt-slot-content {
   width: 100%;
   height: 100%;

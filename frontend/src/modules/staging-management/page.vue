@@ -103,16 +103,30 @@
         </div>
       </div>
 
-      <div class="zancun-actions-grid">
-        <article v-for="action in actions" :key="action.title" :class="['zancun-action-item', action.cardClass]">
-          <div class="zancun-action-copy">
+      <div class="zancun-actions-grid" aria-label="扫码作业">
+        <button
+          v-for="action in actions"
+          :key="action.title"
+          :aria-label="`${action.buttonText}：${action.description}`"
+          :class="action.buttonClass"
+          :data-testid="action.testId"
+          type="button"
+          @click="action.onClick"
+        >
+          <span class="zancun-touch-action__icon" aria-hidden="true">
+            <svg viewBox="0 0 32 32">
+              <path d="M6 4H3v5M26 4h3v5M6 28H3v-5M26 28h3v-5" />
+              <path d="M9 10h14v12H9z" />
+              <path v-if="action.mode === 'stockIn'" d="M16 7v9m0 0-4-4m4 4 4-4" />
+              <path v-else d="M16 25v-9m0 0-4 4m4-4 4 4" />
+            </svg>
+          </span>
+          <span class="zancun-touch-action__copy">
             <span :class="action.statusClass">{{ action.tag }}</span>
-            <h4>{{ action.title }}</h4>
-          </div>
-          <button :class="action.buttonClass" :data-testid="action.testId" type="button" @click="action.onClick">
-            {{ action.buttonText }}
-          </button>
-        </article>
+            <strong>{{ action.buttonText }}</strong>
+            <span class="zancun-touch-action__description">{{ action.description }}</span>
+          </span>
+        </button>
       </div>
     </section>
 
@@ -176,12 +190,16 @@
           </div>
           <span class="pill">样品数 {{ activeDetail.quantity || 0 }}</span>
         </article>
+        <AppFeedback :message="scanWarning" tone="warning" @close="scanWarning = ''" />
 
         <article
           v-for="(destination, index) in activeDetail.targetDestinations"
           :key="`${destination.targetExperimentCode || index}-${destination.targetLabCode || destination.targetLabId || destination.targetLab}`"
           class="zancun-destination-card"
-          :class="{ 'is-disabled': !destination.scheduled, 'is-recommended': destination.preferred }"
+          :class="{
+            'is-disabled': !destination.scheduled || destination.targetAvailable === false,
+            'is-recommended': destination.preferred,
+          }"
           :data-testid="`zancun-destination-card-${index}`"
         >
           <div class="zancun-destination-card__main">
@@ -198,7 +216,7 @@
             class="action-btn secondary zancun-destination-card__action"
             :data-testid="`zancun-destination-submit-${index}`"
             type="button"
-            :disabled="!destination.targetLab || !destination.scheduled"
+            :disabled="!destination.targetLab || !destination.scheduled || destination.targetAvailable === false || Boolean(destination.targetUnavailableReason)"
             @click="confirmDestinationAction(destination)"
           >
             送至{{ destination.targetLab || "目标实验室" }}
@@ -376,6 +394,7 @@ const activeRoom = computed(resolveActiveRoom);
 const roomCopy = computed(() => ROOM_PAGE_COPY[activeRoom.value] || ROOM_PAGE_COPY.staging);
 const snapshot = ref({
   [STORAGE_KEYS.tasks]: [],
+  [STORAGE_KEYS.devices]: [],
   [STORAGE_KEYS.schedules]: [],
   [STORAGE_KEYS.experiments]: [],
   [STORAGE_KEYS.experiment_trays]: [],
@@ -394,6 +413,7 @@ const { focusScanInput } = useScanInputFocus(scanInputRef);
 const STORAGE_API_URL = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
 const STAGING_SNAPSHOT_KEYS = [
   STORAGE_KEYS.tasks,
+  STORAGE_KEYS.devices,
   STORAGE_KEYS.schedules,
   STORAGE_KEYS.experiments,
   STORAGE_KEYS.experiment_trays,
@@ -823,8 +843,35 @@ const cancelDestinationAction = () => {
 };
 
 const confirmDestinationAction = async (destination = null) => {
-  const target = destination || activeDetail.targetDestinations?.[0] || activeDetail;
+  let target = destination || activeDetail.targetDestinations?.[0] || activeDetail;
   if (!target?.scheduled) {
+    return;
+  }
+  scanWarning.value = "";
+  let actionSnapshot = snapshot.value;
+  try {
+    const latestSnapshot = await readRawStorageSnapshot();
+    actionSnapshot = mergeArraySnapshot(snapshot.value, latestSnapshot, STAGING_SNAPSHOT_KEYS);
+    snapshot.value = actionSnapshot;
+    const latestRow = buildZancunRowsFromSnapshot(actionSnapshot, {
+      now: nowValue(),
+      room: activeRoom.value,
+    }).find((row) => row.trayCode === activeDetail.trayCode);
+    if (latestRow) {
+      const requestedLabCode = String(target?.targetLabCode || "").trim();
+      const requestedLab = String(target?.targetLab || "").trim();
+      const requestedExperimentCode = String(target?.targetExperimentCode || "").trim();
+      const refreshedTarget = latestRow.targetDestinations.find((candidate) => (
+        (requestedLabCode
+          ? String(candidate?.targetLabCode || "").trim() === requestedLabCode
+          : String(candidate?.targetLab || "").trim() === requestedLab)
+        && String(candidate?.targetExperimentCode || "").trim() === requestedExperimentCode
+      ));
+      Object.assign(activeDetail, latestRow);
+      target = refreshedTarget || target;
+    }
+  } catch (error) {
+    scanWarning.value = error?.message || "设备状态刷新失败，请稍后重试。";
     return;
   }
   const actionPayload = {
@@ -852,7 +899,7 @@ const confirmDestinationAction = async (destination = null) => {
         targetType: target.targetType,
       },
       room: activeRoom.value,
-      snapshot: snapshot.value,
+      snapshot: actionSnapshot,
   });
 
   const persisted = await persistTrayActionResult(result, actionPayload);
@@ -930,9 +977,10 @@ const confirmDetailAction = async () => {
 
 const actions = [
   {
-    buttonClass: "action-btn secondary zancun-action-button zancun-action-button--stock-in",
+    buttonClass: "zancun-touch-action zancun-touch-action--stock-in",
     buttonText: "扫码入库",
-    cardClass: "zancun-action-item--stock-in",
+    description: "扫描待入库托盘编号",
+    mode: "stockIn",
     onClick: () => void openScanModal("stockIn"),
     statusClass: "status running",
     tag: "入库",
@@ -940,9 +988,10 @@ const actions = [
     title: "入库",
   },
   {
-    buttonClass: "action-btn danger zancun-action-button zancun-action-button--stock-out",
+    buttonClass: "zancun-touch-action zancun-touch-action--stock-out",
     buttonText: "扫码出库",
-    cardClass: "zancun-action-item--stock-out",
+    description: "扫描待出库托盘编号",
+    mode: "stockOut",
     onClick: () => void openScanModal("stockOut"),
     statusClass: "status warn",
     tag: "出库",

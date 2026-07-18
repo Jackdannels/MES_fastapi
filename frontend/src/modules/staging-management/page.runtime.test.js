@@ -17,6 +17,7 @@ const settlePage = async (target) => {
 };
 
 const createSnapshot = () => ({
+  [STORAGE_KEYS.devices]: [],
   [STORAGE_KEYS.tasks]: [
     { id: "task-101", code: "SYLU-2026-04-101", test_type: "温度冲击试验", sample_type: "结构件", source: "外部委托" },
     { id: "task-102", code: "SYLU-2026-04-102", test_type: "振动试验", sample_type: "组件", source: "内部新增" },
@@ -698,6 +699,22 @@ describe("StagingManagementPage runtime", () => {
     expect(mounted.get('[data-testid="zancun-scan-modal"] .form-actions').classes()).toContain("form-actions--touch");
   });
 
+  test.each(["staging", "appearance"])("renders scheme A whole-card scan actions in the %s room", async (room) => {
+    const mounted = await mountPage({ room });
+    const actions = mounted.findAll(".zancun-actions-grid .zancun-touch-action");
+    const stockIn = mounted.get('[data-testid="zancun-stock-in"]');
+    const stockOut = mounted.get('[data-testid="zancun-stock-out"]');
+
+    expect(actions).toHaveLength(2);
+    expect(actions.every((action) => action.element.tagName === "BUTTON")).toBe(true);
+    expect(stockIn.text()).toContain("扫码入库");
+    expect(stockIn.text()).toContain("扫描待入库托盘编号");
+    expect(stockIn.attributes("aria-label")).toBe("扫码入库：扫描待入库托盘编号");
+    expect(stockOut.text()).toContain("扫码出库");
+    expect(stockOut.text()).toContain("扫描待出库托盘编号");
+    expect(stockOut.attributes("aria-label")).toBe("扫码出库：扫描待出库托盘编号");
+  });
+
   test("stock-in scan batches trays from the inline button before closing from the footer", async () => {
     const mounted = await mountPage();
 
@@ -819,8 +836,7 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
     await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
     await mounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
-    await Promise.resolve();
-    await mounted.vm.$nextTick();
+    await settlePage(mounted);
 
     expect(mounted.find('[data-testid="zancun-destination-modal"].is-open').exists()).toBe(false);
     expect(mounted.get('[data-testid="zancun-scan-modal"]').classes()).toContain("is-open");
@@ -878,6 +894,34 @@ describe("StagingManagementPage runtime", () => {
     expect(cards[0].text()).toContain("推荐");
     expect(cards[1].text()).toContain("振动一室");
     expect(mounted.get('[data-testid="zancun-destination-submit-0"]').attributes("disabled")).toBeUndefined();
+  });
+
+  test("stock-out destination modal warns and blocks dispatch to a lab under repair", async () => {
+    remoteSnapshot = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.devices]: [
+        {
+          code: "振动一室",
+          maintenance_end_at: "2027-04-01T13:30:00",
+          maintenance_start_at: "2026-01-01T11:30:00",
+          maintenance_type: "计划维修",
+          name: "振动试验系统-1",
+          status: "维修",
+        },
+      ],
+    };
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+
+    const destinationModal = mounted.get('[data-testid="zancun-destination-modal"]');
+    const submitButton = mounted.get('[data-testid="zancun-destination-submit-0"]');
+    expect(destinationModal.text()).toContain("振动一室正在维修，暂不可送入");
+    expect(destinationModal.text()).toContain("预计结束：2027-04-01 13:30");
+    expect(submitButton.attributes("disabled")).toBeDefined();
+    expect(submitButton.text()).toBe("送至振动一室");
   });
 
   test("stock-out to salt lab stays a lab dispatch and appearance stock-in can optionally store it", async () => {

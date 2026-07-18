@@ -153,4 +153,15 @@ describe("TaskOverviewToolbar", () => {
     expect(wrapper.emitted("update:customStartDate")).toEqual([["2026-03-02"]]);
     expect(wrapper.emitted("update:customEndDate")).toEqual([["2026-03-09"]]);
   });
+
+  test("keeps concise time labels while explaining the task time semantics", () => {
+    const wrapper = mountToolbar();
+    const timeFilter = wrapper.get('select[aria-label="按任务新建或外部受理确认时间筛选"]');
+    const optionLabels = timeFilter.findAll("option").map((option) => option.text());
+
+    expect(optionLabels).toEqual(["全部时间", "今天", "近7天", "近30天", "本年", "自定义"]);
+    expect(optionLabels.every((label) => !label.includes("进入"))).toBe(true);
+    expect(timeFilter.attributes("aria-label")).toBe("按任务新建或外部受理确认时间筛选");
+    expect(timeFilter.attributes("title")).toBe("内部任务按新建时间，外部任务按确认受理时间");
+  });
 });

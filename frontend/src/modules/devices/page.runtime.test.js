@@ -29,10 +29,18 @@ const devicesState = reactive({
   deviceDrawerOpen: false,
   editDeviceOpen: false,
   maintenanceConflictOpen: false,
+  maintenancePlanEndMin: "",
+  maintenancePlanIsPlanned: true,
   maintenancePlanWarning: "",
   maintenancePlanOpen: false,
   pointModalOpen: false,
   runningRepairChoiceOpen: false,
+});
+const maintenancePlanFormState = reactive({
+  endAt: "",
+  note: "",
+  startAt: "",
+  type: "计划维修",
 });
 
 vi.mock("./useDevicesPage", () => ({
@@ -101,13 +109,9 @@ vi.mock("./useDevicesPage", () => ({
         status: "已结束",
       },
     ]),
-    maintenancePlanForm: ref({
-      endAt: "",
-      note: "",
-      startAt: "",
-      type: "计划维修",
-    }),
-    maintenancePlanIsPlanned: computed(() => true),
+    maintenancePlanForm: ref(maintenancePlanFormState),
+    maintenancePlanEndMin: computed(() => devicesState.maintenancePlanEndMin),
+    maintenancePlanIsPlanned: computed(() => devicesState.maintenancePlanIsPlanned),
     maintenancePlanWarning: computed(() => devicesState.maintenancePlanWarning),
     maintenancePlanOpen: computed(() => devicesState.maintenancePlanOpen),
     metrics: computed(() => ({
@@ -166,10 +170,18 @@ describe("DevicesPage runtime", () => {
     devicesState.deviceDrawerOpen = false;
     devicesState.editDeviceOpen = false;
     devicesState.maintenanceConflictOpen = false;
+    devicesState.maintenancePlanEndMin = "";
+    devicesState.maintenancePlanIsPlanned = true;
     devicesState.maintenancePlanWarning = "";
     devicesState.maintenancePlanOpen = false;
     devicesState.pointModalOpen = false;
     devicesState.runningRepairChoiceOpen = false;
+    Object.assign(maintenancePlanFormState, {
+      endAt: "",
+      note: "",
+      startAt: "",
+      type: "计划维修",
+    });
   });
 
   test("renders device rows and hides ledger mutation actions", async () => {
@@ -244,6 +256,23 @@ describe("DevicesPage runtime", () => {
     expect(footerButtons).toEqual(["取消", "确定"]);
 
     devicesState.maintenancePlanOpen = false;
+  });
+
+  test("sets the maintenance end minimum and locks both time fields for immediate maintenance", async () => {
+    const wrapper = mount(DevicesPage);
+    devicesState.maintenancePlanOpen = true;
+    maintenancePlanFormState.startAt = "2026-07-17T15:40";
+    devicesState.maintenancePlanEndMin = "2026-07-17T15:41";
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.get('[data-testid="maintenance-end-at"]').attributes("min")).toBe("2026-07-17T15:41");
+    expect(wrapper.get('[data-testid="maintenance-start-at"]').attributes("disabled")).toBeUndefined();
+
+    devicesState.maintenancePlanIsPlanned = false;
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.get('[data-testid="maintenance-start-at"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="maintenance-end-at"]').attributes("disabled")).toBeDefined();
   });
 
   test("renders maintenance plan warning text", async () => {

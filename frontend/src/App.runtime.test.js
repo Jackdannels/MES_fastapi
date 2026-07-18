@@ -421,7 +421,11 @@ describe("App runtime boundary", () => {
     await nextTick();
 
     expect(wrapper.find('[data-testid="open-task-reset"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="open-external-task-intake"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="open-task-intake"]').exists()).toBe(true);
+    const headerText = wrapper.get(".header-actions").text();
+    expect(headerText.indexOf("任务重置")).toBeLessThan(headerText.indexOf("外部受理"));
+    expect(headerText.indexOf("外部受理")).toBeLessThan(headerText.indexOf("新建任务"));
     expect(wrapper.text()).not.toContain("查看排程");
 
     reactiveRoute.meta = { module: "central", title: "中控总览" };
@@ -431,6 +435,7 @@ describe("App runtime boundary", () => {
     await nextTick();
 
     expect(wrapper.find('[data-testid="open-task-reset"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="open-external-task-intake"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="open-task-intake"]').exists()).toBe(false);
   });
 

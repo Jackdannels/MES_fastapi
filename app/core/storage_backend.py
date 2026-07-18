@@ -28,6 +28,9 @@ EXPERIMENT_TERMINAL_STATUSES = {
 
 STORAGE_KEYS: Iterable[str] = (
     "mes.tasks",
+    "mes.external_task_intakes",
+    "mes.lims_inbox",
+    "mes.lims_outbox",
     "mes.schedules",
     "mes.experiments",
     "mes.experiment_runs",

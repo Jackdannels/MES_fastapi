@@ -1092,6 +1092,70 @@ describe("SchedulePage runtime", () => {
     expect(firstRow.find(".gantt-slot.maintenance").exists()).toBe(true);
   });
 
+  test("shows maintenance before a task that starts after maintenance ends in the same morning gantt cell", async () => {
+    const future = buildDateParts(2);
+    setStorage(TASKS_KEY, [
+      { id: "task-comprehensive", code: "TASK-COMPREHENSIVE", name: "四综合任务", test_type: "四综合试验", status: STATUS_SCHEDULED },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      {
+        id: "TASK-COMPREHENSIVE-A",
+        task_code: "TASK-COMPREHENSIVE",
+        experiment_code: "TASK-COMPREHENSIVE-A",
+        experiment_name: "四综合试验",
+        required_device: PRIMARY_LAB,
+      },
+    ]);
+    setStorage(DEVICES_KEY, [
+      {
+        code: PRIMARY_LAB,
+        name: PRIMARY_LAB,
+        maintenance_start_at: `${future.isoDate}T08:00`,
+        maintenance_end_at: `${future.isoDate}T10:30`,
+        status: "可用",
+      },
+    ]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-comprehensive",
+        task_code: "TASK-COMPREHENSIVE",
+        experiment_code: "TASK-COMPREHENSIVE-A",
+        device: PRIMARY_LAB,
+        start_at: `${future.isoDate}T10:33:00`,
+        end_at: `${future.isoDate}T11:30:00`,
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    const mixedCell = wrapper.get(`[data-testid="gantt-segment-mixed-${PRIMARY_LAB}-${future.isoDate}-am"]`);
+    expect(mixedCell.text()).toContain("TASK-COMPREHENSIVE");
+    expect(mixedCell.text()).toContain("维修中");
+    expect(mixedCell.find(".gantt-slot--mixed").exists()).toBe(true);
+    const taskItem = mixedCell.get('[data-testid="gantt-task-item-schedule-comprehensive"]');
+    const maintenanceItem = mixedCell.get(".gantt-maintenance-item");
+    expect(taskItem.attributes("style")).not.toContain("width:");
+    expect(taskItem.attributes("style")).not.toContain("left:");
+    expect(taskItem.attributes("title")).toContain("10:33");
+    expect(taskItem.attributes("title")).toContain("11:30");
+    expect(maintenanceItem.attributes("title")).toContain("10:30");
+    const timelineItems = mixedCell.get(".gantt-slot-content--mixed").element.children;
+    expect(timelineItems[0]).toBe(maintenanceItem.element);
+    expect(timelineItems[1]).toBe(taskItem.element);
+    const mixedGroupLabel = mixedCell.get(".gantt-slot--mixed").attributes("aria-label");
+    expect(mixedGroupLabel.indexOf("维修")).toBeLessThan(mixedGroupLabel.indexOf("TASK-COMPREHENSIVE"));
+
+    await taskItem.trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+    expect(wrapper.text()).toContain("任务详情");
+  });
+
   test("renders stacked task codes inside one half-day gantt cell", async () => {
     const future = buildDateParts(2);
 

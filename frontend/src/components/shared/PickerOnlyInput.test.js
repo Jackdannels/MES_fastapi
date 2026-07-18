@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import PickerOnlyInput from "./PickerOnlyInput.vue";
 
@@ -21,6 +21,8 @@ describe("PickerOnlyInput", () => {
 
     expect(dateInput.get("input").attributes("type")).toBe("text");
     expect(dateInput.get(".picker-only-input__hint").text()).toBe("年 / 月 / 日");
+    expect(dateTimeInput.get("input").attributes("type")).toBe("text");
+    expect(dateTimeInput.get("input").attributes("readonly")).toBeDefined();
     expect(dateTimeInput.get("input").attributes("data-format-hint")).toBe("年 / 月 / 日 --:--");
   });
 
@@ -56,7 +58,7 @@ describe("PickerOnlyInput", () => {
     expect(wrapper.emitted("update:modelValue")).toEqual([["2026-06-15"]]);
   });
 
-  test("blocks manual text entry while still emitting picker changes", async () => {
+  test("blocks manual text entry, paste, and drop", async () => {
     const wrapper = mount(PickerOnlyInput, {
       props: {
         modelValue: "2026-03-01",
@@ -73,13 +75,11 @@ describe("PickerOnlyInput", () => {
 
     await input.trigger("paste");
     await input.trigger("drop");
-    input.element.value = "2026-03-02";
-    await input.trigger("input");
 
-    expect(wrapper.emitted("update:modelValue")).toEqual([["2026-03-02"]]);
+    expect(wrapper.emitted("update:modelValue")).toBeUndefined();
   });
 
-  test("opens the native picker when clicked if the browser supports it", async () => {
+  test("opens a custom time picker and emits the confirmed hour and minute", async () => {
     const wrapper = mount(PickerOnlyInput, {
       props: {
         modelValue: "08:30",
@@ -87,11 +87,158 @@ describe("PickerOnlyInput", () => {
       },
     });
     const input = wrapper.get("input");
-    input.element.showPicker = vi.fn();
 
     await input.trigger("click");
+    expect(wrapper.findAll('.picker-only-time__field--hour [role="option"]')).toHaveLength(5);
+    expect(wrapper.findAll('.picker-only-time__field--minute [role="option"]')).toHaveLength(5);
+    await wrapper.get('.picker-only-time__field--hour [data-wheel-value="09"]').trigger("click");
+    await wrapper.get('.picker-only-time__field--minute [data-wheel-value="31"]').trigger("click");
+    await wrapper.get(".picker-only-calendar__confirm").trigger("click");
 
-    expect(input.element.showPicker).toHaveBeenCalledOnce();
+    expect(wrapper.emitted("update:modelValue")).toEqual([["09:31"]]);
+    expect(wrapper.find(".picker-only-calendar").exists()).toBe(false);
+  });
+
+  test("closes the custom picker with Escape without changing the value", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      props: {
+        modelValue: "08:30",
+        type: "time",
+      },
+    });
+
+    await wrapper.get("input").trigger("click");
+    await wrapper.get('[role="listbox"][aria-label="小时"]').trigger("keydown", { key: "Escape" });
+
+    expect(wrapper.find(".picker-only-calendar").exists()).toBe(false);
+    expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+  });
+
+  test("selects date and time together without using the native datetime picker", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      props: {
+        modelValue: "2026-07-17T08:00",
+        type: "datetime-local",
+      },
+    });
+
+    await wrapper.get("input").trigger("click");
+    await wrapper.get('[data-date-value="2026-07-18"]').trigger("click");
+    await wrapper.get('.picker-only-time__field--hour [data-wheel-value="09"]').trigger("click");
+    await wrapper.get('.picker-only-time__field--minute [data-wheel-value="01"]').trigger("click");
+    await wrapper.get(".picker-only-calendar__confirm").trigger("click");
+
+    expect(wrapper.emitted("update:modelValue")).toEqual([["2026-07-18T09:01"]]);
+  });
+
+  test("shows datetime values with a readable separator while preserving the emitted model format", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      props: {
+        modelValue: "2026-07-17T08:00",
+        type: "datetime-local",
+      },
+    });
+
+    expect(wrapper.get("input").element.value).toBe("2026-07-17 08:00");
+    await wrapper.get("input").trigger("click");
+    await wrapper.get(".picker-only-calendar__confirm").trigger("click");
+
+    expect(wrapper.emitted("update:modelValue")).toEqual([["2026-07-17T08:00"]]);
+  });
+
+  test("limits a burst of minute wheel events to one precise step", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      props: {
+        modelValue: "08:30",
+        type: "time",
+      },
+    });
+
+    await wrapper.get("input").trigger("click");
+    const minuteWheel = wrapper.get('[role="listbox"][aria-label="分钟"]');
+    await minuteWheel.trigger("wheel", { deltaY: 120 });
+    await minuteWheel.trigger("wheel", { deltaY: 120 });
+    await wrapper.get(".picker-only-calendar__confirm").trigger("click");
+
+    expect(wrapper.emitted("update:modelValue")).toEqual([["08:31"]]);
+  });
+
+  test("disables calendar days outside the configured range", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      attrs: {
+        min: "2026-07-10",
+      },
+      props: {
+        initialCalendarDate: "2026-07-15",
+        modelValue: "",
+        type: "date",
+      },
+    });
+
+    await wrapper.get("input").trigger("click");
+
+    expect(wrapper.get('[data-date-value="2026-07-09"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-date-value="2026-07-10"]').attributes("disabled")).toBeUndefined();
+  });
+
+  test("keeps only one picker open and closes it when another control is pressed", async () => {
+    const wrapper = mount(
+      {
+        components: { PickerOnlyInput },
+        data: () => ({ endAt: "", startAt: "" }),
+        template: `
+          <div>
+            <PickerOnlyInput v-model="startAt" data-testid="start-picker" type="datetime-local" />
+            <PickerOnlyInput v-model="endAt" data-testid="end-picker" type="datetime-local" />
+            <button data-testid="outside-action" type="button">其他按钮</button>
+            <div data-testid="blank-area"></div>
+          </div>
+        `,
+      },
+      { attachTo: document.body },
+    );
+    const pickers = wrapper.findAllComponents(PickerOnlyInput);
+
+    await wrapper.get('[data-testid="start-picker"]').trigger("click");
+    expect(pickers[0].find(".picker-only-calendar").exists()).toBe(true);
+
+    await wrapper.get('[data-testid="end-picker"]').trigger("pointerdown");
+    await wrapper.get('[data-testid="end-picker"]').trigger("click");
+
+    expect(pickers[0].find(".picker-only-calendar").exists()).toBe(false);
+    expect(pickers[1].find(".picker-only-calendar").exists()).toBe(true);
+    expect(wrapper.findAll(".picker-only-calendar")).toHaveLength(1);
+
+    await wrapper.get('[data-testid="outside-action"]').trigger("pointerdown");
+
+    expect(wrapper.find(".picker-only-calendar").exists()).toBe(false);
+
+    await wrapper.get('[data-testid="start-picker"]').trigger("click");
+    await wrapper.get('[data-testid="blank-area"]').trigger("pointerdown");
+
+    expect(wrapper.find(".picker-only-calendar").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  test("prevents confirming a datetime earlier than the configured minimum", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      attrs: {
+        min: "2026-07-17T15:40",
+      },
+      props: {
+        modelValue: "2026-07-17T15:30",
+        type: "datetime-local",
+      },
+    });
+
+    await wrapper.get("input").trigger("click");
+
+    expect(wrapper.get('[data-date-value="2026-07-16"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('.picker-only-time__field--minute [aria-selected="true"]').text()).toBe("40");
+    await wrapper.get('.picker-only-time__field--minute [data-wheel-value="39"]').trigger("click");
+
+    expect(wrapper.get(".picker-only-calendar__confirm").attributes("disabled")).toBeDefined();
+    expect(wrapper.get(".picker-only-time__warning").text()).toBe("所选时间超出允许范围");
   });
 
   test("does not open or emit when the field is externally readonly", async () => {

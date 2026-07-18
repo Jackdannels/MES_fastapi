@@ -12,10 +12,18 @@ import { formatLocalDateTime } from "@/lib/dateTime";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { readMasterTestTypes } from "@/lib/masterDataApi";
 import { notifyStorageSnapshotUpdated } from "@/lib/storageApi";
-import { createTask, deleteTask as deleteTaskByApi, readTasks, resetTasks as resetTasksByApi, updateTask as updateTaskByApi } from "@/lib/tasksApi";
+import {
+  acceptExternalTaskIntake as acceptExternalTaskIntakeByApi,
+  createTask,
+  deleteTask as deleteTaskByApi,
+  readTasks,
+  resetTasks as resetTasksByApi,
+  updateTask as updateTaskByApi,
+} from "@/lib/tasksApi";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import {
   buildFilterOptions,
+  buildExternalIntakeRows,
   buildTaskCode,
   buildTaskEditForm,
   buildExperimentTypeAxisSummary,
@@ -47,6 +55,7 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 
 const TASK_INTAKE_HASH = "#task-intake-modal";
 const TASK_RESET_EVENT = "mes:open-task-reset";
+const EXTERNAL_TASK_INTAKE_EVENT = "mes:open-external-task-intake";
 const RESET_FEEDBACK_DISMISS_MS = 10000;
 const SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量";
 
@@ -55,6 +64,7 @@ function useTasksPage() {
   const route = useRoute();
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
     STORAGE_KEYS.tasks,
+    STORAGE_KEYS.external_task_intakes,
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.streams,
@@ -66,6 +76,7 @@ function useTasksPage() {
   ]);
 
   const rawTasks = ref([]);
+  const rawExternalTaskIntakes = ref([]);
   const rawSchedules = ref([]);
   const rawSamples = ref([]);
   const rawStreams = ref([]);
@@ -79,6 +90,9 @@ function useTasksPage() {
   const resetFeedback = ref("");
   const resetError = ref("");
   const resetting = ref(false);
+  const acceptingExternalTask = ref(false);
+  const externalAcceptanceError = ref("");
+  const selectedExternalTaskIntake = ref(null);
   const intakeForm = ref(createTaskIntakeForm());
   const editForm = ref(createTaskEditForm());
   const intakeWarning = ref("");
@@ -106,13 +120,19 @@ function useTasksPage() {
   const sampleCodesModal = useDialogState();
   const scheduledExperimentRemovalModal = useDialogState();
   const resetModal = useDialogState();
+  const externalAcceptanceModal = useDialogState();
   const taskDrawer = useDialogState();
   let resetFeedbackTimer = null;
   let flushPendingStorageRefresh = () => false;
   let hasPendingSamplesRefresh = false;
 
   const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value));
-  const metrics = computed(() => buildTaskMetrics(allRows.value));
+  const externalTaskIntakeRows = computed(() => buildExternalIntakeRows(rawExternalTaskIntakes.value));
+  const selectedExternalSampleCodePreview = computed(() => {
+    const row = selectedExternalTaskIntake.value;
+    return row ? buildTaskSampleCodes(row.code, row.sampleCount, []).slice(0, 5) : [];
+  });
+  const metrics = computed(() => buildTaskMetrics(allRows.value, externalTaskIntakeRows.value.length));
   const filterOptions = computed(() => buildFilterOptions(allRows.value));
   const masterTestTypeOptions = computed(() =>
     buildExperimentTypeOptions(
@@ -215,7 +235,7 @@ function useTasksPage() {
     // 任务编号统一按 SYLU-年月-序号生成，月份优先跟随期望完成时间。
     const nextCode = buildTaskCode(
       intakeForm.value.test_type,
-      rawTasks.value,
+      [...rawTasks.value, ...rawExternalTaskIntakes.value],
       intakeForm.value.due_at || intakeForm.value.arrival_at || serverNowDate(),
     );
     intakeForm.value.code = nextCode;
@@ -577,9 +597,59 @@ function useTasksPage() {
     openResetModal();
   };
 
+  const openExternalAcceptanceModal = () => {
+    selectedExternalTaskIntake.value = null;
+    externalAcceptanceError.value = "";
+    externalAcceptanceModal.openWith({ id: "external-task-intake-modal" });
+  };
+
+  const closeExternalAcceptanceModal = () => {
+    if (acceptingExternalTask.value) {
+      return;
+    }
+    selectedExternalTaskIntake.value = null;
+    externalAcceptanceError.value = "";
+    externalAcceptanceModal.close();
+  };
+
+  const openExternalTaskIntakeDetail = (row) => {
+    selectedExternalTaskIntake.value = row ? { ...row } : null;
+    externalAcceptanceError.value = "";
+  };
+
+  const postponeExternalTaskIntake = () => {
+    if (acceptingExternalTask.value) {
+      return;
+    }
+    selectedExternalTaskIntake.value = null;
+    externalAcceptanceError.value = "";
+  };
+
+  const handleOpenExternalTaskIntake = () => {
+    openExternalAcceptanceModal();
+  };
+
   const buildFailureMessage = (prefix, error) => {
     const detail = normalizeText(error instanceof Error ? error.message : "");
     return detail ? `${prefix}，${detail}` : prefix;
+  };
+
+  const acceptExternalTaskIntake = async () => {
+    const intakeId = normalizeText(selectedExternalTaskIntake.value?.intakeId || selectedExternalTaskIntake.value?.id);
+    if (!intakeId || acceptingExternalTask.value) {
+      return;
+    }
+    acceptingExternalTask.value = true;
+    externalAcceptanceError.value = "";
+    try {
+      await acceptExternalTaskIntakeByApi(intakeId);
+      selectedExternalTaskIntake.value = null;
+      await loadTasksPage();
+    } catch (error) {
+      externalAcceptanceError.value = buildFailureMessage("外部委托受理失败，请稍后重试", error);
+    } finally {
+      acceptingExternalTask.value = false;
+    }
   };
 
   const taskCodeOf = (task) => normalizeText(task?.task_code || task?.code || task?.taskNo || task?.id);
@@ -719,6 +789,7 @@ function useTasksPage() {
   const readAllTasks = () => readTasks({ includeArchived: true });
 
   const buildSnapshotFallback = () => ({
+    [STORAGE_KEYS.external_task_intakes]: rawExternalTaskIntakes.value,
     [STORAGE_KEYS.schedules]: rawSchedules.value,
     [STORAGE_KEYS.samples]: rawSamples.value,
     [STORAGE_KEYS.streams]: rawStreams.value,
@@ -1154,6 +1225,7 @@ function useTasksPage() {
         readMasterTestTypes().catch(() => []),
       ]);
       rawTasks.value = Array.isArray(tasks) ? tasks : [];
+      applySnapshotArray(snapshot, STORAGE_KEYS.external_task_intakes, rawExternalTaskIntakes);
       applySnapshotArray(snapshot, STORAGE_KEYS.schedules, rawSchedules);
       applySnapshotArray(snapshot, STORAGE_KEYS.samples, rawSamples);
       applySnapshotArray(snapshot, STORAGE_KEYS.streams, rawStreams);
@@ -1238,6 +1310,7 @@ function useTasksPage() {
   const storageRefresh = useStorageSnapshotRefresh({
     keys: [
       STORAGE_KEYS.tasks,
+      STORAGE_KEYS.external_task_intakes,
       STORAGE_KEYS.schedules,
       STORAGE_KEYS.samples,
       STORAGE_KEYS.streams,
@@ -1298,6 +1371,7 @@ function useTasksPage() {
     void loadTasksPage();
     window.addEventListener("hashchange", handleHashChange);
     window.addEventListener("mes:open-task-intake", handleOpenTaskIntake);
+    window.addEventListener(EXTERNAL_TASK_INTAKE_EVENT, handleOpenExternalTaskIntake);
     window.addEventListener(TASK_RESET_EVENT, handleOpenTaskReset);
     window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
     document.addEventListener("pointerdown", handleDocumentPointerDown);
@@ -1307,12 +1381,16 @@ function useTasksPage() {
     clearResetFeedbackTimer();
     window.removeEventListener("hashchange", handleHashChange);
     window.removeEventListener("mes:open-task-intake", handleOpenTaskIntake);
+    window.removeEventListener(EXTERNAL_TASK_INTAKE_EVENT, handleOpenExternalTaskIntake);
     window.removeEventListener(TASK_RESET_EVENT, handleOpenTaskReset);
     window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
   });
 
   return {
+    acceptExternalTaskIntake,
+    acceptingExternalTask,
+    closeExternalAcceptanceModal,
     closeIntakeAxisPicker,
     closeIntakeModal,
     closeResetModal,
@@ -1327,6 +1405,9 @@ function useTasksPage() {
     deleteTask,
     editForm,
     editWarning,
+    externalAcceptanceError,
+    externalAcceptanceModalOpen: externalAcceptanceModal.open,
+    externalTaskIntakeRows,
     filterStatus: selectedStatus,
     filterTestType: selectedTestType,
     defaultAxisCodes: DEFAULT_AXIS_CODES,
@@ -1350,6 +1431,7 @@ function useTasksPage() {
     loadError,
     metrics,
     pageCount,
+    postponeExternalTaskIntake,
     query,
     resetError,
     resetFeedback,
@@ -1364,6 +1446,8 @@ function useTasksPage() {
     saveDraft,
     saveSampleCodes,
     selectedRow: taskDrawer.payload,
+    selectedExternalTaskIntake,
+    selectedExternalSampleCodePreview,
     setCurrentPage,
     statusOptions: scopedStatusOptions,
     closeIntakeExperimentPicker,
@@ -1380,6 +1464,7 @@ function useTasksPage() {
     editAxisPickerType,
     openIntakeExperimentPicker,
     openIntakeModal,
+    openExternalTaskIntakeDetail,
     openEditExperimentPicker,
     openSampleCodesEditor,
     sortDirection,

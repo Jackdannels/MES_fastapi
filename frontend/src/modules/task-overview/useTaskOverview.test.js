@@ -161,6 +161,16 @@ describe("useTaskOverview helpers", () => {
         timeValue: "2026-03-08T12:00:00Z",
         trays: [],
       },
+      {
+        currentStatus: "待排程",
+        experimentSummary: "温度冲击试验",
+        sampleCodes: [],
+        scheduleLabel: "未排程",
+        taskCode: "TASK-006",
+        taskType: "温度冲击试验",
+        timeValue: "2026-03-08T13:00:00Z",
+        trays: [],
+      },
     ];
 
     const filtered = filterTaskOverviewRows({
@@ -175,6 +185,27 @@ describe("useTaskOverview helpers", () => {
 
     expect(filtered).toHaveLength(1);
     expect(filtered[0].taskCode).toBe("TASK-004");
+  });
+
+  test("uses calendar-day bounds and excludes future task times from recent filters", () => {
+    const rows = [
+      { taskCode: "TODAY", taskType: "冲击试验", timeValue: "2026-03-10T08:00:00" },
+      { taskCode: "SEVEN-DAY-EDGE", taskType: "冲击试验", timeValue: "2026-03-04T00:00:00" },
+      { taskCode: "TOO-OLD", taskType: "冲击试验", timeValue: "2026-03-03T23:59:59" },
+      { taskCode: "FUTURE", taskType: "冲击试验", timeValue: "2026-03-11T08:00:00" },
+    ];
+
+    const filtered = filterTaskOverviewRows({
+      customEndDate: "",
+      customStartDate: "",
+      keyword: "",
+      rows,
+      testTypeFilter: "",
+      timeFilter: "last7",
+      now: new Date("2026-03-10T12:00:00"),
+    });
+
+    expect(filtered.map((row) => row.taskCode)).toEqual(["TODAY", "SEVEN-DAY-EDGE"]);
   });
 
   test("builds overview metrics for task and tray modes", () => {

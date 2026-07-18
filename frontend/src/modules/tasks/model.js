@@ -454,7 +454,7 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
 }
 
 // 构建任务表格上方展示的汇总计数。
-function buildTaskMetrics(rows) {
+function buildTaskMetrics(rows, pendingExternalCount = 0) {
   const rowList = Array.isArray(rows) ? rows : [];
   const externalCount = rowList.filter((row) => row.source === SOURCE_EXTERNAL).length;
   const internalCount = rowList.filter((row) => row.source === SOURCE_INTERNAL).length;
@@ -465,6 +465,7 @@ function buildTaskMetrics(rows) {
   return {
     externalCount,
     internalCount,
+    pendingExternalCount: Number.isFinite(Number(pendingExternalCount)) ? Number(pendingExternalCount) : 0,
     retentionCount,
     unscheduledCount,
     unscheduledLabel: unscheduledCount,
@@ -559,6 +560,37 @@ function createTaskIntakeForm() {
     test_types: [],
     axis_codes_by_test_type: {},
   };
+}
+
+function buildExternalIntakeRows(intakes) {
+  return (Array.isArray(intakes) ? intakes : [])
+    .filter((item) => (normalizeText(item?.acceptance_status) || "pending") === "pending")
+    .map((item, index) => {
+      const testTypes = collectExperimentTypes(item?.test_types, item?.test_type);
+      const code = normalizeText(item?.code) || `LIMS-TASK-${index + 1}`;
+      return {
+        ...item,
+        id: normalizeText(item?.intake_id || item?.lims_request_id || item?.id) || `external-intake-${index + 1}`,
+        intakeId: normalizeText(item?.intake_id || item?.lims_request_id || item?.id),
+        code,
+        name: normalizeText(item?.name),
+        source: SOURCE_EXTERNAL,
+        client: normalizeText(item?.client),
+        contact: normalizeText(item?.contact),
+        contactInfo: normalizeText(item?.contact_info),
+        priority: normalizeText(item?.priority) || "中",
+        sampleCount: normalizeText(item?.sample_count),
+        sampleType: normalizeText(item?.sample_type),
+        testType: buildExperimentTypeSummary(testTypes),
+        testTypes,
+        dueAt: formatDateTime(item?.due_at),
+        arrivalAt: formatDateTime(item?.arrival_at),
+        conditions: normalizeText(item?.conditions),
+        attachment: normalizeText(item?.attachment),
+        remark: normalizeText(item?.remark),
+        receivedAt: formatDateTime(item?.received_at),
+      };
+    });
 }
 
 function createTaskEditForm() {
@@ -924,6 +956,7 @@ export {
   STATUS_SCHEDULED,
   STATUS_WAITING,
   buildFilterOptions,
+  buildExternalIntakeRows,
   buildTaskCode,
   buildTaskEditForm,
   buildTaskExperimentProgress,

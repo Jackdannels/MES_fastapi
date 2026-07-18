@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MES LIMS 模拟器</title>
+    <link rel="stylesheet" href="/static/styles.css?v=1.0.2" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">开发联调工具</div>
+          <h1>MES LIMS 模拟器</h1>
+          <p>通过 RabbitMQ 模拟 LIMS 向 MES 下发外部委托任务。</p>
+        </div>
+        <div class="header-badges">
+          <span id="versionBadge" class="badge">v1.0</span>
+          <span id="statusBadge" class="status">RabbitMQ 未连接</span>
+        </div>
+      </header>
+
+      <section class="metrics">
+        <article><span>RabbitMQ 地址</span><strong id="mesUrl">-</strong></article>
+        <article><span>待确认任务</span><strong id="pendingCount">0</strong></article>
+        <article><span>本次已下发</span><strong id="sentCount">0</strong></article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          <div><h2>外部委托内容</h2><p>可先随机生成，再按需调整后下发。</p></div>
+          <button id="generateBtn" type="button">随机生成</button>
+        </div>
+        <form id="taskForm" class="form-grid">
+          <label>任务编号<input id="code" required /></label>
+          <label>任务名称<input id="name" maxlength="20" required /></label>
+          <label>委托单位/部门<input id="client" required /></label>
+          <label>联系人<input id="contact" maxlength="15" required /></label>
+          <label>联系方式<input id="contactInfo" inputmode="numeric" maxlength="15" required /></label>
+          <label>优先级<select id="priority"><option>高</option><option>中</option><option>低</option></select></label>
+          <label>样品数量<input id="sampleCount" type="number" min="1" max="99" required /></label>
+          <label>样品类型<input id="sampleType" required /></label>
+          <label class="span-2">试验类型（使用 / 分隔）<input id="testTypes" required /></label>
+          <div class="field due-at-field">
+            <span class="field-label">期望完成时间</span>
+            <input id="dueAt" type="hidden" />
+            <button id="duePickerTrigger" class="due-picker-trigger" type="button" aria-expanded="false" aria-haspopup="dialog">
+              <span id="dueDisplay">年 / 月 / 日 --:--</span>
+              <span class="due-picker-trigger__icon" aria-hidden="true"></span>
+            </button>
+            <div id="duePicker" class="due-picker" role="dialog" aria-label="选择期望完成日期和时间" hidden>
+              <div class="due-calendar__header">
+                <button id="duePrevMonth" class="due-calendar__nav due-calendar__nav--prev" type="button" aria-label="上一月"></button>
+                <strong id="dueCalendarMonth" class="due-calendar__month"></strong>
+                <button id="dueNextMonth" class="due-calendar__nav due-calendar__nav--next" type="button" aria-label="下一月"></button>
+              </div>
+              <div class="due-calendar__weekdays" aria-hidden="true">
+                <span>周一</span><span>周二</span><span>周三</span><span>周四</span><span>周五</span><span>周六</span><span>周日</span>
+              </div>
+              <div id="dueCalendarDays" class="due-calendar__days"></div>
+              <div class="due-time">
+                <strong>选择时间</strong>
+                <div class="due-time__fields">
+                  <div class="due-time__field">
+                    <span>时</span>
+                    <div id="dueHourWheel" class="due-time__wheel" role="listbox" aria-label="小时" tabindex="0"></div>
+                  </div>
+                  <span class="due-time__separator" aria-hidden="true">:</span>
+                  <div class="due-time__field">
+                    <span>分</span>
+                    <div id="dueMinuteWheel" class="due-time__wheel" role="listbox" aria-label="分钟" tabindex="0"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="due-picker__footer">
+                <button id="dueClear" type="button">清除</button>
+                <div class="due-picker__actions">
+                  <button id="dueCancel" type="button">取消</button>
+                  <button id="dueConfirm" class="primary" type="button">确定</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <label>环境/特殊条件<input id="conditions" /></label>
+          <label>附件<input id="attachment" /></label>
+          <label class="span-all">备注<textarea id="remark" rows="3"></textarea></label>
+        </form>
+        <div class="actions">
+          <button id="sendBtn" class="primary" type="button">下发当前任务</button>
+          <label class="batch-label">批量数量<input id="batchCount" type="number" min="1" max="20" value="3" /></label>
+          <button id="batchBtn" type="button">批量随机下发</button>
+          <span id="feedback" role="status" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title"><div><h2>通信日志</h2><p>记录模拟器向 MES 的下发结果。</p></div><button id="refreshBtn" type="button">刷新</button></div>
+        <div id="logs" class="logs"><div class="empty">暂无日志</div></div>
+      </section>
+    </main>
+    <script src="/static/app.js?v=1.0.2"></script>
+  </body>
+</html>

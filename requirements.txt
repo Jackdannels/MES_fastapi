@@ -6,6 +6,7 @@ jinja2>=3.1,<4.0
 pymysql>=1.1,<2.0
 cryptography>=46.0,<47.0
 paho-mqtt>=2.1,<3.0
+aio-pika>=9.5,<10.0
 # Dameng driver (adjust if your environment uses a different package)
 dmPython>=2.5
 pytest>=9.0,<10.0

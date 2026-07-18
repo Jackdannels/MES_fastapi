@@ -1,17 +1,21 @@
 from typing import Any
 import re
+import threading
+import uuid
 
 from fastapi import APIRouter, Body, HTTPException, Query, status
 
 from app.core.axis_codes import sort_axis_codes
 from app.core.demo_data_reset import run_demo_reset
 from app.core.storage_backend import get_storage_backend
+from app.core.time_utils import now_business_text
 from app.api.routes.storage import publish_storage_update, _validate_fixture_locked_schedules
 from app.services.attendance_service import get_attendance_service
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 SNAPSHOT_KEYS = (
     "mes.tasks",
+    "mes.external_task_intakes",
     "mes.schedules",
     "mes.samples",
     "mes.streams",
@@ -49,6 +53,15 @@ COMPLETED_TASK_EDITABLE_FIELDS = {"name"}
 TRANSFER_HISTORY_ACTIONS = {"样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"}
 AXIS_EXPERIMENT_TYPES = {"冲击试验", "振动试验"}
 MAX_CONTACT_LENGTH = 15
+EXTERNAL_SOURCE = "外部委托"
+INTERNAL_SOURCE = "内部新增"
+EXTERNAL_INTAKES_KEY = "mes.external_task_intakes"
+LIMS_INBOX_KEY = "mes.lims_inbox"
+LIMS_OUTBOX_KEY = "mes.lims_outbox"
+INTEGRATION_KEYS = (LIMS_INBOX_KEY, LIMS_OUTBOX_KEY)
+EXTERNAL_INTAKE_PENDING = "pending"
+EXTERNAL_INTAKE_ACCEPTED = "accepted"
+EXTERNAL_INTAKE_LOCK = threading.RLock()
 INVALID_TASK_TEXT_PATTERN = re.compile(r"[\uFFFD&^*#<>`{}|\\]")
 TASK_TEXT_FIELD_LABELS = {
     "attachment": "附件",
@@ -75,7 +88,7 @@ def load_snapshot(storage=None) -> dict[str, Any]:
     snapshot = storage_backend.read_all() if hasattr(storage_backend, "read_all") else {}
     if not isinstance(snapshot, dict):
         snapshot = {}
-    for key in SNAPSHOT_KEYS:
+    for key in (*SNAPSHOT_KEYS, *INTEGRATION_KEYS):
         if key not in snapshot:
             value = storage_backend.read(key) if hasattr(storage_backend, "read") else []
             snapshot[key] = [dict(item) for item in value] if isinstance(value, list) else []
@@ -124,6 +137,58 @@ def ensure_unique_task_code(tasks: list[dict[str, Any]], code: Any) -> None:
         return
     if any(normalize_text(task.get("code")) == normalized_code for task in tasks):
         raise HTTPException(status_code=400, detail="任务编号已存在")
+
+
+def external_intake_id(intake: dict[str, Any]) -> str:
+    return normalize_text(intake.get("intake_id") or intake.get("lims_request_id") or intake.get("id"))
+
+
+def external_intake_status(intake: dict[str, Any]) -> str:
+    return normalize_text(intake.get("acceptance_status")) or EXTERNAL_INTAKE_PENDING
+
+
+def find_external_intake_index(intakes: list[dict[str, Any]], intake_id: str) -> int:
+    normalized_id = normalize_text(intake_id)
+    for index, intake in enumerate(intakes):
+        if external_intake_id(intake) == normalized_id:
+            return index
+    return -1
+
+
+def ensure_unique_external_intake(
+    intakes: list[dict[str, Any]],
+    *,
+    intake_id: str,
+    task_code_value: str,
+) -> None:
+    if any(external_intake_id(item) == intake_id for item in intakes):
+        raise HTTPException(status_code=409, detail="LIMS 下发请求已存在")
+    if any(task_code(item) == task_code_value for item in intakes):
+        raise HTTPException(status_code=409, detail="外部委托任务编号已存在")
+
+
+def build_lims_status_event(intake: dict[str, Any], event_status: str, *, detail: str = "") -> dict[str, Any]:
+    intake_id = external_intake_id(intake)
+    occurred_at = now_business_text()
+    payload = {
+        "lims_request_id": intake_id,
+        "intake_id": intake_id,
+        "code": task_code(intake),
+        "acceptance_status": event_status,
+        "detail": normalize_text(detail),
+        "occurred_at": occurred_at,
+    }
+    return {
+        "event_id": uuid.uuid4().hex,
+        "message_id": str(uuid.uuid4()),
+        "correlation_id": intake_id,
+        "type": f"mes.external-intake.{event_status}.v1",
+        "schema_version": 1,
+        "source": "MES",
+        "occurred_at": occurred_at,
+        "routing_key": f"mes.external-intake.{event_status}.v1",
+        "payload": payload,
+    }
 
 
 def filter_related_rows(rows: Any, task_code: str) -> list[dict[str, Any]]:
@@ -629,6 +694,43 @@ def persist_task_experiments(task: dict[str, Any], existing_experiments: list[di
     return experiments
 
 
+def add_task_to_snapshot(
+    snapshot: dict[str, Any],
+    payload: dict[str, Any],
+    *,
+    source: str,
+) -> dict[str, Any]:
+    tasks = [dict(task) for task in snapshot.get("mes.tasks", [])]
+    experiments = [dict(experiment) for experiment in snapshot.get("mes.experiments", [])]
+    next_task = dict(payload)
+    if "test_types" not in next_task:
+        raise HTTPException(status_code=400, detail="test_types is required")
+    next_task["test_types"] = parse_test_types(next_task.get("test_types"))
+    next_task["source"] = source
+    normalized_task_code = normalize_text(next_task.get("code"))
+    if not normalized_task_code:
+        raise HTTPException(status_code=400, detail="请填写任务编号")
+    next_task["code"] = normalized_task_code
+    next_task["id"] = normalize_text(next_task.get("id")) or normalized_task_code
+    if not normalize_text(next_task.get("name")):
+        next_task["name"] = build_default_task_name(task_code(next_task), tasks)
+    next_task["sample_count"] = validate_sample_count(next_task.get("sample_count"))
+    next_task["arrival_at"] = ""
+    next_task["status"] = "待排程"
+    next_task["created_at"] = normalize_text(next_task.get("created_at")) or now_business_text()
+    ensure_unique_task_code(tasks, next_task.get("code"))
+    validate_task_text_fields(next_task, require_contact=True)
+    next_experiments = persist_task_experiments(next_task)
+    tasks.insert(0, next_task)
+    snapshot["mes.tasks"] = tasks
+    snapshot["mes.samples"] = sync_task_samples(
+        [dict(sample) for sample in snapshot.get("mes.samples", [])],
+        next_task,
+    )
+    snapshot["mes.experiments"] = experiments + next_experiments
+    return next_task
+
+
 @router.get("")
 def list_tasks(include_archived: bool = Query(False, alias="includeArchived")) -> list[dict[str, Any]]:
     return load_tasks(include_archived)
@@ -638,25 +740,142 @@ def list_tasks(include_archived: bool = Query(False, alias="includeArchived")) -
 def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     storage = get_storage_backend()
     snapshot = load_snapshot(storage)
-    tasks = [dict(task) for task in snapshot.get("mes.tasks", [])]
-    experiments = [dict(experiment) for experiment in snapshot.get("mes.experiments", [])]
-    next_task = dict(payload)
-    if "test_types" not in next_task:
-        raise HTTPException(status_code=400, detail="test_types is required")
-    next_task["test_types"] = parse_test_types(next_task.get("test_types"))
-    if not normalize_text(next_task.get("name")):
-        next_task["name"] = build_default_task_name(task_code(next_task), tasks)
-    next_task["sample_count"] = validate_sample_count(next_task.get("sample_count"))
-    ensure_unique_task_code(tasks, next_task.get("code"))
-    validate_task_text_fields(next_task, require_contact=True)
-    next_experiments = persist_task_experiments(next_task)
-    tasks.insert(0, next_task)
-    snapshot["mes.tasks"] = tasks
-    snapshot["mes.samples"] = sync_task_samples([dict(sample) for sample in snapshot.get("mes.samples", [])], next_task)
-    snapshot["mes.experiments"] = experiments + next_experiments
+    next_task = add_task_to_snapshot(snapshot, payload, source=INTERNAL_SOURCE)
     storage.write_many(snapshot)
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
     return next_task
+
+
+@router.get("/external-intakes")
+def list_external_task_intakes(
+    acceptance_status: str = Query(EXTERNAL_INTAKE_PENDING, alias="status"),
+) -> list[dict[str, Any]]:
+    stored = get_storage_backend().read(EXTERNAL_INTAKES_KEY)
+    intakes = [dict(item) for item in stored] if isinstance(stored, list) else []
+    normalized_status = normalize_text(acceptance_status)
+    if normalized_status:
+        intakes = [item for item in intakes if external_intake_status(item) == normalized_status]
+    return sorted(intakes, key=lambda item: normalize_text(item.get("received_at")), reverse=True)
+
+
+def store_external_task_intake(payload: dict[str, Any], *, message_id: str = "") -> dict[str, Any]:
+    """Persist one RabbitMQ intake idempotently. This is intentionally not an HTTP route."""
+    with EXTERNAL_INTAKE_LOCK:
+        storage = get_storage_backend()
+        snapshot = load_snapshot(storage)
+        tasks = [dict(task) for task in snapshot.get("mes.tasks", [])]
+        intakes = [dict(item) for item in snapshot.get(EXTERNAL_INTAKES_KEY, [])]
+        inbox = [dict(item) for item in snapshot.get(LIMS_INBOX_KEY, [])]
+        outbox = [dict(item) for item in snapshot.get(LIMS_OUTBOX_KEY, [])]
+        normalized_message_id = normalize_text(message_id)
+        if normalized_message_id and any(normalize_text(item.get("message_id")) == normalized_message_id for item in inbox):
+            intake_id = normalize_text(payload.get("lims_request_id") or payload.get("intake_id"))
+            existing_index = find_external_intake_index(intakes, intake_id)
+            if existing_index >= 0:
+                return dict(intakes[existing_index])
+
+        next_intake = dict(payload)
+        task_code_value = task_code(next_intake)
+        if not task_code_value:
+            raise HTTPException(status_code=400, detail="请填写任务编号")
+        if "test_types" not in next_intake:
+            raise HTTPException(status_code=400, detail="test_types is required")
+        next_intake["test_types"] = parse_test_types(next_intake.get("test_types"))
+        next_intake["test_type"] = " / ".join(next_intake["test_types"])
+        next_intake["sample_count"] = validate_sample_count(next_intake.get("sample_count"))
+        next_intake["source"] = EXTERNAL_SOURCE
+        next_intake["client"] = normalize_text(next_intake.get("client"))
+        if not next_intake["client"]:
+            raise HTTPException(status_code=400, detail="请填写委托单位/部门")
+        validate_task_text_fields(next_intake, require_contact=True)
+        intake_id = normalize_text(next_intake.get("lims_request_id") or next_intake.get("intake_id"))
+        intake_id = intake_id or f"LIMS-{uuid.uuid4().hex}"
+        existing_index = find_external_intake_index(intakes, intake_id)
+        if existing_index >= 0:
+            existing = dict(intakes[existing_index])
+            if task_code(existing) != task_code_value:
+                raise HTTPException(status_code=409, detail="LIMS 下发请求号与已有任务不一致")
+            if normalized_message_id:
+                inbox.insert(0, {"message_id": normalized_message_id, "lims_request_id": intake_id, "received_at": now_business_text()})
+                snapshot[LIMS_INBOX_KEY] = inbox[:5000]
+                outbox.append(build_lims_status_event(existing, "received", detail="duplicate intake acknowledged"))
+                storage.write_many({LIMS_INBOX_KEY: snapshot[LIMS_INBOX_KEY], LIMS_OUTBOX_KEY: outbox})
+            return existing
+
+        ensure_unique_task_code(tasks, task_code_value)
+        ensure_unique_external_intake(intakes, intake_id=intake_id, task_code_value=task_code_value)
+        next_intake.update(
+            {
+                "id": intake_id,
+                "intake_id": intake_id,
+                "lims_request_id": intake_id,
+                "code": task_code_value,
+                "acceptance_status": EXTERNAL_INTAKE_PENDING,
+                "received_at": now_business_text(),
+                "accepted_at": "",
+                "accepted_task_code": "",
+            }
+        )
+        intakes.insert(0, next_intake)
+        inbox.insert(0, {"message_id": normalized_message_id or intake_id, "lims_request_id": intake_id, "received_at": now_business_text()})
+        outbox.append(build_lims_status_event(next_intake, "received"))
+        storage.write_many(
+            {
+                EXTERNAL_INTAKES_KEY: intakes,
+                LIMS_INBOX_KEY: inbox[:5000],
+                LIMS_OUTBOX_KEY: outbox,
+            }
+        )
+        publish_storage_update([EXTERNAL_INTAKES_KEY])
+        return next_intake
+
+
+@router.post("/external-intakes/{intake_id}/accept")
+def accept_external_task_intake(intake_id: str) -> dict[str, Any]:
+    with EXTERNAL_INTAKE_LOCK:
+        return _accept_external_task_intake(intake_id)
+
+
+def _accept_external_task_intake(intake_id: str) -> dict[str, Any]:
+    storage = get_storage_backend()
+    snapshot = load_snapshot(storage)
+    intakes = [dict(item) for item in snapshot.get(EXTERNAL_INTAKES_KEY, [])]
+    intake_index = find_external_intake_index(intakes, intake_id)
+    if intake_index < 0:
+        raise HTTPException(status_code=404, detail="外部委托不存在")
+    current_intake = dict(intakes[intake_index])
+    if external_intake_status(current_intake) == EXTERNAL_INTAKE_ACCEPTED:
+        accepted_code = normalize_text(current_intake.get("accepted_task_code")) or task_code(current_intake)
+        accepted_task = next(
+            (dict(item) for item in snapshot.get("mes.tasks", []) if task_code(dict(item)) == accepted_code),
+            None,
+        )
+        return {"intake": current_intake, "task": accepted_task}
+
+    accepted_at = now_business_text()
+    task_payload = {
+        key: value
+        for key, value in current_intake.items()
+        if key not in {"acceptance_status", "accepted_at", "accepted_task_code", "intake_id", "lims_request_id", "received_at"}
+    }
+    task_payload["id"] = task_code(current_intake)
+    task_payload["accepted_at"] = accepted_at
+    accepted_task = add_task_to_snapshot(snapshot, task_payload, source=EXTERNAL_SOURCE)
+    current_intake.update(
+        {
+            "acceptance_status": EXTERNAL_INTAKE_ACCEPTED,
+            "accepted_at": accepted_at,
+            "accepted_task_code": task_code(accepted_task),
+        }
+    )
+    intakes[intake_index] = current_intake
+    snapshot[EXTERNAL_INTAKES_KEY] = intakes
+    outbox = [dict(item) for item in snapshot.get(LIMS_OUTBOX_KEY, [])]
+    outbox.append(build_lims_status_event(current_intake, "accepted"))
+    snapshot[LIMS_OUTBOX_KEY] = outbox
+    storage.write_many(snapshot)
+    publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
+    return {"intake": current_intake, "task": accepted_task}
 
 
 @router.post("/reset")

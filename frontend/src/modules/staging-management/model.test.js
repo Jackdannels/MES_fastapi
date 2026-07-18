@@ -17,6 +17,7 @@ import { getLegacyFallbackHits, resetLegacyFallbackHits } from "@/lib/legacyFall
 const TODAY = "2026-04-01T12:00:00";
 
 const createSnapshot = () => ({
+  [STORAGE_KEYS.devices]: [],
   [STORAGE_KEYS.tasks]: [
     { id: "task-101", code: "SYLU-2026-04-101", test_type: "温度冲击试验", sample_type: "结构件", source: "外部委托" },
     { id: "task-102", code: "SYLU-2026-04-102", test_type: "振动试验", sample_type: "组件", source: "内部新增" },
@@ -756,6 +757,45 @@ describe("staging-management model", () => {
     ]);
     expect(detail.targetDestinations.map((destination) => destination.targetLab)).not.toContain("恒温恒湿间（暂存间）");
     expect(detail.targetLab).toBe("盐雾试验室");
+  });
+
+  test.each([
+    { maintenanceType: "计划维修", status: "维修" },
+    { maintenanceType: "计划保养", status: "保养" },
+  ])("blocks stock-out to a lab that is currently under $status", ({ maintenanceType, status }) => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.devices] = [
+      {
+        code: "振动一室",
+        maintenance_end_at: "2026-04-01T13:30:00",
+        maintenance_start_at: "2026-04-01T11:30:00",
+        maintenance_type: maintenanceType,
+        name: "振动试验系统-1",
+        status,
+      },
+    ];
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const detail = buildZancunScanDetail(rows, "SYLU-2026-04-102-TP-001", "stockOut");
+    const vibrationDestination = detail.targetDestinations.find((destination) => destination.targetLab === "振动一室");
+    const result = applyZancunInventoryAction({
+      now: TODAY,
+      payload: {
+        code: detail.trayCode,
+        mode: "stockOut",
+        targetExperimentCode: vibrationDestination.targetExperimentCode,
+        targetLab: vibrationDestination.targetLab,
+      },
+      snapshot,
+    });
+
+    expect(vibrationDestination).toEqual(expect.objectContaining({
+      preferred: false,
+      targetAvailable: false,
+      targetUnavailableReason: expect.stringContaining(`正在${status}`),
+    }));
+    expect(vibrationDestination.targetUnavailableReason).toContain("2026-04-01 13:30");
+    expect(result.error).toBe(vibrationDestination.targetUnavailableReason);
   });
 
   test("stock-out detail keeps scheduled target lab identity fields for exact matching", () => {

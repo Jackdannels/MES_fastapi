@@ -3,6 +3,9 @@ param(
     [int]$BackendPort = 8000,
     [string]$FrontendHost = "0.0.0.0",
     [int]$FrontendPort = 5173,
+    [string]$LimsSimulatorHost = "127.0.0.1",
+    [int]$LimsSimulatorPort = 8900,
+    [string]$RabbitMqUrl = "amqp://guest:guest@127.0.0.1:5672/",
     [string]$CondaEnv = "fastapi",
     [int]$FrontendWaitTimeoutSeconds = 90,
     [int]$BrowserWaitTimeoutSeconds = 120,
@@ -16,6 +19,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = $PSScriptRoot
 $FrontendRoot = Join-Path $ProjectRoot "frontend"
+$LimsSimulatorRoot = Join-Path $ProjectRoot "tools\lims_simulator"
 
 function Resolve-CondaBat {
     $candidates = @()
@@ -53,6 +57,22 @@ function Resolve-CondaBat {
         }
     }
 
+    return $null
+}
+
+function Resolve-CondaPython([string]$CondaBatPath, [string]$EnvironmentName) {
+    if (-not $CondaBatPath) { return $null }
+    $condaRoot = Split-Path (Split-Path $CondaBatPath -Parent) -Parent
+    $candidates = @()
+    if ($EnvironmentName -and $EnvironmentName -notin @("base", "root")) {
+        $candidates += Join-Path $condaRoot "envs\$EnvironmentName\python.exe"
+    }
+    $candidates += Join-Path $condaRoot "python.exe"
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath $candidate) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
     return $null
 }
 
@@ -101,18 +121,27 @@ if (-not (Test-Path -LiteralPath $FrontendRoot)) {
     throw "Cannot find frontend directory: $FrontendRoot"
 }
 
+if (-not (Test-Path -LiteralPath (Join-Path $LimsSimulatorRoot "app.py"))) {
+    throw "Cannot find LIMS simulator: $LimsSimulatorRoot"
+}
+
 $condaBat = Resolve-CondaBat
+$condaPython = Resolve-CondaPython $condaBat $CondaEnv
 $backendReadyUrl = "http://127.0.0.1:$BackendPort/api/storage"
 $frontendLocalUrl = "http://127.0.0.1:$FrontendPort/"
+$limsSimulatorUrl = "http://127.0.0.1:$LimsSimulatorPort/"
+$limsSimulatorReadyUrl = "http://127.0.0.1:$LimsSimulatorPort/api/state"
 $frontendNetworkHost = Resolve-PrimaryLanIpv4
 $frontendNetworkUrl = "http://${frontendNetworkHost}:$FrontendPort/"
 $launcherSessionId = [Guid]::NewGuid().ToString("N")
 
 if ($condaBat) {
     $backendReloadArgument = if ($Production) { "" } else { " --reload" }
-    $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py$backendReloadArgument --host $BackendHost --port $BackendPort"
+    $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"RABBITMQ_ENABLED=true`" && set `"RABBITMQ_REQUIRED=true`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py$backendReloadArgument --host $BackendHost --port $BackendPort"
+    $limsSimulatorCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$LimsSimulatorRoot`" && python -m uvicorn app:app --host $LimsSimulatorHost --port $LimsSimulatorPort"
 } else {
     $backendCommand = "echo Unable to find conda.bat. Please install Anaconda/Miniconda or add conda to PATH. && echo Expected environment: $CondaEnv"
+    $limsSimulatorCommand = "echo Unable to find conda.bat. LIMS simulator was not started."
 }
 
 $frontendWaitScript = @"
@@ -139,10 +168,11 @@ $frontendRunCommand = if ($Production) {
 } else {
     "npm run dev -- --host $FrontendHost --port $FrontendPort"
 }
-$frontendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedFrontendWait && cd /d `"$FrontendRoot`" && $frontendRunCommand"
+$frontendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"FRONTEND_PUBLIC_URL=$frontendNetworkUrl`" && powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedFrontendWait && cd /d `"$FrontendRoot`" && $frontendRunCommand"
 $terminalCommandSwitch = if ($Production) { "/c" } else { "/k" }
 $backendTerminalCommand = if ($Production) { "$backendCommand & exit /b 0" } else { $backendCommand }
 $frontendTerminalCommand = if ($Production) { "$frontendCommand & exit /b 0" } else { $frontendCommand }
+$limsSimulatorTerminalCommand = if ($Production) { "$limsSimulatorCommand & exit /b 0" } else { $limsSimulatorCommand }
 
 $browserOpenScript = @"
 `$deadline = (Get-Date).AddSeconds($BrowserWaitTimeoutSeconds)
@@ -150,9 +180,12 @@ Write-Host "Waiting for frontend: $frontendLocalUrl"
 do {
     try {
         `$response = Invoke-WebRequest -UseBasicParsing -Uri "$frontendLocalUrl" -TimeoutSec 2
-        if (`$response.StatusCode -ge 200 -and `$response.StatusCode -lt 500) {
+        `$limsResponse = Invoke-WebRequest -UseBasicParsing -Uri "$limsSimulatorReadyUrl" -TimeoutSec 2
+        `$limsState = `$limsResponse.Content | ConvertFrom-Json
+        if (`$response.StatusCode -ge 200 -and `$response.StatusCode -lt 500 -and `$limsResponse.StatusCode -ge 200 -and `$limsResponse.StatusCode -lt 500 -and `$limsState.connected) {
             Write-Host "Opening browser: $frontendNetworkUrl"
             Start-Process "$frontendNetworkUrl"
+            Start-Process "$limsSimulatorUrl"
             exit 0
         }
     } catch {
@@ -165,7 +198,7 @@ exit 1
 
 $encodedBrowserOpen = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($browserOpenScript))
 $windowsTerminal = Get-Command "wt.exe" -ErrorAction SilentlyContinue
-if (-not $windowsTerminal) {
+if (-not $windowsTerminal -and -not $Production) {
     $backendCommand += " --no-use-colors"
 }
 
@@ -179,6 +212,9 @@ if ($DryRun) {
     Write-Host "Frontend command:"
     Write-Host $frontendCommand
     Write-Host ""
+    Write-Host "LIMS simulator command:"
+    Write-Host $limsSimulatorCommand
+    Write-Host ""
     Write-Host "Network frontend URL:"
     Write-Host $frontendNetworkUrl
     Write-Host ""
@@ -187,39 +223,55 @@ if ($DryRun) {
     exit 0
 }
 
-if ($windowsTerminal) {
+if ($Production) {
+    # The desktop launcher must not depend on Windows Terminal's multi-tab
+    # argument parser. Show only the MES backend/frontend consoles so operators
+    # can inspect their logs; keep the LIMS simulator hidden in the background.
+    if (-not $condaPython) { throw "Unable to find python.exe for conda environment: $CondaEnv" }
+
+    $stateDirectory = if ($StateFile) { Split-Path -Parent $StateFile } else { Join-Path $env:LOCALAPPDATA "MesFastApiLauncher" }
+    $logDirectory = Join-Path $stateDirectory "logs"
+    New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
+
+    $previousLauncherSession = $env:MES_LAUNCHER_SESSION
+    $previousRabbitEnabled = $env:RABBITMQ_ENABLED
+    $previousRabbitRequired = $env:RABBITMQ_REQUIRED
+    $previousRabbitUrl = $env:RABBITMQ_URL
+    try {
+        $env:MES_LAUNCHER_SESSION = $launcherSessionId
+        $env:RABBITMQ_ENABLED = "true"
+        $env:RABBITMQ_REQUIRED = "true"
+        $env:RABBITMQ_URL = $RabbitMqUrl
+        $backendConsoleCommand = "chcp 65001 >nul && title MES Backend && set `"PYTHONUTF8=1`" && set `"PYTHONIOENCODING=utf-8`" && `"$condaPython`" scripts\run_local.py --host $BackendHost --port $BackendPort"
+        $frontendConsoleCommand = "title MES Frontend && $frontendCommand"
+        $backendProcess = Start-Process -FilePath $env:ComSpec -ArgumentList "/d", "/k", $backendConsoleCommand `
+            -WorkingDirectory $ProjectRoot -PassThru
+        $frontendProcess = Start-Process -FilePath $env:ComSpec -ArgumentList "/d", "/k", $frontendConsoleCommand `
+            -WorkingDirectory $FrontendRoot -PassThru
+
+        $limsSimulatorProcess = Start-Process -FilePath $condaPython `
+            -ArgumentList "-m", "uvicorn", "app:app", "--host", $LimsSimulatorHost, "--port", $LimsSimulatorPort `
+            -WorkingDirectory $LimsSimulatorRoot -WindowStyle Hidden -PassThru `
+            -RedirectStandardOutput (Join-Path $logDirectory "lims.stdout.log") `
+            -RedirectStandardError (Join-Path $logDirectory "lims.stderr.log")
+    } finally {
+        $env:MES_LAUNCHER_SESSION = $previousLauncherSession
+        $env:RABBITMQ_ENABLED = $previousRabbitEnabled
+        $env:RABBITMQ_REQUIRED = $previousRabbitRequired
+        $env:RABBITMQ_URL = $previousRabbitUrl
+    }
+} elseif ($windowsTerminal) {
     $terminalProcess = Start-Process -FilePath $windowsTerminal.Source `
-        -ArgumentList "-w", "new", "new-tab", "--title", '"MES Backend"', "cmd.exe", $terminalCommandSwitch, $backendTerminalCommand, ";", "new-tab", "--title", '"MES Frontend"', "cmd.exe", $terminalCommandSwitch, $frontendTerminalCommand `
+        -ArgumentList "-w", "new", "new-tab", "--title", '"MES Backend"', "cmd.exe", $terminalCommandSwitch, $backendTerminalCommand, ";", "new-tab", "--title", '"MES Frontend"', "cmd.exe", $terminalCommandSwitch, $frontendTerminalCommand, ";", "new-tab", "--title", '"MES LIMS Simulator"', "cmd.exe", $terminalCommandSwitch, $limsSimulatorTerminalCommand `
         -WorkingDirectory $ProjectRoot `
         -PassThru
-    if ($Production) {
-        # Windows Terminal may reuse an existing host process. Track the cmd.exe
-        # process inside each tab by session marker so Stop/Restart closes the
-        # visible backend and frontend tabs instead of relying on the host PID.
-        $commandDeadline = (Get-Date).AddSeconds(10)
-        $backendCommandProcess = $null
-        $frontendCommandProcess = $null
-        do {
-            $sessionCommands = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-                $_.Name -match "(?i)^cmd\.exe$" -and [string]$_.CommandLine -like "*MES_LAUNCHER_SESSION=$launcherSessionId*"
-            })
-            $backendCommandProcess = $sessionCommands | Where-Object { [string]$_.CommandLine -like "*scripts\run_local.py*" } | Select-Object -First 1
-            $frontendCommandProcess = $sessionCommands | Where-Object { [string]$_.CommandLine -like "*npm run serve:public*" } | Select-Object -First 1
-            if ($backendCommandProcess -and $frontendCommandProcess) { break }
-            Start-Sleep -Milliseconds 100
-        } while ((Get-Date) -lt $commandDeadline)
-        if (-not $backendCommandProcess -or -not $frontendCommandProcess) {
-            throw "Unable to identify MES backend/frontend terminal command processes."
-        }
-        $backendProcess = Get-Process -Id $backendCommandProcess.ProcessId
-        $frontendProcess = Get-Process -Id $frontendCommandProcess.ProcessId
-    } else {
-        $backendProcess = $terminalProcess
-        $frontendProcess = $terminalProcess
-    }
+    $backendProcess = $terminalProcess
+    $frontendProcess = $terminalProcess
+    $limsSimulatorProcess = $terminalProcess
 } else {
     $backendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList $terminalCommandSwitch, "title MES Backend && $backendTerminalCommand" -WorkingDirectory $ProjectRoot -PassThru
     $frontendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList $terminalCommandSwitch, "title MES Frontend && $frontendTerminalCommand" -WorkingDirectory $FrontendRoot -PassThru
+    $limsSimulatorProcess = Start-Process -FilePath "cmd.exe" -ArgumentList $terminalCommandSwitch, "title MES LIMS Simulator && $limsSimulatorTerminalCommand" -WorkingDirectory $LimsSimulatorRoot -PassThru
 }
 if ($StateFile) {
     $stateDirectory = Split-Path -Parent $StateFile
@@ -227,10 +279,15 @@ if ($StateFile) {
     [pscustomobject]@{
         backendCommandPid = $backendProcess.Id
         frontendCommandPid = $frontendProcess.Id
+        limsSimulatorCommandPid = $limsSimulatorProcess.Id
         browserPid = 0
         backendPort = $BackendPort
         frontendPort = $FrontendPort
+        limsSimulatorPort = $LimsSimulatorPort
+        frontendLocalUrl = $frontendLocalUrl
         frontendUrl = $frontendNetworkUrl
+        limsSimulatorUrl = $limsSimulatorUrl
+        logDirectory = $(if ($Production) { $logDirectory } else { "" })
         launcherSessionId = $launcherSessionId
     } | ConvertTo-Json | Set-Content -LiteralPath $StateFile -Encoding UTF8
 }
@@ -241,6 +298,8 @@ if (-not $DisableAutoOpenBrowser) {
         -WindowStyle Hidden
 }
 
-Write-Host "Started MES backend and frontend dev windows."
+Write-Host "Started MES backend, frontend, and LIMS simulator dev windows."
 Write-Host "Backend:  http://localhost:$BackendPort"
 Write-Host "Frontend: $frontendNetworkUrl"
+Write-Host "LIMS simulator: $limsSimulatorUrl"
+exit 0

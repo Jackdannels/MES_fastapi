@@ -3,7 +3,12 @@
   <section class="grid cols-3 stagger">
     <div class="card">
       <div class="muted">外部委托</div>
-      <div class="kpi" id="task-external-count">{{ metrics.externalCount }}</div>
+      <div class="kpi tasks-external-kpi" id="task-external-count">
+        <span>{{ metrics.externalCount }}</span>
+        <span v-if="metrics.pendingExternalCount > 0" class="tasks-external-kpi__pending">
+          （待确认：<strong>{{ metrics.pendingExternalCount }}</strong>）
+        </span>
+      </div>
       <div class="muted">等待到样</div>
     </div>
     <div class="card">
@@ -73,15 +78,12 @@
     </table>
   </section>
 
-  <AppModal :open="intakeModalOpen" class="tasks-intake-modal" title="手动添加任务" @close="closeIntakeModal">
+  <AppModal :open="intakeModalOpen" class="tasks-intake-modal" title="新建内部任务" @close="closeIntakeModal">
     <form class="tasks-intake-form">
       <div class="form-grid">
         <div class="form-field">
           <label>任务来源</label>
-          <select v-model="intakeForm.source" name="source">
-            <option>外部委托</option>
-            <option>内部新增</option>
-          </select>
+          <input v-model="intakeForm.source" type="text" name="source" readonly />
         </div>
         <div class="form-field">
           <label>任务名称</label>
@@ -208,6 +210,132 @@
       </button>
       <button class="action-btn" data-testid="task-intake-test-types-confirm" type="button" @click="confirmIntakeExperimentPicker">
         确认选择
+      </button>
+    </template>
+  </AppModal>
+
+  <AppModal
+    :open="externalAcceptanceModalOpen"
+    class="tasks-external-acceptance-modal"
+    :close-on-backdrop="!acceptingExternalTask"
+    :close-on-esc="!acceptingExternalTask"
+    :title="selectedExternalTaskIntake ? '外部委托详情' : '外部受理'"
+    @close="closeExternalAcceptanceModal"
+  >
+    <div v-if="!selectedExternalTaskIntake" class="tasks-external-acceptance-list" data-testid="external-task-intake-list">
+      <p class="muted">以下任务由 LIMS 下发，确认受理后才会进入总任务清单。</p>
+      <div v-if="externalTaskIntakeRows.length === 0" class="tasks-external-empty">当前没有待确认的外部委托任务。</div>
+      <div v-else class="tasks-external-table-wrap">
+        <table class="table tasks-external-table">
+          <thead>
+            <tr>
+              <th>任务号</th>
+              <th>样品数</th>
+              <th>实验摘要</th>
+              <th>期望完成时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, index) in externalTaskIntakeRows" :key="row.id">
+              <td>{{ row.code }}</td>
+              <td>{{ row.sampleCount }}</td>
+              <td class="tasks-external-table__summary">{{ row.testType }}</td>
+              <td>{{ row.dueAt }}</td>
+              <td>
+                <button
+                  class="action-link"
+                  :data-testid="`external-task-intake-detail-${index}`"
+                  type="button"
+                  @click="openExternalTaskIntakeDetail(row)"
+                >
+                  详情
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div v-else class="tasks-external-detail" data-testid="external-task-intake-detail">
+      <div class="form-grid tasks-external-detail__grid">
+        <div class="form-field">
+          <label>任务来源</label>
+          <input :value="selectedExternalTaskIntake.source" type="text" readonly />
+        </div>
+        <div class="form-field">
+          <label>任务名称</label>
+          <input :value="selectedExternalTaskIntake.name" type="text" readonly />
+        </div>
+        <div class="form-field">
+          <label>任务编号</label>
+          <input :value="selectedExternalTaskIntake.code" type="text" readonly />
+        </div>
+        <div class="form-field">
+          <label>委托单位/部门</label>
+          <input :value="selectedExternalTaskIntake.client" type="text" readonly />
+        </div>
+        <div class="form-field">
+          <label>联系人</label>
+          <input :value="selectedExternalTaskIntake.contact" type="text" readonly />
+        </div>
+        <div class="form-field">
+          <label>联系方式</label>
+          <input :value="selectedExternalTaskIntake.contactInfo" type="text" readonly />
+        </div>
+        <div class="form-field">
+          <label>优先级</label>
+          <input :value="selectedExternalTaskIntake.priority" type="text" readonly />
+        </div>
+        <div class="form-field">
+          <label>样品数量</label>
+          <input :value="selectedExternalTaskIntake.sampleCount" type="text" readonly />
+        </div>
+        <div class="form-field tasks-sample-preview">
+          <label>样品编号预览</label>
+          <div class="tasks-sample-preview__list">
+            <span v-for="code in selectedExternalSampleCodePreview" :key="code">{{ code }}</span>
+            <span v-if="selectedExternalSampleCodePreview.length === 0" class="muted">受理后自动生成</span>
+          </div>
+        </div>
+        <div class="form-field">
+          <label>样品类型</label>
+          <input :value="selectedExternalTaskIntake.sampleType" type="text" readonly />
+        </div>
+        <div class="form-field">
+          <label>试验类型</label>
+          <input :value="selectedExternalTaskIntake.testType" type="text" readonly />
+        </div>
+        <div class="form-field">
+          <label>期望完成日期</label>
+          <input :value="selectedExternalTaskIntake.dueAt" type="text" readonly />
+        </div>
+        <div class="form-field">
+          <label>到样日期</label>
+          <input :value="selectedExternalTaskIntake.arrivalAt" type="text" readonly placeholder="后续自动回填" />
+        </div>
+        <div class="form-field">
+          <label>环境/特殊条件</label>
+          <input :value="selectedExternalTaskIntake.conditions" type="text" readonly />
+        </div>
+        <div class="form-field">
+          <label>附件</label>
+          <input :value="selectedExternalTaskIntake.attachment" type="text" readonly />
+        </div>
+        <div class="form-field" style="grid-column: 1 / -1;">
+          <label>备注</label>
+          <textarea :value="selectedExternalTaskIntake.remark" readonly></textarea>
+        </div>
+      </div>
+      <AppFeedback :message="externalAcceptanceError" tone="error" @close="externalAcceptanceError = ''" />
+    </div>
+    <template v-if="selectedExternalTaskIntake" #footer>
+      <button class="action-btn secondary" data-testid="external-task-intake-postpone" type="button" :disabled="acceptingExternalTask" @click="postponeExternalTaskIntake">
+        暂不受理
+      </button>
+      <button class="action-btn" data-testid="external-task-intake-accept" type="button" :disabled="acceptingExternalTask" @click="acceptExternalTaskIntake">
+        {{ acceptingExternalTask ? "受理中…" : "同意受理" }}
       </button>
     </template>
   </AppModal>
@@ -495,6 +623,9 @@ import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useTasksPage } from "./useTasksPage";
 
 const {
+  acceptExternalTaskIntake,
+  acceptingExternalTask,
+  closeExternalAcceptanceModal,
   closeIntakeAxisPicker,
   closeIntakeModal,
   closeTaskDrawer,
@@ -518,6 +649,9 @@ const {
   editAxisPickerType,
   editForm,
   editWarning,
+  externalAcceptanceError,
+  externalAcceptanceModalOpen,
+  externalTaskIntakeRows,
   filterStatus,
   filterTestType,
   defaultAxisCodes,
@@ -539,6 +673,7 @@ const {
   loadError,
   metrics,
   pageCount,
+  postponeExternalTaskIntake,
   query,
   closeResetModal,
   resetError,
@@ -552,11 +687,14 @@ const {
   sampleCodesWarning,
   saveDraft,
   saveSampleCodes,
+  selectedExternalSampleCodePreview,
+  selectedExternalTaskIntake,
   setCurrentPage,
   statusOptions,
   closeIntakeExperimentPicker,
   confirmIntakeExperimentPicker,
   openEditExperimentPicker,
+  openExternalTaskIntakeDetail,
   openIntakeExperimentPicker,
   openSampleCodesEditor,
   sortDirection,

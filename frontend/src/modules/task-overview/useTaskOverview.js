@@ -51,8 +51,9 @@ function filterTaskOverviewRows({
   const selectedTime = String(timeFilter || "all");
   const selectedScheduleFilter = TASK_SCHEDULE_FILTERS.has(String(scheduleFilter || "")) ? String(scheduleFilter || "") : "all";
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const ms7 = 7 * 24 * 60 * 60 * 1000;
-  const ms30 = 30 * 24 * 60 * 60 * 1000;
+  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - 1;
+  const startOfLast7Days = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).getTime();
+  const startOfLast30Days = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29).getTime();
 
   const matchTime = (row) => {
     // 时间筛选统一基于任务聚合行里的 timeValue 字段判断。
@@ -64,16 +65,16 @@ function filterTaskOverviewRows({
       return false;
     }
     if (selectedTime === "today") {
-      return rowTime >= startOfToday;
+      return rowTime >= startOfToday && rowTime <= endOfToday;
     }
     if (selectedTime === "last7") {
-      return now.getTime() - rowTime <= ms7;
+      return rowTime >= startOfLast7Days && rowTime <= endOfToday;
     }
     if (selectedTime === "last30") {
-      return now.getTime() - rowTime <= ms30;
+      return rowTime >= startOfLast30Days && rowTime <= endOfToday;
     }
     if (selectedTime === "thisYear") {
-      return new Date(rowTime).getFullYear() === now.getFullYear();
+      return new Date(rowTime).getFullYear() === now.getFullYear() && rowTime <= endOfToday;
     }
     if (selectedTime === "custom") {
       const rawStart = customStartDate ? new Date(`${customStartDate}T00:00:00`).getTime() : Number.NaN;
@@ -258,6 +259,7 @@ function useTaskOverview() {
   const overviewRoot = ref(null);
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
     STORAGE_KEYS.tasks,
+    STORAGE_KEYS.external_task_intakes,
     STORAGE_KEYS.samples,
     STORAGE_KEYS.schedules,
     STORAGE_KEYS.streams,
@@ -287,9 +289,10 @@ function useTaskOverview() {
   let flushPendingStorageRefresh = () => false;
   let lastOverviewSnapshot = null;
 
-  const buildRows = (tasks, samples, schedules, experiments, experimentTrays) =>
+  const buildRows = (tasks, samples, schedules, experiments, experimentTrays, externalIntakes = []) =>
     buildTaskRows({
       tasks,
+      externalIntakes,
       experiments,
       samples,
       schedules,
@@ -315,9 +318,12 @@ function useTaskOverview() {
       unassignedExperimentLabel: UNASSIGNED_EXPERIMENT_LABEL,
     });
 
-  const replaceOverview = (tasks, samples, schedules, experiments, experimentTrays = [], experimentRuns = [], experimentRunTrays = [], experimentRunSteps = []) => {
+  const replaceOverview = (tasks, samples, schedules, experiments, experimentTrays = [], experimentRuns = [], experimentRunTrays = [], experimentRunSteps = [], externalIntakes = null) => {
     // 编辑器保存/删除后通过这个入口一次性刷新两种视图。
-    rows.value = buildRows(tasks, samples, schedules, experiments, experimentTrays);
+    const resolvedExternalIntakes = Array.isArray(externalIntakes)
+      ? externalIntakes
+      : lastOverviewSnapshot?.[STORAGE_KEYS.external_task_intakes] || [];
+    rows.value = buildRows(tasks, samples, schedules, experiments, experimentTrays, resolvedExternalIntakes);
     trayOverviewRows.value = buildTrayOverviewRows(tasks, samples, schedules, experiments, experimentTrays, experimentRuns, experimentRunTrays, experimentRunSteps);
   };
 
@@ -377,6 +383,7 @@ function useTaskOverview() {
         snapshot[STORAGE_KEYS.experiment_runs],
         snapshot[STORAGE_KEYS.experiment_run_trays],
         snapshot[STORAGE_KEYS.experiment_run_steps],
+        snapshot[STORAGE_KEYS.external_task_intakes],
       );
       lastOverviewSnapshot = {
         [STORAGE_KEYS.tasks]: snapshot[STORAGE_KEYS.tasks],
@@ -387,6 +394,7 @@ function useTaskOverview() {
         [STORAGE_KEYS.experiment_runs]: snapshot[STORAGE_KEYS.experiment_runs],
         [STORAGE_KEYS.experiment_run_trays]: snapshot[STORAGE_KEYS.experiment_run_trays],
         [STORAGE_KEYS.experiment_run_steps]: snapshot[STORAGE_KEYS.experiment_run_steps],
+        [STORAGE_KEYS.external_task_intakes]: snapshot[STORAGE_KEYS.external_task_intakes],
       };
     } finally {
       if (showBlockingLoading) {

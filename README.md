@@ -2,12 +2,15 @@
 
 本项目是一个基于 `FastAPI + Vue 3 + Vite` 的 MES 示例系统。
 
+开发工具版本：MES 启动器 `v1.1`、上位机模拟器 `v2.0`、LIMS 模拟器 `v1.0`。各模拟器通过后端版本常量和状态接口向页面提供版本号。
+
 当前默认运行方式：
 
 - 前端独立运行在 `http://127.0.0.1:5173/`
 - 后端默认只提供 API，在 `http://127.0.0.1:8000/`
 - 后端业务存储默认走 MySQL
 - 后端健康检查地址：`http://127.0.0.1:8000/health`
+- 开发用 LIMS 模拟器：`http://127.0.0.1:8900/`
 - 运行期不再支持 `STORAGE_BACKEND=json`
 
 ## 本地开发启动
@@ -52,8 +55,11 @@ start-dev.bat
 
 - 后端：`http://127.0.0.1:8000`
 - 前端 Vite 开发服务：`http://127.0.0.1:5173`
+- LIMS 模拟器：`http://127.0.0.1:8900`
 
-脚本会等待后端可用后再启动前端，并自动打开当前电脑的局域网访问地址。
+脚本会统一启动并跟踪三个服务，关闭或重启 MES 时也会同步关闭或重启 LIMS 模拟器。
+服务准备完成后会打开 MES 页面和 LIMS 模拟器页面。
+通过桌面启动器运行时，MES 后端和前端使用可见终端窗口输出日志；LIMS 模拟器继续在后台隐藏运行。
 
 ### 3. 手动启动后端
 
@@ -147,13 +153,29 @@ python scripts\trial_run.py --port 8021
 - `logout_status_code` 为 `204`
 - `post_logout_session_status_code` 为 `401`
 
+## LIMS 外部委托开发联调
+
+LIMS 模拟器位于 `tools/lims_simulator`，通过 RabbitMQ AMQP 向 MES 下发外部委托，不调用 MES 接收 HTTP API，也不直接写数据库：
+
+```text
+Exchange: lims.mes.commands
+Routing Key: lims.external-intake.created.v1
+Queue: mes.external-intake.v1
+```
+
+MES 通过 `mes.lims.events` Exchange 回传 `received`、`accepted`、`failed` 状态。消息采用持久化投递、Publisher Confirm、手动 ACK、Inbox 幂等和 Outbox 状态发布。MES 页面内部使用的待受理查询与同意受理 HTTP 接口继续保留。
+
+任务受理页点击“外部受理”可以查看待确认委托。只有点击“同意受理”后，MES 才会生成正式任务、样品和实验记录。任务重置会生成 8 条待确认外部委托作为开发基线。
+
+模拟器默认由 `start-dev.ps1`、`mes-service-control.ps1` 和桌面启动器统一管理。单独调试方法见 `tools/lims_simulator/README.md`。
+
 ## RabbitMQ / MQTT / 上位机配置
 
-本项目通过 RabbitMQ 的 MQTT 插件向上位机/工控机发送实验室指令。RabbitMQ 作为消息中枢，MQTT 端口面向上位机，后续 LIMS 可继续通过 AMQP 或独立同步服务接入。
+本项目通过 RabbitMQ 的 MQTT 插件向上位机/工控机发送实验室指令，并通过原生 AMQP 队列承载 LIMS 外部委托业务消息。
 
 当前已使用的端口：
 
-- `5672`：RabbitMQ AMQP 端口，预留给后端 worker、LIMS 同步等服务
+- `5672`：RabbitMQ AMQP 端口，供 MES 与 LIMS 使用
 - `15672`：RabbitMQ 管理后台，默认地址 `http://127.0.0.1:15672/`
 - `1883`：RabbitMQ MQTT 插件端口，上位机/工控机连接该端口
 

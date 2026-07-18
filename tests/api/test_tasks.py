@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+import re
+import pytest
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -8,6 +10,7 @@ class FakeTaskStorage:
     def __init__(
         self,
         tasks=None,
+        external_task_intakes=None,
         schedules=None,
         samples=None,
         streams=None,
@@ -24,6 +27,7 @@ class FakeTaskStorage:
     ):
         self.payloads = {
             "mes.tasks": list(tasks or []),
+            "mes.external_task_intakes": list(external_task_intakes or []),
             "mes.schedules": list(schedules or []),
             "mes.samples": list(samples or []),
             "mes.streams": list(streams or []),
@@ -64,6 +68,7 @@ class FakeTaskStorage:
 def build_client(
     monkeypatch,
     tasks=None,
+    external_task_intakes=None,
     schedules=None,
     samples=None,
     streams=None,
@@ -82,6 +87,7 @@ def build_client(
 
     storage = FakeTaskStorage(
         tasks=tasks,
+        external_task_intakes=external_task_intakes,
         schedules=schedules,
         samples=samples,
         streams=streams,
@@ -158,6 +164,111 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
     assert [item["code"] for item in remaining.json()] == ["SYLU-2026-03-003"]
     assert remaining.json()[0]["experiment_count"] == 2
     assert len(remaining.json()[0]["experiment_codes"]) == 2
+
+
+def test_manual_task_creation_forces_internal_source(monkeypatch):
+    client = build_client(monkeypatch)
+
+    response = client.post(
+        "/api/tasks",
+        json={
+            "code": "SYLU-2026-07-001",
+            "name": "内部任务",
+            "source": "外部委托",
+            "contact": "张三",
+            "contact_info": "13800001234",
+            "sample_count": "2",
+            "test_types": ["盐雾试验"],
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["source"] == "内部新增"
+
+
+def test_lims_external_intake_stays_out_of_tasks_until_accepted(monkeypatch):
+    from app.api.routes import tasks as tasks_route
+
+    client = build_client(monkeypatch)
+    payload = {
+        "lims_request_id": "LIMS-REQUEST-001",
+        "code": "SYLU-2026-07-021",
+        "name": "LIMS委托021",
+        "client": "37单位",
+        "contact": "李四",
+        "contact_info": "13900001234",
+        "priority": "高",
+        "sample_count": "3",
+        "sample_type": "金属件",
+        "test_types": ["盐雾试验", "振动试验"],
+        "due_at": "2026-07-23 09:00",
+        "arrival_at": "2026-07-16 09:00",
+        "remark": "LIMS模拟下发",
+    }
+
+    received = tasks_route.store_external_task_intake(payload, message_id="MSG-001")
+    duplicate = tasks_route.store_external_task_intake(payload, message_id="MSG-001")
+    tasks_before = client.get("/api/tasks")
+    pending_before = client.get("/api/tasks/external-intakes?status=pending")
+    storage = client.app.state.storage
+
+    assert client.post("/api/tasks/external-intakes", json=payload).status_code == 405
+    assert received["source"] == "外部委托"
+    assert received["acceptance_status"] == "pending"
+    assert duplicate["intake_id"] == received["intake_id"]
+    assert len(storage.read("mes.external_task_intakes")) == 1
+    assert len(storage.read("mes.lims_inbox")) == 1
+    assert len(storage.read("mes.lims_outbox")) == 1
+    assert tasks_before.json() == []
+    assert [item["code"] for item in pending_before.json()] == ["SYLU-2026-07-021"]
+
+    accepted = client.post("/api/tasks/external-intakes/LIMS-REQUEST-001/accept")
+    assert accepted.status_code == 200
+    assert accepted.json()["task"]["source"] == "外部委托"
+    assert accepted.json()["task"]["arrival_at"] == ""
+    assert accepted.json()["intake"]["acceptance_status"] == "accepted"
+    assert accepted.json()["task"]["accepted_at"] == accepted.json()["intake"]["accepted_at"]
+    assert accepted.json()["task"]["accepted_at"]
+    assert len(storage.read("mes.tasks")) == 1
+    assert len(storage.read("mes.samples")) == 3
+    assert len(storage.read("mes.experiments")) == 2
+    assert client.get("/api/tasks/external-intakes?status=pending").json() == []
+
+    accepted_again = client.post("/api/tasks/external-intakes/LIMS-REQUEST-001/accept")
+    assert accepted_again.status_code == 200
+    assert len(storage.read("mes.tasks")) == 1
+
+
+def test_lims_external_intake_rejects_duplicate_request_and_task_code(monkeypatch):
+    from app.api.routes import tasks as tasks_route
+
+    existing = {
+        "id": "LIMS-REQUEST-001",
+        "intake_id": "LIMS-REQUEST-001",
+        "lims_request_id": "LIMS-REQUEST-001",
+        "code": "SYLU-2026-07-021",
+        "acceptance_status": "pending",
+    }
+    client = build_client(monkeypatch, external_task_intakes=[existing])
+    payload = {
+        "lims_request_id": "LIMS-REQUEST-001",
+        "code": "SYLU-2026-07-022",
+        "client": "22单位",
+        "contact": "王五",
+        "contact_info": "13900001235",
+        "sample_count": "1",
+        "test_types": ["盐雾试验"],
+    }
+
+    with pytest.raises(Exception) as duplicate_request:
+        tasks_route.store_external_task_intake(payload, message_id="MSG-002")
+    payload["lims_request_id"] = "LIMS-REQUEST-002"
+    payload["code"] = "SYLU-2026-07-021"
+    with pytest.raises(Exception) as duplicate_code:
+        tasks_route.store_external_task_intake(payload, message_id="MSG-003")
+
+    assert duplicate_request.value.status_code == 409
+    assert duplicate_code.value.status_code == 409
 
 
 def test_list_tasks_reads_only_the_task_collection(monkeypatch):
@@ -2117,9 +2228,12 @@ def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and
     assert response.status_code == 200
     assert response.json()["task_count"] == 20
     assert response.json()["experiment_count"] == 60
+    assert response.json()["external_intake_count"] == 8
     assert response.json()["sample_count"] == len(storage.read("mes.samples"))
     assert response.json()["sample_count"] > 100
     assert len(storage.read("mes.tasks")) == 20
+    assert len(storage.read("mes.external_task_intakes")) == 8
+    assert all(re.fullmatch(r"\d{2}单位", item["client"]) for item in storage.read("mes.external_task_intakes"))
     today = datetime.now()
     assert storage.read("mes.tasks")[0]["code"] == f"SYLU-{today.year}-{today.month:02d}-001"
     assert storage.read("mes.tasks")[0]["arrival_at"].startswith(f"{today.year}-{today.month:02d}-{today.day:02d}")

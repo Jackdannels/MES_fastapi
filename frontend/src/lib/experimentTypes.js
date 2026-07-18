@@ -1,5 +1,11 @@
 const normalizeExperimentType = (value) => String(value ?? "").trim();
 
+const normalizeExperimentTypeKey = (value) =>
+  normalizeExperimentType(value)
+    .toLowerCase()
+    .replaceAll("实验", "试验")
+    .replace(/\s+/g, "");
+
 const uniqueExperimentTypes = (values) => {
   const seen = new Set();
   return (Array.isArray(values) ? values : [])
@@ -38,11 +44,11 @@ const buildExperimentTypeSummary = (...values) => collectExperimentTypes(...valu
 const buildExperimentTypeOptions = (...values) => sortExperimentTypes(collectExperimentTypes(...values));
 
 const matchesExperimentTypeFilter = (selectedType, ...values) => {
-  const query = normalizeExperimentType(selectedType).toLowerCase();
+  const query = normalizeExperimentTypeKey(selectedType);
   if (!query) {
     return true;
   }
-  return collectExperimentTypes(...values).some((value) => normalizeExperimentType(value).toLowerCase().includes(query));
+  return collectExperimentTypes(...values).some((value) => normalizeExperimentTypeKey(value) === query);
 };
 
 export {
@@ -51,6 +57,7 @@ export {
   collectExperimentTypes,
   matchesExperimentTypeFilter,
   normalizeExperimentType,
+  normalizeExperimentTypeKey,
   sortExperimentTypes,
   splitExperimentTypeSummary,
   uniqueExperimentTypes,

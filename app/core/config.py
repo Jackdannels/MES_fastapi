@@ -43,6 +43,17 @@ class Settings(BaseSettings):
     MQTT_QOS: int = 1
     MQTT_TOPIC_PREFIX: str = "mes/v1"
 
+    RABBITMQ_ENABLED: bool = False
+    RABBITMQ_REQUIRED: bool = True
+    RABBITMQ_URL: str = "amqp://guest:guest@127.0.0.1:5672/"
+    RABBITMQ_COMMAND_EXCHANGE: str = "lims.mes.commands"
+    RABBITMQ_EVENT_EXCHANGE: str = "mes.lims.events"
+    RABBITMQ_DLX_EXCHANGE: str = "lims.mes.dlx"
+    RABBITMQ_INTAKE_QUEUE: str = "mes.external-intake.v1"
+    RABBITMQ_INTAKE_ROUTING_KEY: str = "lims.external-intake.created.v1"
+    RABBITMQ_STATUS_QUEUE: str = "lims.external-intake-status.v1"
+    RABBITMQ_PREFETCH_COUNT: int = 10
+
     UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE: bool = False
     UPPER_COMPUTER_SIMULATOR_AUTO_START: bool = True
     UPPER_COMPUTER_SIMULATOR_DIR: str = str(DEFAULT_UPPER_COMPUTER_SIMULATOR_DIR)

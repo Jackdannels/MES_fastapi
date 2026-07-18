@@ -64,7 +64,13 @@
         @compositionstart="handleCompositionStart"
         @input="handleInput"
       />
-      <select :value="timeFilter" class="search-input" @change="emit('update:timeFilter', $event.target.value)">
+      <select
+        :value="timeFilter"
+        aria-label="按任务新建或外部受理确认时间筛选"
+        class="search-input"
+        title="内部任务按新建时间，外部任务按确认受理时间"
+        @change="emit('update:timeFilter', $event.target.value)"
+      >
         <option value="all">全部时间</option>
         <option value="today">今天</option>
         <option value="last7">近7天</option>

@@ -477,6 +477,57 @@ const resolveMaintenanceConflictSlotMeta = ({ device, deviceCode, matchedSchedul
   };
 };
 
+const slotIntervalIsVisible = ({ endAt, segmentEnd, segmentStart, startAt }) => {
+  if (!startAt || !endAt || !segmentStart || !segmentEnd || segmentEnd <= segmentStart) {
+    return false;
+  }
+  return startAt < segmentEnd && endAt > segmentStart;
+};
+
+const resolveScheduleMaintenanceSlotMeta = ({ device, deviceCode, matchedSchedules = [], now, segmentEnd, segmentStart }) => {
+  if (matchedSchedules.length !== 1 || isExpiredMaintenanceWindow(device, now)) {
+    return null;
+  }
+  const schedule = matchedSchedules[0];
+  const scheduleStart = parseDate(schedule?.start_at);
+  const scheduleEnd = parseDate(schedule?.end_at);
+  const maintenanceStart = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
+  const maintenanceEnd = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
+  if (!scheduleStart || !scheduleEnd || !maintenanceStart || deviceMaintenanceOverlapsSchedule(device, scheduleStart, scheduleEnd, now)) {
+    return null;
+  }
+  const taskIsVisible = slotIntervalIsVisible({
+    endAt: scheduleEnd,
+    segmentEnd,
+    segmentStart,
+    startAt: scheduleStart,
+  });
+  const maintenanceIsVisible = slotIntervalIsVisible({
+    endAt: maintenanceEnd || segmentEnd,
+    segmentEnd,
+    segmentStart,
+    startAt: maintenanceStart,
+  });
+  if (!taskIsVisible || !maintenanceIsVisible) {
+    return null;
+  }
+  const taskCode = normalizeText(schedule?.task_code) || "任务";
+  const maintenanceEndLabel = maintenanceEnd ? formatDateTime(maintenanceEnd) : "未设置结束时间";
+  return {
+    maintenance: {
+      label: "维修中",
+      title: `${normalizeText(deviceCode)}维修：${formatDateTime(maintenanceStart)} - ${maintenanceEndLabel}`,
+    },
+    task: {
+      label: taskCode,
+      title: `${taskCode}：${formatDateTime(scheduleStart)} - ${formatDateTime(scheduleEnd)}`,
+    },
+    timelineOrder: maintenanceStart < scheduleStart
+      ? ["maintenance", "task"]
+      : ["task", "maintenance"],
+  };
+};
+
 const findDeviceRecord = (devices = [], deviceCode = "") =>
   (Array.isArray(devices) ? devices : []).find((device) => normalizeText(device?.code) === normalizeText(deviceCode));
 
@@ -1444,6 +1495,7 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
       SLOT_SEQUENCE.map((segment) => {
         const range = segment === "am" ? SLOT_RANGES.morning : SLOT_RANGES.afternoon;
         const segmentStart = parseDate(`${day.key}T${range.start}:00`);
+        const displaySegmentEnd = parseDate(`${day.key}T${range.end}:00`);
         const segmentEnd = segment === "am"
           ? parseDate(`${day.key}T${SLOT_RANGES.afternoon.start}:00`)
           : parseDate(`${toLocalDateValue(addDays(day.date, 1))}T${SLOT_RANGES.morning.start}:00`);
@@ -1521,19 +1573,36 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
             title: [maintenanceConflictMeta.title, ...items.map((item) => item.title)].filter(Boolean).join("\n"),
           };
         }
-        if (deviceMaintenanceOverlapsSchedule(deviceByCode.get(device), segmentStart, segmentEnd, now)) {
+        const scheduleMaintenanceMeta = resolveScheduleMaintenanceSlotMeta({
+          device: deviceByCode.get(device),
+          deviceCode: device,
+          matchedSchedules: matched,
+          now,
+          segmentEnd: displaySegmentEnd,
+          segmentStart,
+        });
+        if (scheduleMaintenanceMeta && items.length === 1) {
           return {
-            className: "gantt-slot idle maintenance",
+            className: "gantt-slot gantt-slot--mixed",
+            allItems: items,
             date: day.key,
-            displayMode: "idle",
-            items: [],
+            displayMode: "schedule-maintenance",
+            items,
             key: slotKey,
-            label: "维修中",
+            label: normalizeText(matched[0]?.task_code),
+            maintenance: scheduleMaintenanceMeta.maintenance,
             overflowCount: 0,
-            scheduleId: "",
+            scheduleId: normalizeText(matched[0]?.id),
             segment,
-            state: "maintenance",
-            title: `${normalizeText(device)}维修中，暂不可排程`,
+            stackKey: slotKey,
+            state: "schedule-maintenance",
+            task: scheduleMaintenanceMeta.task,
+            taskColor: items[0]?.color || resolveTaskColor(matched[0]?.task_code),
+            timelineOrder: scheduleMaintenanceMeta.timelineOrder,
+            title: scheduleMaintenanceMeta.timelineOrder
+              .map((itemType) => (itemType === "maintenance" ? scheduleMaintenanceMeta.maintenance.title : items[0]?.title))
+              .filter(Boolean)
+              .join("\n"),
           };
         }
         const slotTitle = items.map((item, index) => `${index >= 2 ? "隐藏: " : ""}${item.title}`).join("\n");
@@ -1639,6 +1708,7 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
         items: slot.items,
         key: `${slot.key}-segment`,
         label: slot.label,
+        maintenance: slot.maintenance,
         overflowCount: slot.overflowCount,
         scheduleId: slot.scheduleId,
         scheduleIds,
@@ -1646,6 +1716,8 @@ function buildGanttRows({ schedules, experiments = [], experimentTrays = [], sam
         stackKey: slot.stackKey || slot.key,
         state: slot.state,
         taskColor: slot.taskColor || slot.items?.[0]?.color || "",
+        task: slot.task,
+        timelineOrder: slot.timelineOrder,
         title: slot.title,
       });
     });

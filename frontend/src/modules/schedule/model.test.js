@@ -2359,9 +2359,94 @@ describe("schedulePageModel", () => {
     const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
     expect(impactRow?.slots[0]).toEqual(expect.objectContaining({ scheduleId: "schedule-before-maintenance" }));
     expect(impactRow?.slots[1]).toEqual(expect.objectContaining({
-      label: "维修中",
-      state: "maintenance",
+      displayMode: "schedule-maintenance",
+      scheduleId: "schedule-before-maintenance",
+      state: "schedule-maintenance",
+      timelineOrder: ["task", "maintenance"],
     }));
+    expect(impactRow?.slots[1]?.maintenance).toEqual(expect.objectContaining({ label: "维修中" }));
+  });
+
+  test("buildGanttRows places maintenance before a task when maintenance ends first in the same morning slot", () => {
+    const gantt = buildGanttRows({
+      devices: [
+        {
+          code: "冲击一室",
+          maintenance_start_at: "2099-07-18T08:00:00",
+          maintenance_end_at: "2099-07-18T10:30:00",
+          status: "可用",
+        },
+      ],
+      now: new Date("2099-07-18T07:00:00"),
+      schedules: [
+        {
+          id: "schedule-after-maintenance",
+          task_code: "SYLU-2099-07-032",
+          experiment_code: "SYLU-2099-07-032-A",
+          device: "冲击一室",
+          start_at: "2099-07-18T10:33:00",
+          end_at: "2099-07-18T11:30:00",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      startDate: new Date("2099-07-18T00:00:00"),
+      tasks: [{ code: "SYLU-2099-07-032", status: STATUS_SCHEDULED, test_type: "冲击试验" }],
+    });
+
+    const impactRow = gantt.rows.find((row) => row.device === "冲击一室");
+    expect(impactRow?.slots[0]).toEqual(expect.objectContaining({
+      displayMode: "schedule-maintenance",
+      scheduleId: "schedule-after-maintenance",
+      state: "schedule-maintenance",
+      timelineOrder: ["maintenance", "task"],
+    }));
+    expect(impactRow?.slots[0]?.maintenance?.title).toContain("10:30");
+    expect(impactRow?.slots[0]?.task?.title).toContain("10:33");
+  });
+
+  test("buildGanttRows keeps a task visible when maintenance starts later in the same afternoon slot", () => {
+    const gantt = buildGanttRows({
+      devices: [
+        {
+          code: "四综合实验室",
+          maintenance_start_at: "2099-03-20T16:23",
+          status: "可用",
+        },
+      ],
+      now: new Date("2099-03-20T11:30:00"),
+      schedules: [
+        {
+          id: "schedule-comprehensive",
+          task_code: "SYLU-2099-03-001",
+          experiment_code: "SYLU-2099-03-001-A",
+          device: "四综合实验室",
+          start_at: "2099-03-20T12:00:00",
+          end_at: "2099-03-20T15:00:00",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      startDate: new Date("2099-03-20T00:00:00"),
+      tasks: [{ code: "SYLU-2099-03-001", status: STATUS_SCHEDULED, test_type: "四综合试验" }],
+    });
+
+    const comprehensiveRow = gantt.rows.find((row) => row.device === "四综合实验室");
+    expect(comprehensiveRow?.slots[1]).toEqual(expect.objectContaining({
+      displayMode: "schedule-maintenance",
+      scheduleId: "schedule-comprehensive",
+      state: "schedule-maintenance",
+      timelineOrder: ["task", "maintenance"],
+    }));
+    expect(comprehensiveRow?.slots[1]?.items[0]).toEqual(expect.objectContaining({ taskCode: "SYLU-2099-03-001" }));
+    expect(comprehensiveRow?.slots[1]?.task).toEqual(expect.objectContaining({
+      label: "SYLU-2099-03-001",
+      title: expect.stringContaining("2099-03-20 12:00"),
+    }));
+    expect(comprehensiveRow?.slots[1]?.maintenance).toEqual(expect.objectContaining({
+      label: "维修中",
+      title: expect.stringContaining("未设置结束时间"),
+    }));
+    expect(comprehensiveRow?.slots[1]?.task).not.toHaveProperty("startPercent");
+    expect(comprehensiveRow?.slots[1]?.maintenance).not.toHaveProperty("widthPercent");
   });
 
   test("buildGanttRows exposes maintenance conflicts instead of hiding maintenance behind an existing schedule", () => {

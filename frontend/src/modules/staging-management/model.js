@@ -4,15 +4,17 @@ import {
   requiresPreExperimentAppearanceStorage,
 } from "@/modules/samples/sampleFlow.constants";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { resolveActiveDeviceMaintenance } from "@/lib/deviceMaintenance";
 import { serverNowDate } from "@/lib/serverClock";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { getLabsForTestType } from "@/lib/labs";
-import { resolveScheduleLabCode } from "@/lib/labIdentity";
+import { labIdentityMatches, resolveScheduleLabCode } from "@/lib/labIdentity";
 import { normalizeTrayScanCode } from "@/lib/trayQrCode";
 import { isAxisProgressIncomplete, resolveAxisProgress } from "@/modules/experiment-progress/axisProgress";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
 
 const TASKS_KEY = "mes.tasks";
+const DEVICES_KEY = "mes.devices";
 const SCHEDULES_KEY = "mes.schedules";
 const EXPERIMENTS_KEY = "mes.experiments";
 const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
@@ -1056,7 +1058,7 @@ const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments
   });
 };
 
-const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, experimentTrays, experimentRunSteps, experimentRunTrays, room = "staging" }) => {
+const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, experimentTrays, experimentRunSteps, experimentRunTrays, devices = [], now = serverNowDate(), room = "staging" }) => {
   const config = resolveStorageRoomConfig(room);
   const taskCode = normalizeText(row?.taskCode);
   const trayCode = normalizeText(row?.trayCode);
@@ -1067,6 +1069,49 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
   const experimentMap = buildExperimentMap(experiments);
   const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
   const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
+  const deviceMatchesDestination = (device, destination) => {
+    const target = {
+      labCode: destination?.targetLabCode,
+      labId: destination?.targetLabId,
+      name: destination?.targetLab,
+    };
+    const identities = [
+      {
+        device: normalizeText(device?.code),
+        lab_code: device?.lab_code || device?.labCode || device?.code,
+        lab_id: device?.lab_id ?? device?.labId ?? "",
+      },
+      { device: normalizeText(device?.location) },
+      { device: normalizeText(device?.name) },
+    ];
+    return identities.some((identity) => labIdentityMatches(identity, target));
+  };
+  const finalizeDestinations = (destinations) => {
+    const annotated = asArray(destinations).map((destination) => {
+      if (normalizeText(destination?.targetType) === "staging") {
+        return { ...destination, targetAvailable: true };
+      }
+      const device = asArray(devices).find((candidate) => deviceMatchesDestination(candidate, destination));
+      const maintenance = resolveActiveDeviceMaintenance(device, now);
+      if (!maintenance) {
+        return { ...destination, targetAvailable: true };
+      }
+      const endLabel = maintenance.endAt ? `，预计结束：${formatLocalDateTime(maintenance.endAt)}` : "";
+      return {
+        ...destination,
+        preferred: false,
+        targetAvailable: false,
+        targetUnavailableReason: `${destination.targetLab}正在${maintenance.status}，暂不可送入${endLabel}`,
+      };
+    });
+    if (!annotated.some((destination) => destination.preferred && destination.targetAvailable !== false)) {
+      const nextPreferred = annotated.find((destination) => destination.scheduled && destination.targetAvailable !== false);
+      if (nextPreferred) {
+        nextPreferred.preferred = true;
+      }
+    }
+    return annotated;
+  };
   const acceptsExperimentCode = (experimentCode) => trayExperimentCodes.size === 0 || trayExperimentCodes.has(normalizeText(experimentCode));
   const restrictToAppearanceDestinations =
     config.key === "appearance"
@@ -1258,7 +1303,7 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
     if (earliestCount === 1) {
       directScheduledCandidates[0].preferred = true;
     }
-    return [...directScheduledCandidates, ...appearanceStagingDestination];
+    return finalizeDestinations([...directScheduledCandidates, ...appearanceStagingDestination]);
   }
 
   if (scheduledCandidates.length || directExperimentCandidates.length || trayExperimentCodes.size > 0) {
@@ -1266,10 +1311,10 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
     const remainingDirectCandidates = directExperimentCandidates.filter((candidate) =>
       !scheduledExperimentCodes.has(candidate.targetExperimentCode),
     );
-    return [...scheduledCandidates, ...remainingDirectCandidates, ...appearanceStagingDestination];
+    return finalizeDestinations([...scheduledCandidates, ...remainingDirectCandidates, ...appearanceStagingDestination]);
   }
 
-  return appearanceStagingDestination;
+  return finalizeDestinations(appearanceStagingDestination);
 };
 
 const collectTaskTrayCodes = (snapshot, taskCode) => {
@@ -1369,6 +1414,7 @@ const pruneTerminalExperimentSchedules = (snapshot, taskCode) => {
 function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
   const config = resolveStorageRoomConfig(options.room);
   const tasks = asArray(snapshot[TASKS_KEY]);
+  const devices = asArray(snapshot[DEVICES_KEY]);
   const schedules = asArray(snapshot[SCHEDULES_KEY]);
   const experiments = asArray(snapshot[EXPERIMENTS_KEY]);
   const experimentTrays = asArray(snapshot[EXPERIMENT_TRAYS_KEY]);
@@ -1641,6 +1687,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         && toDateKey(lastEvent?.time) === toDateKey(options.now || serverNowDate());
 
       const targetDestinations = resolveTrayTargetDestinations({
+        devices,
         experiments,
         experimentRunSteps,
         experimentRunTrays,
@@ -1649,6 +1696,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         room: config.key,
         samples,
         schedules,
+        now: options.now || serverNowDate(),
       });
       const targetDestination =
         targetDestinations.find((destination) => destination.preferred)
@@ -2075,7 +2123,16 @@ function applyZancunInventoryAction(input = {}) {
       snapshot: nextSnapshot,
     };
   }
-  if (actionMode === "stockOut" && (selectedDestination ? !selectedDestination.scheduled : normalizeText(matchedRow.targetUnavailableReason))) {
+  if (
+    actionMode === "stockOut"
+    && (
+      selectedDestination
+        ? !selectedDestination.scheduled
+          || selectedDestination.targetAvailable === false
+          || Boolean(normalizeText(selectedDestination.targetUnavailableReason))
+        : Boolean(normalizeText(matchedRow.targetUnavailableReason))
+    )
+  ) {
     return {
       error: normalizeText(selectedDestination?.targetUnavailableReason) || matchedRow.targetUnavailableReason,
       row: null,

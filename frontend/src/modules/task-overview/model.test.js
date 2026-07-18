@@ -738,14 +738,28 @@ describe("taskOverviewModel", () => {
     expect(rows[0].taskCode).toBe("SYLU-2026-03-001");
   });
 
-  test("buildTaskRows prefers arrival_at over created_at for overview time", () => {
+  test("buildTaskRows uses internal creation time and external acceptance time for overview filtering", () => {
     const rows = buildTaskRows({
       tasks: [
         {
-          code: "SYLU-2026-03-001",
+          code: "SYLU-2026-03-001-INTERNAL",
+          source: "内部新增",
           test_type: "冲击试验",
           created_at: "2026-03-10T08:00:00Z",
           arrival_at: "2026-03-18 09:14",
+        },
+        {
+          code: "SYLU-2026-03-002-EXTERNAL",
+          source: "外部委托",
+          test_type: "振动试验",
+          created_at: "2026-03-01T08:00:00Z",
+          arrival_at: "2026-03-19 10:30",
+        },
+      ],
+      externalIntakes: [
+        {
+          accepted_at: "2026-03-12 11:25",
+          accepted_task_code: "SYLU-2026-03-002-EXTERNAL",
         },
       ],
       samples: [],
@@ -754,7 +768,8 @@ describe("taskOverviewModel", () => {
       unscheduledLabel: "未排程",
     });
 
-    expect(rows[0].timeValue).toBe("2026-03-18 09:14");
+    expect(rows.find((row) => row.taskCode.endsWith("INTERNAL"))?.timeValue).toBe("2026-03-10T08:00:00Z");
+    expect(rows.find((row) => row.taskCode.endsWith("EXTERNAL"))?.timeValue).toBe("2026-03-12 11:25");
   });
 
   test("buildTaskRows keeps overview rows scheduled until a tray explicitly enters the running state", () => {

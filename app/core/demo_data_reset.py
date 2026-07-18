@@ -8,6 +8,7 @@ from app.core.axis_codes import sort_axis_codes
 from app.core.storage_backend import AXIS_EXPERIMENT_TYPES, DEFAULT_AXIS_CODES, EXPERIMENT_TYPE_OPTIONS, normalize_storage_payload
 
 TASK_COUNT = 20
+EXTERNAL_INTAKE_COUNT = 8
 MANDATORY_EXPERIMENT_TYPE = "盐雾试验"
 
 
@@ -32,6 +33,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
     tasks: list[dict[str, Any]] = []
     samples: list[dict[str, Any]] = []
     experiments: list[dict[str, Any]] = []
+    external_task_intakes: list[dict[str, Any]] = []
     current_time = now or datetime.now()
     base_time = current_time.replace(hour=8, minute=0, second=0, microsecond=0)
 
@@ -118,9 +120,52 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
                 }
             )
 
+    for intake_index in range(1, EXTERNAL_INTAKE_COUNT + 1):
+        task_index = TASK_COUNT + intake_index
+        task_code = _task_code(task_index, base_time)
+        remaining_experiment_types = [
+            experiment_type for experiment_type in EXPERIMENT_TYPE_OPTIONS if experiment_type != MANDATORY_EXPERIMENT_TYPE
+        ]
+        experiment_types = [MANDATORY_EXPERIMENT_TYPE, *rng.sample(remaining_experiment_types, 2)]
+        rng.shuffle(experiment_types)
+        received_at = (base_time + timedelta(minutes=intake_index * 10)).strftime("%Y-%m-%d %H:%M:%S")
+        due_at = (base_time + timedelta(days=7, hours=task_index)).strftime("%Y-%m-%d %H:%M")
+        intake_id = f"LIMS-{base_time.year}{base_time.month:02d}{base_time.day:02d}-{intake_index:03d}"
+        external_task_intakes.append(
+            {
+                "id": intake_id,
+                "intake_id": intake_id,
+                "lims_request_id": intake_id,
+                "code": task_code,
+                "name": f"LIMS委托任务{intake_index:03d}",
+                "source": "外部委托",
+                "client": f"{rng.randint(10, 99)}单位",
+                "contact": f"委托联系人{intake_index:02d}",
+                "contact_info": f"1390000{intake_index:04d}",
+                "priority": rng.choice(("高", "中", "低")),
+                "sample_count": str(rng.randint(5, 12)),
+                "sample_type": rng.choice(("金属件", "复合材料", "电子组件")),
+                "test_type": " / ".join(experiment_types),
+                "test_types": experiment_types,
+                "required_device": " / ".join(experiment_types),
+                "due_at": due_at,
+                "arrival_at": "",
+                "conditions": "",
+                "attachment": "",
+                "remark": "LIMS开发阶段模拟下发",
+                "acceptance_status": "pending",
+                "received_at": received_at,
+                "accepted_at": "",
+                "accepted_task_code": "",
+            }
+        )
+
     snapshot.update(
         {
             "mes.tasks": tasks,
+            "mes.external_task_intakes": external_task_intakes,
+            "mes.lims_inbox": [],
+            "mes.lims_outbox": [],
             "mes.samples": samples,
             "mes.experiments": experiments,
             "mes.schedules": [],
@@ -167,4 +212,5 @@ def run_demo_reset(storage_backend: Any) -> dict[str, Any]:
         "task_count": len(snapshot.get("mes.tasks", [])),
         "sample_count": len(snapshot.get("mes.samples", [])),
         "experiment_count": len(snapshot.get("mes.experiments", [])),
+        "external_intake_count": len(snapshot.get("mes.external_task_intakes", [])),
     }

@@ -117,6 +117,7 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     tasks = snapshot["mes.tasks"]
     samples = snapshot["mes.samples"]
     experiments = snapshot["mes.experiments"]
+    external_intakes = snapshot["mes.external_task_intakes"]
 
     assert len(tasks) == 20
     assert [task["code"] for task in tasks] == [f"SYLU-2026-05-{index:03d}" for index in range(1, 21)]
@@ -131,6 +132,10 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     assert all("盐雾试验" in str(task["test_type"]).split(" / ") for task in tasks)
     assert all("盐雾试验" in task["test_types"] for task in tasks)
     assert all(len(set(str(task["test_type"]).split(" / "))) == 3 for task in tasks)
+    assert len(external_intakes) == 8
+    assert [item["code"] for item in external_intakes] == [f"SYLU-2026-05-{index:03d}" for index in range(21, 29)]
+    assert all(item["source"] == "外部委托" and item["acceptance_status"] == "pending" for item in external_intakes)
+    assert all(str(item["client"]).endswith("单位") for item in external_intakes)
 
     assert len(experiments) == 60
     experiments_by_task = {}

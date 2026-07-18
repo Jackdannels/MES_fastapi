@@ -2100,20 +2100,34 @@ function buildTrayFlowView(input = {}) {
           });
         });
         const normalizedFinalStatus = normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status);
+        const latestExperimentResultTime = resultIndexes.reduce(
+          (latest, stepIndex) => Math.max(latest, parseTimeValue(steps[stepIndex]?.time)),
+          0,
+        );
+        const postExperimentStagingTime = routeStepTimeAfter(
+          POST_EXPERIMENT_STAGING_STOCKED_STATUS,
+          latestExperimentResultTime,
+        );
+        const hasPostExperimentStaging = Boolean(postExperimentStagingTime)
+          || normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS;
         const finalStatusIsStagingStocked =
           normalizedFinalStatus === POST_EXPERIMENT_STAGING_STOCKED_STATUS
-          || normalizedFinalStatus === "已到达暂存间";
-        const postTestStagingSentIndex = pushStep({
-          key: "route-folded-post-staging-sent",
-          label: "送至暂存间",
-          reached: finalStatusIsStagingStocked || normalizedFinalStatus === "厂家收回",
-          time: stepTimeMap.get("送至暂存间") || "",
-        });
+          || (!hasPostExperimentStaging && normalizedFinalStatus === "已到达暂存间");
+        const postTestStagingSentIndex = hasPostExperimentStaging
+          ? -1
+          : pushStep({
+              key: "route-folded-post-staging-sent",
+              label: "送至暂存间",
+              reached: finalStatusIsStagingStocked || normalizedFinalStatus === "厂家收回",
+              time: routeStepTimeAfter("送至暂存间", latestExperimentResultTime),
+            });
         const postTestStagingIndex = pushStep({
           key: "route-folded-post-staging",
-          label: "已到达暂存间",
+          label: hasPostExperimentStaging ? POST_EXPERIMENT_STAGING_STOCKED_STATUS : "已到达暂存间",
           reached: finalStatusIsStagingStocked || normalizedFinalStatus === "厂家收回",
-          time: stepTimeMap.get("已到达暂存间") || stepTimeMap.get(POST_EXPERIMENT_STAGING_STOCKED_STATUS) || "",
+          time: hasPostExperimentStaging
+            ? postExperimentStagingTime
+            : routeStepTimeAfter("已到达暂存间", latestExperimentResultTime),
         });
         const foldedCompletedExperimentCodes = new Set(
           foldedExperimentResults
@@ -2151,7 +2165,9 @@ function buildTrayFlowView(input = {}) {
           resultIndexes.forEach((stepIndex) => {
             steps[stepIndex].reached = true;
           });
-          steps[postTestStagingSentIndex].reached = true;
+          if (postTestStagingSentIndex >= 0) {
+            steps[postTestStagingSentIndex].reached = true;
+          }
           steps[postTestStagingIndex].reached = true;
         } else if (finalStatusIsStagingStocked) {
           activeIndex = postTestStagingIndex;

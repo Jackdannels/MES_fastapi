@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
-import { createTask, deleteTask, readTasks, resetTasks, updateTask } from "./tasksApi";
+import { acceptExternalTaskIntake, createTask, deleteTask, readExternalTaskIntakes, readTasks, resetTasks, updateTask } from "./tasksApi";
 
 const TASKS_ENDPOINT = buildApiUrl("/api/tasks", getFrontendApiBaseUrl());
 const TASKS_WITH_ARCHIVED_ENDPOINT = buildApiUrl("/api/tasks?includeArchived=true", getFrontendApiBaseUrl());
@@ -165,6 +165,30 @@ describe("tasksApi", () => {
         method: "POST",
         credentials: "include",
       }),
+    );
+  });
+
+  test("reads and accepts pending LIMS task intakes through dedicated endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => [{ intake_id: "LIMS-1", code: "TASK-1" }] })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ task: { code: "TASK-1" } }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = await readExternalTaskIntakes();
+    const accepted = await acceptExternalTaskIntake("LIMS-1");
+
+    expect(pending).toEqual([{ intake_id: "LIMS-1", code: "TASK-1" }]);
+    expect(accepted).toEqual({ task: { code: "TASK-1" } });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      buildApiUrl("/api/tasks/external-intakes?status=pending", getFrontendApiBaseUrl()),
+      expect.objectContaining({ credentials: "include" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      buildApiUrl("/api/tasks/external-intakes/LIMS-1/accept", getFrontendApiBaseUrl()),
+      expect.objectContaining({ method: "POST", credentials: "include" }),
     );
   });
 });

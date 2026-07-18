@@ -17,7 +17,11 @@ describe("shared table styles", () => {
   test("keeps the custom calendar compact enough for modal forms", () => {
     const source = readFileSync(stylesPath, "utf8");
 
+    expect(source).toMatch(/\.picker-only-calendar\s*\{[^}]*position:\s*fixed/i);
     expect(source).toMatch(/\.picker-only-calendar\s*\{[^}]*width:\s*min\(292px,\s*calc\(100vw - 24px\)\)/i);
     expect(source).toMatch(/\.picker-only-calendar__day\s*\{[^}]*height:\s*30px/i);
+    expect(source).toMatch(/\.picker-only-calendar--datetime\s*\{[^}]*width:\s*min\(360px,\s*calc\(100vw - 24px\)\)/i);
+    expect(source).toMatch(/\.picker-only-time__wheel\s*\{[^}]*grid-template-rows:\s*repeat\(5,\s*28px\)/i);
+    expect(source).toMatch(/\.picker-only-time__wheel::before\s*\{[^}]*transform:\s*translateY\(-50%\)/i);
   });
 });

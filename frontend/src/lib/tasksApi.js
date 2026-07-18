@@ -48,6 +48,32 @@ async function createTask(task) {
   return response.json();
 }
 
+async function readExternalTaskIntakes(options = {}) {
+  const status = String(options?.status ?? "pending").trim();
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const response = await fetch(buildApiUrl(`/api/tasks/external-intakes${query}`, API_BASE_URL), {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await throwApiError(response, "Failed to read external task intakes");
+  }
+  const intakes = await response.json();
+  return Array.isArray(intakes) ? intakes : [];
+}
+
+async function acceptExternalTaskIntake(intakeId) {
+  const response = await fetch(buildApiUrl(`/api/tasks/external-intakes/${encodeURIComponent(intakeId)}/accept`, API_BASE_URL), {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await throwApiError(response, `Failed to accept external task intake ${intakeId}`);
+  }
+  return response.json();
+}
+
 async function updateTask(taskId, task) {
   const payload = task ?? {};
   const response = await fetch(buildApiUrl(`/api/tasks/${taskId}`, API_BASE_URL), {
@@ -87,4 +113,12 @@ async function resetTasks() {
   return response.json();
 }
 
-export { createTask, deleteTask, readTasks, resetTasks, updateTask };
+export {
+  acceptExternalTaskIntake,
+  createTask,
+  deleteTask,
+  readExternalTaskIntakes,
+  readTasks,
+  resetTasks,
+  updateTask,
+};

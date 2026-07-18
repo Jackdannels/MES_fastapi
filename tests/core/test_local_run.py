@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 from app.core.local_run import APP_ENV_KEYS, build_local_run_env
+from scripts.run_local import enable_windows_virtual_terminal
 from scripts.trial_run import (
     build_trial_run_server_command,
     build_trial_run_server_env,
@@ -91,6 +92,10 @@ def test_run_local_script_no_use_colors_option_is_documented_and_accepted():
 
     assert result.returncode == 0, result.stderr
     assert "--no-use-colors" in result.stdout
+
+
+def test_windows_virtual_terminal_setup_is_safe_for_the_current_output_handle():
+    assert isinstance(enable_windows_virtual_terminal(), bool)
 
 
 def test_trial_run_script_help_is_invokable_from_repo_root():

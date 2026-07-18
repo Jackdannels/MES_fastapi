@@ -2,15 +2,20 @@ using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 
 namespace MesFastApiLauncher
 {
     internal static class Program
     {
         internal const string ProjectRoot = @"__PROJECT_ROOT__";
+        internal const string LauncherVersion = "1.1";
 
         [STAThread]
         private static void Main()
@@ -56,18 +61,19 @@ namespace MesFastApiLauncher
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            Text = "MES 启动器";
+            Text = "MES 启动器 v" + Program.LauncherVersion;
 
             var title = new Label { AutoSize = true, ForeColor = Color.FromArgb(231, 239, 243), Font = new Font("Microsoft YaHei UI", 18F, FontStyle.Bold), Location = new Point(28, 28), Text = "MES 系统" };
-            var meta = new Label { AutoSize = true, ForeColor = Color.FromArgb(151, 169, 181), Location = new Point(30, 68), Text = "服务控制中心  ·  后端 8000  ·  前端 5173" };
+            var versionBadge = new Label { AutoSize = false, BackColor = Color.FromArgb(19, 35, 42), ForeColor = Color.FromArgb(99, 230, 190), Font = new Font("Segoe UI", 9F, FontStyle.Bold), Location = new Point(423, 31), Size = new Size(59, 26), Text = "v" + Program.LauncherVersion, TextAlign = ContentAlignment.MiddleCenter };
+            var meta = new Label { AutoSize = true, ForeColor = Color.FromArgb(151, 169, 181), Location = new Point(30, 68), Text = "服务控制中心  ·  后端 8000  ·  前端 5173  ·  LIMS 8900" };
             statusLabel = new Label { AutoSize = false, BackColor = Color.FromArgb(19, 35, 42), ForeColor = Color.FromArgb(99, 230, 190), Location = new Point(28, 104), Size = new Size(454, 39), TextAlign = ContentAlignment.MiddleLeft };
-            closeButton = CreateActionButton("关闭 MES 系统", "关闭后端、前端和专属系统窗口", Color.FromArgb(145, 48, 43), 160);
-            restartButton = CreateActionButton("重启 MES 系统", "重新启用服务并刷新系统页面", Color.FromArgb(183, 117, 41), 232);
-            startButton = CreateActionButton("开启 MES 系统", "启动后端与前端服务", Color.FromArgb(38, 122, 82), 304);
+            closeButton = CreateActionButton("关闭 MES 系统", "关闭后端、前端、LIMS模拟器和专属窗口", Color.FromArgb(145, 48, 43), 160);
+            restartButton = CreateActionButton("重启 MES 系统", "重新启用全部服务并刷新系统页面", Color.FromArgb(183, 117, 41), 232);
+            startButton = CreateActionButton("开启 MES 系统", "启动后端、前端与LIMS模拟器", Color.FromArgb(38, 122, 82), 304);
             closeButton.Click += (sender, args) => RequestAction("Stop", "关闭MES系统会终止当前服务和系统窗口，是否继续？");
             restartButton.Click += (sender, args) => RequestAction("Restart", "重启MES系统会短暂中断当前页面，是否继续？");
             startButton.Click += (sender, args) => RequestAction("Start", null);
-            Controls.AddRange(new Control[] { title, meta, statusLabel, closeButton, restartButton, startButton });
+            Controls.AddRange(new Control[] { title, versionBadge, meta, statusLabel, closeButton, restartButton, startButton });
 
             modalOverlay = new Panel { BackColor = Color.FromArgb(7, 14, 19), Location = Point.Empty, Size = ClientSize, Visible = false };
             var modalBorder = new Panel { BackColor = Color.FromArgb(43, 116, 106), Location = new Point(27, 88), Size = new Size(456, 234) };
@@ -107,8 +113,16 @@ namespace MesFastApiLauncher
         private async void RefreshStatus()
         {
             if (actionRunning) return;
-            var result = await Task.Run(() => RunControl("Status"));
-            statusLabel.Text = "  " + ReadResultValue(result, "message");
+            try
+            {
+                var result = await Task.Run(() => RunControl("Status"));
+                statusLabel.Text = "  " + ReadResultValue(result, "message");
+            }
+            catch (Exception ex)
+            {
+                statusLabel.Text = "  无法读取MES系统状态";
+                ShowThemedModal("状态读取失败", ex.Message, false, null, true);
+            }
         }
 
         private void RequestAction(string action, string confirmation)
@@ -134,7 +148,8 @@ namespace MesFastApiLauncher
                 var status = ReadResultValue(result, "status");
                 var message = ReadResultValue(result, "message");
                 statusLabel.Text = "  " + message;
-                if (status == "already_running") ShowThemedModal("MES 系统已开启", "MES系统已经打开，无需再次开启。", false, null, false);
+                if (status == "error") ShowThemedModal("操作失败", message, false, null, true);
+                else if (status == "already_running") ShowThemedModal("MES 系统已开启", "MES系统已经打开，无需再次开启。", false, null, false);
                 else if (status == "not_running") ShowThemedModal("未检测到运行中的系统", "未检测到开启的MES系统，无需关闭。", false, null, false);
                 else if (action == "Start" && status == "started") ShowThemedModal("启动完成", "MES系统已启动，可以在默认浏览器中继续操作。", false, null, false);
                 else if (action == "Restart" && status == "started") ShowThemedModal("重启完成", "MES系统已重新启动，页面已刷新。", false, null, false);
@@ -165,8 +180,31 @@ namespace MesFastApiLauncher
 
         private string RunControl(string action)
         {
-            var info = new ProcessStartInfo { FileName = "powershell.exe", Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + controlScript + "\" -Action " + action, WorkingDirectory = Program.ProjectRoot, UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
-            using (var process = Process.Start(info)) { var output = process.StandardOutput.ReadToEnd(); process.WaitForExit(); return output; }
+            var resultFile = Path.Combine(Path.GetTempPath(), "mes-launcher-result-" + Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                var info = new ProcessStartInfo { FileName = "powershell.exe", Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + controlScript + "\" -Action " + action + " -ResultFile \"" + resultFile + "\"", WorkingDirectory = Program.ProjectRoot, UseShellExecute = false, CreateNoWindow = true };
+                using (var process = Process.Start(info))
+                {
+                    if (process == null) throw new InvalidOperationException("无法启动MES控制脚本。");
+                    process.WaitForExit();
+                    var output = File.Exists(resultFile) ? File.ReadAllText(resultFile) : "";
+                    if (!HasResultValue(output, "status"))
+                    {
+                        throw new InvalidOperationException("MES控制脚本未返回执行结果，退出码: " + process.ExitCode + "。");
+                    }
+                    return output;
+                }
+            }
+            finally
+            {
+                if (File.Exists(resultFile)) File.Delete(resultFile);
+            }
+        }
+
+        private static bool HasResultValue(string result, string name)
+        {
+            return Regex.IsMatch(result ?? "", "\\\"" + name + "\\\"\\s*:\\s*\\\"[^\\\"]*\\\"");
         }
 
         private static string ReadResultValue(string result, string name)

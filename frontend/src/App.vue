@@ -54,6 +54,15 @@
           <button
             v-if="showTaskIntakeAction"
             class="action-btn"
+            data-testid="open-external-task-intake"
+            type="button"
+            @click="openExternalTaskIntake"
+          >
+            外部受理
+          </button>
+          <button
+            v-if="showTaskIntakeAction"
+            class="action-btn"
             data-testid="open-task-intake"
             type="button"
             @click="openTaskIntake"
@@ -273,6 +282,10 @@ const openTaskIntake = async () => {
 
 const openTaskReset = () => {
   window.dispatchEvent(new CustomEvent(TASK_RESET_EVENT));
+};
+
+const openExternalTaskIntake = () => {
+  window.dispatchEvent(new CustomEvent("mes:open-external-task-intake"));
 };
 
 const refreshPage = () => {

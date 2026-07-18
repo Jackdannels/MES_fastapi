@@ -251,13 +251,15 @@
                   ? `gantt-segment-split-${segment.stackKey}`
                   : segment.displayMode === 'stacked'
                   ? `gantt-segment-stack-${segment.stackKey}`
+                  : segment.displayMode === 'schedule-maintenance'
+                  ? `gantt-segment-mixed-${segment.stackKey}`
                   : segment.scheduleId
                     ? `gantt-segment-${segment.scheduleId}`
                     : null
               "
-              @click="segment.displayMode !== 'stacked' && segment.displayMode !== 'split' && segment.scheduleId && openTaskDetailModal(segment.scheduleId, segment.scheduleIds)"
+              @click="!['stacked', 'split', 'schedule-maintenance'].includes(segment.displayMode) && segment.scheduleId && openTaskDetailModal(segment.scheduleId, segment.scheduleIds)"
             >
-              <template v-if="segment.displayMode === 'split' || segment.displayMode === 'stacked'">
+              <template v-if="['split', 'stacked', 'schedule-maintenance'].includes(segment.displayMode)">
                 <div
                   :class="segment.className"
                   role="group"
@@ -265,7 +267,33 @@
                   :title="segment.title"
                   :style="segment.taskColor ? { '--gantt-task-color': segment.taskColor } : null"
                 >
-                  <span class="gantt-slot-content">
+                  <span v-if="segment.displayMode === 'schedule-maintenance'" class="gantt-slot-content gantt-slot-content--mixed">
+                    <template v-for="timelineItemType in segment.timelineOrder || ['task', 'maintenance']" :key="`${segment.key}-${timelineItemType}`">
+                      <button
+                        v-if="timelineItemType === 'task'"
+                        class="gantt-task-item"
+                        type="button"
+                        :data-testid="segment.items[0]?.scheduleId ? `gantt-task-item-${segment.items[0].scheduleId}` : null"
+                        :disabled="!segment.items[0]?.scheduleId"
+                        :aria-label="segment.task?.title || segment.items[0]?.title"
+                        :style="{ '--gantt-task-color': segment.items[0]?.color }"
+                        :title="segment.task?.title || segment.items[0]?.title"
+                        @click.stop="segment.items[0]?.scheduleId && openTaskDetailModal(segment.items[0].scheduleId, segment.items[0].scheduleIds)"
+                      >
+                        {{ segment.items[0]?.taskCode }}
+                      </button>
+                      <span
+                        v-else
+                        class="gantt-maintenance-item"
+                        :aria-label="segment.maintenance?.title"
+                        role="note"
+                        :title="segment.maintenance?.title"
+                      >
+                        {{ segment.maintenance?.label }}
+                      </span>
+                    </template>
+                  </span>
+                  <span v-else class="gantt-slot-content">
                     <button
                       v-for="item in segment.items"
                       :key="`${segment.key}-${item.taskCode}`"

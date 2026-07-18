@@ -3,6 +3,7 @@ param(
     [string]$Action = "Status",
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$StateFile = (Join-Path $env:LOCALAPPDATA "MesFastApiLauncher\mes-service-state.json"),
+    [string]$ResultFile = "",
     [switch]$IgnorePortListeners,
     [switch]$DryRun
 )
@@ -10,9 +11,16 @@ param(
 $ErrorActionPreference = "Stop"
 $backendPort = 8000
 $frontendPort = 5173
+$limsSimulatorPort = 8900
 
 function Write-Result([string]$Status, [string]$Message) {
-    [pscustomobject]@{ status = $Status; message = $Message } | ConvertTo-Json -Compress
+    $json = [pscustomobject]@{ status = $Status; message = $Message } | ConvertTo-Json -Compress
+    if ($ResultFile) {
+        $resultDirectory = Split-Path -Parent $ResultFile
+        if ($resultDirectory) { New-Item -ItemType Directory -Force -Path $resultDirectory | Out-Null }
+        Set-Content -LiteralPath $ResultFile -Value $json -Encoding UTF8
+    }
+    $json
 }
 
 function Read-State {
@@ -30,9 +38,9 @@ function Test-ProcessAlive($ProcessId) {
 
 function Test-MesRunning {
     $state = Read-State
-    $tracked = @($state.backendCommandPid, $state.frontendCommandPid) | Where-Object { Test-ProcessAlive $_ }
+    $tracked = @($state.backendCommandPid, $state.frontendCommandPid, $state.limsSimulatorCommandPid) | Where-Object { Test-ProcessAlive $_ }
     if ($IgnorePortListeners) { return [bool]($tracked.Count -gt 0) }
-    return [bool]($tracked.Count -gt 0 -or (Get-ListenerPids $backendPort).Count -gt 0 -or (Get-ListenerPids $frontendPort).Count -gt 0)
+    return [bool]($tracked.Count -gt 0 -or (Get-ListenerPids $backendPort).Count -gt 0 -or (Get-ListenerPids $frontendPort).Count -gt 0 -or (Get-ListenerPids $limsSimulatorPort).Count -gt 0)
 }
 
 function Test-MesHttpReady([string]$Url) {
@@ -44,12 +52,46 @@ function Test-MesHttpReady([string]$Url) {
     }
 }
 
+function Test-LimsRabbitReady {
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$limsSimulatorPort/api/state" -TimeoutSec 2
+        if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 500) { return $false }
+        $state = $response.Content | ConvertFrom-Json
+        return [bool]$state.connected
+    } catch {
+        return $false
+    }
+}
+
+function Open-MesPages($State) {
+    $frontendUrl = $State.frontendLocalUrl
+    if (-not $frontendUrl) { $frontendUrl = "http://127.0.0.1:$frontendPort/" }
+    $limsSimulatorUrl = $State.limsSimulatorUrl
+    if (-not $limsSimulatorUrl) { $limsSimulatorUrl = "http://127.0.0.1:$limsSimulatorPort/" }
+    Start-Process $frontendUrl
+    Start-Process $limsSimulatorUrl
+}
+
 function Stop-ProcessTree($ProcessId) {
+    if (-not (Test-ProcessAlive $ProcessId)) { return }
+
+    # taskkill /T can terminate the requested service successfully and still
+    # report an error for a console-host child that exited concurrently or is
+    # managed by Windows. Treat taskkill as best effort, suppress both streams,
+    # then force-stop the requested root if it remains. Port release below is
+    # the authoritative shutdown result.
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "SilentlyContinue"
+        & taskkill.exe /PID $ProcessId /T /F 2>&1 | Out-Null
+    } catch {
+        # Process-tree races are expected during shutdown.
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
     if (Test-ProcessAlive $ProcessId) {
-        # A sibling process tree can exit between the liveness check and taskkill.
-        # Port release is verified separately, so this benign race must not leak
-        # an error into the launcher's JSON response.
-        & taskkill.exe /PID $ProcessId /T /F 2>$null | Out-Null
+        Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -68,7 +110,10 @@ function Get-MesCommandPids($ProcessMap, [string]$LauncherSessionId = "") {
         if (-not $commandLine -or [string]$_.Name -notmatch "(?i)^cmd\.exe$") { return $false }
         if ($sessionMarker) { return $commandLine -like "*$sessionMarker*" }
         return $commandLine -like "*$ProjectRoot*" -and (
-            $commandLine -like "*scripts\run_local.py*" -or $commandLine -like "*npm run dev*" -or $commandLine -like "*npm run serve:public*"
+            $commandLine -like "*scripts\run_local.py*" `
+                -or $commandLine -like "*npm run dev*" `
+                -or $commandLine -like "*npm run serve:public*" `
+                -or $commandLine -like "*tools\lims_simulator*"
         )
     } | Select-Object -ExpandProperty ProcessId -Unique)
 }
@@ -90,6 +135,7 @@ function Get-ParentCommandPids($ProcessMap, $ProcessIds) {
 }
 
 function Stop-TrackedMesProcess($ProcessId) {
+    if (-not $ProcessId) { return }
     $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
     if (-not $process) { return }
     # Windows Terminal is shared by tabs and may host unrelated user shells; close only MES command trees.
@@ -110,7 +156,7 @@ function Wait-ProcessesExited($ProcessIds, [int]$TimeoutSeconds = 5) {
 function Wait-MesPortsReleased {
     $deadline = (Get-Date).AddSeconds(10)
     do {
-        if (@(Get-ListenerPids $backendPort).Count -eq 0 -and @(Get-ListenerPids $frontendPort).Count -eq 0) { return }
+        if (@(Get-ListenerPids $backendPort).Count -eq 0 -and @(Get-ListenerPids $frontendPort).Count -eq 0 -and @(Get-ListenerPids $limsSimulatorPort).Count -eq 0) { return }
         Start-Sleep -Milliseconds 200
     } while ((Get-Date) -lt $deadline)
     throw "MES服务端口未能在10秒内释放"
@@ -122,9 +168,9 @@ function Stop-MesSystem {
 
     $state = Read-State
     $processMap = Get-ProcessMap
-    $listenerPids = if ($IgnorePortListeners) { @() } else { @(Get-ListenerPids $backendPort) + @(Get-ListenerPids $frontendPort) | Select-Object -Unique }
+    $listenerPids = if ($IgnorePortListeners) { @() } else { @(Get-ListenerPids $backendPort) + @(Get-ListenerPids $frontendPort) + @(Get-ListenerPids $limsSimulatorPort) | Select-Object -Unique }
     $commandPids = @(
-        @($state.backendCommandPid, $state.frontendCommandPid)
+        @($state.backendCommandPid, $state.frontendCommandPid, $state.limsSimulatorCommandPid)
         @(Get-MesCommandPids $processMap $state.launcherSessionId)
         @(Get-ParentCommandPids $processMap $listenerPids)
     ) | Where-Object { $_ } | Select-Object -Unique
@@ -141,38 +187,78 @@ function Stop-MesSystem {
 }
 
 function Start-MesSystem {
-    if (Test-MesRunning) { return @{ status = "already_running"; message = "MES系统已经打开，无需再次开启" } }
+    if (Test-MesRunning) {
+        $runningBackendReady = Test-MesHttpReady "http://127.0.0.1:$backendPort/api/storage"
+        $runningFrontendReady = Test-MesHttpReady "http://127.0.0.1:$frontendPort/"
+        $runningLimsReady = Test-LimsRabbitReady
+        if ($runningBackendReady -and $runningFrontendReady -and $runningLimsReady) {
+            Open-MesPages (Read-State)
+            return @{ status = "already_running"; message = "MES系统已经运行，已打开MES与LIMS模拟器页面" }
+        }
+        # 旧版本服务或异常中断可能只留下部分端口。先统一回收，再按完整服务组重启。
+        $null = Stop-MesSystem
+    }
     if ($DryRun) { return @{ status = "started"; message = "MES系统已启动" } }
 
     $startScript = Join-Path $ProjectRoot "start-dev.ps1"
     if (-not (Test-Path -LiteralPath $startScript)) { throw "未找到启动脚本: $startScript" }
     $stateDirectory = Split-Path -Parent $StateFile
     if ($stateDirectory) { New-Item -ItemType Directory -Force -Path $stateDirectory | Out-Null }
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $startScript -Production -DisableAutoOpenBrowser -StateFile $StateFile
+    $bootstrapLogDirectory = Join-Path $stateDirectory "logs"
+    New-Item -ItemType Directory -Force -Path $bootstrapLogDirectory | Out-Null
+    $bootstrapStdout = Join-Path $bootstrapLogDirectory "bootstrap.stdout.log"
+    $bootstrapStderr = Join-Path $bootstrapLogDirectory "bootstrap.stderr.log"
+    $startArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$startScript`" -Production -DisableAutoOpenBrowser -StateFile `"$StateFile`""
+    $startProcess = Start-Process -FilePath "powershell.exe" -ArgumentList $startArguments `
+        -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput $bootstrapStdout -RedirectStandardError $bootstrapStderr
+    $startProcess.WaitForExit()
+    $startExitCode = $startProcess.ExitCode
+    $startDetail = ""
+    if ($startExitCode -ne 0) {
+        $startDetail = @(
+            $(if (Test-Path -LiteralPath $bootstrapStdout) { Get-Content -Raw -LiteralPath $bootstrapStdout })
+            $(if (Test-Path -LiteralPath $bootstrapStderr) { Get-Content -Raw -LiteralPath $bootstrapStderr })
+        ) -join [Environment]::NewLine
+        $startDetail = $startDetail.Trim()
+        if (-not (Test-Path -LiteralPath $StateFile)) {
+            if ($startDetail) { throw "启动脚本执行失败: $startDetail" }
+            throw "启动脚本执行失败，退出码: $startExitCode"
+        }
+    }
+    if (-not (Test-Path -LiteralPath $StateFile)) { throw "启动脚本未写入服务状态文件" }
 
     $backendReadyUrl = "http://127.0.0.1:$backendPort/api/storage"
     $frontendReadyUrl = "http://127.0.0.1:$frontendPort/"
+    $limsSimulatorReadyUrl = "http://127.0.0.1:$limsSimulatorPort/api/state"
     $deadline = (Get-Date).AddSeconds(90)
     $backendReady = $false
     $frontendReady = $false
+    $limsSimulatorReady = $false
     do {
         $backendReady = Test-MesHttpReady $backendReadyUrl
         $frontendReady = Test-MesHttpReady $frontendReadyUrl
-        if ($backendReady -and $frontendReady) { break }
+        $limsSimulatorReady = Test-LimsRabbitReady
+        if ($backendReady -and $frontendReady -and $limsSimulatorReady) { break }
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
-    if (-not ($backendReady -and $frontendReady)) { throw "前后端服务未能在90秒内准备完成" }
+    if (-not ($backendReady -and $frontendReady -and $limsSimulatorReady)) {
+        if ($startDetail) { throw "启动脚本执行异常且服务未准备完成: $startDetail" }
+        throw "前后端及LIMS模拟器未能在90秒内准备完成"
+    }
 
-    $state = Read-State
-    $frontendUrl = $state.frontendUrl
-    if (-not $frontendUrl) { $frontendUrl = "http://127.0.0.1:$frontendPort/" }
-    Start-Process $frontendUrl
+    Open-MesPages (Read-State)
     return @{ status = "started"; message = "MES系统已启动" }
 }
 
-switch ($Action) {
-    "Status" { if (Test-MesRunning) { Write-Result "running" "MES系统正在运行" } else { Write-Result "stopped" "MES系统未启动" } }
-    "Stop" { $result = Stop-MesSystem; Write-Result $result.status $result.message }
-    "Start" { $result = Start-MesSystem; Write-Result $result.status $result.message }
-    "Restart" { $stop = Stop-MesSystem; $result = Start-MesSystem; Write-Result $result.status $(if ($stop.status -eq "not_running") { "MES系统已启动" } else { "MES系统已重启" }) }
+try {
+    switch ($Action) {
+        "Status" { if (Test-MesRunning) { Write-Result "running" "MES系统正在运行" } else { Write-Result "stopped" "MES系统未启动" } }
+        "Stop" { $result = Stop-MesSystem; Write-Result $result.status $result.message }
+        "Start" { $result = Start-MesSystem; Write-Result $result.status $result.message }
+        "Restart" { $stop = Stop-MesSystem; $result = Start-MesSystem; Write-Result $result.status $(if ($stop.status -eq "not_running") { "MES系统已启动" } else { "MES系统已重启" }) }
+    }
+} catch {
+    Write-Result "error" $_.Exception.Message
+    exit 1
 }

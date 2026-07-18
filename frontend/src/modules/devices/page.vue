@@ -259,11 +259,24 @@
       </div>
       <div class="form-field">
         <label>开始时间</label>
-        <PickerOnlyInput v-model="maintenancePlanForm.startAt" :disabled="!maintenancePlanIsPlanned" type="datetime-local" />
+        <PickerOnlyInput
+          v-model="maintenancePlanForm.startAt"
+          :disabled="!maintenancePlanIsPlanned"
+          data-testid="maintenance-start-at"
+          name="maintenance_start_at"
+          type="datetime-local"
+        />
       </div>
       <div class="form-field">
         <label>结束时间</label>
-        <PickerOnlyInput v-model="maintenancePlanForm.endAt" :disabled="!maintenancePlanIsPlanned" type="datetime-local" />
+        <PickerOnlyInput
+          v-model="maintenancePlanForm.endAt"
+          :disabled="!maintenancePlanIsPlanned"
+          :min="maintenancePlanEndMin || undefined"
+          data-testid="maintenance-end-at"
+          name="maintenance_end_at"
+          type="datetime-local"
+        />
       </div>
       <div class="form-field" style="grid-column: 1 / -1;">
         <label>备注</label>
@@ -395,6 +408,7 @@ const {
   maintenanceRecordDeviceFilter,
   maintenanceRecordRows,
   maintenancePlanForm,
+  maintenancePlanEndMin,
   maintenancePlanIsPlanned,
   maintenancePlanWarning,
   maintenancePlanOpen,

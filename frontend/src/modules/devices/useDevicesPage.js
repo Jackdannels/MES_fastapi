@@ -138,6 +138,13 @@ function useDevicesPage() {
   const metrics = computed(() => buildDeviceMetrics(baseRows.value));
   const locationOptions = computed(() => buildLocationOptions(rawDevices.value));
   const maintenancePlanIsPlanned = computed(() => isPlannedMaintenanceType(maintenancePlanForm.value.type));
+  const maintenancePlanEndMin = computed(() => {
+    const startAt = parseTime(maintenancePlanForm.value.startAt);
+    if (startAt === null) {
+      return "";
+    }
+    return toBusinessDateTimeValue(new Date(startAt + 60 * 1000)).replace(" ", "T").slice(0, 16);
+  });
   const testTypeOptions = computed(() => buildTestTypeOptions(rawDevices.value));
   const visiblePointRows = computed(() => buildVisiblePointRows(pointRows.value, pointQuery.value));
   const editDeviceStatusClass = computed(() => resolveStatusClass(deviceForm.value.status));
@@ -961,6 +968,37 @@ function useDevicesPage() {
     },
   );
 
+  watch(
+    () => maintenancePlanForm.value.type,
+    (type) => {
+      maintenancePlanWarning.value = "";
+      if (isPlannedMaintenanceType(type)) {
+        return;
+      }
+      maintenancePlanForm.value.startAt = "";
+      maintenancePlanForm.value.endAt = "";
+    },
+    { flush: "sync" },
+  );
+
+  watch(
+    () => [
+      maintenancePlanForm.value.type,
+      maintenancePlanForm.value.startAt,
+      maintenancePlanForm.value.endAt,
+    ],
+    ([type, startValue, endValue]) => {
+      if (!isPlannedMaintenanceType(type) || !normalizeText(startValue) || !normalizeText(endValue)) {
+        return;
+      }
+      const startAt = parseTime(startValue);
+      const endAt = parseTime(endValue);
+      if (!startAt || !endAt || endAt <= startAt) {
+        maintenancePlanForm.value.endAt = "";
+      }
+    },
+  );
+
   const syncDeviceClock = () => {
     const currentDate = serverNowDate();
     now.value = currentDate;
@@ -1006,6 +1044,7 @@ function useDevicesPage() {
     maintenanceRecordDeviceFilter,
     maintenanceRecordRows,
     maintenancePlanForm,
+    maintenancePlanEndMin,
     maintenancePlanIsPlanned,
     maintenancePlanWarning,
     maintenancePlanOpen: maintenancePlanModal.open,

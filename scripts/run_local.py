@@ -10,6 +10,37 @@ if str(REPO_ROOT) not in sys.path:
 from app.core.local_run import load_local_run_env
 
 
+ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+STD_OUTPUT_HANDLE = -11
+STD_ERROR_HANDLE = -12
+
+
+def enable_windows_virtual_terminal() -> bool:
+    """Enable ANSI color processing for the inherited Windows console handles."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetStdHandle.argtypes = [wintypes.DWORD]
+        kernel32.GetStdHandle.restype = wintypes.HANDLE
+        kernel32.GetConsoleMode.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel32.GetConsoleMode.restype = wintypes.BOOL
+        kernel32.SetConsoleMode.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.SetConsoleMode.restype = wintypes.BOOL
+        enabled = False
+        for stream_id in (STD_OUTPUT_HANDLE, STD_ERROR_HANDLE):
+            handle = kernel32.GetStdHandle(stream_id)
+            mode = wintypes.DWORD()
+            if handle and kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                enabled = bool(kernel32.SetConsoleMode(handle, mode.value | ENABLE_VIRTUAL_TERMINAL_PROCESSING)) or enabled
+        return enabled
+    except (AttributeError, OSError, ValueError):
+        return False
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -37,6 +68,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     env = load_local_run_env(REPO_ROOT / args.env_file)
+    if not args.no_use_colors:
+        enable_windows_virtual_terminal()
+        env["PYTHONUTF8"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
     command = [
         sys.executable,
         "-m",

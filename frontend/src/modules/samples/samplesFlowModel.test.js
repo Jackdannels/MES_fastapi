@@ -9658,6 +9658,12 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.label === "冲击试验已完成")).toEqual(
       expect.objectContaining({ reached: true, active: false, time: "2026-07-02 14:23:48" }),
     );
+    expect(view.steps.find((step) => step.label === "实验后暂存间存放")).toEqual(
+      expect.objectContaining({ reached: true, active: false, time: "2026-07-02 14:24:31" }),
+    );
+    expect(labels.indexOf("实验后暂存间存放")).toBeGreaterThan(labels.indexOf("冲击试验已完成"));
+    expect(labels).not.toContain("送至暂存间");
+    expect(labels).not.toContain("已到达暂存间");
     expect(view.steps.find((step) => step.label === "待继续冲击试验：剩余 1/2轴")).toBeFalsy();
     expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：厂家收回`);
   });

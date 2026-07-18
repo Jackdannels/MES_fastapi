@@ -776,6 +776,64 @@ describe("useDevicesPage", () => {
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
   });
 
+  test("clears a planned end time when the start time moves to or after it", async () => {
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+    wrapper.vm.maintenancePlanForm.type = "计划维修";
+    wrapper.vm.maintenancePlanForm.startAt = "2099-03-20T10:00";
+    wrapper.vm.maintenancePlanForm.endAt = "2099-03-20T11:00";
+    await settle(wrapper);
+
+    expect(wrapper.vm.maintenancePlanEndMin).toBe("2099-03-20T10:01");
+
+    wrapper.vm.maintenancePlanForm.startAt = "2099-03-20T11:00";
+    await settle(wrapper);
+
+    expect(wrapper.vm.maintenancePlanForm.endAt).toBe("");
+  });
+
+  test.each(["维修", "保养"])("clears planned times for immediate %s and saves the confirmation time", async (type) => {
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.devices": [{ code: "冲击一室", name: "冲击试验系统-1", status: "可用" }],
+      "mes.experiment_trays": [],
+      "mes.experiment_runs": [],
+      "mes.samples": [],
+      "mes.schedules": [],
+      "mes.conflicts": [],
+      "mes.experiments": [],
+      "mes.tasks": [],
+      "mes.maintenance_records": [],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+    wrapper.vm.maintenancePlanForm.startAt = "2099-03-21T08:00";
+    wrapper.vm.maintenancePlanForm.endAt = "2099-03-21T12:00";
+    wrapper.vm.maintenancePlanForm.type = type;
+    await settle(wrapper);
+
+    expect(wrapper.vm.maintenancePlanIsPlanned).toBe(false);
+    expect(wrapper.vm.maintenancePlanForm.startAt).toBe("");
+    expect(wrapper.vm.maintenancePlanForm.endAt).toBe("");
+
+    await wrapper.vm.saveMaintenancePlan();
+    await settle(wrapper);
+
+    expect(mocks.persistSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      "mes.devices": [
+        expect.objectContaining({
+          maintenance_end_at: "",
+          maintenance_start_at: "2099-03-20 07:30:00",
+          maintenance_type: type,
+          status: type,
+        }),
+      ],
+    }));
+  });
+
   test("cancels a future planned maintenance without an end time", async () => {
     mocks.loadSnapshot.mockResolvedValueOnce({
       "mes.devices": [

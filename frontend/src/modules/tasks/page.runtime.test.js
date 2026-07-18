@@ -12,6 +12,7 @@ const STREAMS_KEY = "mes.streams";
 const EXPERIMENTS_KEY = "mes.experiments";
 const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
 const EXPERIMENT_SAMPLES_KEY = "mes.experiment_samples";
+const EXTERNAL_INTAKES_KEY = "mes.external_task_intakes";
 const TASKS_ENDPOINT = buildApiUrl("/api/tasks", getFrontendApiBaseUrl());
 const TASKS_RESET_ENDPOINT = buildApiUrl("/api/tasks/reset", getFrontendApiBaseUrl());
 const STORAGE_ENDPOINT = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
@@ -112,6 +113,7 @@ const createTasksPageFetchMock = ({
   experiments = [],
   experimentTrays = [],
   experimentSamples = [],
+  externalTaskIntakes = [],
   testTypes = ALL_EXPERIMENT_TYPES.map((name) => ({ name })),
   testTypesError = null,
   afterReset = null,
@@ -125,6 +127,7 @@ const createTasksPageFetchMock = ({
     experiments: clone(experiments),
     experimentTrays: clone(experimentTrays),
     experimentSamples: clone(experimentSamples),
+    externalTaskIntakes: clone(externalTaskIntakes),
   };
 
   const fetchMock = vi.fn((url, options = {}) => {
@@ -177,6 +180,25 @@ const createTasksPageFetchMock = ({
       });
     }
 
+    if (url.includes("/api/tasks/external-intakes/") && url.endsWith("/accept") && method === "POST") {
+      const intakeId = decodeURIComponent(url.split("/external-intakes/")[1].replace("/accept", ""));
+      const intake = state.externalTaskIntakes.find((item) => (item.intake_id || item.id) === intakeId);
+      if (!intake) {
+        return Promise.resolve({ ok: false, status: 404, statusText: "Not Found", json: async () => ({ detail: "外部委托不存在" }) });
+      }
+      const nextTask = { ...clone(intake), id: intake.code, source: "外部委托", status: "待排程", arrival_at: "" };
+      delete nextTask.acceptance_status;
+      state.tasks = [nextTask, ...state.tasks];
+      state.externalTaskIntakes = state.externalTaskIntakes.map((item) => (
+        item === intake ? { ...item, acceptance_status: "accepted" } : item
+      ));
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ intake: { ...intake, acceptance_status: "accepted" }, task: nextTask }),
+      });
+    }
+
     if (url.startsWith(buildTaskEndpoint("")) && method === "PUT") {
       const taskId = url.slice(buildTaskEndpoint("").length);
       const nextTask = JSON.parse(options.body ?? "{}");
@@ -218,6 +240,7 @@ const createTasksPageFetchMock = ({
           [EXPERIMENTS_KEY]: clone(state.experiments),
           [EXPERIMENT_TRAYS_KEY]: clone(state.experimentTrays),
           [EXPERIMENT_SAMPLES_KEY]: clone(state.experimentSamples),
+          [EXTERNAL_INTAKES_KEY]: clone(state.externalTaskIntakes),
         }),
       });
     }
@@ -2001,7 +2024,8 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
-    expect(wrapper.get('select[name="source"]').element.value).toBe("内部新增");
+    expect(wrapper.get('input[name="source"]').element.value).toBe("内部新增");
+    expect(wrapper.get('input[name="source"]').attributes("readonly")).toBeDefined();
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
     await selectIntakeAxisExperiment(wrapper, "冲击试验");
@@ -2343,6 +2367,56 @@ describe("TasksPage runtime", () => {
 
     expect(wrapper.text()).toContain("任务重置失败");
     expect(wrapper.find('[data-testid="task-reset-modal"]').exists()).toBe(true);
+  });
+
+  test("shows pending LIMS tasks, keeps details read-only, and accepts one into the task list", async () => {
+    const { state } = installApiFetchMock({
+      tasks: [createTask({ id: "task-existing", code: "SYLU-2026-07-020", source: "外部委托" })],
+      externalTaskIntakes: [
+        {
+          id: "LIMS-001",
+          intake_id: "LIMS-001",
+          code: "SYLU-2026-07-021",
+          name: "LIMS委托021",
+          source: "外部委托",
+          client: "37单位",
+          contact: "李四",
+          contact_info: "13900001234",
+          priority: "高",
+          sample_count: "3",
+          sample_type: "金属件",
+          test_types: ["盐雾试验", "振动试验"],
+          test_type: "盐雾试验 / 振动试验",
+          due_at: "2026-07-23 09:00",
+          arrival_at: "",
+          acceptance_status: "pending",
+        },
+      ],
+    });
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    expect(wrapper.get("#task-external-count").text()).toContain("待确认：1");
+    window.dispatchEvent(new CustomEvent("mes:open-external-task-intake"));
+    await settle(wrapper);
+    expect(wrapper.get('[data-testid="external-task-intake-list"]').text()).toContain("SYLU-2026-07-021");
+
+    await wrapper.get('[data-testid="external-task-intake-detail-0"]').trigger("click");
+    await settle(wrapper);
+    const detail = wrapper.get('[data-testid="external-task-intake-detail"]');
+    expect(detail.findAll("input").some((input) => input.element.value === "37单位")).toBe(true);
+    expect(detail.findAll("input").every((input) => input.attributes("readonly") !== undefined)).toBe(true);
+    await wrapper.get('[data-testid="external-task-intake-postpone"]').trigger("click");
+    await settle(wrapper);
+    expect(state.tasks).toHaveLength(1);
+
+    await wrapper.get('[data-testid="external-task-intake-detail-0"]').trigger("click");
+    await wrapper.get('[data-testid="external-task-intake-accept"]').trigger("click");
+    await settle(wrapper);
+
+    expect(state.tasks.map((task) => task.code)).toContain("SYLU-2026-07-021");
+    expect(wrapper.get("#task-external-count").text()).not.toContain("待确认");
+    expect(wrapper.text()).toContain("SYLU-2026-07-021");
   });
 
   test("sample update event reloads tasks and refreshes the open detail modal arrival time", async () => {

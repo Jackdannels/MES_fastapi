@@ -1,5 +1,6 @@
 const STORAGE_KEYS = {
   tasks: "mes.tasks",
+  external_task_intakes: "mes.external_task_intakes",
   schedules: "mes.schedules",
   experiments: "mes.experiments",
   experiment_runs: "mes.experiment_runs",
