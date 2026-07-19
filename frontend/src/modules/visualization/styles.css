@@ -21,6 +21,72 @@
   min-width: 0;
 }
 
+.visual-board.visual-lab-status-board {
+  --status-cyan: #37d7dc;
+  --status-green: #5ee58b;
+  --status-amber: #f4b64a;
+  --status-line: rgba(91, 221, 213, 0.24);
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px;
+  color: #e9fffb;
+  background:
+    linear-gradient(rgba(62, 211, 201, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(62, 211, 201, 0.045) 1px, transparent 1px),
+    radial-gradient(circle at 78% 8%, rgba(55, 215, 220, 0.14), transparent 28%),
+    #061012;
+  background-size: 36px 36px, 36px 36px, auto, auto;
+  border: 1px solid var(--status-line);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.025);
+}
+.visual-board.visual-lab-status-board.is-compact { padding: 8px; gap: 7px; }
+.visual-lab-status-board .visual-board-header { display:flex; justify-content:space-between; align-items:end; gap:12px; padding-bottom:9px; border-bottom:1px solid var(--status-line); }
+.visual-lab-status-board .visual-board-kicker { color: var(--status-cyan); font: 800 10px/1.2 "Cascadia Mono", Consolas, monospace; letter-spacing:.08em; }
+.visual-lab-status-board .visual-board-title { margin-top:3px; font-size:20px; font-weight:800; }
+.visual-lab-status-board .visual-board-clock { display:grid; gap:2px; text-align:right; color:#9db8b5; font-size:11px; }
+.visual-lab-status-board .visual-board-clock strong { color:var(--status-green); font-size:13px; }
+.visual-lab-status-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; }
+.visual-lab-status-summary-item { display:grid; gap:3px; padding:7px 9px; border:1px solid rgba(91,221,213,.18); background:rgba(8,30,31,.72); }
+.visual-lab-status-summary-item span { color:#8db0ae; font-size:10px; }
+.visual-lab-status-summary-item strong { color:#ecfffb; font:700 16px/1 "Cascadia Mono", Consolas, monospace; }
+.visual-lab-status-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; min-height:0; align-content:stretch; }
+.visual-lab-status-card { display:grid; grid-template-rows:auto 1fr; min-width:0; min-height:0; padding:9px; border:1px solid rgba(91,221,213,.22); background:rgba(3,17,18,.78); }
+.visual-lab-status-card.tone-running { border-color:rgba(94,229,139,.5); box-shadow:inset 3px 0 0 var(--status-green); }
+.visual-lab-status-card.tone-idle { border-color:rgba(244,182,74,.38); box-shadow:inset 3px 0 0 var(--status-amber); }
+.visual-lab-status-card-head { display:flex; justify-content:space-between; align-items:center; gap:8px; padding-bottom:7px; border-bottom:1px solid rgba(91,221,213,.16); }
+.visual-lab-status-card-head strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+.visual-lab-status-card-head span { display:inline-flex; align-items:center; gap:4px; color:#a6c5c1; font-size:10px; white-space:nowrap; }
+.visual-lab-status-card-head i { width:6px; height:6px; border-radius:50%; background:var(--status-cyan); box-shadow:0 0 8px currentColor; }
+.tone-running .visual-lab-status-card-head i { background:var(--status-green); }
+.tone-idle .visual-lab-status-card-head i { background:var(--status-amber); }
+.visual-lab-status-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; padding-top:7px; }
+.visual-lab-status-metric { display:grid; gap:3px; min-width:0; padding:5px 6px; background:rgba(7,31,32,.78); border:1px solid rgba(91,221,213,.12); }
+.visual-lab-status-metric span { color:#79aaa7; font-size:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.visual-lab-status-metric strong { color:#effffc; font:700 13px/1.1 "Cascadia Mono", Consolas, monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.visual-lab-status-metric.room strong,.visual-lab-status-metric.humidity strong { color:#72e9e2; }
+.visual-lab-status-metric.is-unavailable { opacity:.72; border-style:dashed; }
+.visual-lab-status-metric.is-unavailable strong { color:#8ca5a2; font-family:inherit; font-size:11px; }
+.visual-lab-status-board.is-compact .visual-board-title { font-size:13px; }
+.visual-lab-status-board.is-compact .visual-board-clock { font-size:8px; }
+.visual-lab-status-board.is-compact .visual-board-clock strong { font-size:9px; }
+.visual-lab-status-board.is-compact .visual-lab-status-summary-item { padding:4px 5px; }
+.visual-lab-status-board.is-compact .visual-lab-status-summary-item span { font-size:7px; }
+.visual-lab-status-board.is-compact .visual-lab-status-summary-item strong { font-size:10px; }
+.visual-lab-status-board.is-compact .visual-lab-status-grid { gap:4px; }
+.visual-lab-status-board.is-compact .visual-lab-status-card { padding:5px; }
+.visual-lab-status-board.is-compact .visual-lab-status-card-head { padding-bottom:4px; }
+.visual-lab-status-board.is-compact .visual-lab-status-card-head strong { font-size:8px; }
+.visual-lab-status-board.is-compact .visual-lab-status-card-head span { font-size:7px; }
+.visual-lab-status-board.is-compact .visual-lab-status-metrics { gap:3px; padding-top:4px; }
+.visual-lab-status-board.is-compact .visual-lab-status-metric { padding:3px; }
+.visual-lab-status-board.is-compact .visual-lab-status-metric span { font-size:6px; }
+.visual-lab-status-board.is-compact .visual-lab-status-metric strong { font-size:8px; }
+@media (max-width: 980px) { .visual-lab-status-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width: 640px) { .visual-lab-status-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } .visual-lab-status-grid { grid-template-columns:1fr; } }
+
 .visualization-toolbar {
   display: flex;
   align-items: center;

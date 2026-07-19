@@ -314,17 +314,17 @@ const screenCards = [
     ],
   },
   {
-    key: "exception",
-    name: "异常告警屏",
-    kind: "placeholder",
-    status: "告警",
-    metric: "2 条待处理",
-    accent: "red",
-    tone: "alert",
+    key: "lab-status",
+    name: "试验间状态监测屏",
+    kind: "lab-status",
+    status: "实时监测",
+    metric: "11 个试验间",
+    accent: "cyan",
+    tone: "live",
     indicators: [
-      ["高", "0"],
-      ["中", "1"],
-      ["低", "1"],
+      ["室温", "实时"],
+      ["设备", "在线"],
+      ["搬运", "10 间"],
     ],
   },
   {
@@ -669,6 +669,9 @@ const resolveScreenComponent = (screen) => {
   }
   if (screen?.kind === "analysis") {
     return AnalysisScreen;
+  }
+  if (screen?.kind === "lab-status") {
+    return LabStatusScreen;
   }
   return PlaceholderScreen;
 };
@@ -2283,6 +2286,61 @@ const AnalysisScreen = {
         ]),
       ]);
     };
+  },
+};
+
+const LAB_STATUS_FALLBACK_NAMES = [
+  "冲击一室", "冲击二室", "四综合实验室", "振动一室", "振动二室",
+  "温度冲击一室", "温度冲击二室", "盐雾试验室", "霉菌试验室", "高低温湿热一室", "高低温湿热二室",
+];
+
+const LabStatusScreen = {
+  name: "LabStatusScreen",
+  props: {
+    labs: { type: Array, default: () => [] },
+    labNames: { type: Array, default: () => [] },
+    compact: { type: Boolean, default: false },
+    screen: { type: Object, default: () => ({}) },
+  },
+  setup(props) {
+    const rows = computed(() => {
+      const names = props.labNames.length ? props.labNames : LAB_STATUS_FALLBACK_NAMES;
+      return names.slice(0, 11).map((name, index) => {
+        const seed = Array.from(name).reduce((total, char) => total + char.charCodeAt(0), 0) + index * 37;
+        const roomTemp = (21.2 + (seed % 28) / 10).toFixed(1);
+        const humidity = 42 + (seed % 24);
+        const testTemp = (24 + (seed % 80) / 10).toFixed(1);
+        const testVoltage = (218 + (seed % 18) / 10).toFixed(1);
+        const carrierTemp = (27 + (seed % 55) / 10).toFixed(1);
+        const carrierVoltage = (222 + (seed % 14) / 10).toFixed(1);
+        const noCarrier = name === "高低温湿热二室";
+        const source = props.labs.find((lab) => lab.name === name);
+        const running = Boolean(source?.taskCount || source?.trayCount || index % 4 === 0);
+        return {
+          name,
+          status: running ? "运行" : index % 5 === 0 ? "待机" : "在线",
+          tone: running ? "running" : index % 5 === 0 ? "idle" : "online",
+          roomTemp, humidity, testTemp, testVoltage, carrierTemp, carrierVoltage, noCarrier,
+        };
+      });
+    });
+    return () => h("div", { class: ["visual-board", "visual-lab-status-board", props.compact ? "is-compact" : ""] }, [
+      h("div", { class: "visual-board-header" }, [
+        h("div", [h("div", { class: "visual-board-kicker" }, "LAB ENVIRONMENT / SCREEN 07"), h("div", { class: "visual-board-title" }, props.screen?.name || "试验间状态监测屏")]),
+        h("div", { class: "visual-board-clock" }, [h("strong", "实时采集"), h("span", "11 个试验间 · 10 套搬运设备")]),
+      ]),
+      h("div", { class: "visual-lab-status-summary" }, [
+        ["环境在线", "11 / 11"], ["试验设备", "11 / 11"], ["搬运设备", "10 / 10"], ["采集周期", "5 s"],
+      ].map(([label, value]) => h("div", { class: "visual-lab-status-summary-item", key: label }, [h("span", label), h("strong", value)]))),
+      h("div", { class: "visual-lab-status-grid" }, rows.value.map((row) => h("article", { class: ["visual-lab-status-card", `tone-${row.tone}`], key: row.name }, [
+        h("div", { class: "visual-lab-status-card-head" }, [h("strong", row.name), h("span", [h("i"), row.status])]),
+        h("div", { class: "visual-lab-status-metrics" }, [
+          ["室温", `${row.roomTemp} °C`, "room"], ["湿度", `${row.humidity} %RH`, "humidity"],
+          ["试验设备温度", `${row.testTemp} °C`, "test-temp"], ["试验设备电压", `${row.testVoltage} V`, "test-voltage"],
+          ["搬运设备温度", row.noCarrier ? "—" : `${row.carrierTemp} °C`, "carrier-temp"], ["搬运设备电压", row.noCarrier ? "无搬运设备" : `${row.carrierVoltage} V`, "carrier-voltage"],
+        ].map(([label, value, metric]) => h("div", { class: ["visual-lab-status-metric", metric, row.noCarrier && metric.startsWith("carrier") ? "is-unavailable" : ""], key: label }, [h("span", label), h("strong", value)]))),
+      ]))),
+    ]);
   },
 };
 

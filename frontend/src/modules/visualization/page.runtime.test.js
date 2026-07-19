@@ -271,6 +271,21 @@ describe("VisualizationPage runtime", () => {
     expect(cards[0].find('[data-testid="visual-lab-select"]').exists()).toBe(false);
   });
 
+  test("renders the seventh screen as an eleven-room status monitor without carrier telemetry for hot-humid room two", async () => {
+    const wrapper = mountPage();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    const seventhCard = wrapper.findAll('[data-testid="visual-screen-card"]')[6];
+    const labCards = seventhCard.findAll(".visual-lab-status-card");
+    const hostlessLab = labCards.find((card) => card.text().includes("高低温湿热二室"));
+
+    expect(seventhCard.text()).toContain("试验间状态监测屏");
+    expect(labCards).toHaveLength(11);
+    expect(hostlessLab?.text()).toContain("无搬运设备");
+    expect(seventhCard.findAll(".visual-lab-status-metric.is-unavailable")).toHaveLength(2);
+  });
+
   test("renders current laboratory login information on the fourth screen cards", async () => {
     snapshotState.attendanceSessions = [
       {
