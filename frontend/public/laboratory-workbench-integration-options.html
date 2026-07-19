@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>试验室操作台整合方案预览</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg-deep: #06090d;
+        --bg-panel: #0d1218;
+        --bg-raised: #131a22;
+        --border: rgba(113, 232, 209, 0.2);
+        --border-strong: rgba(113, 232, 209, 0.46);
+        --text: #edfdf9;
+        --muted: #91aaa6;
+        --accent: #63e6be;
+        --accent-rgb: 99, 230, 190;
+        --shadow: 0 20px 52px rgba(0, 0, 0, 0.42);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        min-height: 100dvh;
+        padding: 18px 22px;
+        background:
+          linear-gradient(rgba(var(--accent-rgb), 0.07) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(var(--accent-rgb), 0.07) 1px, transparent 1px),
+          radial-gradient(circle at 16% 4%, rgba(var(--accent-rgb), 0.13), transparent 32%),
+          var(--bg-deep);
+        background-size: 28px 28px, 28px 28px, auto, auto;
+        color: var(--text);
+        font-family: "IBM Plex Sans", "Microsoft YaHei", "Segoe UI", sans-serif;
+      }
+
+      button {
+        font: inherit;
+      }
+
+      .page {
+        width: min(1876px, 100%);
+        min-height: calc(100dvh - 36px);
+        margin: 0 auto;
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        gap: 12px;
+      }
+
+      .preview-head,
+      .scheme-tabs,
+      .preview-stage {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(13, 18, 24, 0.96);
+        box-shadow: var(--shadow);
+      }
+
+      .preview-head {
+        min-height: 74px;
+        padding: 14px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      .preview-head h1 {
+        font-size: 25px;
+        line-height: 1.2;
+      }
+
+      .preview-head p {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .viewport-badge {
+        flex: none;
+        padding: 8px 12px;
+        border: 1px solid var(--border-strong);
+        border-radius: 999px;
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .scheme-tabs {
+        min-height: 58px;
+        padding: 8px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .scheme-tab {
+        min-height: 42px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg-raised);
+        color: var(--muted);
+        cursor: pointer;
+        font-weight: 800;
+        transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+      }
+
+      .scheme-tab:hover,
+      .scheme-tab[aria-selected="true"] {
+        border-color: var(--border-strong);
+        background: rgba(var(--accent-rgb), 0.13);
+        color: var(--text);
+      }
+
+      .scheme-tab:focus-visible,
+      .terminal-button:focus-visible,
+      .work-action:focus-visible,
+      .choose-button:focus-visible {
+        outline: 3px solid rgba(var(--accent-rgb), 0.7);
+        outline-offset: 2px;
+      }
+
+      .preview-stage {
+        min-height: 0;
+        overflow: hidden;
+        padding: 10px;
+      }
+
+      .scheme-panel {
+        height: 100%;
+      }
+
+      .scheme-panel[hidden] {
+        display: none;
+      }
+
+      .terminal-preview {
+        height: 100%;
+        min-height: 0;
+        padding: 12px;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 12px;
+        border: 1px solid rgba(var(--accent-rgb), 0.22);
+        border-radius: 7px;
+        background:
+          linear-gradient(rgba(var(--accent-rgb), 0.055) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(var(--accent-rgb), 0.055) 1px, transparent 1px),
+          #071017;
+        background-size: 26px 26px;
+      }
+
+      .terminal-toolbar {
+        min-height: 102px;
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: linear-gradient(135deg, rgba(13, 18, 24, 0.98), rgba(19, 26, 34, 0.94));
+      }
+
+      .terminal-identity {
+        min-width: 300px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .terminal-identity h2 {
+        font-size: 28px;
+        line-height: 1.16;
+        letter-spacing: 0.02em;
+      }
+
+      .identity-meta,
+      .identity-kicker {
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+      }
+
+      .variant-b .terminal-identity h2 {
+        font-size: 30px;
+      }
+
+      .variant-b .identity-kicker {
+        color: var(--muted);
+        letter-spacing: 0.16em;
+      }
+
+      .variant-c .terminal-identity {
+        padding-left: 14px;
+        border-left: 4px solid var(--accent);
+      }
+
+      .identity-line {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .identity-chip {
+        min-height: 30px;
+        padding: 5px 10px;
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--border-strong);
+        border-radius: 999px;
+        background: rgba(var(--accent-rgb), 0.12);
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .terminal-controls {
+        display: flex;
+        align-items: stretch;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+
+      .terminal-button,
+      .attendance-status {
+        min-height: 62px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        background: var(--bg-raised);
+        color: var(--text);
+      }
+
+      .terminal-button {
+        min-width: 118px;
+        padding: 10px 16px;
+        cursor: pointer;
+        font-weight: 800;
+        transition: border-color 180ms ease, background 180ms ease;
+      }
+
+      .terminal-button:hover {
+        border-color: var(--border-strong);
+        background: rgba(var(--accent-rgb), 0.13);
+      }
+
+      .reset-control {
+        margin-right: 28px;
+        border-color: rgba(255, 107, 90, 0.48);
+        background: rgba(255, 107, 90, 0.14);
+        color: #ffb4aa;
+      }
+
+      .attendance-status {
+        min-width: 190px;
+        padding: 9px 18px;
+        display: grid;
+        place-items: center;
+        align-content: center;
+        gap: 4px;
+        border-style: dashed;
+        text-align: center;
+      }
+
+      .attendance-status strong {
+        font-size: 16px;
+      }
+
+      .attendance-status span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .terminal-body {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(330px, 0.7fr);
+        gap: 12px;
+      }
+
+      .workbench-card,
+      .state-card {
+        min-height: 0;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        background: rgba(13, 18, 24, 0.95);
+      }
+
+      .workbench-card {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        gap: 14px;
+      }
+
+      .card-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .card-title h3 {
+        font-size: 20px;
+      }
+
+      .card-title span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .work-actions {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .work-action {
+        min-height: 86px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg-raised);
+        color: var(--text);
+        cursor: pointer;
+        font-weight: 800;
+      }
+
+      .work-action:nth-child(2) { background: #173f5f; border-color: #2b79a9; }
+      .work-action:nth-child(3) { background: #185342; border-color: #2d8b70; }
+      .work-action:nth-child(4) { background: #684610; border-color: #a97622; }
+
+      .task-preview {
+        min-height: 0;
+        padding: 14px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: rgba(19, 26, 34, 0.74);
+      }
+
+      .task-item {
+        padding: 12px;
+        display: grid;
+        align-content: center;
+        gap: 6px;
+        border: 1px solid rgba(var(--accent-rgb), 0.2);
+        border-radius: 5px;
+      }
+
+      .task-item strong {
+        font-family: Consolas, monospace;
+      }
+
+      .task-item span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .state-card {
+        display: grid;
+        grid-template-rows: auto repeat(3, minmax(0, 1fr)) auto;
+        gap: 10px;
+      }
+
+      .state-card h3 {
+        font-size: 18px;
+      }
+
+      .state-row {
+        padding: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: var(--bg-raised);
+      }
+
+      .state-row span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .choose-button {
+        min-height: 46px;
+        border: 1px solid var(--border-strong);
+        border-radius: 4px;
+        background: rgba(var(--accent-rgb), 0.15);
+        color: var(--text);
+        cursor: pointer;
+        font-weight: 800;
+      }
+
+      .choice-status {
+        min-height: 20px;
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 700;
+        text-align: right;
+      }
+
+      @media (max-width: 1500px), (max-height: 820px) {
+        body { overflow: auto; }
+        .page { min-height: 900px; }
+        .terminal-toolbar { align-items: flex-start; flex-direction: column; }
+        .terminal-controls { width: 100%; flex-wrap: wrap; justify-content: flex-start; }
+        .reset-control { margin-right: 16px; }
+      }
+
+      @media (min-width: 1501px) and (min-height: 821px) {
+        html,
+        body { height: 100%; overflow: hidden; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after { transition: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="preview-head">
+        <div>
+          <h1>试验室操作台整合方案</h1>
+          <p>三套方案均取消重复的下方试验间标题；重置按钮与登录按钮同样式，并保留 28px 防误触间距。</p>
+        </div>
+        <div class="viewport-badge">1920 × 1080 · 100%</div>
+      </header>
+
+      <nav class="scheme-tabs" role="tablist" aria-label="整合方案">
+        <button class="scheme-tab" id="tab-a" type="button" role="tab" aria-selected="true" aria-controls="panel-a" data-scheme="a">方案 A · 单行直述（推荐）</button>
+        <button class="scheme-tab" id="tab-b" type="button" role="tab" aria-selected="false" aria-controls="panel-b" data-scheme="b">方案 B · 主副标题</button>
+        <button class="scheme-tab" id="tab-c" type="button" role="tab" aria-selected="false" aria-controls="panel-c" data-scheme="c">方案 C · 标识条与标签</button>
+      </nav>
+
+      <section class="preview-stage">
+        <article class="scheme-panel" id="panel-a" role="tabpanel" aria-labelledby="tab-a" data-panel="a">
+          <div class="terminal-preview variant-a">
+            <header class="terminal-toolbar">
+              <div class="terminal-identity">
+                <h2>冲击一室试验室操作台</h2>
+              </div>
+              <div class="terminal-controls">
+                <button class="terminal-button reset-control" type="button">重置试验室任务</button>
+                <button class="terminal-button" type="button">试验间登录</button>
+                <div class="attendance-status"><strong>未登录</strong><span>请先登录后操作</span></div>
+                <button class="terminal-button" type="button">显示弹窗</button>
+                <button class="terminal-button" type="button">退出登录</button>
+              </div>
+            </header>
+            <div class="terminal-body">
+              <section class="workbench-card">
+                <div class="card-title"><h3>实验任务控制</h3><span>当前实验室：冲击一室</span></div>
+                <div class="work-actions"><button class="work-action">查看任务</button><button class="work-action">比对任务</button><button class="work-action">安装样品</button><button class="work-action">确认准备就绪</button></div>
+                <div class="task-preview"><div class="task-item"><strong>SYLU-2026-07-001</strong><span>冲击试验 · 待比对</span></div><div class="task-item"><strong>SYLU-2026-07-002</strong><span>冲击试验 · 等待安装</span></div></div>
+              </section>
+              <aside class="state-card"><h3>操作台状态</h3><div class="state-row"><span>当前试验间</span><strong>冲击一室</strong></div><div class="state-row"><span>登录状态</span><strong>未登录</strong></div><div class="state-row"><span>运行任务</span><strong>0</strong></div><button class="choose-button" type="button" data-choose="A">选择方案 A</button><div class="choice-status" aria-live="polite"></div></aside>
+            </div>
+          </div>
+        </article>
+
+        <article class="scheme-panel" id="panel-b" role="tabpanel" aria-labelledby="tab-b" data-panel="b" hidden>
+          <div class="terminal-preview variant-b">
+            <header class="terminal-toolbar">
+              <div class="terminal-identity">
+                <span class="identity-kicker">试验室操作台</span>
+                <h2>冲击一室</h2>
+                <span class="identity-meta">LAB_IMPACT_1 · 冲击试验</span>
+              </div>
+              <div class="terminal-controls">
+                <button class="terminal-button reset-control" type="button">重置试验室任务</button>
+                <button class="terminal-button" type="button">试验间登录</button>
+                <div class="attendance-status"><strong>未登录</strong><span>请先登录后操作</span></div>
+                <button class="terminal-button" type="button">显示弹窗</button>
+                <button class="terminal-button" type="button">退出登录</button>
+              </div>
+            </header>
+            <div class="terminal-body">
+              <section class="workbench-card">
+                <div class="card-title"><h3>实验任务控制</h3><span>任务与设备指令</span></div>
+                <div class="work-actions"><button class="work-action">查看任务</button><button class="work-action">比对任务</button><button class="work-action">安装样品</button><button class="work-action">确认准备就绪</button></div>
+                <div class="task-preview"><div class="task-item"><strong>SYLU-2026-07-001</strong><span>冲击试验 · 待比对</span></div><div class="task-item"><strong>SYLU-2026-07-002</strong><span>冲击试验 · 等待安装</span></div></div>
+              </section>
+              <aside class="state-card"><h3>操作台状态</h3><div class="state-row"><span>当前试验间</span><strong>冲击一室</strong></div><div class="state-row"><span>登录状态</span><strong>未登录</strong></div><div class="state-row"><span>运行任务</span><strong>0</strong></div><button class="choose-button" type="button" data-choose="B">选择方案 B</button><div class="choice-status" aria-live="polite"></div></aside>
+            </div>
+          </div>
+        </article>
+
+        <article class="scheme-panel" id="panel-c" role="tabpanel" aria-labelledby="tab-c" data-panel="c" hidden>
+          <div class="terminal-preview variant-c">
+            <header class="terminal-toolbar">
+              <div class="terminal-identity">
+                <div class="identity-line"><h2>冲击一室</h2><span class="identity-chip">试验室操作台</span></div>
+                <span class="identity-meta">冲击试验 · LAB_IMPACT_1</span>
+              </div>
+              <div class="terminal-controls">
+                <button class="terminal-button reset-control" type="button">重置试验室任务</button>
+                <button class="terminal-button" type="button">试验间登录</button>
+                <div class="attendance-status"><strong>未登录</strong><span>请先登录后操作</span></div>
+                <button class="terminal-button" type="button">显示弹窗</button>
+                <button class="terminal-button" type="button">退出登录</button>
+              </div>
+            </header>
+            <div class="terminal-body">
+              <section class="workbench-card">
+                <div class="card-title"><h3>实验任务控制</h3><span>冲击一室专用终端</span></div>
+                <div class="work-actions"><button class="work-action">查看任务</button><button class="work-action">比对任务</button><button class="work-action">安装样品</button><button class="work-action">确认准备就绪</button></div>
+                <div class="task-preview"><div class="task-item"><strong>SYLU-2026-07-001</strong><span>冲击试验 · 待比对</span></div><div class="task-item"><strong>SYLU-2026-07-002</strong><span>冲击试验 · 等待安装</span></div></div>
+              </section>
+              <aside class="state-card"><h3>操作台状态</h3><div class="state-row"><span>当前试验间</span><strong>冲击一室</strong></div><div class="state-row"><span>登录状态</span><strong>未登录</strong></div><div class="state-row"><span>运行任务</span><strong>0</strong></div><button class="choose-button" type="button" data-choose="C">选择方案 C</button><div class="choice-status" aria-live="polite"></div></aside>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const tabs = [...document.querySelectorAll("[data-scheme]")];
+      const panels = [...document.querySelectorAll("[data-panel]")];
+
+      function activateScheme(scheme) {
+        tabs.forEach((tab) => {
+          const active = tab.dataset.scheme === scheme;
+          tab.setAttribute("aria-selected", String(active));
+          tab.tabIndex = active ? 0 : -1;
+        });
+        panels.forEach((panel) => {
+          panel.hidden = panel.dataset.panel !== scheme;
+        });
+      }
+
+      tabs.forEach((tab, index) => {
+        tab.addEventListener("click", () => activateScheme(tab.dataset.scheme));
+        tab.addEventListener("keydown", (event) => {
+          if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+          event.preventDefault();
+          const direction = event.key === "ArrowRight" ? 1 : -1;
+          const target = tabs[(index + direction + tabs.length) % tabs.length];
+          activateScheme(target.dataset.scheme);
+          target.focus();
+        });
+      });
+
+      document.querySelectorAll("[data-choose]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll(".choice-status").forEach((status) => { status.textContent = ""; });
+          button.nextElementSibling.textContent = `已临时选择方案 ${button.dataset.choose}，请将方案编号告诉 Codex。`;
+        });
+      });
+    </script>
+  </body>
+</html>

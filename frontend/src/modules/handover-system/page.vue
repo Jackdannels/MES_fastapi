@@ -1,5 +1,5 @@
 <template>
-  <TransferWorkbench mode="handover" />
+  <TransferWorkbench mode="handover" terminal />
 </template>
 
 <script setup>

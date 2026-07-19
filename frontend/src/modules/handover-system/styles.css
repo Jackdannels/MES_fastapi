@@ -10,6 +10,33 @@
   background-size: 28px 28px, 28px 28px, auto, auto;
 }
 
+/* Dedicated 1920x1080 handover terminal: keep the page in the viewport and let pagination handle the task set. */
+.transfer-area-screen.is-terminal {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 32px 40px 20px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.transfer-area-screen.is-terminal .transfer-area-shell {
+  min-height: 0;
+  height: 100%;
+}
+
+.transfer-area-screen.is-terminal .transfer-overview-shell {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.transfer-area-screen.is-terminal .transfer-detail-shell {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
 .transfer-area-screen.is-embedded {
   min-height: auto;
   padding: 0;
@@ -35,23 +62,31 @@
 
 .transfer-system-header {
   width: min(1760px, 100%);
-  margin: 0 auto 28px;
+  margin: 0 auto 16px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .transfer-system-header__meta {
   display: grid;
-  gap: 6px;
 }
 
 .transfer-system-title {
-  margin: 6px 0 8px;
+  margin: 0;
   font-size: 34px;
   font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
   color: var(--text);
 }
 
-.transfer-system-subtitle {
-  max-width: 640px;
+.transfer-system-actions {
+  align-items: stretch;
+}
+
+.transfer-system-actions .action-btn {
+  min-height: 64px;
+  padding-inline: 24px;
+  font-size: 18px;
+  white-space: nowrap;
 }
 
 .transfer-overview-shell,
@@ -65,7 +100,17 @@
 .transfer-overview-shell {
   min-height: 1040px;
   align-content: start;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+/* Dispatch has four direct rows. Keep the scanner in an auto-sized row and give only results the remaining height. */
+.transfer-overview-shell.transfer-dispatch-shell {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  align-content: stretch;
+  overflow: hidden;
 }
 
 .transfer-overview-title-row,
@@ -84,7 +129,8 @@
 }
 
 .transfer-overview-shell__head {
-  align-items: flex-start;
+  min-height: 68px;
+  align-items: stretch;
 }
 
 .transfer-overview-toolbar-frame {
@@ -111,16 +157,18 @@
 }
 
 .transfer-overview-page-title {
-  font-size: clamp(28px, 3.2vw, 42px);
-  line-height: 1.1;
+  display: flex;
+  align-items: center;
+  font-size: clamp(28px, 2vw, 32px);
+  line-height: 1;
   letter-spacing: 0.03em;
   color: var(--text);
   font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
 }
 
 .transfer-overview-page-title--compact {
-  font-size: clamp(22px, 2.3vw, 34px);
-  line-height: 1.08;
+  font-size: clamp(22px, 1.8vw, 30px);
+  line-height: 1;
 }
 
 .transfer-overview-kpis {
@@ -367,6 +415,37 @@
   width: 100%;
 }
 
+.transfer-area-screen.is-terminal .transfer-table__head {
+  min-height: 60px;
+}
+
+.transfer-area-screen.is-terminal .transfer-table__head,
+.transfer-area-screen.is-terminal .transfer-table__row {
+  gap: 10px;
+  padding: 0 14px;
+}
+
+.transfer-area-screen.is-terminal .transfer-table__codes {
+  grid-template-rows: repeat(4, 34px);
+  grid-auto-rows: 34px;
+  gap: 6px;
+  max-height: 154px;
+}
+
+.transfer-area-screen.is-terminal .transfer-sample-code-chip {
+  min-height: 34px;
+  padding: 4px 10px;
+  font-size: 14px;
+}
+
+.transfer-area-screen.is-terminal .task-list-pagination > .task-list-pagination__step {
+  width: 64px;
+  min-width: 64px;
+  min-height: 48px;
+  padding: 0;
+  font-size: 28px;
+}
+
 .transfer-table__count {
   display: grid;
   align-content: center;
@@ -537,9 +616,11 @@
   color: var(--text);
 }
 
-.transfer-tray-limit-stepper .app-number-input {
-  width: 88px;
-  min-height: 40px;
+.transfer-tray-limit-stepper .app-number-input.is-horizontal {
+  width: 190px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
 }
 
 .transfer-tray-limit-stepper .app-number-input__field {
@@ -767,49 +848,6 @@
 .sample-codes-input {
   min-height: 78px;
   resize: vertical;
-}
-
-.transfer-tray-preview {
-  min-height: 78px;
-  padding: 12px 14px;
-  border-radius: var(--radius-panel);
-  border: 1px solid var(--border);
-  background: var(--bg-card-raised);
-  color: var(--text);
-  box-shadow: var(--shadow);
-  display: grid;
-  gap: 8px;
-  font-size: 13px;
-  line-height: 1.5;
-  word-break: break-word;
-}
-
-.transfer-tray-preview__row {
-  color: var(--muted);
-}
-
-.transfer-tray-preview__code {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-weight: 700;
-  color: var(--text);
-  background: rgba(var(--industrial-accent-rgb), 0.12);
-  border: 1px solid rgba(var(--industrial-accent-rgb), 0.42);
-}
-
-.transfer-tray-preview__separator {
-  color: var(--muted);
-}
-
-.transfer-tray-preview__meta {
-  font-weight: 600;
-  color: var(--muted);
-}
-
-.transfer-tray-preview__samples {
-  color: var(--text);
 }
 
 .transfer-print-all-btn {

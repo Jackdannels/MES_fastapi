@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">MES 工作台 v1.3</title>
+  <desc id="desc">深色工业工作台图标，包含连接节点和 MES 字样</desc>
+  <defs>
+    <linearGradient id="shell" x1="20" y1="18" x2="236" y2="238" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#123c48"/>
+      <stop offset="1" stop-color="#071319"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="56" y1="54" x2="205" y2="205" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#63e6be"/>
+      <stop offset="1" stop-color="#2fb6d4"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="232" height="232" rx="54" fill="url(#shell)" stroke="#63e6be" stroke-width="8"/>
+  <path d="M58 75h140M58 128h140M58 181h140" stroke="#163b45" stroke-width="10" stroke-linecap="round"/>
+  <path d="M63 75h37v53h56v53h37" fill="none" stroke="url(#signal)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="63" cy="75" r="13" fill="#f2b45b" stroke="#fff0c9" stroke-width="4"/>
+  <circle cx="100" cy="128" r="13" fill="#63e6be" stroke="#d6fff0" stroke-width="4"/>
+  <circle cx="156" cy="181" r="13" fill="#2fb6d4" stroke="#d9f8ff" stroke-width="4"/>
+  <text x="128" y="116" fill="#f4fbff" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="800" text-anchor="middle" letter-spacing="4">MES</text>
+</svg>

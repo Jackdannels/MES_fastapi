@@ -18,9 +18,9 @@ namespace MESWorkstationConfigurator
     [Serializable]
     public class LauncherConfig
     {
-        public string ServerUrl = "http://192.168.110.90:5173";
+        public string ServerUrl = "http://192.168.110.15:5173";
         public string StationKey = "handover";
-        public int ZoomPercent = 90;
+        public int ZoomPercent = 100;
         public string TerminalId = "";
         public string ProtectedTerminalSecret = "";
         public string RegisteredServerUrl = "";
@@ -48,7 +48,9 @@ namespace MESWorkstationConfigurator
 
     internal static class LauncherRuntime
     {
-        internal const string Version = "v1.1";
+        internal const string Version = "v1.5";
+        internal const int WorkstationZoomPercent = 100;
+        internal const string DefaultServerUrl = "http://192.168.110.15:5173";
         internal const string RunValueName = "MESWorkstationLauncher";
         internal static readonly string InstallDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -94,7 +96,13 @@ namespace MESWorkstationConfigurator
                 }
                 using (FileStream stream = File.OpenRead(ConfigPath))
                 {
-                    return (LauncherConfig)new XmlSerializer(typeof(LauncherConfig)).Deserialize(stream);
+                    LauncherConfig config = (LauncherConfig)new XmlSerializer(typeof(LauncherConfig)).Deserialize(stream);
+                    if (String.IsNullOrWhiteSpace(config.ServerUrl) || String.Equals(config.ServerUrl.TrimEnd('/'), "http://192.168.110.90:5173", StringComparison.OrdinalIgnoreCase))
+                    {
+                        config.ServerUrl = DefaultServerUrl;
+                    }
+                    config.ZoomPercent = WorkstationZoomPercent;
+                    return config;
                 }
             }
             catch (Exception exception)
@@ -141,7 +149,7 @@ namespace MESWorkstationConfigurator
             if (!Uri.TryCreate(normalized, UriKind.Absolute, out uri)
                 || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             {
-                throw new InvalidOperationException("MES 地址格式不正确，例如：http://192.168.110.90:5173");
+                throw new InvalidOperationException("MES 地址格式不正确，例如：http://192.168.110.15:5173");
             }
             bool hasExplicitPort = uri.Authority.LastIndexOf(':') > uri.Authority.LastIndexOf(']');
             if (!hasExplicitPort && uri.Scheme == Uri.UriSchemeHttp)
@@ -410,6 +418,7 @@ namespace MESWorkstationConfigurator
                 string targetUrl = BuildTerminalBootstrapUrl(config);
                 Directory.CreateDirectory(EdgeProfilePath);
                 StopDedicatedEdge();
+                NormalizeDedicatedEdgeZoom();
 
                 ProcessStartInfo startInfo = new ProcessStartInfo();
                 startInfo.FileName = edgePath;
@@ -422,7 +431,7 @@ namespace MESWorkstationConfigurator
                     + " --no-first-run"
                     + " --no-default-browser-check"
                     + " --disable-session-crashed-bubble"
-                    + " --force-device-scale-factor=0.9";
+                    + " --force-device-scale-factor=1.0";
                 Process.Start(startInfo);
                 Log("Edge 已启动，固定终端目标=" + businessTargetUrl);
             }
@@ -459,6 +468,54 @@ namespace MESWorkstationConfigurator
             catch (Exception exception)
             {
                 Log("关闭旧工作台 Edge 时忽略错误：" + exception.Message);
+            }
+        }
+
+        private static void NormalizeDedicatedEdgeZoom()
+        {
+            try
+            {
+                string preferencesPath = Path.Combine(EdgeProfilePath, "Default", "Preferences");
+                if (!File.Exists(preferencesPath))
+                {
+                    Log("专用 Edge 尚无历史缩放配置，按 100% 启动。");
+                    return;
+                }
+
+                JavaScriptSerializer serializer = new JavaScriptSerializer();
+                serializer.MaxJsonLength = Int32.MaxValue;
+                Dictionary<string, object> preferences = serializer.DeserializeObject(
+                    File.ReadAllText(preferencesPath, Encoding.UTF8)
+                ) as Dictionary<string, object>;
+                if (preferences == null)
+                {
+                    throw new InvalidOperationException("Edge Preferences 格式无法识别。");
+                }
+
+                object partitionValue;
+                Dictionary<string, object> partition = null;
+                if (preferences.TryGetValue("partition", out partitionValue))
+                {
+                    partition = partitionValue as Dictionary<string, object>;
+                }
+                if (partition == null)
+                {
+                    partition = new Dictionary<string, object>();
+                    preferences["partition"] = partition;
+                }
+                partition["default_zoom_level"] = 0.0;
+                partition["per_host_zoom_levels"] = new Dictionary<string, object>();
+
+                File.WriteAllText(
+                    preferencesPath,
+                    serializer.Serialize(preferences),
+                    new UTF8Encoding(false)
+                );
+                Log("专用 Edge 页面缩放已统一重置为 100%。");
+            }
+            catch (Exception exception)
+            {
+                Log("重置专用 Edge 页面缩放时忽略错误：" + exception.Message);
             }
         }
 
@@ -584,7 +641,7 @@ namespace MESWorkstationConfigurator
             LauncherConfig config = LauncherRuntime.LoadConfig();
             config.ServerUrl = LauncherRuntime.NormalizeServerUrl(serverText.Text);
             config.StationKey = selected.Key;
-            config.ZoomPercent = 90;
+            config.ZoomPercent = LauncherRuntime.WorkstationZoomPercent;
             return config;
         }
 

@@ -3,6 +3,15 @@
     <Teleport v-if="canTeleportScheduleAction" to=".header-actions-before-logout">
       <div class="laboratory-attendance-header" data-testid="laboratory-attendance-header">
         <button
+          class="action-btn laboratory-reset-button"
+          data-testid="laboratory-reset-task"
+          type="button"
+          :disabled="!canResetCurrentTask"
+          @click="openResetConfirm"
+        >
+          重置试验室任务
+        </button>
+        <button
           class="action-btn secondary laboratory-attendance-login-button"
           data-testid="laboratory-attendance-login"
           type="button"
@@ -30,92 +39,46 @@
       </button>
     </Teleport>
 
-    <section class="grid laboratory-summary-grid stagger">
-      <div class="card">
-        <div class="muted">今日实验排程数量</div>
-        <div class="kpi">{{ summary.todayPendingCount }}</div>
-      </div>
-      <div class="card">
-        <div class="muted">今日未做实验数量</div>
-        <div class="kpi">{{ summary.todayUndoneCount }}</div>
-      </div>
-    </section>
-
     <section class="card section laboratory-control-card">
-      <div class="laboratory-control-header">
-        <div>
-          <h3>{{ labName }}操作台</h3>
-          <p class="muted">当前实验室为{{ labName }}，任务与实验准备流程按现有项目数据口径展示。</p>
-        </div>
-        <button
-          class="laboratory-reset-button"
-          data-testid="laboratory-reset-task"
-          type="button"
-          :disabled="!canResetCurrentTask"
-          @click="openResetConfirm"
-        >
-          重置实验室任务
-        </button>
-      </div>
-
       <div class="laboratory-actions-grid">
-        <article class="laboratory-action-item laboratory-action-item--tasks">
-          <div class="laboratory-action-copy">
-            <span class="muted">清单</span>
-            <h4>查看当前实验室任务</h4>
-          </div>
-          <button class="action-btn secondary laboratory-action-button" data-testid="laboratory-view-tasks" type="button" @click="openTaskList">
-            查看任务
-          </button>
-        </article>
+        <button
+          class="laboratory-action-item laboratory-action-item--tasks"
+          data-testid="laboratory-view-tasks"
+          type="button"
+          @click="openTaskList"
+        >
+          查看任务
+        </button>
 
-        <article class="laboratory-action-item laboratory-action-item--compare" :class="{ 'is-locked': !actionState.canCompare }">
-          <div class="laboratory-action-copy">
-            <span class="muted">步骤 1</span>
-            <h4>任务比对</h4>
-          </div>
-          <button
-            class="action-btn laboratory-action-button"
-            data-testid="laboratory-compare"
-            type="button"
-            :disabled="runningInteractionLocked || !actionState.canCompare"
-            @click="openCompare"
-          >
-            比对任务
-          </button>
-        </article>
+        <button
+          class="laboratory-action-item laboratory-action-item--compare"
+          data-testid="laboratory-compare"
+          type="button"
+          :disabled="runningInteractionLocked || !actionState.canCompare"
+          @click="openCompare"
+        >
+          比对任务
+        </button>
 
-        <article class="laboratory-action-item laboratory-action-item--install" :class="{ 'is-locked': !canRequestFixtureInstall }">
-          <div class="laboratory-action-copy">
-            <span class="muted">步骤 2</span>
-            <h4>样品安装</h4>
-          </div>
-          <button
-            class="action-btn laboratory-action-button"
-            data-testid="laboratory-install"
-            type="button"
-            :disabled="runningInteractionLocked || !canRequestFixtureInstall"
-            @click="openInstall"
-          >
-            {{ installActionLabel }}
-          </button>
-        </article>
+        <button
+          class="laboratory-action-item laboratory-action-item--install"
+          data-testid="laboratory-install"
+          type="button"
+          :disabled="runningInteractionLocked || !canRequestFixtureInstall"
+          @click="openInstall"
+        >
+          {{ installActionLabel }}
+        </button>
 
-        <article class="laboratory-action-item laboratory-action-item--ready" :class="{ 'is-locked': !canRequestReady }">
-          <div class="laboratory-action-copy">
-            <span class="muted">步骤 3</span>
-            <h4>确认准备就绪</h4>
-          </div>
-          <button
-            class="action-btn laboratory-action-button"
-            data-testid="laboratory-ready"
-            type="button"
-            :disabled="runningInteractionLocked || !canRequestReady"
-            @click="openReady"
-          >
-            {{ readyActionLabel }}
-          </button>
-        </article>
+        <button
+          class="laboratory-action-item laboratory-action-item--ready"
+          data-testid="laboratory-ready"
+          type="button"
+          :disabled="runningInteractionLocked || !canRequestReady"
+          @click="openReady"
+        >
+          {{ readyActionLabel }}
+        </button>
       </div>
 
       <div v-if="laboratoryMqError" class="laboratory-empty-hint" data-testid="laboratory-mq-error">
@@ -135,95 +98,70 @@
           <div v-if="!recentTasks.length" class="laboratory-recent-task laboratory-recent-task--empty">
             当前{{ labName }}暂无任务
           </div>
-          <article
+          <button
             v-for="row in recentTasks"
             :key="`recent-${row.id}`"
             class="laboratory-recent-task"
-            :class="{ 'is-current': selectedTask && selectedTask.id === row.id }"
+            :class="{
+              'is-current': selectedTask && selectedTask.id === row.id,
+              'is-locked': (!selectedTask || selectedTask.id !== row.id) && !canSelectTaskKey(row.id),
+            }"
+            :data-testid="`laboratory-recent-task-${row.taskCode}`"
+            type="button"
+            :disabled="(selectedTask && selectedTask.id === row.id) || !canSelectTaskKey(row.id)"
+            @click="openRecentTaskConfirm(row)"
           >
-            <div class="laboratory-recent-task__head">
+            <span class="laboratory-recent-task__head">
               <strong class="laboratory-recent-task__code">{{ row.taskCode }}</strong>
               <span v-if="selectedTask && selectedTask.id === row.id" class="pill">
                 {{ currentTask && currentTask.id === row.id ? "当前任务" : "已选中" }}
               </span>
-            </div>
-            <div class="laboratory-recent-task__experiment muted">{{ row.experimentName }}</div>
-            <div v-if="row.axisCodes?.length" class="laboratory-recent-task__axes" data-testid="laboratory-recent-task-axes">
+            </span>
+            <span class="laboratory-recent-task__experiment muted">{{ row.experimentName }}</span>
+            <span v-if="row.axisCodes?.length" class="laboratory-recent-task__axes" data-testid="laboratory-recent-task-axes">
               轴向：{{ row.axisCodes.join("、") }}
-            </div>
-            <div class="laboratory-recent-task__time">{{ row.dateTimeRange }}</div>
-          </article>
+            </span>
+            <span class="laboratory-recent-task__time">{{ row.dateTimeRange }}</span>
+          </button>
         </div>
       </div>
 
       <div class="laboratory-progress-panel">
         <h4>流程状态</h4>
-        <div class="laboratory-flow-grid">
-          <section class="laboratory-flow-card" data-testid="laboratory-task-flow">
-            <div class="laboratory-flow-card__head">
-              <div>
-                <div class="laboratory-flow-card__title">任务流程图</div>
-                <div class="muted">
-                  {{ currentTask ? `${currentTask.taskCode} / ${currentTask.experimentName}` : `当前${labName}暂无排程` }}
-                </div>
+        <section class="laboratory-flow-card laboratory-flow-card--full" data-testid="laboratory-tray-flow">
+          <div class="laboratory-flow-card__head laboratory-flow-card__head--stacked">
+            <div>
+              <div class="muted">
+                {{ trayFlowTask ? `${trayFlowTask.taskCode} / ${trayFlowTask.experimentName}` : "当前无可切换托盘" }}
               </div>
             </div>
-            <ol class="laboratory-flow-steps">
-              <li
-                v-for="step in currentTaskFlow.steps"
-                :key="`task-flow-${step.key}`"
-                :class="{ 'is-active': step.active, 'is-reached': step.reached }"
+            <div class="laboratory-tray-tabs">
+              <button
+                v-for="tray in currentExperimentTrayRows"
+                :key="`tray-tab-${tray.trayCode}`"
+                class="laboratory-tray-tab"
+                :class="{ 'is-active': selectedTrayRow && selectedTrayRow.trayCode === tray.trayCode }"
+                :data-testid="`laboratory-tray-tab-${tray.trayCode}`"
+                type="button"
+                @click="setSelectedTrayCode(tray.trayCode)"
               >
-                {{ step.label }}
-              </li>
-            </ol>
-            <div class="laboratory-flow-status" data-testid="laboratory-task-flow-status">{{ currentTaskFlow.currentStatus }}</div>
-            <div
-              v-if="currentTaskFlow.axisStatusLabel"
-              class="laboratory-flow-axis-status"
-              data-testid="laboratory-task-axis-status"
+                {{ tray.trayCode }}
+              </button>
+            </div>
+          </div>
+          <div class="laboratory-flow-status" data-testid="laboratory-tray-flow-status">{{ selectedTrayFlow.currentStatus }}</div>
+          <ol class="laboratory-flow-steps laboratory-flow-steps--tray" data-testid="laboratory-tray-flow-list">
+            <li
+              v-for="step in selectedTrayFlow.steps"
+              :key="`tray-flow-${step.key}`"
+              :data-testid="`laboratory-tray-flow-step-${step.key}`"
+              :class="{ 'is-active': step.active, 'is-reached': step.reached }"
             >
-              {{ currentTaskFlow.axisStatusLabel }}
-            </div>
-            <div class="muted laboratory-flow-note">{{ progressMessage }}</div>
-          </section>
-
-          <section class="laboratory-flow-card" data-testid="laboratory-tray-flow">
-            <div class="laboratory-flow-card__head laboratory-flow-card__head--stacked">
-              <div>
-                <div class="laboratory-flow-card__title">托盘流程图</div>
-                <div class="muted">
-                  {{ trayFlowTask ? `${trayFlowTask.taskCode} / ${trayFlowTask.experimentName}` : "当前无可切换托盘" }}
-                </div>
-              </div>
-              <div class="laboratory-tray-tabs">
-                <button
-                  v-for="tray in currentExperimentTrayRows"
-                  :key="`tray-tab-${tray.trayCode}`"
-                  class="laboratory-tray-tab"
-                  :class="{ 'is-active': selectedTrayRow && selectedTrayRow.trayCode === tray.trayCode }"
-                  :data-testid="`laboratory-tray-tab-${tray.trayCode}`"
-                  type="button"
-                  @click="setSelectedTrayCode(tray.trayCode)"
-                >
-                  {{ tray.trayCode }}
-                </button>
-              </div>
-            </div>
-            <div class="laboratory-flow-status" data-testid="laboratory-tray-flow-status">{{ selectedTrayFlow.currentStatus }}</div>
-            <ol class="laboratory-flow-steps laboratory-flow-steps--tray" data-testid="laboratory-tray-flow-list">
-              <li
-                v-for="step in selectedTrayFlow.steps"
-                :key="`tray-flow-${step.key}`"
-                :data-testid="`laboratory-tray-flow-step-${step.key}`"
-                :class="{ 'is-active': step.active, 'is-reached': step.reached }"
-              >
-                <span class="laboratory-flow-label">{{ step.label }}</span>
-                <span class="laboratory-flow-time" :title="formatFlowTime(step.time)">{{ formatFlowTime(step.time) }}</span>
-              </li>
-            </ol>
-          </section>
-        </div>
+              <span class="laboratory-flow-label">{{ step.label }}</span>
+              <span class="laboratory-flow-time" :title="formatFlowTime(step.time)">{{ formatFlowTime(step.time) }}</span>
+            </li>
+          </ol>
+        </section>
       </div>
     </section>
 
@@ -370,7 +308,8 @@
       @close="closeTaskList"
     >
       <div class="laboratory-modal-body">
-        <table class="table laboratory-task-list-card">
+        <div class="laboratory-task-table-scroll">
+          <table class="table laboratory-task-list-card">
           <thead>
             <tr>
               <th>任务编号</th>
@@ -419,7 +358,7 @@
               </td>
               <td>
                 <button
-                  class="action-btn secondary"
+                  class="action-btn secondary laboratory-task-select-button"
                   :data-testid="`laboratory-select-task-${row.taskCode}`"
                   type="button"
                   :disabled="!canSelectTaskKey(row.id)"
@@ -435,11 +374,12 @@
               <td colspan="7" class="laboratory-empty-table-cell">当前实验室暂无任务</td>
             </tr>
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
       <template #footer>
         <button
-          class="action-btn"
+          class="action-btn laboratory-task-confirm-button"
           data-testid="laboratory-confirm-current-task"
           type="button"
           :disabled="runningInteractionLocked || !pendingTaskCode"
@@ -450,7 +390,45 @@
       </template>
     </AppModal>
 
-    <AppModal :open="compareModalOpen" data-testid="laboratory-compare-modal" title="任务比对" @close="closeCompare">
+    <AppModal
+      :open="recentTaskConfirmOpen"
+      data-testid="laboratory-recent-task-confirm-modal"
+      title="切换当前任务"
+      @close="closeRecentTaskConfirm"
+    >
+      <div class="laboratory-modal-body laboratory-prompt-card laboratory-recent-task-confirm-copy">
+        <p>
+          是否要将当前任务更改为
+          <strong>{{ recentTaskCandidate?.taskCode || "-" }}</strong>？
+        </p>
+      </div>
+      <template #footer>
+        <button
+          class="action-btn secondary laboratory-confirm-dialog-button"
+          data-testid="laboratory-recent-task-cancel"
+          type="button"
+          @click="closeRecentTaskConfirm"
+        >
+          取消
+        </button>
+        <button
+          class="action-btn laboratory-confirm-dialog-button"
+          data-testid="laboratory-recent-task-confirm"
+          type="button"
+          @click="confirmRecentTaskChange"
+        >
+          确定
+        </button>
+      </template>
+    </AppModal>
+
+    <AppModal
+      :open="compareModalOpen"
+      class="laboratory-operation-modal laboratory-operation-modal--compare"
+      data-testid="laboratory-compare-modal"
+      title="任务比对"
+      @close="closeCompare"
+    >
       <div class="laboratory-modal-body">
         <div class="laboratory-compare-head">
           <h4>即将进行实验任务的详细清单</h4>
@@ -475,7 +453,7 @@
               @keyup.enter="submitCompareScan"
             />
           </label>
-          <button class="action-btn" data-testid="laboratory-compare-scan-submit" type="button" @click="submitCompareScan">扫码确认</button>
+          <button class="action-btn laboratory-compare-scan-button" data-testid="laboratory-compare-scan-submit" type="button" @click="submitCompareScan">扫码确认</button>
         </div>
         <AppFeedback
           v-if="compareFeedback"
@@ -490,17 +468,23 @@
         </AppFeedback>
       </div>
       <template #footer>
-        <button class="action-btn" :disabled="!canCompleteCompare" data-testid="laboratory-compare-complete" type="button" @click="confirmCompare">比对完成</button>
+        <button class="action-btn laboratory-operation-modal-button" :disabled="!canCompleteCompare" data-testid="laboratory-compare-complete" type="button" @click="confirmCompare">比对完成</button>
       </template>
     </AppModal>
 
-    <AppModal :open="installModalOpen" data-testid="laboratory-install-modal" title="样品安装" @close="closeInstall">
+    <AppModal
+      :open="installModalOpen"
+      class="laboratory-operation-modal"
+      data-testid="laboratory-install-modal"
+      title="样品安装"
+      @close="closeInstall"
+    >
       <div class="laboratory-modal-body laboratory-prompt-card">
         <p>{{ installActionLabel === "重新下发安装" ? "将重新向上位机下发夹具安装命令，请确认上位机已连接并订阅当前试验间。" : `请安装样品，并确认${labName}当前任务已准备完成。` }}</p>
       </div>
       <template #footer>
-        <button class="action-btn secondary" data-testid="laboratory-install-cancel" type="button" @click="closeInstall">取消</button>
-        <button class="action-btn" data-testid="laboratory-install-confirm" type="button" @click="confirmInstall">安装完成</button>
+        <button class="action-btn secondary laboratory-operation-modal-button" data-testid="laboratory-install-cancel" type="button" @click="closeInstall">取消</button>
+        <button class="action-btn laboratory-operation-modal-button" data-testid="laboratory-install-confirm" type="button" @click="confirmInstall">安装完成</button>
       </template>
     </AppModal>
 
@@ -561,13 +545,19 @@
       </div>
     </AppModal>
 
-    <AppModal :open="readyModalOpen" data-testid="laboratory-ready-modal" title="确认实验准备就绪" @close="closeReady">
+    <AppModal
+      :open="readyModalOpen"
+      class="laboratory-operation-modal"
+      data-testid="laboratory-ready-modal"
+      title="确认实验准备就绪"
+      @close="closeReady"
+    >
       <div class="laboratory-modal-body laboratory-prompt-card">
         <p>确定当前{{ labName }}任务已完成实验准备，并将状态更新为实验准备就绪。</p>
       </div>
       <template #footer>
-        <button class="action-btn secondary" data-testid="laboratory-ready-cancel" type="button" @click="closeReady">取消</button>
-        <button class="action-btn" data-testid="laboratory-ready-confirm" type="button" @click="confirmReady">确认准备就绪</button>
+        <button class="action-btn secondary laboratory-operation-modal-button" data-testid="laboratory-ready-cancel" type="button" @click="closeReady">取消</button>
+        <button class="action-btn laboratory-operation-modal-button" data-testid="laboratory-ready-confirm" type="button" @click="confirmReady">确认准备就绪</button>
       </template>
     </AppModal>
 
@@ -580,17 +570,32 @@
       </template>
     </AppModal>
 
-    <AppModal :open="resetConfirmModalOpen" data-testid="laboratory-reset-confirm-modal" title="确认撤回任务" @close="closeResetConfirm">
-      <div class="laboratory-modal-body laboratory-prompt-card">
-        <p>是否撤回当前任务下当前实验对应托盘？撤回后将恢复到上一个有效出库发起点。</p>
+    <AppModal
+      :open="resetConfirmModalOpen"
+      class="laboratory-reset-modal"
+      data-testid="laboratory-reset-confirm-modal"
+      title="确认撤回任务"
+      @close="closeResetConfirm"
+    >
+      <div class="laboratory-modal-body">
+        <div class="laboratory-reset-warning-panel" role="alert">
+          <strong>撤回任务将改变当前托盘流程</strong>
+          <p>是否撤回当前任务下当前实验对应托盘？撤回后将恢复到上一个有效出库发起点。</p>
+        </div>
       </div>
       <template #footer>
-        <button class="action-btn secondary" data-testid="laboratory-reset-cancel" type="button" @click="closeResetConfirm">取消</button>
-        <button class="action-btn" data-testid="laboratory-reset-confirm" type="button" @click="confirmResetPrompt">确认撤回</button>
+        <button class="action-btn secondary laboratory-reset-modal-button" data-testid="laboratory-reset-cancel" type="button" @click="closeResetConfirm">取消</button>
+        <button class="action-btn danger laboratory-reset-modal-button" data-testid="laboratory-reset-confirm" type="button" @click="confirmResetPrompt">确认撤回</button>
       </template>
     </AppModal>
 
-    <AppModal :open="resetDangerModalOpen" data-testid="laboratory-reset-danger-modal" title="危险操作确认" @close="closeResetDanger">
+    <AppModal
+      :open="resetDangerModalOpen"
+      class="laboratory-reset-modal"
+      data-testid="laboratory-reset-danger-modal"
+      title="危险操作确认"
+      @close="closeResetDanger"
+    >
       <div class="laboratory-modal-body">
         <div class="laboratory-danger-panel">
           <strong>危险操作确认</strong>
@@ -598,8 +603,8 @@
         </div>
       </div>
       <template #footer>
-        <button class="action-btn secondary" data-testid="laboratory-reset-danger-cancel" type="button" @click="closeResetDanger">取消</button>
-        <button class="action-btn danger" data-testid="laboratory-reset-danger-confirm" type="button" @click="confirmResetTask">确认撤回</button>
+        <button class="action-btn secondary laboratory-reset-modal-button" data-testid="laboratory-reset-danger-cancel" type="button" @click="closeResetDanger">取消</button>
+        <button class="action-btn danger laboratory-reset-modal-button" data-testid="laboratory-reset-danger-confirm" type="button" @click="confirmResetTask">确认撤回</button>
       </template>
     </AppModal>
 
@@ -784,7 +789,6 @@ const {
   currentAxisCompletion,
   currentExperimentTrayRows,
   currentTask,
-  currentTaskFlow,
   hideRunningModal,
   logoutAttendance,
   installModalOpen,
@@ -798,7 +802,6 @@ const {
   openResetConfirm,
   openTaskList,
   pendingTaskCode,
-  progressMessage,
   laboratoryTaskNotice,
   openAttendanceLogin,
   readyModalOpen,
@@ -818,7 +821,6 @@ const {
   setAttendanceLoginMode,
   setSelectedTrayCode,
   showRunningModal,
-  summary,
   submitCompareScan,
   submitAttendanceLogin,
   submitAttendanceQrLogin,
@@ -828,6 +830,9 @@ const {
 
 const fullContentModalOpen = ref(false);
 const fullContentDetail = ref(null);
+const recentTaskConfirmOpen = ref(false);
+const recentTaskCandidate = ref(null);
+const recentTaskPreviousPendingCode = ref("");
 const attendanceLoginRunningExperimentActive = computed(() => Boolean(runningExperiment.value?.active));
 
 const previewItems = (items, limit) => (Array.isArray(items) ? items.slice(0, limit) : []);
@@ -871,6 +876,35 @@ const openRunningFullContent = () => {
 
 const closeFullContentModal = () => {
   fullContentModalOpen.value = false;
+};
+
+const openRecentTaskConfirm = (row) => {
+  if (!row?.id || selectedTask.value?.id === row.id || !canSelectTaskKey(row.id)) {
+    return;
+  }
+  recentTaskPreviousPendingCode.value = String(pendingTaskCode.value || "");
+  setPendingTaskCode(row.id);
+  recentTaskCandidate.value = row;
+  recentTaskConfirmOpen.value = true;
+};
+
+const closeRecentTaskConfirm = () => {
+  pendingTaskCode.value = recentTaskPreviousPendingCode.value;
+  recentTaskConfirmOpen.value = false;
+  recentTaskCandidate.value = null;
+  recentTaskPreviousPendingCode.value = "";
+};
+
+const confirmRecentTaskChange = () => {
+  const candidateKey = String(recentTaskCandidate.value?.id || "");
+  if (!candidateKey || !canSelectTaskKey(candidateKey)) {
+    closeRecentTaskConfirm();
+    return;
+  }
+  confirmCurrentTask();
+  recentTaskConfirmOpen.value = false;
+  recentTaskCandidate.value = null;
+  recentTaskPreviousPendingCode.value = "";
 };
 
 const formatFlowTime = (value) => {

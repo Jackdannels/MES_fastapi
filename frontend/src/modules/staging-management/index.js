@@ -9,7 +9,7 @@ export const route = {
   component: Page,
   meta: {
     title: "暂存间系统",
-    subtitle: "管理暂存间样品入库、出库与样品总览。",
+    subtitle: "管理暂存间托盘入库、出库与托盘总览。",
     module: "staging",
   },
 };

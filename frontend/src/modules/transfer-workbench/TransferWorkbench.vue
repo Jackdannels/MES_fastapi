@@ -1,10 +1,8 @@
 <template>
-  <div class="transfer-area-screen" :class="{ 'is-embedded': embedded }">
+  <div class="transfer-area-screen" :class="{ 'is-embedded': embedded, 'is-terminal': terminal }">
     <header v-if="showModeHeader" class="page-header transfer-system-header">
       <div class="transfer-system-header__meta">
-        <div class="eyebrow">{{ modeConfig.eyebrow }}</div>
         <h1 class="transfer-system-title">{{ modeConfig.headerTitle }}</h1>
-        <p class="subtitle transfer-system-subtitle">{{ modeConfig.headerSubtitle }}</p>
       </div>
       <div class="header-actions transfer-system-actions">
         <button
@@ -38,27 +36,21 @@
       </div>
     </header>
 
-    <div class="transfer-area-shell" :class="{ 'is-embedded': embedded }">
+    <div class="transfer-area-shell" :class="{ 'is-embedded': embedded, 'is-terminal': terminal }">
       <template v-if="showDispatchPanel">
         <TransferDispatchPanel :dispatch-state="transferDispatch" />
       </template>
 
       <template v-else-if="viewMode === 'overview'">
         <section class="card transfer-overview-shell">
-          <div v-if="showOverviewIntro" class="transfer-overview-title-row">
+          <div class="transfer-overview-shell__head">
             <h2
+              v-if="showOverviewIntro"
               class="transfer-overview-page-title"
               :class="{ 'transfer-overview-page-title--compact': mode === 'pre-allocation' }"
             >
               {{ modeConfig.overviewTitle }}
             </h2>
-          </div>
-
-          <div class="transfer-overview-shell__head">
-            <div v-if="showOverviewIntro">
-              <h2>总任务清单</h2>
-              <div class="muted">{{ modeConfig.overviewHint }}</div>
-            </div>
             <div class="transfer-overview-kpis transfer-overview-status-actions">
               <button
                 class="transfer-overview-kpi transfer-overview-kpi--filter"
@@ -228,7 +220,12 @@
           </div>
 
           <div class="card transfer-overview-pagination">
-            <AppPagination :current-page="currentTaskPage" :page-count="taskPageCount" @change="setTaskPage" />
+            <AppPagination
+              :current-page="currentTaskPage"
+              :page-count="taskPageCount"
+              :show-jump-controls="mode !== 'handover'"
+              @change="setTaskPage"
+            />
           </div>
         </section>
       </template>
@@ -267,18 +264,22 @@
 
           <section class="transfer-tray-panel">
             <div class="transfer-panel-title transfer-panel-title--tray">
-              <div>
-                <h3>托盘栏位</h3>
-                <div class="muted">
-                  {{ trayInteractionHint }}
-                </div>
-              </div>
+              <h3>托盘栏位</h3>
 
               <div class="transfer-tray-toolbar">
                 <div class="transfer-tray-limit-toolbar">
-                  <span class="transfer-tray-limit-toolbar__label">统一上限</span>
                   <div class="transfer-tray-limit-stepper">
-                    <AppNumberInput :key="trayLimitInputKey" data-testid="transfer-tray-limit-input" min="1" :max="MAX_TRAY_LIMIT" step="1" :disabled="taskEditingLocked" :model-value="trayLimit" @change="setTrayLimit" />
+                    <AppNumberInput
+                      :key="trayLimitInputKey"
+                      controls-layout="horizontal"
+                      data-testid="transfer-tray-limit-input"
+                      min="1"
+                      :max="MAX_TRAY_LIMIT"
+                      step="1"
+                      :disabled="taskEditingLocked"
+                      :model-value="trayLimit"
+                      @change="setTrayLimit"
+                    />
                   </div>
                 </div>
 
@@ -390,25 +391,6 @@
                       删除托盘
                     </button>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="helper transfer-helper">{{ modeConfig.detailHelper }}</div>
-
-            <div class="form-field">
-              <label>托盘预览</label>
-              <div class="transfer-tray-preview" data-testid="transfer-tray-preview">
-                <div
-                  v-for="tray in trayPreviewRows"
-                  :key="tray.trayNo"
-                  class="transfer-tray-preview__row"
-                >
-                  <span class="transfer-tray-preview__code">{{ tray.trayNo }}</span>
-                  <span class="transfer-tray-preview__separator"> | </span>
-                  <span class="transfer-tray-preview__meta">{{ tray.loadText }}</span>
-                  <span class="transfer-tray-preview__separator"> | </span>
-                  <span class="transfer-tray-preview__samples">{{ tray.sampleText }}</span>
                 </div>
               </div>
             </div>
@@ -580,6 +562,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  terminal: {
+    type: Boolean,
+    default: false,
+  },
   mode: {
     type: String,
     default: "handover",
@@ -669,13 +655,9 @@ const MODE_CONFIGS = {
   handover: {
     allowConfirm: true,
     allowReset: true,
-    detailHelper: "默认上限为 16，完成实验匹配并保存托盘后即可确认入库；到货任务仍可打印二维码，但不允许再调整托盘。",
     detailHint: "支持触控先点托盘再点样品，也支持样品换位",
     detailTitle: "托盘分装与入库",
-    eyebrow: "接驳区系统",
-    headerSubtitle: "处理接驳区到样确认、托盘分装与交接。",
     headerTitle: "接驳区工作台",
-    overviewHint: "样品送达后可调整托盘分装，完成实验匹配并保存托盘后即可确认入库，打印二维码为可选操作。",
     overviewTitle: "接驳任务总览",
     printTitle: "接驳区二维码打印",
     resetActionLabel: "重新入库",
@@ -686,10 +668,6 @@ const MODE_CONFIGS = {
     detailHelper: "当前为预接驳预分装模式，可保存托盘方案与打印二维码；正式入库由接驳区工作台执行。到货任务仅允许查看与打印。",
     detailHint: "支持鼠标拖拽与点击快速调整托盘",
     detailTitle: "任务样品分配管理",
-    eyebrow: "样品管理",
-    headerSubtitle: "在中控系统中预分配托盘方案，并同步给接驳区工作台。",
-    headerTitle: "样品预分装",
-    overviewHint: "通过总任务清单进入任务样品分配管理。可保存托盘方案、打印二维码并同步至接驳区，正式入库由接驳区执行。",
     overviewTitle: "样品预分装",
     printTitle: "样品预分装二维码打印",
     resetActionLabel: "重新分配",
@@ -1128,11 +1106,6 @@ const canResetWorkspace = computed(() => {
   }
   return true;
 });
-const trayPreviewRows = computed(() => assignedTrays.value.map((tray) => ({
-  trayNo: tray.trayNo,
-  loadText: `${tray.samples.length} / ${trayLimit.value}`,
-  sampleText: tray.samples.map((sample) => sample.sampleNo).join(" / ") || "暂无样品",
-})));
 const selectedSampleLabel = computed(() => {
   for (const tray of assignedTrays.value) {
     const sample = tray.samples.find((item) => item.sampleId === selectedSampleId.value);
@@ -1141,24 +1114,6 @@ const selectedSampleLabel = computed(() => {
   return "";
 });
 const quickMoveTrayLabel = computed(() => assignedTrays.value[armedTrayIndex.value]?.trayNo || "");
-const trayInteractionHint = computed(() => {
-  if (reloadBlockedReason.value) {
-    return `${reloadBlockedReason.value} 当前仅支持查看与打印。`;
-  }
-  if (isStoredTask.value) {
-    return "到货任务仅支持查看与打印。";
-  }
-  if (allocationSaved.value) {
-    return `当前托盘方案已保存，点击${modeConfig.value.resetActionLabel}后才能继续调整。`;
-  }
-  if (isExperimentMode.value) {
-    return `当前为 ${currentExperimentName.value} 托盘选择模式，只能选择托盘编号。`;
-  }
-  if (props.mode === "pre-allocation") {
-    return "支持鼠标拖拽样品到托盘，也支持先点样品再点托盘或先点托盘再点样品快速调整。";
-  }
-  return "触控可先点目标托盘，再点其他托盘中的样品完成移入；点一个样品再点另一个样品可交换位置。";
-});
 const selectionHintText = computed(() => {
   if (lockedOperationHint.value) {
     return lockedOperationHint.value;
@@ -1666,7 +1621,7 @@ const setTrayLimit = (value) => {
     showWorkbenchFeedback(trayCapacityWarning.value, "warning");
     return;
   }
-  rebalanceTrayLayout({ limit: nextLimit, message: `已按统一上限 ${nextLimit} 重新分配托盘。` });
+  rebalanceTrayLayout({ limit: nextLimit, message: `已将每盘数量上限调整为 ${nextLimit}，并重新分配托盘。` });
 };
 
 const allowTrayDrag = () => canDragSamples.value;

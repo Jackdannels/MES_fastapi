@@ -34,6 +34,8 @@ EXPERIMENT_TYPES = (
     "盐雾试验",
     "霉菌试验",
 )
+AXIS_AWARE_EXPERIMENT_TYPES = frozenset(("冲击试验", "振动试验"))
+DEFAULT_AXIS_CODES = ("x+", "x-", "y+", "y-", "z+", "z-")
 
 
 def now_beijing() -> datetime:
@@ -97,6 +99,11 @@ class LimsSimulator:
         code = self.next_task_code()
         type_count = rng.randint(1, 3)
         test_types = rng.sample(list(EXPERIMENT_TYPES), type_count)
+        axis_codes_by_test_type = {
+            test_type: list(DEFAULT_AXIS_CODES)
+            for test_type in test_types
+            if test_type in AXIS_AWARE_EXPERIMENT_TYPES
+        }
         request_id = f"LIMS-{now_beijing().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6].upper()}"
         return {
             "lims_request_id": request_id,
@@ -111,6 +118,7 @@ class LimsSimulator:
             "sample_type": rng.choice(("金属件", "复合材料", "电子组件", "粉末样品")),
             "test_type": " / ".join(test_types),
             "test_types": test_types,
+            "axis_codes_by_test_type": axis_codes_by_test_type,
             "required_device": " / ".join(test_types),
             "due_at": (now_beijing() + timedelta(days=rng.randint(3, 10))).strftime("%Y-%m-%d %H:%M"),
             "arrival_at": "",

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">MES 工作台 v1.5 方案 B 智造六核</title>
+  <desc id="desc">深色工业工作台图标，以六边形徽章、M 型协同核心和三色节点组成</desc>
+  <defs>
+    <linearGradient id="shell" x1="18" y1="16" x2="238" y2="240" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#123c48"/>
+      <stop offset="1" stop-color="#071319"/>
+    </linearGradient>
+    <linearGradient id="hex" x1="70" y1="54" x2="194" y2="204" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#63e6be"/>
+      <stop offset="1" stop-color="#2fb6d4"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="232" height="232" rx="54" fill="url(#shell)" stroke="#63e6be" stroke-width="8"/>
+  <path d="M128 42l70 40v92l-70 40-70-40V82z" fill="#0a242b" stroke="url(#hex)" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M82 158V92l46 38 46-38v66" fill="none" stroke="#f4fbff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="128" cy="42" r="10" fill="#e7b75f" stroke="#f4fbff" stroke-width="3"/>
+  <circle cx="58" cy="174" r="10" fill="#63e6be" stroke="#f4fbff" stroke-width="3"/>
+  <circle cx="198" cy="174" r="10" fill="#2fb6d4" stroke="#f4fbff" stroke-width="3"/>
+</svg>

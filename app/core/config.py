@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     SESSION_SECRET_KEY: Optional[str] = None
     SESSION_IDLE_TIMEOUT_MINUTES: int = 0
     SESSION_MAX_AGE_HOURS: int = 0
-    FRONTEND_ORIGINS: str = "http://127.0.0.1:5173,http://localhost:5173"
+    FRONTEND_ORIGINS: str = "http://192.168.110.15:5173,http://127.0.0.1:5173,http://localhost:5173"
     STORAGE_BACKEND: str = "mysql"
 
     MYSQL_HOST: str = "127.0.0.1"

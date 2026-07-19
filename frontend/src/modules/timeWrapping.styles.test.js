@@ -45,7 +45,7 @@ describe("time wrapping styles", () => {
     const labelRule = ruleFrom(source, ".laboratory-flow-label");
     const timeRule = ruleFrom(source, ".laboratory-flow-time");
 
-    expect(trayRule).toContain("repeat(auto-fit, minmax(180px, 1fr))");
+    expect(trayRule).toContain("repeat(auto-fit, minmax(220px, 1fr))");
     expect(trayRule).not.toContain("repeat(4, minmax(0, 1fr))");
     expect(trayItemRule).toContain("grid-template-columns: minmax(0, 1fr);");
     expect(trayItemRule).toContain("grid-template-rows: auto auto;");

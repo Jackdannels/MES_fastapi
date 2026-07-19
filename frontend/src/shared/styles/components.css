@@ -251,6 +251,37 @@
   opacity: 0.42;
 }
 
+.app-number-input.is-horizontal {
+  align-items: stretch;
+  overflow: visible;
+  border: 0;
+  background: transparent;
+  gap: 8px;
+}
+
+.app-number-input.is-horizontal .app-number-input__field {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 8px 12px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-panel-strong);
+}
+
+.app-number-input.is-horizontal .app-number-input__step {
+  flex: 0 0 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.42);
+  border-radius: var(--radius-control);
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+}
+
+.app-number-input.is-horizontal .app-number-input__step + .app-number-input__step {
+  border-top: 1px solid rgba(var(--industrial-accent-rgb), 0.42);
+}
+
 .form-grid > .form-field {
   min-width: 0;
 }

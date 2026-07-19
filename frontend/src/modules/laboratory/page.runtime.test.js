@@ -15,6 +15,12 @@ let attendanceSessionState;
 let masterLabsState;
 let snapshotState;
 let storageGetSnapshotOverride;
+const resetTaskButton = () => headerActions?.querySelector('[data-testid="laboratory-reset-task"]');
+const clickResetTask = async () => {
+  await flushPageUpdates();
+  resetTaskButton()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  await flushPageUpdates();
+};
 const WITHDRAWABLE_LAB_STATUSES = new Set(["已到达实验室", "工装夹具安装", "实验准备就绪"]);
 const { routeState } = vi.hoisted(() => ({
   routeState: {
@@ -407,6 +413,7 @@ const addActiveExperimentRun = ({
 const mountPage = async () => {
   const expectedStorageGetCalls = storageGetCalls().length + 1;
   const expectedMasterLabsGetCalls = masterLabsGetCalls().length + 1;
+  document.querySelectorAll(".page-header").forEach((element) => element.remove());
   pageHeader = document.createElement("header");
   pageHeader.className = "page-header";
   pageHeader.innerHTML = `
@@ -432,6 +439,7 @@ const mountPage = async () => {
 const mountPageInsideShell = async () => {
   const expectedStorageGetCalls = storageGetCalls().length + 1;
   const expectedMasterLabsGetCalls = masterLabsGetCalls().length + 1;
+  document.querySelectorAll(".page-header").forEach((element) => element.remove());
   const Shell = {
     components: { LaboratoryPage },
     template: `
@@ -987,10 +995,15 @@ describe("LaboratoryPage runtime", () => {
     await mountPage();
 
     const headerText = headerActions.textContent || "";
+    const resetButton = resetTaskButton();
     expect(headerText).toContain("试验间登录");
+    expect(headerText).toContain("重置试验室任务");
     expect(headerText).toContain("未登录");
     expect(headerText).toContain("请先登录后操作");
+    expect(headerText.indexOf("重置试验室任务")).toBeLessThan(headerText.indexOf("试验间登录"));
     expect(headerText.indexOf("试验间登录")).toBeLessThan(headerText.indexOf("显示弹窗"));
+    expect(resetButton?.classList.contains("action-btn")).toBe(true);
+    expect(resetButton?.classList.contains("laboratory-reset-button")).toBe(true);
     expect(headerActions.querySelector('[data-testid="laboratory-attendance-login"]')?.hasAttribute("disabled")).toBe(false);
     expect(headerActions.querySelector('[data-testid="laboratory-attendance-logout"]')).toBeNull();
   });
@@ -1207,15 +1220,22 @@ describe("LaboratoryPage runtime", () => {
     };
     await mountPage();
 
+    const viewTasksButton = document.body.querySelector('[data-testid="laboratory-view-tasks"]');
     const compareButton = document.body.querySelector('[data-testid="laboratory-compare"]');
-    expect(compareButton?.textContent || "").toContain("比对任务");
+    const installButton = document.body.querySelector('[data-testid="laboratory-install"]');
+    const readyButton = document.body.querySelector('[data-testid="laboratory-ready"]');
+    expect(viewTasksButton?.tagName).toBe("BUTTON");
+    expect(String(viewTasksButton?.textContent || "").trim()).toBe("查看任务");
+    expect(String(compareButton?.textContent || "").trim()).toBe("比对任务");
+    expect(String(installButton?.textContent || "").trim()).toBe("安装样品");
+    expect(String(readyButton?.textContent || "").trim()).toBe("确认准备就绪");
 
     compareButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
 
     expect(document.body.querySelector('[data-testid="laboratory-attendance-login-modal"]')).toBeTruthy();
     expect(document.body.querySelector('[data-testid="laboratory-compare-modal"].is-open')).toBeFalsy();
-    expect(compareButton?.textContent || "").toContain("比对任务");
+    expect(String(compareButton?.textContent || "").trim()).toBe("比对任务");
   });
 
   test("locks laboratory actions when the selected lab is under maintenance", async () => {
@@ -1320,7 +1340,8 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.text()).toContain("冲击一室操作台");
+    expect(mounted.text()).not.toContain("冲击一室操作台");
+    expect(mounted.text()).not.toContain("任务与实验准备流程按现有项目数据口径展示");
     expect(mounted.text()).toContain("SYLU-2026-04-501");
     expect(mounted.text()).not.toContain("SYLU-2026-04-101");
 
@@ -1685,7 +1706,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.text()).toContain("冲击一室操作台");
+    expect(mounted.text()).not.toContain("冲击一室操作台");
     await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
     await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-CJ-002");
     await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
@@ -1747,7 +1768,7 @@ describe("LaboratoryPage runtime", () => {
       }
     });
     const mounted = await mountPage();
-    expect(mounted.text()).toContain("盐雾试验室操作台");
+    expect(mounted.text()).not.toContain("盐雾试验室操作台");
     const callsBeforeSwitch = interfaceModeCalls().length;
 
     writeHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
@@ -1760,16 +1781,17 @@ describe("LaboratoryPage runtime", () => {
   test("renders the salt-spray laboratory console and excludes other laboratory tasks", async () => {
     const mounted = await mountPage();
 
-    expect(mounted.text()).toContain("盐雾试验室操作台");
-    expect(mounted.text()).toContain("今日实验排程数量");
+    expect(mounted.text()).not.toContain("盐雾试验室操作台");
+    expect(mounted.text()).not.toContain("今日实验排程数量");
+    expect(mounted.text()).not.toContain("今日未做实验数量");
     expect(mounted.text()).toContain("SYLU-2026-04-101");
     expect(mounted.text()).toContain("盐雾试验-A");
     expect(mounted.text()).toContain(toDisplayedDateTime("2026-04-02T09:30:00.000Z"));
     expect(mounted.text()).toContain(toDisplayedDateTime("2026-04-02T11:00:00.000Z"));
     expect(mounted.text()).not.toContain("SYLU-2026-04-102");
-    expect(mounted.find('[data-testid="laboratory-reset-task"]').exists()).toBe(true);
-    expect(mounted.get('[data-testid="laboratory-reset-task"]').text()).toContain("重置实验室任务");
-    expect(mounted.find(".laboratory-control-header .pill").exists()).toBe(false);
+    expect(resetTaskButton()).toBeTruthy();
+    expect(resetTaskButton()?.textContent || "").toContain("重置试验室任务");
+    expect(mounted.find(".laboratory-control-header").exists()).toBe(false);
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
     expect(mounted.get(".laboratory-recent-task__head").text()).toContain("SYLU-2026-04-101");
@@ -1826,7 +1848,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.text()).toContain("盐雾试验室（东区）操作台");
+    expect(mounted.text()).not.toContain("盐雾试验室（东区）操作台");
     expect(mounted.text()).toContain("SYLU-2026-06-001");
     expect(mounted.text()).not.toContain("SYLU-2026-06-002");
   });
@@ -1897,7 +1919,7 @@ describe("LaboratoryPage runtime", () => {
     const logoutButton = document.body.querySelector('[data-testid="app-logout"]');
     const headerButtons = Array.from(headerActions.querySelectorAll("button")).map((button) => String(button.textContent || "").trim());
 
-    expect(headerButtons).toEqual(["刷新", "切换登录", "显示弹窗", "退出登录"]);
+    expect(headerButtons).toEqual(["刷新", "重置试验室任务", "切换登录", "显示弹窗", "退出登录"]);
     expect(displayButton?.getAttribute("disabled")).not.toBeNull();
     expect(displayButton?.previousElementSibling?.textContent || "").toContain("切换登录");
     expect(logoutButton?.previousElementSibling?.querySelector('[data-testid="laboratory-show-running-modal"]')).toBe(displayButton);
@@ -1934,6 +1956,33 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.text()).toContain("SYLU-2026-04-201 / 盐雾试验-B");
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
     expect(mounted.get('[data-testid="laboratory-task-row-SYLU-2026-04-201"]').classes()).toContain("is-current");
+  });
+
+  test("switches a recent task only after direct-click confirmation and keeps the current task on cancel", async () => {
+    const mounted = await mountPage();
+    const currentTaskButton = mounted.get('[data-testid="laboratory-recent-task-SYLU-2026-04-101"]');
+    const nextTaskButton = mounted.get('[data-testid="laboratory-recent-task-SYLU-2026-04-201"]');
+
+    expect(currentTaskButton.attributes("disabled")).toBeDefined();
+    expect(nextTaskButton.attributes("disabled")).toBeUndefined();
+
+    await nextTaskButton.trigger("click");
+    expect(mounted.get('[data-testid="laboratory-recent-task-confirm-modal"]').classes()).toContain("is-open");
+    expect(mounted.get('[data-testid="laboratory-recent-task-confirm-modal"]').text()).toContain(
+      "是否要将当前任务更改为 SYLU-2026-04-201",
+    );
+
+    await mounted.get('[data-testid="laboratory-recent-task-cancel"]').trigger("click");
+    expect(mounted.find('[data-testid="laboratory-recent-task-confirm-modal"].is-open').exists()).toBe(false);
+    expect(mounted.get('[data-testid="laboratory-tray-flow"]').text()).toContain("SYLU-2026-04-101 / 盐雾试验-A");
+
+    await nextTaskButton.trigger("click");
+    await mounted.get('[data-testid="laboratory-recent-task-confirm"]').trigger("click");
+    await flushPageUpdates();
+
+    expect(mounted.find('[data-testid="laboratory-recent-task-confirm-modal"].is-open').exists()).toBe(false);
+    expect(mounted.get('[data-testid="laboratory-tray-flow"]').text()).toContain("SYLU-2026-04-201 / 盐雾试验-B");
+    expect(mounted.get('[data-testid="laboratory-recent-task-SYLU-2026-04-201"]').attributes("disabled")).toBeDefined();
   });
 
   test("blocks switching schedules of the same experiment after comparison", async () => {
@@ -2141,8 +2190,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.findAll(".laboratory-recent-task.is-current")).toHaveLength(1);
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').text()).not.toContain("重新下发准备");
-    expect(mounted.get('[data-testid="laboratory-task-flow-status"]').text()).toBe("任务进行中");
-    expect(mounted.get('[data-testid="laboratory-task-axis-status"]').text()).toBe("冲击试验部分完成 4/6轴");
+    expect(mounted.find('[data-testid="laboratory-task-flow"]').exists()).toBe(false);
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain(`当前托盘：${trayCode}`);
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain("冲击试验部分完成 4/6轴");
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).not.toContain("样品运输中");
@@ -2331,6 +2379,11 @@ describe("LaboratoryPage runtime", () => {
     await flushPageUpdates();
 
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
+
+    const lockedRecentTask = mounted.get('[data-testid="laboratory-recent-task-SYLU-2026-04-201"]');
+    expect(lockedRecentTask.attributes("disabled")).toBeDefined();
+    await lockedRecentTask.trigger("click");
+    expect(mounted.find('[data-testid="laboratory-recent-task-confirm-modal"].is-open').exists()).toBe(false);
 
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
     const nextTaskButton = mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]');
@@ -3373,7 +3426,7 @@ describe("LaboratoryPage runtime", () => {
     ];
     const mounted = await mountPage();
 
-    await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
+    await clickResetTask();
     expect(mounted.find('[data-testid="laboratory-reset-confirm-modal"].is-open').exists()).toBe(true);
     expect(mounted.text()).toContain("是否撤回当前任务下当前实验对应托盘？");
     expect(mounted.get('[data-testid="laboratory-reset-confirm-modal"] .form-actions').classes()).toContain("form-actions--touch");
@@ -3403,7 +3456,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeDefined();
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(true);
   });
 
   test("disables the reset button after the current experiment is completed", async () => {
@@ -3422,7 +3475,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeDefined();
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(true);
   });
 
   test("enables reset for a current partial-axis experiment tray", async () => {
@@ -3463,7 +3516,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeUndefined();
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(false);
   });
 
   test("withdraws only the current salt-spray experiment trays after double confirmation", async () => {
@@ -3515,7 +3568,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
+    await clickResetTask();
     await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
     await nextTick();
     await mounted.get('[data-testid="laboratory-reset-danger-confirm"]').trigger("click");
@@ -3586,14 +3639,14 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
+    await clickResetTask();
     expect(mounted.find('[data-testid="laboratory-reset-confirm-modal"].is-open').exists()).toBe(true);
 
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
     await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
     await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
     await nextTick();
-    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeDefined();
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(true);
 
     await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
     await nextTick();
@@ -3625,7 +3678,7 @@ describe("LaboratoryPage runtime", () => {
     const staleSnapshot = JSON.parse(JSON.stringify(snapshotState));
     storageGetSnapshotOverride = () => staleSnapshot;
 
-    await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
+    await clickResetTask();
     await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
     await nextTick();
     await mounted.get('[data-testid="laboratory-reset-danger-confirm"]').trigger("click");
@@ -3687,7 +3740,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.text()).toContain("高低温湿热一室操作台");
+    expect(mounted.text()).not.toContain("高低温湿热一室操作台");
     expect(mounted.text()).toContain("SYLU-2026-04-302");
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
@@ -3779,7 +3832,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeDefined();
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(true);
 
     await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
     await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("SYLU-2026-05-001-TP-002");
@@ -3795,9 +3848,9 @@ describe("LaboratoryPage runtime", () => {
       flow_status: "已到达实验室",
       trays: [expect.objectContaining({ status: "已到达实验室", tray_code: "SYLU-2026-05-001-TP-002" })],
     }));
-    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeUndefined();
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(false);
 
-    await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
+    await clickResetTask();
     await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
     await nextTick();
     await mounted.get('[data-testid="laboratory-reset-danger-confirm"]').trigger("click");
@@ -3859,10 +3912,10 @@ describe("LaboratoryPage runtime", () => {
       status: "送至实验室",
       trays: expect.arrayContaining([expect.objectContaining({ status: "送至实验室", tray_code: "TP-002" })]),
     }));
-    expect(mounted.text()).toContain("当前任务已完成部分托盘比对，可继续比对或开始样品安装");
+    expect(mounted.find(".laboratory-flow-note").exists()).toBe(false);
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
-    expect(mounted.get('[data-testid="laboratory-reset-task"]').attributes("disabled")).toBeUndefined();
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(false);
 
     await mounted.get('[data-testid="laboratory-install"]').trigger("click");
     await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
@@ -3889,7 +3942,6 @@ describe("LaboratoryPage runtime", () => {
       status: "送至实验室",
       trays: expect.arrayContaining([expect.objectContaining({ status: "送至实验室", tray_code: "TP-002" })]),
     }));
-    expect(mounted.text()).toContain("当前任务已完成夹具安装，等待上位机确认夹具安装完成");
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
     expect(mounted.get('[data-testid="laboratory-install"]').text()).toContain("重新下发");
@@ -3965,7 +4017,6 @@ describe("LaboratoryPage runtime", () => {
     wrapper = undefined;
 
     mounted = await mountPage();
-    expect(mounted.text()).toContain("当前任务已有托盘完成样品安装，待确认已安装托盘准备就绪");
   });
 
   test("mqtt mode can resend fixture install when upper computer missed the first command", async () => {
@@ -4000,7 +4051,6 @@ describe("LaboratoryPage runtime", () => {
       status: "工装夹具安装",
       trays: expect.arrayContaining([expect.objectContaining({ status: "工装夹具安装", tray_code: "TP-001" })]),
     }));
-    expect(mounted.text()).toContain("等待上位机确认夹具安装完成");
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
     expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("5");
     vi.advanceTimersByTime(5000);
@@ -4273,7 +4323,6 @@ describe("LaboratoryPage runtime", () => {
 
     expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(false);
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验进行中");
-    expect(mounted.text()).toContain("当前任务 SYLU-2026-04-101 已进入实验进行中");
     expect(attendanceWorkStartCalls()).toHaveLength(1);
     expect(attendanceWorkStartCalls()[0][0]).toBe("/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/work/start");
   });
@@ -4391,7 +4440,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.text()).toContain("高低温湿热二室操作台");
+    expect(mounted.text()).not.toContain("高低温湿热二室操作台");
     await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
     await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("TP-GDW-001");
     await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
@@ -4502,7 +4551,8 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-install"]').trigger("click");
     await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
     await waitForSamplesUpdatedEvent(dispatchEventSpy, 1);
-    await mounted.get('[data-testid="laboratory-reset-task"]').trigger("click");
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(false);
+    await clickResetTask();
     await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
     await mounted.get('[data-testid="laboratory-reset-danger-confirm"]').trigger("click");
     await flushPageUpdates();
@@ -4518,12 +4568,12 @@ describe("LaboratoryPage runtime", () => {
     }));
   });
 
-  test("renders dual flow panels and allows switching trays within the current experiment", async () => {
+  test("renders only the full-width tray flow and allows switching trays within the current experiment", async () => {
     const mounted = await mountPage();
 
-    expect(mounted.get('[data-testid="laboratory-task-flow"]').text()).toContain("任务流程图");
-    expect(mounted.get('[data-testid="laboratory-task-flow-status"]').text()).toContain("已排程");
-    expect(mounted.get('[data-testid="laboratory-tray-flow"]').text()).toContain("托盘流程图");
+    expect(mounted.find('[data-testid="laboratory-task-flow"]').exists()).toBe(false);
+    expect(mounted.get('[data-testid="laboratory-tray-flow"]').text()).not.toContain("托盘流程图");
+    expect(mounted.get('[data-testid="laboratory-tray-flow"]').classes()).toContain("laboratory-flow-card--full");
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain("TP-001");
     expect(mounted.get('[data-testid="laboratory-tray-flow-list"]').classes()).toContain("laboratory-flow-steps--tray");
     const firstTrayStep = mounted.get('[data-testid="laboratory-tray-flow-step-in_transit"]');

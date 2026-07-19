@@ -325,8 +325,14 @@ describe("App runtime boundary", () => {
       await nextTick();
 
       expect(storage.getItem).toHaveBeenCalledWith("mes_laboratory_selected_lab_v1");
-      expect(wrapper.text()).toContain("试验室操作台");
+      expect(wrapper.get(".page-header h1").text()).toBe("冲击一室试验室操作台");
+      expect(wrapper.get(".main").classes()).toContain("main--laboratory");
+      expect(wrapper.get(".page-header").classes()).toContain("page-header--laboratory");
+      expect(wrapper.get(".page-header").find(".eyebrow").exists()).toBe(false);
+      expect(wrapper.get(".page-header").find(".subtitle").exists()).toBe(false);
+      expect(wrapper.text()).not.toContain("查看当前试验室任务与实验准备流程。");
       expect(wrapper.text()).not.toContain("盐雾试验室操作台");
+      expect(wrapper.text()).not.toContain("LAB_IMPACT_1");
       expect(wrapper.find('[data-testid="laboratory-error-sample"]').exists()).toBe(false);
       expect(wrapper.find('[data-testid="staging-error-sample"]').exists()).toBe(false);
       expect(wrapper.find('[data-testid="tray-error-sample-dialog"]').exists()).toBe(false);

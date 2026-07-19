@@ -100,4 +100,19 @@ describe("AppPagination", () => {
     expect(wrapper.text()).toContain("第 5 / 10 页");
     expect(wrapper.find('[data-testid="pagination-jump-input"]').exists()).toBe(true);
   });
+
+  test("can hide jump controls while keeping enlarged terminal step controls available", () => {
+    const wrapper = mount(AppPagination, {
+      props: {
+        currentPage: 2,
+        pageCount: 8,
+        showJumpControls: false,
+      },
+    });
+
+    expect(wrapper.find('[data-testid="pagination-jump-input"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="pagination-jump-submit"]').exists()).toBe(false);
+    expect(wrapper.get('[data-page="prev"]').attributes("aria-label")).toBe("上一页");
+    expect(wrapper.get('[data-page="next"]').attributes("aria-label")).toBe("下一页");
+  });
 });

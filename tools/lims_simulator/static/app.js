@@ -1,4 +1,13 @@
 const $ = (id) => document.getElementById(id);
+const EXPERIMENT_TYPES = ["冲击试验", "振动试验", "四综合试验", "温度冲击试验", "高低温湿热试验", "盐雾试验", "霉菌试验"];
+const AXIS_AWARE_EXPERIMENT_TYPES = new Set(["冲击试验", "振动试验"]);
+const DEFAULT_AXIS_CODES = ["x+", "x-", "y+", "y-", "z+", "z-"];
+let selectedTestTypes = [];
+let selectedAxisCodesByTestType = {};
+let draftTestTypes = [];
+let draftAxisCodesByTestType = {};
+let axisPickerType = "";
+let axisPickerCodes = [];
 
 async function requestJson(path, options = {}) {
   const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
@@ -117,6 +126,165 @@ function shiftDueTimePart(part, delta) {
   selectDueTimePart(part, String((current + delta + size) % size).padStart(2, "0"));
 }
 
+function uniqueTextValues(values) {
+  return [...new Set((Array.isArray(values) ? values : []).map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function normalizeAxisCodes(values) {
+  const source = Array.isArray(values) ? values : String(values || "").split(/[,，/、\s]+/);
+  const uniqueCodes = uniqueTextValues(source.map((value) => String(value).toLowerCase()));
+  return [...DEFAULT_AXIS_CODES.filter((code) => uniqueCodes.includes(code)), ...uniqueCodes.filter((code) => !DEFAULT_AXIS_CODES.includes(code))];
+}
+
+function normalizeAxisMap(axisMap, testTypes) {
+  const source = axisMap && typeof axisMap === "object" ? axisMap : {};
+  return uniqueTextValues(testTypes).reduce((result, testType) => {
+    if (!AXIS_AWARE_EXPERIMENT_TYPES.has(testType)) return result;
+    const axisCodes = normalizeAxisCodes(source[testType]);
+    if (axisCodes.length) result[testType] = axisCodes;
+    return result;
+  }, {});
+}
+
+function cloneAxisMap(axisMap) {
+  return Object.fromEntries(Object.entries(axisMap || {}).map(([testType, axisCodes]) => [testType, [...axisCodes]]));
+}
+
+function buildTestTypesSummary(testTypes, axisMap = {}) {
+  return uniqueTextValues(testTypes).map((testType) => {
+    const axisCodes = normalizeAxisCodes(axisMap[testType]);
+    return AXIS_AWARE_EXPERIMENT_TYPES.has(testType) && axisCodes.length
+      ? `${testType}（${axisCodes.map((code) => code.toUpperCase()).join("、")}）`
+      : testType;
+  }).join(" / ");
+}
+
+function syncSelectedTestTypes(testTypes, axisMap = {}) {
+  selectedTestTypes = uniqueTextValues(testTypes);
+  selectedAxisCodesByTestType = normalizeAxisMap(axisMap, selectedTestTypes);
+  const summary = buildTestTypesSummary(selectedTestTypes, selectedAxisCodesByTestType);
+  $("testTypes").value = selectedTestTypes.join(" / ");
+  $("testTypesSummary").textContent = summary || "请选择试验类型";
+  $("testTypesTrigger").classList.toggle("is-empty", !summary);
+}
+
+function setSelectionValidation(id, message = "") {
+  $(id).textContent = message;
+  $(id).hidden = !message;
+}
+
+function syncModalState() {
+  const hasOpenModal = !$("testTypesModal").hidden || !$("axisModal").hidden;
+  document.body.classList.toggle("has-modal", hasOpenModal);
+}
+
+function renderTestTypesPicker() {
+  $("testTypesDraftSummary").textContent = buildTestTypesSummary(draftTestTypes, draftAxisCodesByTestType) || "请选择试验类型";
+  $("testTypesGrid").innerHTML = EXPERIMENT_TYPES.map((testType) => {
+    const selected = draftTestTypes.includes(testType);
+    return `<button class="test-type-card${selected ? " is-selected" : ""}" type="button" data-test-type="${escapeHtml(testType)}" aria-pressed="${selected}"><span class="test-type-card__name">${escapeHtml(testType)}</span><span class="test-type-card__check${selected ? " is-selected" : ""}" aria-hidden="true">${selected ? "✓" : ""}</span></button>`;
+  }).join("");
+}
+
+function openTestTypesPicker() {
+  draftTestTypes = [...selectedTestTypes];
+  draftAxisCodesByTestType = cloneAxisMap(selectedAxisCodesByTestType);
+  setSelectionValidation("testTypesValidation");
+  renderTestTypesPicker();
+  $("testTypesModal").hidden = false;
+  $("testTypesTrigger").setAttribute("aria-expanded", "true");
+  syncModalState();
+  $("testTypesModal").querySelector(".selection-modal__dialog").focus();
+}
+
+function closeTestTypesPicker({ restoreFocus = true } = {}) {
+  if (!$("axisModal").hidden) closeAxisPicker({ restoreFocus: false });
+  $("testTypesModal").hidden = true;
+  $("testTypesTrigger").setAttribute("aria-expanded", "false");
+  setSelectionValidation("testTypesValidation");
+  syncModalState();
+  if (restoreFocus) $("testTypesTrigger").focus();
+}
+
+function renderAxisPicker() {
+  $("axisExperimentType").textContent = axisPickerType || "-";
+  $("axisGrid").innerHTML = DEFAULT_AXIS_CODES.map((axisCode) => {
+    const selected = axisPickerCodes.includes(axisCode);
+    return `<button class="axis-option${selected ? " is-selected" : ""}" type="button" data-axis-code="${axisCode}" aria-pressed="${selected}">${axisCode.toUpperCase()}</button>`;
+  }).join("");
+}
+
+function openAxisPicker(testType) {
+  axisPickerType = testType;
+  const currentCodes = normalizeAxisCodes(draftAxisCodesByTestType[testType]);
+  axisPickerCodes = currentCodes.length ? currentCodes : [...DEFAULT_AXIS_CODES];
+  setSelectionValidation("axisValidation");
+  renderAxisPicker();
+  $("testTypesModal").setAttribute("inert", "");
+  $("axisModal").hidden = false;
+  syncModalState();
+  $("axisModal").querySelector(".selection-modal__dialog").focus();
+}
+
+function closeAxisPicker({ restoreFocus = true } = {}) {
+  const closingType = axisPickerType;
+  $("axisModal").hidden = true;
+  $("testTypesModal").removeAttribute("inert");
+  axisPickerType = "";
+  axisPickerCodes = [];
+  setSelectionValidation("axisValidation");
+  syncModalState();
+  if (restoreFocus) [...$("testTypesGrid").querySelectorAll("[data-test-type]")].find((option) => option.dataset.testType === closingType)?.focus();
+}
+
+function toggleDraftTestType(testType) {
+  if (draftTestTypes.includes(testType)) {
+    draftTestTypes = draftTestTypes.filter((value) => value !== testType);
+    delete draftAxisCodesByTestType[testType];
+    renderTestTypesPicker();
+    return;
+  }
+  if (AXIS_AWARE_EXPERIMENT_TYPES.has(testType)) {
+    openAxisPicker(testType);
+    return;
+  }
+  draftTestTypes.push(testType);
+  renderTestTypesPicker();
+}
+
+function confirmAxisPicker() {
+  const confirmedType = axisPickerType;
+  const axisCodes = normalizeAxisCodes(axisPickerCodes);
+  if (!axisCodes.length) {
+    setSelectionValidation("axisValidation", "请选择至少一个试验轴向");
+    return;
+  }
+  if (!draftTestTypes.includes(axisPickerType)) draftTestTypes.push(axisPickerType);
+  draftAxisCodesByTestType[axisPickerType] = axisCodes;
+  closeAxisPicker({ restoreFocus: false });
+  renderTestTypesPicker();
+  [...$("testTypesGrid").querySelectorAll("[data-test-type]")].find((option) => option.dataset.testType === confirmedType)?.focus();
+}
+
+function confirmTestTypesPicker() {
+  if (!draftTestTypes.length) {
+    setSelectionValidation("testTypesValidation", "请选择至少一个试验类型");
+    return;
+  }
+  syncSelectedTestTypes(draftTestTypes, draftAxisCodesByTestType);
+  closeTestTypesPicker();
+}
+
+function trapModalFocus(event, modal) {
+  if (event.key !== "Tab") return;
+  const focusable = [...modal.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter((element) => !element.hidden);
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable.at(-1);
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+}
+
 function fillForm(task) {
   const dueAt = splitLocalDateTime(task.due_at);
   $("code").value = task.code || "";
@@ -127,7 +295,7 @@ function fillForm(task) {
   $("priority").value = task.priority || "中";
   $("sampleCount").value = task.sample_count || "";
   $("sampleType").value = task.sample_type || "";
-  $("testTypes").value = (task.test_types || []).join(" / ");
+  syncSelectedTestTypes(task.test_types || [], task.axis_codes_by_test_type || task.axisCodesByTestType || {});
   setDueValue(dueAt.date ? `${dueAt.date} ${dueAt.hour}:${dueAt.minute}` : "");
   closeDuePicker();
   $("conditions").value = task.conditions || "";
@@ -136,12 +304,13 @@ function fillForm(task) {
 }
 
 function readForm() {
-  const testTypes = $("testTypes").value.split("/").map((item) => item.trim()).filter(Boolean);
+  const testTypes = [...selectedTestTypes];
   return {
     code: $("code").value.trim(), name: $("name").value.trim(), client: $("client").value.trim(),
     contact: $("contact").value.trim(), contact_info: $("contactInfo").value.trim(), priority: $("priority").value,
     sample_count: $("sampleCount").value, sample_type: $("sampleType").value.trim(), test_types: testTypes,
     test_type: testTypes.join(" / "), required_device: testTypes.join(" / "),
+    axis_codes_by_test_type: cloneAxisMap(selectedAxisCodesByTestType),
     due_at: $("dueAt").value, arrival_at: "", conditions: $("conditions").value.trim(),
     attachment: $("attachment").value.trim(), remark: $("remark").value.trim(), source: "外部委托",
   };
@@ -182,6 +351,18 @@ async function generate({ announce = true } = {}) {
 
 async function sendCurrent() {
   if (!$("taskForm").reportValidity()) return;
+  if (!selectedTestTypes.length) {
+    feedback("请选择至少一个试验类型。", true);
+    openTestTypesPicker();
+    return;
+  }
+  const missingAxisType = selectedTestTypes.find((testType) => AXIS_AWARE_EXPERIMENT_TYPES.has(testType) && !normalizeAxisCodes(selectedAxisCodesByTestType[testType]).length);
+  if (missingAxisType) {
+    feedback(`请为${missingAxisType}选择至少一个试验轴向。`, true);
+    openTestTypesPicker();
+    openAxisPicker(missingAxisType);
+    return;
+  }
   if (!$("dueAt").value) {
     feedback("请选择期望完成时间。", true);
     openDuePicker();
@@ -212,6 +393,36 @@ $("generateBtn").addEventListener("click", () => generate().catch((error) => fee
 $("sendBtn").addEventListener("click", sendCurrent);
 $("batchBtn").addEventListener("click", sendBatch);
 $("refreshBtn").addEventListener("click", () => Promise.all([refreshState(), refreshLogs()]).catch((error) => feedback(error.message, true)));
+$("testTypesTrigger").addEventListener("click", openTestTypesPicker);
+$("testTypesGrid").addEventListener("click", (event) => {
+  const option = event.target.closest("[data-test-type]");
+  if (option) toggleDraftTestType(option.dataset.testType);
+});
+$("testTypesClose").addEventListener("click", () => closeTestTypesPicker());
+$("testTypesCancel").addEventListener("click", () => closeTestTypesPicker());
+$("testTypesConfirm").addEventListener("click", confirmTestTypesPicker);
+$("testTypesModal").querySelector("[data-close-test-types]").addEventListener("click", () => closeTestTypesPicker());
+$("axisGrid").addEventListener("click", (event) => {
+  const option = event.target.closest("[data-axis-code]");
+  if (!option) return;
+  const axisCode = option.dataset.axisCode;
+  axisPickerCodes = axisPickerCodes.includes(axisCode) ? axisPickerCodes.filter((value) => value !== axisCode) : [...axisPickerCodes, axisCode];
+  setSelectionValidation("axisValidation");
+  renderAxisPicker();
+});
+$("axisClose").addEventListener("click", () => closeAxisPicker());
+$("axisCancel").addEventListener("click", () => closeAxisPicker());
+$("axisConfirm").addEventListener("click", confirmAxisPicker);
+$("axisModal").querySelector("[data-close-axis]").addEventListener("click", () => closeAxisPicker());
+[$("testTypesModal"), $("axisModal")].forEach((modal) => modal.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    if (modal === $("axisModal")) closeAxisPicker();
+    else closeTestTypesPicker();
+    return;
+  }
+  trapModalFocus(event, modal);
+}));
 $("duePickerTrigger").addEventListener("click", openDuePicker);
 $("duePrevMonth").addEventListener("click", () => shiftDueMonth(-1));
 $("dueNextMonth").addEventListener("click", () => shiftDueMonth(1));

@@ -48,6 +48,9 @@ def test_lims_simulator_serves_rabbit_state_and_generates_valid_task(monkeypatch
     assert generated.json()["source"] == "外部委托"
     assert generated.json()["client"].endswith("单位")
     assert generated.json()["test_types"]
+    axis_map = generated.json()["axis_codes_by_test_type"]
+    assert set(axis_map).issubset(set(generated.json()["test_types"]))
+    assert all(axis_codes == ["x+", "x-", "y+", "y-", "z+", "z-"] for axis_codes in axis_map.values())
     assert 1 <= int(generated.json()["sample_count"]) <= 12
 
     page = client.get("/")
@@ -56,7 +59,11 @@ def test_lims_simulator_serves_rabbit_state_and_generates_valid_task(monkeypatch
     assert 'id="duePickerTrigger"' in page.text
     assert 'id="dueHourWheel"' in page.text
     assert 'id="dueMinuteWheel"' in page.text
+    assert 'id="testTypesTrigger"' in page.text
+    assert 'id="testTypesModal"' in page.text
+    assert 'id="axisModal"' in page.text
     assert "const wheelOffsets = [-2, -1, 0, 1, 2]" in script.text
+    assert 'const AXIS_AWARE_EXPERIMENT_TYPES = new Set(["冲击试验", "振动试验"])' in script.text
     assert 'due_at: $("dueAt").value' in script.text
 
 
@@ -70,6 +77,7 @@ def test_lims_simulator_publishes_only_through_rabbitmq(monkeypatch):
         "contact_info": "13900001234",
         "sample_count": "2",
         "test_types": ["盐雾试验"],
+        "axis_codes_by_test_type": {},
     }
 
     response = client.post("/api/tasks/send", json=payload)
@@ -78,3 +86,4 @@ def test_lims_simulator_publishes_only_through_rabbitmq(monkeypatch):
     assert response.json()["publish_status"] == "published"
     assert fake.published[0]["source"] == "外部委托"
     assert fake.published[0]["lims_request_id"].startswith("LIMS-")
+    assert fake.published[0]["axis_codes_by_test_type"] == {}

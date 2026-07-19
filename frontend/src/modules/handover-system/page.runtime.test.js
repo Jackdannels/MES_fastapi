@@ -258,6 +258,8 @@ describe("TransferAreaPage runtime", () => {
     expect(wrapper.text()).toContain("任务编号");
     expect(wrapper.text()).toContain("SYLU-2026-03-101");
     expect(wrapper.text()).not.toContain("样品送达时间");
+    expect(wrapper.text()).not.toContain("默认上限为 16");
+    expect(wrapper.find('[data-testid="transfer-tray-preview"]').exists()).toBe(false);
   });
 
   test("can click samples to swap positions and place one into another tray", async () => {
@@ -276,19 +278,15 @@ describe("TransferAreaPage runtime", () => {
     await tray1Samples[0].trigger("click");
     await settle(wrapper);
 
-    const previewAfterSwap = wrapper.get('[data-testid="transfer-tray-preview"]').text();
-    const previewTrayCodes = wrapper.findAll('[data-testid="transfer-tray-preview"] .transfer-tray-preview__code').map((node) => node.text());
-    expect(previewTrayCodes).toContain("SYLU-2026-03-101-TP-001");
-    expect(previewTrayCodes).toContain("SYLU-2026-03-101-TP-002");
-    expect(previewAfterSwap).toContain("SYLU-2026-03-101-TP-001 | 2 / 2 | SYLU-2026-03-101-SP-002 / SYLU-2026-03-101-SP-003");
-    expect(previewAfterSwap).toContain("SYLU-2026-03-101-TP-002 | 2 / 2 | SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-004");
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("SYLU-2026-03-101-SP-002");
+    expect(wrapper.get('[data-testid="transfer-tray-card-1"]').text()).toContain("SYLU-2026-03-101-SP-001");
 
     const refreshedTray0Samples = wrapper.get('[data-testid="transfer-tray-card-0"]').findAll(".sample-tray-sample-tag");
     await refreshedTray0Samples[1].trigger("click");
     await wrapper.get('[data-testid="transfer-tray-card-2"]').trigger("click");
     await settle(wrapper);
 
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toContain("SYLU-2026-03-101-TP-003");
+    expect(wrapper.get('[data-testid="transfer-tray-card-2"]').text()).toContain("SYLU-2026-03-101-SP-003");
   });
 
   test("touch-first flow supports selecting a target tray before tapping a sample", async () => {
@@ -307,11 +305,8 @@ describe("TransferAreaPage runtime", () => {
     await tray0Samples[0].trigger("click");
     await settle(wrapper);
 
-    const previewText = wrapper.get('[data-testid="transfer-tray-preview"]').text();
-    expect(previewText).toContain("SYLU-2026-03-101-TP-003");
-    expect(previewText).toContain("SYLU-2026-03-101-SP-001");
-    expect(previewText).toContain("SYLU-2026-03-101-TP-001");
-    expect(previewText).toContain("SYLU-2026-03-101-SP-002");
+    expect(wrapper.get('[data-testid="transfer-tray-card-2"]').text()).toContain("SYLU-2026-03-101-SP-001");
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("SYLU-2026-03-101-SP-002");
   });
 
   test("confirm storage marks samples stored and reload moves task back to pending list", async () => {
@@ -654,9 +649,8 @@ describe("TransferAreaPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.findAll('[data-testid^="transfer-tray-card-"]')).toHaveLength(1);
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toContain(
-      "SYLU-2026-03-101-TP-001 | 4 / 4 | SYLU-2026-03-101-SP-001 / SYLU-2026-03-101-SP-002 / SYLU-2026-03-101-SP-003 / SYLU-2026-03-101-SP-004",
-    );
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("SYLU-2026-03-101-TP-001");
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("SYLU-2026-03-101-SP-004");
   });
 
   test("saved allocations restart tray numbering from TP-001 after redistribution", async () => {
@@ -728,8 +722,9 @@ describe("TransferAreaPage runtime", () => {
     await wrapper.get('[data-testid="transfer-tray-limit-input"]').trigger("change");
     await settle(wrapper);
 
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toContain("SYLU-2026-03-101-TP-001");
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).not.toContain("SYLU-2026-03-101-TP-003");
+    const redistributedTrayText = wrapper.findAll('[data-testid^="transfer-tray-card-"]').map((tray) => tray.text()).join(" ");
+    expect(redistributedTrayText).toContain("SYLU-2026-03-101-TP-001");
+    expect(redistributedTrayText).not.toContain("SYLU-2026-03-101-TP-003");
   });
 
   test("deleting a non-empty tray rebalances samples instead of blocking deletion", async () => {
@@ -753,9 +748,10 @@ describe("TransferAreaPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.findAll('[data-testid^="transfer-tray-card-"]')).toHaveLength(2);
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).not.toContain("SYLU-2026-03-101-TP-003");
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toContain("SYLU-2026-03-101-SP-001");
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toContain("SYLU-2026-03-101-SP-004");
+    const remainingTrayText = wrapper.findAll('[data-testid^="transfer-tray-card-"]').map((tray) => tray.text()).join(" ");
+    expect(remainingTrayText).not.toContain("SYLU-2026-03-101-TP-003");
+    expect(remainingTrayText).toContain("SYLU-2026-03-101-SP-001");
+    expect(remainingTrayText).toContain("SYLU-2026-03-101-SP-004");
   });
 
   test("deleting when current tray count is already minimal shows a clear warning", async () => {
@@ -914,7 +910,7 @@ describe("TransferAreaPage runtime", () => {
     expect(wrapper.get(".transfer-use-tray-btn").attributes("disabled")).toBeDefined();
     expect(wrapper.get('[data-testid="transfer-tray-limit-input"]').attributes("disabled")).toBeDefined();
     expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
-    expect(wrapper.text()).toContain("当前为 盐雾试验 托盘选择模式");
+    expect(wrapper.text()).toContain("盐雾试验 托盘选择模式");
 
     await wrapper.get(".transfer-task-header__summary strong").trigger("click");
     await settle(wrapper);
@@ -1470,13 +1466,13 @@ describe("TransferAreaPage runtime", () => {
 
     expect(wrapper.get(".transfer-use-tray-btn").element.disabled).toBe(true);
 
-    const previewBeforeLockedMove = wrapper.get('[data-testid="transfer-tray-preview"]').text();
+    const traysBeforeLockedMove = wrapper.findAll('[data-testid^="transfer-tray-card-"]').map((tray) => tray.text());
     const tray0Samples = wrapper.get('[data-testid="transfer-tray-card-0"]').findAll(".sample-tray-sample-tag");
     await tray0Samples[0].trigger("click");
     await wrapper.get('[data-testid="transfer-tray-card-2"]').trigger("click");
     await settle(wrapper);
 
-    expect(wrapper.get('[data-testid="transfer-tray-preview"]').text()).toBe(previewBeforeLockedMove);
+    expect(wrapper.findAll('[data-testid^="transfer-tray-card-"]').map((tray) => tray.text())).toEqual(traysBeforeLockedMove);
     expect(wrapper.get('[data-testid="transfer-tray-card-2"]').text()).toContain("暂无样品");
 
     await wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(4)").trigger("click");

@@ -361,9 +361,15 @@ describe("TransferWorkbench runtime", () => {
 
     const actionTexts = wrapper.findAll(".transfer-system-actions .action-btn").map((button) => button.text());
     expect(actionTexts).toEqual(["任务总览", "样品出库", "出错样品处理", "退出登录"]);
+    expect(wrapper.get(".transfer-system-title").text()).toBe("接驳区工作台");
+    expect(wrapper.find(".transfer-system-header .eyebrow").exists()).toBe(false);
+    expect(wrapper.find(".transfer-system-subtitle").exists()).toBe(false);
+    expect(wrapper.get(".transfer-overview-shell__head .transfer-overview-page-title").text()).toBe("接驳任务总览");
     expect(wrapper.get('[data-testid="handover-nav-overview"]').classes()).toContain("is-active");
     expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain("总任务清单");
+    expect(wrapper.text()).not.toContain("总任务清单");
+    expect(wrapper.text()).not.toContain("样品送达后可调整托盘分装");
+    expect(wrapper.find('[data-testid="pagination-jump-input"]').exists()).toBe(false);
 
     await wrapper.get('[data-testid="handover-nav-dispatch"]').trigger("click");
     await settle(wrapper);
@@ -377,7 +383,7 @@ describe("TransferWorkbench runtime", () => {
 
     expect(wrapper.get('[data-testid="handover-nav-overview"]').classes()).toContain("is-active");
     expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain("总任务清单");
+    expect(wrapper.text()).not.toContain("总任务清单");
   });
 
   test("handover overview nav returns from a hidden task detail to the task list", async () => {
@@ -401,7 +407,7 @@ describe("TransferWorkbench runtime", () => {
 
     expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="transfer-task-code"]').exists()).toBe(false);
-    expect(wrapper.text()).toContain("总任务清单");
+    expect(wrapper.text()).not.toContain("总任务清单");
     expect(wrapper.find('[data-testid="transfer-task-row-101"]').exists()).toBe(true);
   });
 
@@ -729,7 +735,7 @@ describe("TransferWorkbench runtime", () => {
 
     expect(fetch.mock.calls.filter(([input]) => String(input).includes("/api/transfer-area/bootstrap"))).toHaveLength(3);
     expect(fetch.mock.calls.filter(([input]) => String(input).includes("/api/transfer-area/tasks/102/workspace"))).toHaveLength(3);
-    expect(wrapper.text()).toContain("到货任务仅支持查看与打印。");
+    expect(wrapper.text()).not.toContain("到货任务仅支持查看与打印。");
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/withdraw-dispatch"),
       expect.objectContaining({ method: "POST" }),
@@ -930,7 +936,7 @@ describe("TransferWorkbench runtime", () => {
     await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
     await settle(wrapper);
 
-    expect(wrapper.text()).toContain("支持鼠标拖拽样品到托盘");
+    expect(wrapper.text()).toContain("支持鼠标拖拽与点击快速调整托盘");
     expect(wrapper.text()).toContain("重新分配");
     expect(wrapper.text()).not.toContain("重新入库");
     expect(wrapper.get('[data-testid="transfer-save-trays"]').exists()).toBe(true);
@@ -2400,7 +2406,7 @@ describe("TransferWorkbench runtime", () => {
 
     expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001");
     expect(wrapper.text()).toContain("SYLU-2026-03-102-SP-001");
-    expect(wrapper.text()).toContain("该任务已有托盘开始实验，不能重新分配。");
+    expect(wrapper.text()).not.toContain("该任务已有托盘开始实验，不能重新分配。");
     expect(wrapper.get(".transfer-print-all-btn").attributes("disabled")).toBeUndefined();
     expect(wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(3)").attributes("disabled")).toBeDefined();
   });

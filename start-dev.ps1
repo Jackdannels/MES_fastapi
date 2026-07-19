@@ -3,6 +3,7 @@ param(
     [int]$BackendPort = 8000,
     [string]$FrontendHost = "0.0.0.0",
     [int]$FrontendPort = 5173,
+    [string]$FrontendNetworkHost = "192.168.110.15",
     [string]$LimsSimulatorHost = "127.0.0.1",
     [int]$LimsSimulatorPort = 8900,
     [string]$RabbitMqUrl = "amqp://guest:guest@127.0.0.1:5672/",
@@ -131,7 +132,7 @@ $backendReadyUrl = "http://127.0.0.1:$BackendPort/api/storage"
 $frontendLocalUrl = "http://127.0.0.1:$FrontendPort/"
 $limsSimulatorUrl = "http://127.0.0.1:$LimsSimulatorPort/"
 $limsSimulatorReadyUrl = "http://127.0.0.1:$LimsSimulatorPort/api/state"
-$frontendNetworkHost = Resolve-PrimaryLanIpv4
+$frontendNetworkHost = if ([string]::IsNullOrWhiteSpace($FrontendNetworkHost)) { Resolve-PrimaryLanIpv4 } else { $FrontendNetworkHost.Trim() }
 $frontendNetworkUrl = "http://${frontendNetworkHost}:$FrontendPort/"
 $launcherSessionId = [Guid]::NewGuid().ToString("N")
 

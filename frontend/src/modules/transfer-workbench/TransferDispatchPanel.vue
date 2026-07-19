@@ -271,29 +271,40 @@ const resolveDestinationHint = (destination) => {
 
 <style scoped>
 .transfer-dispatch-shell {
-  min-height: auto;
-  grid-template-rows: none;
-  align-content: start;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  align-content: stretch;
+  gap: 12px;
+  overflow: hidden;
 }
 
 .transfer-dispatch-toolbar {
-  position: relative;
+  position: static;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) 220px;
 }
 
 .transfer-dispatch-toolbar > .transfer-dispatch-feedback {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% + 8px);
-  z-index: 20;
-  width: auto;
+  position: static;
+  grid-column: 1 / -1;
+  width: 100%;
   margin-top: 0;
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
 }
 
 .transfer-dispatch-result {
-  gap: 8px;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-rows: auto auto;
+  gap: 14px;
   align-content: start;
+  margin-top: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .transfer-dispatch-summary-card,
@@ -629,6 +640,10 @@ const resolveDestinationHint = (destination) => {
 }
 
 @media (max-width: 720px) {
+  .transfer-dispatch-toolbar {
+    grid-template-columns: 1fr;
+  }
+
   .transfer-dispatch-destination-card__top,
   .transfer-dispatch-destination-card__row {
     flex-direction: column;

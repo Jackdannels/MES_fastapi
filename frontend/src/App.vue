@@ -98,12 +98,12 @@
         </RouterLink>
       </nav>
     </aside>
-    <main class="main">
-      <header class="page-header">
-        <div>
-          <div class="eyebrow">{{ moduleLabel }}</div>
+    <main class="main" :class="{ 'main--laboratory': isLaboratoryModule }">
+      <header class="page-header" :class="{ 'page-header--laboratory': isLaboratoryModule }">
+        <div class="page-header__copy">
+          <div v-if="!isLaboratoryModule" class="eyebrow">{{ moduleLabel }}</div>
           <h1>{{ pageTitle }}</h1>
-          <p class="subtitle">{{ pageSubtitle }}</p>
+          <p v-if="!isLaboratoryModule" class="subtitle">{{ pageSubtitle }}</p>
         </div>
         <div class="header-actions">
           <span class="header-actions-before-logout"></span>
@@ -169,7 +169,6 @@ const pendingScheduleExceptionCount = ref(0);
 const errorSample = useTrayErrorSampleHandling();
 let navAlertFallbackTimer = null;
 
-const pageTitle = computed(() => route.meta?.title || "七二四新火工区信息化中控管理系统");
 const pageSubtitle = computed(() => route.meta?.subtitle || "");
 const isAuthLayout = computed(() => route.meta?.layout === "auth");
 const currentModule = computed(() => {
@@ -205,6 +204,14 @@ const currentLabName = computed(() => {
     return "";
   }
   return String(window.localStorage.getItem(LABORATORY_SELECTED_LAB_STORAGE_KEY) || "").trim();
+});
+const pageTitle = computed(() => {
+  if (!isLaboratoryModule.value || !currentLabName.value) {
+    return route.meta?.title || "七二四新火工区信息化中控管理系统";
+  }
+  return /[试实]验室$/.test(currentLabName.value)
+    ? `${currentLabName.value}操作台`
+    : `${currentLabName.value}试验室操作台`;
 });
 
 const isActive = (name) => route.name === name;

@@ -17,6 +17,12 @@ body:has(.staging-management-page) .page-header h1 {
   margin: 0;
 }
 
+body:has(.staging-management-page) .page-header .header-actions .action-btn {
+  min-height: 64px;
+  padding-inline: 24px;
+  font-size: 24px;
+}
+
 .staging-management-page > .section {
   margin-top: 0;
 }
@@ -39,77 +45,12 @@ body:has(.staging-management-page) .page-header h1 {
 
 .zancun-actions-card {
   display: grid;
-  gap: 14px;
-}
-
-.zancun-actions-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 14px;
-}
-
-.zancun-actions-header__main {
-  display: grid;
-  gap: 10px;
-  justify-self: start;
-}
-
-.zancun-actions-header > .pill {
-  justify-self: end;
-}
-
-.zancun-current-view {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  min-height: 58px;
-  min-width: min(100%, 360px);
-  padding: 12px 22px;
-  border-radius: var(--radius-panel);
-  border: 1px solid var(--border);
-  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.16), rgba(19, 26, 34, 0.94));
-  box-shadow: var(--shadow);
-  justify-self: center;
-}
-
-.zancun-current-view--option-a {
-  white-space: nowrap;
-}
-
-.zancun-current-view__label {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 28px;
-  color: var(--accent);
-  font-size: 15px;
-  font-weight: 800;
-}
-
-.zancun-current-view__value {
-  color: var(--text);
-  font-size: 36px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.zancun-current-view__unit {
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 700;
+  gap: 16px;
 }
 
 .zancun-console-panel {
   display: grid;
   gap: 12px;
-}
-
-.zancun-console-toolbar {
-  justify-content: space-between;
-  align-items: center;
 }
 
 .zancun-console-pagination {
@@ -131,6 +72,20 @@ body:has(.staging-management-page) .page-header h1 {
   color: var(--muted);
 }
 
+.zancun-current-staging-pagination,
+.zancun-planned-inbound-pagination {
+  min-height: 52px;
+}
+
+.zancun-current-staging-pagination > .task-list-pagination__step,
+.zancun-planned-inbound-pagination > .task-list-pagination__step {
+  width: 52px;
+  min-width: 52px;
+  min-height: 48px;
+  padding: 6px 0;
+  font-size: 26px;
+}
+
 .zancun-inventory-column__head .zancun-console-pagination,
 .zancun-inventory-column__head .zancun-inventory-pagination,
 .zancun-inventory-column__head .zancun-inventory-column__pagination,
@@ -148,22 +103,22 @@ body:has(.staging-management-page) .page-header h1 {
 }
 
 .zancun-inventory-columns {
-  --zancun-console-slot-height: 72px;
+  --zancun-console-slot-height: 84px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: auto repeat(4, minmax(var(--zancun-console-slot-height), auto));
-  column-gap: 14px;
+  grid-template-rows: auto repeat(5, minmax(var(--zancun-console-slot-height), auto));
+  column-gap: 10px;
   row-gap: 10px;
   align-items: stretch;
 }
 
 .zancun-inventory-column {
   display: grid;
-  grid-row: 1 / span 5;
+  grid-row: 1 / span 6;
   grid-template-rows: subgrid;
   row-gap: 10px;
   min-width: 0;
-  padding: 14px;
+  padding: 12px;
   border-radius: var(--radius-panel);
   border: 1px solid var(--border);
   background: var(--bg-card-raised);
@@ -175,7 +130,7 @@ body:has(.staging-management-page) .page-header h1 {
 }
 
 .zancun-inventory-column__head {
-  min-height: 36px;
+  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -184,7 +139,15 @@ body:has(.staging-management-page) .page-header h1 {
 
 .zancun-inventory-column__head h4 {
   margin: 0;
-  font-size: 16px;
+  font-size: clamp(20px, 1.4vw, 28px);
+  line-height: 1.2;
+}
+
+.zancun-inventory-column__title--current {
+  color: var(--accent);
+}
+
+.zancun-inventory-column__title--planned {
   color: var(--text);
 }
 
@@ -192,13 +155,15 @@ body:has(.staging-management-page) .page-header h1 {
   height: 100%;
   min-height: var(--zancun-console-slot-height, 72px);
   box-sizing: border-box;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border-radius: var(--radius-panel);
   border: 1px solid var(--border);
   background: var(--bg-card-raised);
   box-shadow: var(--shadow);
   display: grid;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px 24px;
+  align-items: center;
   align-content: center;
 }
 
@@ -228,8 +193,42 @@ body:has(.staging-management-page) .page-header h1 {
   gap: 10px 14px;
 }
 
+.zancun-console-slot__main {
+  min-width: 0;
+}
+
+.zancun-console-slot__meta {
+  justify-content: flex-end;
+}
+
 .zancun-console-slot__main strong {
   color: var(--text);
+}
+
+.zancun-console-slot__tray-code {
+  font-size: 22px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.zancun-console-slot__task-code.muted {
+  color: var(--accent-2);
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+
+.zancun-console-slot__quantity {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.zancun-console-slot__quantity strong {
+  margin-left: 4px;
+  color: var(--accent);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
 }
 
 .zancun-console-slot__empty {
@@ -359,23 +358,62 @@ body:has(.staging-management-page) .page-header h1 {
 
 .zancun-scan-panel {
   display: grid;
-  gap: 14px;
+  gap: 22px;
 }
 
 .zancun-scan-panel .muted {
   margin: 0;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.modal-content.zancun-scan-modal-content {
+  width: min(900px, 92vw);
+  padding: 32px;
+  border-radius: 18px;
+}
+
+.zancun-scan-modal-content .modal-header {
+  margin-bottom: 22px;
+}
+
+.zancun-scan-modal-content .modal-header > strong {
+  font-size: 24px;
+  line-height: 1.3;
+}
+
+.zancun-scan-modal-content .modal-close {
+  min-width: 108px;
+  min-height: 54px;
+  padding: 0 22px;
+  font-size: 16px;
+}
+
+.zancun-scan-modal-content .form-field {
+  gap: 10px;
+}
+
+.zancun-scan-modal-content .form-field label {
+  font-size: 16px;
+}
+
+.zancun-scan-modal-content .form-field input {
+  min-height: 60px;
+  padding: 14px 16px;
+  font-size: 17px;
 }
 
 .zancun-scan-indicator {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 54px;
+  min-height: 76px;
   border-radius: 14px;
   border: 1px dashed rgba(56, 189, 248, 0.45);
   background: rgba(56, 189, 248, 0.08);
   color: var(--text);
-  font-size: 14px;
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .zancun-scan-code-row {
@@ -385,17 +423,24 @@ body:has(.staging-management-page) .page-header h1 {
   align-items: stretch;
 }
 
-.zancun-scan-submit-btn {
-  min-width: 112px;
+.action-btn.zancun-scan-submit-btn {
+  min-width: 156px;
+  min-height: 60px;
+  padding: 0 28px;
+  font-size: 18px;
   justify-content: center;
 }
 
 [data-testid="zancun-scan-modal"] .form-actions {
   justify-content: center;
+  margin-top: 24px;
 }
 
-.zancun-scan-complete-btn {
-  min-width: 180px;
+.action-btn.zancun-scan-complete-btn {
+  min-width: 240px;
+  min-height: 60px;
+  padding: 0 32px;
+  font-size: 18px;
 }
 
 .zancun-detail-grid input[readonly] {
@@ -551,18 +596,19 @@ body:has(.staging-management-page) .page-header h1 {
 }
 
 @media (max-width: 720px) {
-  .zancun-console-toolbar {
-    justify-content: flex-start;
-    align-items: stretch;
-  }
-
   .zancun-console-pagination {
     justify-content: space-between;
   }
 
-  .zancun-actions-header {
-    grid-template-columns: 1fr;
-    align-items: stretch;
+  .zancun-inventory-column__head {
+    flex-wrap: wrap;
+  }
+
+  .zancun-inventory-column__head .zancun-current-staging-pagination,
+  .zancun-inventory-column__head .zancun-planned-inbound-pagination {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
   }
 
   .zancun-inventory-columns {
@@ -584,19 +630,26 @@ body:has(.staging-management-page) .page-header h1 {
     gap: 10px;
   }
 
-  .zancun-current-view {
-    width: 100%;
-    min-width: 0;
-    justify-self: stretch;
-    white-space: normal;
+  .zancun-console-slot {
+    grid-template-columns: 1fr;
+    gap: 8px;
   }
 
-  .zancun-actions-header > .pill {
-    justify-self: start;
+  .zancun-console-slot__meta {
+    justify-content: flex-start;
   }
 
   .zancun-scan-code-row {
     grid-template-columns: 1fr;
+  }
+
+  .modal-content.zancun-scan-modal-content {
+    padding: 22px;
+  }
+
+  .action-btn.zancun-scan-submit-btn,
+  .action-btn.zancun-scan-complete-btn {
+    width: 100%;
   }
 
   .zancun-actions-grid {

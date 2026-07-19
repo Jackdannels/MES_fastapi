@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MES LIMS 模拟器</title>
-    <link rel="stylesheet" href="/static/styles.css?v=1.0.2" />
+    <link rel="stylesheet" href="/static/styles.css?v=1.0.3" />
   </head>
   <body>
     <main class="shell">
@@ -40,7 +40,15 @@
           <label>优先级<select id="priority"><option>高</option><option>中</option><option>低</option></select></label>
           <label>样品数量<input id="sampleCount" type="number" min="1" max="99" required /></label>
           <label>样品类型<input id="sampleType" required /></label>
-          <label class="span-2">试验类型（使用 / 分隔）<input id="testTypes" required /></label>
+          <div class="field span-2 test-types-field">
+            <span id="testTypesLabel" class="field-label">试验类型</span>
+            <input id="testTypes" type="hidden" />
+            <button id="testTypesTrigger" class="test-types-trigger is-empty" type="button" aria-expanded="false" aria-haspopup="dialog" aria-controls="testTypesModal" aria-labelledby="testTypesLabel testTypesSummary" aria-describedby="testTypesHelper">
+              <span id="testTypesSummary">请选择试验类型</span>
+              <span class="test-types-trigger__icon" aria-hidden="true"></span>
+            </button>
+            <span id="testTypesHelper" class="field-helper">可多选；冲击试验、振动试验需选择试验轴向</span>
+          </div>
           <div class="field due-at-field">
             <span class="field-label">期望完成时间</span>
             <input id="dueAt" type="hidden" />
@@ -98,6 +106,47 @@
         <div id="logs" class="logs"><div class="empty">暂无日志</div></div>
       </section>
     </main>
-    <script src="/static/app.js?v=1.0.2"></script>
+    <div id="testTypesModal" class="selection-modal" hidden>
+      <div class="selection-modal__backdrop" data-close-test-types></div>
+      <section class="selection-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="testTypesModalTitle" tabindex="-1">
+        <header class="selection-modal__header">
+          <h2 id="testTypesModalTitle">选择试验类型</h2>
+          <button id="testTypesClose" class="selection-modal__close" type="button" aria-label="关闭试验类型选择"></button>
+        </header>
+        <div class="selection-modal__body">
+          <div id="testTypesDraftSummary" class="selection-summary">请选择试验类型</div>
+          <div id="testTypesGrid" class="test-types-grid" aria-label="试验类型选项"></div>
+          <p id="testTypesValidation" class="selection-validation" role="alert" hidden></p>
+        </div>
+        <footer class="selection-modal__footer">
+          <button id="testTypesCancel" type="button">取消</button>
+          <button id="testTypesConfirm" class="primary" type="button">确认选择</button>
+        </footer>
+      </section>
+    </div>
+
+    <div id="axisModal" class="selection-modal selection-modal--nested" hidden>
+      <div class="selection-modal__backdrop" data-close-axis></div>
+      <section class="selection-modal__dialog selection-modal__dialog--axis" role="dialog" aria-modal="true" aria-labelledby="axisModalTitle" tabindex="-1">
+        <header class="selection-modal__header">
+          <h2 id="axisModalTitle">选择试验轴向</h2>
+          <button id="axisClose" class="selection-modal__close" type="button" aria-label="关闭试验轴向选择"></button>
+        </header>
+        <div class="selection-modal__body axis-picker">
+          <div class="axis-picker__header">
+            <strong id="axisExperimentType">-</strong>
+            <span>确认后加入试验类型</span>
+          </div>
+          <div id="axisGrid" class="axis-picker__grid" aria-label="试验轴向选项"></div>
+          <p id="axisValidation" class="selection-validation" role="alert" hidden></p>
+        </div>
+        <footer class="selection-modal__footer">
+          <button id="axisCancel" type="button">取消</button>
+          <button id="axisConfirm" class="primary" type="button">确认轴向</button>
+        </footer>
+      </section>
+    </div>
+
+    <script src="/static/app.js?v=1.0.3"></script>
   </body>
 </html>

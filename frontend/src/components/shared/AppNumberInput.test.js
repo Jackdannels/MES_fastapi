@@ -45,6 +45,21 @@ describe("AppNumberInput", () => {
     expect(wrapper.emitted("update:modelValue")).toEqual([["1"]]);
   });
 
+  test("places touch controls on both sides of the field in horizontal mode", async () => {
+    const wrapper = mount(AppNumberInput, {
+      props: {
+        controlsLayout: "horizontal",
+        modelValue: "2",
+        min: 1,
+        max: 3,
+      },
+    });
+
+    expect(wrapper.classes()).toContain("is-horizontal");
+    expect(wrapper.find(".app-number-input__controls").exists()).toBe(false);
+    expect(wrapper.findAll("button").map((button) => button.attributes("aria-label"))).toEqual(["减少", "增加"]);
+  });
+
   test("clamps typed values to the configured maximum", async () => {
     const wrapper = mount(AppNumberInput, {
       props: {

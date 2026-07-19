@@ -17,7 +17,7 @@
       第 {{ safeCurrentPage }} / {{ safePageCount }} 页
     </span>
 
-    <label class="task-list-pagination__jump">
+    <label v-if="showJumpControls" class="task-list-pagination__jump">
       <AppNumberInput
         v-model="jumpValue"
         data-testid="pagination-jump-input"
@@ -67,6 +67,10 @@ const props = defineProps({
     default: 1,
   },
   showStepControls: {
+    type: Boolean,
+    default: true,
+  },
+  showJumpControls: {
     type: Boolean,
     default: true,
   },

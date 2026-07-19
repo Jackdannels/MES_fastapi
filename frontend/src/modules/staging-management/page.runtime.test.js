@@ -308,7 +308,7 @@ describe("StagingManagementPage runtime", () => {
     const mounted = await mountPage();
 
     expect(mounted.text()).toContain("SYLU-2026-04-101");
-    expect(mounted.get('[data-testid="zancun-current-view"]').text()).toContain("暂存间中托盘数量1");
+    expect(mounted.get('[data-testid="zancun-current-staging-column"] h4').text()).toContain("暂存间托盘 1");
     expect(mounted.text()).not.toContain("今日到货");
     expect(mounted.text()).not.toContain("今日已出库");
     expect(mounted.findAll('[data-testid="zancun-current-staging-row"]')).toHaveLength(1);
@@ -320,7 +320,7 @@ describe("StagingManagementPage runtime", () => {
   test("refreshes staging rows when tray data changes elsewhere", async () => {
     const mounted = await mountPage();
 
-    expect(mounted.get('[data-testid="zancun-current-view"]').text()).toContain("暂存间中托盘数量1");
+    expect(mounted.get('[data-testid="zancun-current-staging-column"] h4').text()).toContain("暂存间托盘 1");
     expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).not.toContain("SYLU-2026-04-101-TP-001");
 
     remoteSnapshot = {
@@ -350,7 +350,7 @@ describe("StagingManagementPage runtime", () => {
     window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     await settlePage(mounted);
 
-    expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("当前在库 2");
+    expect(mounted.get('[data-testid="zancun-current-staging-column"] h4').text()).toContain("暂存间托盘 2");
     expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("SYLU-2026-04-101-TP-001");
   });
 
@@ -368,7 +368,7 @@ describe("StagingManagementPage runtime", () => {
     await settlePage(mounted);
 
     expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("SYLU-2026-04-102-TP-001");
-    expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("当前在库 1");
+    expect(mounted.get('[data-testid="zancun-current-staging-column"] h4').text()).toContain("暂存间托盘 1");
     expect(mounted.get('[data-testid="zancun-planned-inbound-column"]').text()).toContain("SYLU-2026-04-101-TP-001");
   });
 
@@ -378,7 +378,7 @@ describe("StagingManagementPage runtime", () => {
     const currentColumn = mounted.get('[data-testid="zancun-current-staging-column"]');
 
     expect(plannedColumn.text()).toContain("允许暂存");
-    expect(currentColumn.text()).toContain("暂存间样品");
+    expect(currentColumn.text()).toContain("暂存间托盘");
     expect(plannedColumn.text()).toContain("SYLU-2026-04-101-TP-001");
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-102-TP-001");
     expect(currentColumn.text()).toContain("SYLU-2026-04-102-TP-001");
@@ -500,8 +500,8 @@ describe("StagingManagementPage runtime", () => {
     const mounted = await mountPage();
     const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
 
-    expect(plannedColumn.text()).toContain("允许暂存 5");
-    await mounted.get('[data-testid="zancun-console-search"]').setValue(trayCode);
+    expect(plannedColumn.text()).toContain("允许暂存托盘");
+    await mounted.get('[data-testid="zancun-planned-inbound-pagination"] button[data-page="next"]').trigger("click");
     await settlePage(mounted);
     expect(plannedColumn.text()).toContain(trayCode);
   });
@@ -574,8 +574,11 @@ describe("StagingManagementPage runtime", () => {
       .find((row) => row.text().includes(trayCode));
 
     expect(targetRow?.text()).toContain(trayCode);
-    expect(targetRow?.text()).toContain("放置暂存间");
-    expect(targetRow?.text()).not.toContain("盐雾试验已完成");
+    expect(targetRow?.text()).toContain(taskCode);
+    expect(targetRow?.text()).toContain("样品数量 1");
+    expect(targetRow?.text()).not.toContain("盐雾试验");
+    expect(targetRow?.text()).not.toContain("恒温恒湿间");
+    expect(targetRow?.text()).not.toContain("放置暂存间");
     expect(targetRow?.text()).not.toContain("到货");
   });
 
@@ -589,17 +592,17 @@ describe("StagingManagementPage runtime", () => {
 
     const mounted = await mountPage();
 
-    expect(mounted.get('[data-testid="zancun-current-staging-column"] .pill').text()).toBe("当前在库 3");
-    expect(mounted.get('[data-testid="zancun-planned-inbound-column"] .pill').text()).toBe("允许暂存 6");
+    expect(mounted.get('[data-testid="zancun-current-staging-column"] h4').text()).toBe("暂存间托盘 3");
+    expect(mounted.get('[data-testid="zancun-planned-inbound-column"] h4').text()).toBe("允许暂存托盘 6");
   });
 
-  test("inventory columns render four fixed slots with empty placeholders on short pages", async () => {
+  test("inventory columns render five fixed slots with empty placeholders on short pages", async () => {
     const mounted = await mountPage();
     const currentColumn = mounted.get('[data-testid="zancun-current-staging-column"]');
     const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
 
-    expect(currentColumn.findAll(".zancun-console-slot")).toHaveLength(4);
-    expect(plannedColumn.findAll(".zancun-console-slot")).toHaveLength(4);
+    expect(currentColumn.findAll(".zancun-console-slot")).toHaveLength(5);
+    expect(plannedColumn.findAll(".zancun-console-slot")).toHaveLength(5);
   });
 
   test("current staging and planned inbound lists paginate independently", async () => {
@@ -617,13 +620,12 @@ describe("StagingManagementPage runtime", () => {
     const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
 
     expect(currentColumn.text()).toContain("SYLU-2026-04-111-TP-001");
-    expect(currentColumn.text()).not.toContain("SYLU-2026-04-112-TP-001");
+    expect(currentColumn.text()).not.toContain("SYLU-2026-04-113-TP-001");
     expect(plannedColumn.text()).toContain("SYLU-2026-04-101-TP-001");
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-108-TP-001");
 
     await currentColumn.get('[data-testid="zancun-current-staging-pagination"] [data-page="next"]').trigger("click");
 
-    expect(currentColumn.text()).toContain("SYLU-2026-04-112-TP-001");
     expect(currentColumn.text()).toContain("SYLU-2026-04-113-TP-001");
     expect(plannedColumn.text()).toContain("SYLU-2026-04-101-TP-001");
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-108-TP-001");
@@ -638,6 +640,7 @@ describe("StagingManagementPage runtime", () => {
     remoteSnapshot = withExtraTrayFixtures(createSnapshot(), [
       { sequence: 107, status: "送至暂存间" },
       { sequence: 108, status: "送至暂存间" },
+      { sequence: 109, status: "送至暂存间" },
     ]);
     const mounted = await mountPage();
 
@@ -654,10 +657,10 @@ describe("StagingManagementPage runtime", () => {
     await settlePage(mounted);
 
     const plannedColumn = mounted.get('[data-testid="zancun-planned-inbound-column"]');
-    expect(plannedColumn.findAll(".zancun-console-slot")).toHaveLength(4);
+    expect(plannedColumn.findAll(".zancun-console-slot")).toHaveLength(5);
     expect(plannedColumn.text()).not.toContain("SYLU-2026-04-101-TP-001");
     expect(plannedColumn.text()).toContain("SYLU-2026-04-107-TP-001");
-    expect(plannedColumn.text()).not.toContain("SYLU-2026-04-108-TP-001");
+    expect(plannedColumn.text()).not.toContain("SYLU-2026-04-109-TP-001");
     expect(getStorageCallCount()).toBe(getCallsBeforeStockIn);
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/api/storage/rooms/staging/trays/SYLU-2026-04-101-TP-001/stock-in"), expect.objectContaining({
       method: "POST",
@@ -668,19 +671,46 @@ describe("StagingManagementPage runtime", () => {
     }));
   });
 
-  test("merges the current tray count into the console header without KPI filters", async () => {
+  test("removes the duplicate tray metric and keeps only the two inventory columns", async () => {
     const mounted = await mountPage();
-    const summaryBar = mounted.get('[data-testid="zancun-current-view"]');
 
-    expect(summaryBar.classes()).toContain("zancun-current-view--option-a");
-    expect(summaryBar.text()).toContain("暂存间中托盘数量");
-    expect(summaryBar.text()).toContain("1");
-    expect(summaryBar.text()).toContain("盘");
+    expect(mounted.find('[data-testid="zancun-current-view"]').exists()).toBe(false);
     expect(mounted.find('[data-testid="zancun-metric-stocked-out"]').exists()).toBe(false);
     expect(mounted.find('[data-testid="zancun-metric-stocked-in"]').exists()).toBe(false);
     expect(mounted.find('[data-testid="zancun-metric-active"]').exists()).toBe(false);
+    expect(mounted.find('[data-testid="zancun-console-search"]').exists()).toBe(false);
+    expect(mounted.get('[data-testid="zancun-current-staging-column"] h4').text()).toBe("暂存间托盘 1");
+    expect(mounted.get('[data-testid="zancun-planned-inbound-column"] h4').text()).toBe("允许暂存托盘 4");
+    expect(mounted.text()).not.toContain("暂存间控制台");
+    expect(mounted.text()).not.toContain("标准流程");
     expect(mounted.find('[data-testid="zancun-scan-modal"].is-open').exists()).toBe(false);
     expect(mounted.text()).toContain("SYLU-2026-04-101-TP-001");
+  });
+
+  test.each([
+    ["staging", "暂存间托盘", "允许暂存托盘"],
+    ["appearance", "外观检测间托盘", "待入库托盘"],
+  ])("uses the simplified overview header in the %s room", async (room, currentTitle, plannedTitle) => {
+    const mounted = await mountPage({ room });
+
+    expect(mounted.find('[data-testid="zancun-current-view"]').exists()).toBe(false);
+    expect(mounted.find('[data-testid="zancun-console-search"]').exists()).toBe(false);
+    expect(mounted.get('[data-testid="zancun-current-staging-column"] h4').text()).toContain(currentTitle);
+    expect(mounted.get('[data-testid="zancun-planned-inbound-column"] h4').text()).toMatch(new RegExp(`${plannedTitle} \\d+$`));
+    expect(mounted.text()).not.toContain("标准流程");
+  });
+
+  test("hides page jump controls while keeping enlarged previous and next controls", async () => {
+    const mounted = await mountPage();
+    const paginations = mounted.findAll(".zancun-current-staging-pagination, .zancun-planned-inbound-pagination");
+
+    expect(paginations).toHaveLength(2);
+    paginations.forEach((pagination) => {
+      expect(pagination.find('[data-testid="pagination-jump-input"]').exists()).toBe(false);
+      expect(pagination.find('[data-testid="pagination-jump-submit"]').exists()).toBe(false);
+      expect(pagination.find('[data-page="prev"]').exists()).toBe(true);
+      expect(pagination.find('[data-page="next"]').exists()).toBe(true);
+    });
   });
 
   test("tray rows are display-only and scan buttons open directly into focused edit mode", async () => {
@@ -1345,10 +1375,13 @@ describe("StagingManagementPage runtime", () => {
         status: "实验后暂存间存放",
       }),
     );
-    await mounted.get('[data-testid="zancun-console-search"]').setValue("SYLU-2026-04-107-TP-001");
+    const stockedRow = mounted.findAll('[data-testid="zancun-current-staging-row"]')
+      .find((row) => row.text().includes("SYLU-2026-04-107-TP-001"));
 
-    expect(mounted.text()).toContain("SYLU-2026-04-107-TP-001");
-    expect(mounted.text()).toContain("实验后暂存");
+    expect(stockedRow?.text()).toContain("SYLU-2026-04-107-TP-001");
+    expect(stockedRow?.text()).toContain("SYLU-2026-04-107");
+    expect(stockedRow?.text()).toContain("样品数量 1");
+    expect(stockedRow?.text()).not.toContain("实验后暂存");
     expect(dispatchEventSpy.mock.calls.some(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toBe(true);
   });
 });

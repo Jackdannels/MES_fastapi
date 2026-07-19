@@ -1,38 +1,19 @@
 <template>
   <div class="staging-management-page">
     <section class="card section zancun-actions-card">
-      <div class="zancun-actions-header">
-        <div class="zancun-actions-header__main">
-          <h3>{{ roomCopy.consoleTitle }}</h3>
-        </div>
-        <div class="zancun-current-view zancun-current-view--option-a" data-testid="zancun-current-view">
-          <span class="zancun-current-view__label">{{ roomCopy.activeMetricLabel }}</span>
-          <strong class="zancun-current-view__value">{{ activeMetricLabel }}</strong>
-          <span class="zancun-current-view__unit">盘</span>
-        </div>
-        <span class="pill">标准流程</span>
-      </div>
-
       <div class="zancun-console-panel">
-        <div class="toolbar zancun-console-toolbar">
-          <input
-            v-model="overviewQuery"
-            class="search-input"
-            data-testid="zancun-console-search"
-            placeholder="筛选任务编号/托盘编号/责任人"
-          />
-        </div>
-
         <div class="zancun-inventory-columns">
           <section class="zancun-inventory-column" data-testid="zancun-current-staging-column">
             <div class="zancun-inventory-column__head">
-              <h4>{{ roomCopy.currentColumnTitle }}</h4>
-              <span class="pill">{{ roomCopy.currentPillPrefix }} {{ currentStagingTotalCount }}</span>
+              <h4 class="zancun-inventory-column__title zancun-inventory-column__title--current">
+                {{ roomCopy.currentColumnTitle }} {{ currentStagingTotalCount }}
+              </h4>
               <AppPagination
                 class="zancun-current-staging-pagination"
                 data-testid="zancun-current-staging-pagination"
                 :current-page="currentStagingCurrentPage"
                 :page-count="currentStagingPageCount"
+                :show-jump-controls="false"
                 @change="setCurrentStagingPage"
               />
             </div>
@@ -45,14 +26,11 @@
               >
                 <template v-if="slot.row">
                   <div class="zancun-console-slot__main">
-                    <strong>{{ slot.row.trayCode }}</strong>
-                    <span class="muted">{{ slot.row.taskCode }}</span>
+                    <strong class="zancun-console-slot__tray-code">{{ slot.row.trayCode }}</strong>
+                    <span class="muted zancun-console-slot__task-code">{{ slot.row.taskCode }}</span>
                   </div>
                   <div class="zancun-console-slot__meta">
-                    <span>{{ slot.row.sampleType }}</span>
-                    <span>数量 {{ slot.row.quantity }}</span>
-                    <span>{{ slot.row.location }}</span>
-                    <span :class="slot.row.statusClass">{{ slot.row.statusLabel || slot.row.status }}</span>
+                    <span class="zancun-console-slot__quantity">样品数量 <strong>{{ slot.row.quantity }}</strong></span>
                   </div>
                 </template>
                 <div v-else class="zancun-console-slot__empty muted">
@@ -64,13 +42,15 @@
 
           <section class="zancun-inventory-column" data-testid="zancun-planned-inbound-column">
             <div class="zancun-inventory-column__head">
-              <h4>{{ roomCopy.plannedTitle }}</h4>
-              <span class="pill">{{ roomCopy.plannedPillPrefix }} {{ plannedInboundTotalCount }}</span>
+              <h4 class="zancun-inventory-column__title zancun-inventory-column__title--planned">
+                {{ roomCopy.plannedTitle }} {{ plannedInboundTotalCount }}
+              </h4>
               <AppPagination
                 class="zancun-planned-inbound-pagination"
                 data-testid="zancun-planned-inbound-pagination"
                 :current-page="overviewCurrentPage"
                 :page-count="overviewPageCount"
+                :show-jump-controls="false"
                 @change="setOverviewPage"
               />
             </div>
@@ -83,15 +63,11 @@
               >
                 <template v-if="slot.row">
                   <div class="zancun-console-slot__main">
-                    <strong>{{ slot.row.trayCode }}</strong>
-                    <span class="muted">{{ slot.row.taskCode }}</span>
+                    <strong class="zancun-console-slot__tray-code">{{ slot.row.trayCode }}</strong>
+                    <span class="muted zancun-console-slot__task-code">{{ slot.row.taskCode }}</span>
                   </div>
                   <div class="zancun-console-slot__meta">
-                    <span>{{ slot.row.sampleType }}</span>
-                    <span>数量 {{ slot.row.quantity }}</span>
-                    <span>{{ slot.row.location }}</span>
-                    <span>{{ slot.row.inboundKindLabel }}</span>
-                    <span :class="slot.row.statusClass">{{ slot.row.statusLabel || slot.row.status }}</span>
+                    <span class="zancun-console-slot__quantity">样品数量 <strong>{{ slot.row.quantity }}</strong></span>
                   </div>
                 </template>
                 <div v-else class="zancun-console-slot__empty muted">
@@ -133,6 +109,7 @@
     <AppModal
       :open="scanModalOpen"
       :title="activeScanMode === 'stockIn' ? '扫码入库' : '扫码出库'"
+      content-class="zancun-scan-modal-content"
       data-testid="zancun-scan-modal"
       @close="cancelScan"
     >
@@ -346,7 +323,6 @@ import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import {
   applyZancunInventoryAction,
   buildZancunInventorySections,
-  buildZancunMetrics,
   buildZancunOverviewView,
   buildZancunRowsFromSnapshot,
   buildZancunScanDetail,
@@ -354,28 +330,20 @@ import {
 
 const ROOM_PAGE_COPY = {
   staging: {
-    activeMetricLabel: "暂存间中托盘数量",
-    consoleTitle: "暂存间控制台",
-    currentColumnTitle: "暂存间样品",
-    currentEmptyMessage: "当前页暂无暂存间样品",
-    currentPillPrefix: "当前在库",
+    currentColumnTitle: "暂存间托盘",
+    currentEmptyMessage: "当前页暂无暂存间托盘",
     destinationTitle: "选择目标实验室",
     moduleSource: "staging-management",
     plannedEmptyMessage: "当前页暂无允许暂存托盘",
-    plannedPillPrefix: "允许暂存",
-    plannedTitle: "允许暂存",
+    plannedTitle: "允许暂存托盘",
   },
   appearance: {
-    activeMetricLabel: "外观检测间中托盘数量",
-    consoleTitle: "外观检测间控制台",
-    currentColumnTitle: "外观检测间样品",
-    currentEmptyMessage: "当前页暂无外观检测间样品",
-    currentPillPrefix: "当前在库",
+    currentColumnTitle: "外观检测间托盘",
+    currentEmptyMessage: "当前页暂无外观检测间托盘",
     destinationTitle: "选择目标去向",
     moduleSource: "appearance-inspection",
-    plannedEmptyMessage: "当前页暂无待检测托盘",
-    plannedPillPrefix: "待入库",
-    plannedTitle: "计划入库",
+    plannedEmptyMessage: "当前页暂无待入库托盘",
+    plannedTitle: "待入库托盘",
   },
 };
 
@@ -404,9 +372,8 @@ const snapshot = ref({
   [STORAGE_KEYS.samples]: [],
   [STORAGE_KEYS.staging_events]: [],
 });
-const overviewQuery = ref("");
 const overviewCurrentPage = ref(1);
-const overviewPageSize = 4;
+const overviewPageSize = 5;
 const currentStagingCurrentPage = ref(1);
 const scanInputRef = ref(null);
 const { focusScanInput } = useScanInputFocus(scanInputRef);
@@ -460,7 +427,7 @@ const overviewSourceRows = computed(() =>
 const overviewView = computed(() =>
   buildZancunOverviewView({
     filters: {
-      query: overviewQuery.value,
+      query: "",
     },
     page: 1,
     pageSize: Math.max(overviewSourceRows.value.length, 1),
@@ -471,17 +438,6 @@ const overviewView = computed(() =>
     },
   }),
 );
-
-const stagingSummary = computed(() =>
-  buildZancunMetrics({
-    now: nowValue(),
-    room: activeRoom.value,
-    rows: overviewSourceRows.value,
-    stagingEvents: snapshot.value[STORAGE_KEYS.staging_events],
-  }),
-);
-
-const activeMetricLabel = computed(() => String(stagingSummary.value.totalTrayCount ?? 0));
 
 const overviewRows = computed(() => overviewView.value.rows);
 const inventorySections = computed(() => buildZancunInventorySections(overviewRows.value, { room: activeRoom.value }));
@@ -515,11 +471,6 @@ const currentStagingRows = computed(() => paginateRows(currentStagingAllRows.val
 const plannedInboundRows = computed(() => paginateRows(plannedInboundAllRows.value, overviewCurrentPage.value));
 const currentStagingSlots = computed(() => buildInventorySlots(currentStagingRows.value, roomCopy.value.currentEmptyMessage));
 const plannedInboundSlots = computed(() => buildInventorySlots(plannedInboundRows.value, roomCopy.value.plannedEmptyMessage));
-
-watch(overviewQuery, () => {
-  overviewCurrentPage.value = 1;
-  currentStagingCurrentPage.value = 1;
-});
 
 watch(
   overviewPageCount,

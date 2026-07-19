@@ -1,5 +1,14 @@
 <template>
-  <div class="app-number-input" :class="[rootClass, { 'is-disabled': disabled, 'is-readonly': readonly }]">
+  <div class="app-number-input" :class="[rootClass, { 'is-disabled': disabled, 'is-readonly': readonly, 'is-horizontal': controlsLayout === 'horizontal' }]">
+    <button
+      v-if="controlsLayout === 'horizontal'"
+      class="app-number-input__step app-number-input__step--down"
+      data-testid="number-step-down"
+      type="button"
+      aria-label="减少"
+      :disabled="disabled || readonly"
+      @click="stepBy(-1)"
+    ></button>
     <input
       v-bind="inputAttrs"
       class="app-number-input__field"
@@ -16,7 +25,16 @@
       @input="handleInput"
       @change="handleChange"
     />
-    <div class="app-number-input__controls">
+    <button
+      v-if="controlsLayout === 'horizontal'"
+      class="app-number-input__step app-number-input__step--up"
+      data-testid="number-step-up"
+      type="button"
+      aria-label="增加"
+      :disabled="disabled || readonly"
+      @click="stepBy(1)"
+    ></button>
+    <div v-else class="app-number-input__controls">
       <button
         class="app-number-input__step app-number-input__step--up"
         data-testid="number-step-up"
@@ -83,6 +101,11 @@ const props = defineProps({
     type: [Number, String],
     default: 1,
   },
+  controlsLayout: {
+    type: String,
+    default: "vertical",
+    validator: (value) => ["vertical", "horizontal"].includes(value),
+  },
 });
 
 const emit = defineEmits(["update:modelValue", "change"]);
@@ -90,7 +113,8 @@ const attrs = useAttrs();
 
 const rootClass = computed(() => attrs.class);
 const inputAttrs = computed(() => {
-  const { class: _class, ...rest } = attrs;
+  const rest = { ...attrs };
+  delete rest.class;
   return rest;
 });
 const modelText = computed(() => String(props.modelValue ?? ""));

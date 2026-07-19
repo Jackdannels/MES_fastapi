@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 980" role="img" aria-labelledby="title desc">
+  <title id="title">MES 工作台 v1.4 图标六选一</title>
+  <desc id="desc">六款深色工业风 MES 工作台矢量图标候选方案</desc>
+  <defs>
+    <linearGradient id="page-bg" x1="0" y1="0" x2="1500" y2="980" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#071b20"/>
+      <stop offset="1" stop-color="#02080c"/>
+    </linearGradient>
+    <linearGradient id="icon-shell" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#163f49"/>
+      <stop offset="1" stop-color="#07151b"/>
+    </linearGradient>
+    <linearGradient id="teal-cyan" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#63e6be"/>
+      <stop offset="1" stop-color="#2fb6d4"/>
+    </linearGradient>
+    <linearGradient id="amber-teal" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#e7b75f"/>
+      <stop offset="1" stop-color="#63e6be"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#63e6be" stroke-opacity=".055"/>
+    </pattern>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style>
+      .card { fill:#0b171d; stroke:#21434a; stroke-width:2; }
+      .icon-bg { fill:url(#icon-shell); stroke:#4cbfa9; stroke-width:4; }
+      .title { fill:#edfdf9; font:800 28px 'Microsoft YaHei UI','Segoe UI',sans-serif; }
+      .code { fill:#63e6be; font:800 18px Consolas,monospace; letter-spacing:2px; }
+      .desc { fill:#8ba9a4; font:600 17px 'Microsoft YaHei UI','Segoe UI',sans-serif; }
+      .mes { fill:#f4fbff; font:900 31px 'Segoe UI',sans-serif; letter-spacing:4px; }
+      .line { fill:none; stroke:url(#teal-cyan); stroke-width:9; stroke-linecap:round; stroke-linejoin:round; }
+      .thin { fill:none; stroke:#63e6be; stroke-width:5; stroke-linecap:round; stroke-linejoin:round; }
+    </style>
+  </defs>
+
+  <rect width="1500" height="980" rx="32" fill="url(#page-bg)"/>
+  <rect width="1500" height="980" rx="32" fill="url(#grid)"/>
+  <text x="60" y="70" fill="#edfdf9" font-family="Microsoft YaHei UI,Segoe UI,sans-serif" font-size="34" font-weight="900">MES 工作台设置 v1.4 · 图标方案</text>
+  <text x="60" y="108" fill="#8ba9a4" font-family="Microsoft YaHei UI,Segoe UI,sans-serif" font-size="18" font-weight="600">统一工业暗色体系 · 适配桌面快捷方式、任务栏与设置器窗口</text>
+
+  <!-- A 联动流程 -->
+  <g transform="translate(45 145)">
+    <rect class="card" width="450" height="365" rx="24"/>
+    <g transform="translate(117 28)">
+      <rect class="icon-bg" width="216" height="216" rx="50"/>
+      <path d="M45 62h42v46h43v46h41" class="line"/>
+      <circle cx="45" cy="62" r="12" fill="#e7b75f" stroke="#fff0c9" stroke-width="3"/>
+      <circle cx="87" cy="108" r="12" fill="#63e6be" stroke="#d6fff0" stroke-width="3"/>
+      <circle cx="130" cy="154" r="12" fill="#2fb6d4" stroke="#d9f8ff" stroke-width="3"/>
+      <text class="mes" x="111" y="98" text-anchor="middle">MES</text>
+    </g>
+    <text class="code" x="28" y="278">方案 A</text>
+    <text class="title" x="28" y="315">联动流程</text>
+    <text class="desc" x="28" y="345">突出任务、托盘与设备的连续协作</text>
+  </g>
+
+  <!-- B 智造六核 -->
+  <g transform="translate(525 145)">
+    <rect class="card" width="450" height="365" rx="24"/>
+    <g transform="translate(117 28)">
+      <rect class="icon-bg" width="216" height="216" rx="50"/>
+      <path d="M108 35l66 38v76l-66 38-66-38V73z" fill="#0a242b" stroke="url(#teal-cyan)" stroke-width="7"/>
+      <path d="M72 137V82l36 30 36-30v55" fill="none" stroke="#edfdf9" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="108" cy="35" r="8" fill="#e7b75f"/>
+      <circle cx="42" cy="149" r="8" fill="#63e6be"/>
+      <circle cx="174" cy="149" r="8" fill="#2fb6d4"/>
+    </g>
+    <text class="code" x="28" y="278">方案 B</text>
+    <text class="title" x="28" y="315">智造六核</text>
+    <text class="desc" x="28" y="345">六边形工业徽章，力量感最强</text>
+  </g>
+
+  <!-- C 控制矩阵 -->
+  <g transform="translate(1005 145)">
+    <rect class="card" width="450" height="365" rx="24"/>
+    <g transform="translate(117 28)">
+      <rect class="icon-bg" width="216" height="216" rx="50"/>
+      <rect x="40" y="40" width="61" height="61" rx="14" fill="#12343d" stroke="#63e6be" stroke-width="5"/>
+      <rect x="115" y="40" width="61" height="61" rx="14" fill="#12343d" stroke="#2fb6d4" stroke-width="5"/>
+      <rect x="40" y="115" width="61" height="61" rx="14" fill="#12343d" stroke="#e7b75f" stroke-width="5"/>
+      <rect x="115" y="115" width="61" height="61" rx="14" fill="#173d42" stroke="#63e6be" stroke-width="5"/>
+      <path d="M57 70h28M129 70h33M56 146h30M129 146h33" stroke="#edfdf9" stroke-width="7" stroke-linecap="round"/>
+      <circle cx="145" cy="146" r="8" fill="#63e6be" filter="url(#glow)"/>
+    </g>
+    <text class="code" x="28" y="278">方案 C</text>
+    <text class="title" x="28" y="315">控制矩阵</text>
+    <text class="desc" x="28" y="345">多试验间控制台，简洁现代</text>
+  </g>
+
+  <!-- D 数据脉冲 -->
+  <g transform="translate(45 545)">
+    <rect class="card" width="450" height="365" rx="24"/>
+    <g transform="translate(117 28)">
+      <rect class="icon-bg" width="216" height="216" rx="50"/>
+      <circle cx="108" cy="108" r="70" fill="#091f26" stroke="#214c53" stroke-width="7"/>
+      <path d="M31 112h36l17-39 29 77 22-58 16 20h34" class="line"/>
+      <circle cx="67" cy="112" r="8" fill="#e7b75f"/>
+      <circle cx="113" cy="150" r="8" fill="#63e6be" filter="url(#glow)"/>
+      <circle cx="151" cy="112" r="8" fill="#2fb6d4"/>
+      <path d="M108 27v15M108 174v15M27 108h15M174 108h15" class="thin" opacity=".7"/>
+    </g>
+    <text class="code" x="28" y="278">方案 D</text>
+    <text class="title" x="28" y="315">数据脉冲</text>
+    <text class="desc" x="28" y="345">强调实时状态、监测与可靠运行</text>
+  </g>
+
+  <!-- E 托盘闭环 -->
+  <g transform="translate(525 545)">
+    <rect class="card" width="450" height="365" rx="24"/>
+    <g transform="translate(117 28)">
+      <rect class="icon-bg" width="216" height="216" rx="50"/>
+      <path d="M57 71a69 69 0 0 1 107-1" class="line"/>
+      <path d="M159 51l8 23-24 3" fill="none" stroke="#2fb6d4" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M159 145a69 69 0 0 1-107 1" class="line"/>
+      <path d="M57 165l-8-23 24-3" fill="none" stroke="#63e6be" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M73 93l35-17 35 17-35 17z" fill="#163c43" stroke="#edfdf9" stroke-width="5"/>
+      <path d="M73 93v32l35 17 35-17V93M108 110v32" fill="none" stroke="#e7b75f" stroke-width="5" stroke-linejoin="round"/>
+    </g>
+    <text class="code" x="28" y="278">方案 E</text>
+    <text class="title" x="28" y="315">托盘闭环</text>
+    <text class="desc" x="28" y="345">最贴合入库、试验、流转业务主线</text>
+  </g>
+
+  <!-- F 精密芯核 -->
+  <g transform="translate(1005 545)">
+    <rect class="card" width="450" height="365" rx="24"/>
+    <g transform="translate(117 28)">
+      <rect class="icon-bg" width="216" height="216" rx="50"/>
+      <rect x="58" y="58" width="100" height="100" rx="23" fill="#0a252c" stroke="url(#amber-teal)" stroke-width="7"/>
+      <text class="mes" x="110" y="120" text-anchor="middle" font-size="27">MES</text>
+      <path d="M78 35v23M108 35v23M138 35v23M78 158v23M108 158v23M138 158v23M35 78h23M35 108h23M35 138h23M158 78h23M158 108h23M158 138h23" class="thin"/>
+      <circle cx="35" cy="78" r="6" fill="#e7b75f"/>
+      <circle cx="181" cy="108" r="6" fill="#2fb6d4"/>
+      <circle cx="108" cy="181" r="6" fill="#63e6be" filter="url(#glow)"/>
+    </g>
+    <text class="code" x="28" y="278">方案 F</text>
+    <text class="title" x="28" y="315">精密芯核</text>
+    <text class="desc" x="28" y="345">科技感突出，适合长期品牌化使用</text>
+  </g>
+</svg>

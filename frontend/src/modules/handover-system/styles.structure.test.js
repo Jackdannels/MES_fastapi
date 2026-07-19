@@ -18,9 +18,55 @@ describe("handover system styles", () => {
     const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
     const source = readFileSync(stylesPath, "utf8");
 
-    expect(source).toMatch(/\.transfer-overview-shell\s*\{[^}]*grid-template-rows:\s*auto\s+auto\s+auto\s+minmax\(0,\s*1fr\)\s+auto/i);
+    expect(source).toMatch(/\.transfer-overview-shell\s*\{[^}]*grid-template-rows:\s*auto\s+auto\s+minmax\(0,\s*1fr\)\s+auto/i);
     expect(source).toMatch(/\.transfer-area-screen\.is-embedded\s+\.transfer-overview-shell\s*\{[^}]*height:\s*calc\(100vh\s*-\s*172px\)/i);
     expect(source).toMatch(/\.transfer-overview-pagination\s*\{[^}]*margin-top:\s*auto/i);
+  });
+
+  test("handover headings share their rows with touch-friendly actions", () => {
+    const componentPath = resolve(process.cwd(), "src/modules/transfer-workbench/TransferWorkbench.vue");
+    const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
+    const componentSource = readFileSync(componentPath, "utf8");
+    const styleSource = readFileSync(stylesPath, "utf8");
+
+    expect(componentSource).toMatch(/class="transfer-overview-shell__head"[\s\S]*v-if="showOverviewIntro"[\s\S]*class="transfer-overview-page-title"[\s\S]*class="transfer-overview-kpis/);
+    expect(componentSource).toContain('<h1 class="transfer-system-title">{{ modeConfig.headerTitle }}</h1>');
+    expect(styleSource).toMatch(/\.transfer-system-header\s*\{[^}]*justify-content:\s*space-between/i);
+    expect(styleSource).toMatch(/\.transfer-overview-shell__head\s*\{[^}]*min-height:\s*68px/i);
+    expect(styleSource).toMatch(/\.transfer-overview-page-title\s*\{[^}]*font-size:\s*clamp\(28px,\s*2vw,\s*32px\)/i);
+    expect(styleSource).toMatch(/\.transfer-system-actions\s+\.action-btn\s*\{[^}]*min-height:\s*64px/i);
+  });
+
+  test("handover terminal uses the viewport as its layout boundary", () => {
+    const componentPath = resolve(process.cwd(), "src/modules/transfer-workbench/TransferWorkbench.vue");
+    const pagePath = resolve(process.cwd(), "src/modules/handover-system/page.vue");
+    const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
+    const componentSource = readFileSync(componentPath, "utf8");
+    const pageSource = readFileSync(pagePath, "utf8");
+    const styleSource = readFileSync(stylesPath, "utf8");
+
+    expect(pageSource).toContain('<TransferWorkbench mode="handover" terminal />');
+    expect(componentSource).toContain("'is-terminal': terminal");
+    expect(styleSource).toMatch(/\.transfer-area-screen\.is-terminal\s*\{[^}]*height:\s*100dvh/i);
+    expect(styleSource).toMatch(/\.transfer-area-screen\.is-terminal\s*\{[^}]*min-height:\s*0/i);
+    expect(styleSource).toMatch(/\.transfer-area-screen\.is-terminal\s*\{[^}]*overflow:\s*hidden/i);
+    expect(styleSource).toMatch(/\.transfer-area-screen\.is-terminal\s+\.transfer-overview-shell\s*\{[^}]*height:\s*100%/i);
+    expect(styleSource).toMatch(/\.transfer-area-screen\.is-terminal\s+\.transfer-overview-shell\s*\{[^}]*min-height:\s*0/i);
+    expect(styleSource).toMatch(/\.transfer-area-screen\.is-terminal\s+\.transfer-detail-shell\s*\{[^}]*overflow:\s*auto/i);
+  });
+
+  test("handover terminal compresses the three-row overview without scrolling the page", () => {
+    const componentPath = resolve(process.cwd(), "src/modules/transfer-workbench/TransferWorkbench.vue");
+    const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
+    const componentSource = readFileSync(componentPath, "utf8");
+    const source = readFileSync(stylesPath, "utf8");
+
+    expect(source).toMatch(/\.transfer-area-screen\.is-terminal\s+\.transfer-table__codes\s*\{[^}]*grid-template-rows:\s*repeat\(4,\s*34px\)/i);
+    expect(source).toMatch(/\.transfer-area-screen\.is-terminal\s+\.transfer-table__codes\s*\{[^}]*max-height:\s*154px/i);
+    expect(source).toMatch(/\.transfer-area-screen\.is-terminal\s+\.transfer-sample-code-chip\s*\{[^}]*min-height:\s*34px/i);
+    expect(componentSource).toContain(':show-jump-controls="mode !== \'handover\'"');
+    expect(source).toMatch(/\.transfer-area-screen\.is-terminal\s+\.task-list-pagination\s*>\s*\.task-list-pagination__step\s*\{[^}]*min-width:\s*64px/i);
+    expect(source).toMatch(/\.transfer-area-screen\.is-terminal\s+\.task-list-pagination\s*>\s*\.task-list-pagination__step\s*\{[^}]*min-height:\s*48px/i);
   });
 
   test("overview feedback is a floating toast and does not reserve a grid row", () => {
@@ -111,6 +157,7 @@ describe("handover system styles", () => {
     expect(styleSource).toMatch(
       /\.transfer-dispatch-summary-card,\s*\.transfer-dispatch-destination-card\s*\{[^}]*background:\s*var\(--bg-card-raised\)/i,
     );
-    expect(styleSource).not.toMatch(/background:\s*(?:#fff|#ffffff|white)\b/i);
+    // Barcode previews intentionally use a white SVG surface; scope this assertion to dispatch cards.
+    expect(styleSource).not.toMatch(/\.transfer-dispatch-(?:result|summary-card|destination-card)[^{]*\{[^}]*background:\s*(?:#fff|#ffffff|white)\b/i);
   });
 });
