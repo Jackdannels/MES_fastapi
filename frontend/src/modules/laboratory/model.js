@@ -4,6 +4,7 @@ import {
   normalizeLifecycleStatus,
   synchronizeSamplesForTrayCodes,
 } from "@/modules/samples/samplesFlowModel";
+import { WITHDRAWAL_ACTIONS } from "@/modules/samples/sampleFlow.constants";
 import { resolveLabDestinationName } from "@/modules/samples/sampleFlow.experimentHelpers";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { serverNowDate, serverNowMs } from "@/lib/serverClock";
@@ -734,7 +735,9 @@ const experimentTaskMatches = (experiment, taskCode) => {
 const runTrayStatusIsCompleted = (runTray) =>
   COMPLETED_EXPERIMENT_STATUSES.has(normalizeLifecycleStatus("", normalizeText(runTray?.run_tray_status || runTray?.runTrayStatus || runTray?.status)));
 const historyEntryMarksCompletedExperiment = (entry) =>
-  COMPLETED_EXPERIMENT_STATUSES.has(normalizeLifecycleStatus("", normalizeText(entry?.status)));
+  !WITHDRAWAL_ACTIONS.has(normalizeText(entry?.action))
+  && !normalizeText(entry?.detail).includes(" / 撤回至")
+  && COMPLETED_EXPERIMENT_STATUSES.has(normalizeLifecycleStatus("", normalizeText(entry?.status)));
 const historyDetailMentionsExperiment = (entry, taskCode, experimentName) => {
   const detail = normalizeText(entry?.detail);
   const normalizedExperimentName = normalizeText(experimentName);

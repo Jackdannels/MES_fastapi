@@ -9388,6 +9388,127 @@ describe("laboratory model", () => {
     );
   });
 
+  test("keeps the authoritative vibration dispatch after another laboratory withdraws to an earlier axis completion", () => {
+    const taskCode = "SYLU-2026-07-029";
+    const trayCode = `${taskCode}-TP-001`;
+    const impactExperimentCode = `${taskCode}-A`;
+    const hotHumidExperimentCode = `${taskCode}-B`;
+    const vibrationExperimentCode = `${taskCode}-G`;
+    const view = buildLaboratoryWorkbenchView({
+      experimentRuns: [
+        {
+          ended_at: "2026-07-20 18:48:13",
+          experiment_code: impactExperimentCode,
+          run_no: "RUN-IMPACT-COMPLETED",
+          status: "实验已完成",
+          task_code: taskCode,
+          tray_codes: [trayCode],
+        },
+      ],
+      experimentRunTrays: [
+        {
+          ended_at: "2026-07-20 18:48:13",
+          experiment_code: impactExperimentCode,
+          run_no: "RUN-IMPACT-COMPLETED",
+          run_tray_status: "实验已完成",
+          task_code: taskCode,
+          tray_code: trayCode,
+        },
+      ],
+      experimentTrays: [impactExperimentCode, hotHumidExperimentCode, vibrationExperimentCode].map((experimentCode) => ({
+        experiment_code: experimentCode,
+        task_code: taskCode,
+        tray_code: trayCode,
+      })),
+      experiments: [
+        {
+          axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+          experiment_code: impactExperimentCode,
+          experiment_name: "冲击试验",
+          task_code: taskCode,
+        },
+        { experiment_code: hotHumidExperimentCode, experiment_name: "高低温湿热试验", task_code: taskCode },
+        { experiment_code: vibrationExperimentCode, experiment_name: "振动试验", task_code: taskCode },
+      ],
+      labCode: "LAB_HOT_HUMID",
+      labName: "高低温湿热一室",
+      now: new Date("2026-07-20T19:00:00+08:00"),
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          history: [
+            {
+              action: "暂存间扫码出库",
+              detail: `${trayCode} 送至 振动一室`,
+              location: "振动一室",
+              status: "送至实验室",
+              time: "2026-07-20 18:51:21",
+              tray_code: trayCode,
+            },
+            {
+              action: "实验任务撤回",
+              detail: `${taskCode} / 高低温湿热试验 / 撤回至冲击试验已完成（试验间内撤回当前实验任务）`,
+              location: "冲击一室",
+              status: "实验已完成",
+              time: "2026-07-20 18:48:35",
+              tray_code: trayCode,
+            },
+            {
+              action: "实验完成",
+              detail: `${taskCode} / 冲击试验 / 实验已完成`,
+              location: "冲击一室",
+              status: "实验已完成",
+              time: "2026-07-20 18:48:13",
+              tray_code: trayCode,
+            },
+            {
+              action: "实验完成",
+              detail: `${taskCode} / 冲击试验 / 冲击试验部分完成 4/6轴`,
+              location: "冲击一室",
+              status: "冲击试验部分完成 4/6轴",
+              time: "2026-07-20 18:44:35",
+              tray_code: trayCode,
+            },
+          ],
+          location: "振动一室",
+          status: "送至实验室",
+          task_code: taskCode,
+          trays: [
+            {
+              status: "送至实验室",
+              target_experiment_code: vibrationExperimentCode,
+              target_lab: "振动一室",
+              tray_code: trayCode,
+            },
+          ],
+        },
+      ],
+      schedules: [
+        {
+          device: "高低温湿热一室",
+          experiment_code: hotHumidExperimentCode,
+          lab_code: "LAB_HOT_HUMID",
+          start_at: "2026-07-21 08:00:00",
+          task_code: taskCode,
+        },
+        {
+          device: "振动一室",
+          experiment_code: vibrationExperimentCode,
+          lab_code: "LAB_VIBRATION_1",
+          start_at: "2026-07-21 08:00:00",
+          task_code: taskCode,
+        },
+      ],
+      selectedTrayCode: trayCode,
+      tasks: [{ code: taskCode, test_type: "冲击试验 / 高低温湿热试验 / 振动试验" }],
+    });
+
+    expect(view.selectedTrayFlow.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：送至振动一室`);
+    expect(view.selectedTrayFlow.steps.find((step) => step.label === "送至振动一室")).toEqual(
+      expect.objectContaining({ active: true }),
+    );
+  });
+
   test("keeps latest completed normal experiment active in laboratory tray flow before current salt starts", () => {
     const taskCode = "SYLU-2026-11-001";
     const trayCode = `${taskCode}-TP-001`;
