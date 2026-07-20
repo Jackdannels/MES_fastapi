@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from typing import Any, Protocol
 
+from app.core.master_data import LAB_INTERFACE_MQTT, require_laboratory_interface
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.db.session import get_connection
 from app.services.attendance_service import get_attendance_service, should_finish_work_interval_for_completion
@@ -25,6 +26,7 @@ from app.services.laboratory_operations import (
     scope_snapshot_samples_for_experiment as scope_laboratory_samples_for_experiment,
 )
 from app.services.laboratory_start import start_storage_laboratory_experiment
+from app.services.storage_update_bus import publish_storage_update
 
 
 PROTOCOL_NAME = "MES_LAB_MQTT"
@@ -230,10 +232,6 @@ def run_context_from_snapshot(snapshot: dict[str, list[dict[str, Any]]], run_no:
 
 
 def publish_realtime_update() -> None:
-    try:
-        from app.api.routes.storage import publish_storage_update
-    except Exception:
-        return
     publish_storage_update([
             "mes.experiments",
             "mes.experiment_runs",
@@ -796,6 +794,7 @@ def process_laboratory_event(
     lab_code = first_text(payload, "lab_code") or topic_lab_code(topic)
     if not lab_code:
         raise ValueError("lab_code is required")
+    require_laboratory_interface(LAB_INTERFACE_MQTT, lab_code=lab_code)
     # MES receive time is the authoritative business timestamp. The original
     # upper-computer timestamp remains in payload_json for auditing.
     occurred_at = normalize_text(received_at) or now_iso()

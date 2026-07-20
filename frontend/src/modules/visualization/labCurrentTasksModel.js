@@ -113,7 +113,7 @@ const findRawDeviceForLab = (devices, labName) => {
   ) || null;
 };
 
-const findLatestCompletedSchedule = ({ experiments, schedules, taskByCode, experimentByKey, labRef }) => {
+const findLatestCompletedSchedule = ({ schedules, taskByCode, experimentByKey, labRef }) => {
   const rows = asArray(schedules)
     .filter((schedule) => recordMatchesLab(schedule, labRef))
     .map((schedule) => {
@@ -167,13 +167,6 @@ const buildCountdown = (runningExperiment) => {
     progressPercent: duration > 0 ? clampPercent((elapsed / duration) * 100) : 0,
     remainingLabel: runningExperiment.countdownLabel || "",
   };
-};
-
-const formatUrgentMinutes = (remainingSeconds) => {
-  if (remainingSeconds <= 0) {
-    return "已完成";
-  }
-  return `${Math.ceil(remainingSeconds / 60)} 分钟`;
 };
 
 const trayCodesFromRows = (rows) => asArray(rows)
@@ -232,7 +225,6 @@ const buildLabCard = ({ deviceRow, experimentByKey, labName, now, rawDevice, sna
   });
   const currentTask = workbench.currentTask;
   const completedTask = currentTask ? null : findLatestCompletedSchedule({
-    experiments: snapshot.experiments,
     schedules: snapshot.schedules,
     taskByCode,
     experimentByKey,

@@ -665,7 +665,6 @@ const {
   intakeExperimentModalOpen,
   intakeExperimentSummary,
   intakeExperimentTypeOptions,
-  isCompletedTaskDetail,
   isTaskDetailLocked,
   intakeModalOpen,
   intakeSampleCodePreview,

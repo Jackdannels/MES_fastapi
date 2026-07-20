@@ -550,7 +550,7 @@ def test_attendance_clear_all_sessions_preserves_personnel_accounts():
     assert service.list_operation_logs(raw_date="2026-07-03") == []
 
 
-def test_api_experiment_start_and_complete_updates_attendance_work_interval(monkeypatch):
+def test_hostless_api_experiment_start_and_complete_updates_attendance_work_interval(monkeypatch):
     business_times = iter(["2026-07-03 09:00:00", "2026-07-03 09:05:00"])
     monkeypatch.setattr(laboratory_route, "now_business_text", lambda: next(business_times))
     current_time = {"value": datetime(2026, 7, 3, 9, 0, 0, tzinfo=timezone.utc)}
@@ -566,12 +566,12 @@ def test_api_experiment_start_and_complete_updates_attendance_work_interval(monk
         role_name="试验员",
         active=True,
     )
-    service.login_lab("盐雾试验室", username="api-worker", password="pw123")
+    service.login_lab("高低温湿热二室", username="api-worker", password="pw123")
     snapshot = {
         "tasks": [{"code": "TASK-API"}],
         "samples": [],
         "schedules": [],
-        "experiments": [{"task_code": "TASK-API", "experiment_code": "EXP-API", "experiment_name": "盐雾试验"}],
+        "experiments": [{"task_code": "TASK-API", "experiment_code": "EXP-API", "experiment_name": "高低温湿热试验"}],
         "experiment_runs": [],
         "experiment_run_trays": [],
         "experiment_run_steps": [],
@@ -580,7 +580,7 @@ def test_api_experiment_start_and_complete_updates_attendance_work_interval(monk
         "staging_events": [],
     }
     monkeypatch.setattr(laboratory_route, "read_snapshot", lambda: snapshot)
-    monkeypatch.setattr(laboratory_route, "start_lab_name", lambda *_args, **_kwargs: "盐雾试验室")
+    monkeypatch.setattr(laboratory_route, "start_lab_name", lambda *_args, **_kwargs: "高低温湿热二室")
     monkeypatch.setattr(laboratory_route, "scope_snapshot_samples_for_experiment", lambda scoped_snapshot, **_kwargs: scoped_snapshot)
     monkeypatch.setattr(
         laboratory_route,
@@ -615,12 +615,13 @@ def test_api_experiment_start_and_complete_updates_attendance_work_interval(monk
         "TASK-API",
         "EXP-API",
         laboratory_route.LaboratoryStartRequest(
-            labName="盐雾试验室",
+            labCode="LAB_HOT_HUMID_2",
+            labName="高低温湿热二室",
             runNo="RUN-API",
             startedAt="2026-07-03 09:00:00",
         ),
     )
-    active_session = service.read_lab_session("盐雾试验室")
+    active_session = service.read_lab_session("高低温湿热二室")
     current_time["value"] = datetime(2026, 7, 3, 9, 5, 0, tzinfo=timezone.utc)
     complete_response = laboratory_route.complete_current_experiment(
         "TASK-API",
@@ -640,7 +641,7 @@ def test_api_experiment_start_and_complete_updates_attendance_work_interval(monk
     assert worker["todaySeconds"] == 300
 
 
-def test_api_experiment_start_uses_storage_started_at_for_attendance_when_request_is_empty(monkeypatch):
+def test_hostless_api_experiment_start_uses_storage_started_at_for_attendance_when_request_is_empty(monkeypatch):
     service = AttendanceService(repository=InMemoryAttendanceRepository())
     set_attendance_service_for_tests(service)
     service.create_user(
@@ -650,12 +651,12 @@ def test_api_experiment_start_uses_storage_started_at_for_attendance_when_reques
         role_name="试验员",
         active=True,
     )
-    service.login_lab("盐雾试验室", username="api-empty-start-worker", password="pw123")
+    service.login_lab("高低温湿热二室", username="api-empty-start-worker", password="pw123")
     snapshot = {
         "tasks": [{"code": "TASK-API-EMPTY"}],
         "samples": [],
         "schedules": [],
-        "experiments": [{"task_code": "TASK-API-EMPTY", "experiment_code": "EXP-API-EMPTY", "experiment_name": "盐雾试验"}],
+        "experiments": [{"task_code": "TASK-API-EMPTY", "experiment_code": "EXP-API-EMPTY", "experiment_name": "高低温湿热试验"}],
         "experiment_runs": [],
         "experiment_run_trays": [],
         "experiment_run_steps": [],
@@ -664,7 +665,7 @@ def test_api_experiment_start_uses_storage_started_at_for_attendance_when_reques
         "staging_events": [],
     }
     monkeypatch.setattr(laboratory_route, "read_snapshot", lambda: snapshot)
-    monkeypatch.setattr(laboratory_route, "start_lab_name", lambda *_args, **_kwargs: "盐雾试验室")
+    monkeypatch.setattr(laboratory_route, "start_lab_name", lambda *_args, **_kwargs: "高低温湿热二室")
     monkeypatch.setattr(laboratory_route, "scope_snapshot_samples_for_experiment", lambda scoped_snapshot, **_kwargs: scoped_snapshot)
     monkeypatch.setattr(
         laboratory_route,
@@ -686,7 +687,8 @@ def test_api_experiment_start_uses_storage_started_at_for_attendance_when_reques
         "TASK-API-EMPTY",
         "EXP-API-EMPTY",
         laboratory_route.LaboratoryStartRequest(
-            labName="盐雾试验室",
+            labCode="LAB_HOT_HUMID_2",
+            labName="高低温湿热二室",
             runNo="RUN-API-EMPTY",
         ),
     )

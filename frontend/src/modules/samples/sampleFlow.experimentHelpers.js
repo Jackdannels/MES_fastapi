@@ -214,6 +214,12 @@ const parseWithdrawalRestoreTarget = (detail, taskCode) => {
   if (!target) {
     return null;
   }
+  if (target.includes("部分完成")) {
+    return {
+      experimentName: normalizeText(parsed?.experimentName),
+      status: target,
+    };
+  }
   const experimentName = stripCompletedExperimentSuffix(target);
   if (experimentName && experimentName !== target) {
     return {

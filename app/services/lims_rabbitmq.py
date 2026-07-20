@@ -4,28 +4,29 @@ import asyncio
 import json
 import uuid
 from contextlib import suppress
+from threading import RLock
 from typing import Any
 
 from fastapi import HTTPException
 
-from app.api.routes.tasks import (
-    EXTERNAL_INTAKE_LOCK,
-    LIMS_OUTBOX_KEY,
-    external_intake_id,
-    store_external_task_intake,
-    task_code,
-)
 from app.core.config import Settings
 from app.core.storage_backend import get_storage_backend
 from app.core.time_utils import now_business_text
 
 
 INTAKE_MESSAGE_TYPE = "lims.external-intake.created.v1"
+LIMS_OUTBOX_KEY = "mes.lims_outbox"
+EXTERNAL_INTAKE_LOCK = RLock()
+
+
+def task_code(task: dict[str, Any]) -> str:
+    return str(task.get("code") or task.get("task_code") or task.get("taskNo") or task.get("task_no") or task.get("id") or "").strip()
 
 
 class LimsRabbitRuntime:
-    def __init__(self, app_settings: Settings) -> None:
+    def __init__(self, app_settings: Settings, *, store_intake=None) -> None:
         self.settings = app_settings
+        self.store_intake = store_intake
         self.connection: Any | None = None
         self.consumer_channel: Any | None = None
         self.publisher_channel: Any | None = None
@@ -139,8 +140,10 @@ class LimsRabbitRuntime:
         payload: dict[str, Any] = {}
         try:
             envelope, payload = self._decode_envelope(message.body)
+            if self.store_intake is None:
+                raise RuntimeError("LIMS intake handler is not configured")
             await asyncio.to_thread(
-                store_external_task_intake,
+                self.store_intake,
                 payload,
                 message_id=str(envelope.get("message_id") or ""),
             )

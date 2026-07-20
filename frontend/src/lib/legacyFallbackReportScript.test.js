@@ -4,10 +4,12 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 describe("legacy fallback report script", () => {
+  const snapshotPath = resolve(process.cwd(), "..", ".tmp", "analysis_snapshot_07026_08001.json");
+
   test("prints separate frontend and backend fallback summaries for the default snapshot", () => {
     const output = execFileSync(
       process.execPath,
-      [resolve(process.cwd(), "scripts/legacy-fallback-snapshot-report.mjs")],
+      [resolve(process.cwd(), "scripts/legacy-fallback-snapshot-report.mjs"), "--snapshot", snapshotPath],
       {
         cwd: process.cwd(),
         encoding: "utf8",
@@ -22,7 +24,7 @@ describe("legacy fallback report script", () => {
   test("includes backend risk examples with run context in json output", () => {
     const output = execFileSync(
       process.execPath,
-      [resolve(process.cwd(), "scripts/legacy-fallback-snapshot-report.mjs"), "--json"],
+      [resolve(process.cwd(), "scripts/legacy-fallback-snapshot-report.mjs"), "--json", "--snapshot", snapshotPath],
       {
         cwd: process.cwd(),
         encoding: "utf8",

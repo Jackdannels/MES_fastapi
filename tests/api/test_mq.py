@@ -42,6 +42,48 @@ def build_client(monkeypatch):
     return TestClient(app), published
 
 
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        (
+            "/api/mq/laboratory/fixture-install",
+            {
+                "task_code": "TASK-HH2",
+                "lab_code": "LAB_HOT_HUMID_2",
+                "experiment_code": "EXP-HH2",
+                "sample_count": 1,
+                "fixture_install_id": "FIXTURE-HH2",
+                "tray_codes": ["TP-HH2"],
+            },
+        ),
+        (
+            "/api/mq/laboratory/ready",
+            {
+                "task_code": "TASK-HH2",
+                "lab_code": "LAB_HOT_HUMID_2",
+                "experiment_code": "EXP-HH2",
+            },
+        ),
+        (
+            "/api/mq/laboratory/events/experiment-started",
+            {
+                "message_type": "EXPERIMENT_STARTED",
+                "message_id": "MSG-HH2-HTTP",
+                "lab_code": "LAB_HOT_HUMID_2",
+            },
+        ),
+    ],
+)
+def test_mq_http_endpoints_reject_hostless_laboratory(monkeypatch, path, payload):
+    client, published = build_client(monkeypatch)
+
+    response = client.post(path, json=payload)
+
+    assert response.status_code == 422
+    assert "仅支持 hostless 接口" in response.json()["detail"]
+    assert published == []
+
+
 def test_fixture_install_endpoint_requires_install_id_trays_and_experiment(monkeypatch):
     client, published = build_client(monkeypatch)
 
@@ -240,9 +282,10 @@ def test_ready_endpoint_preserves_schedule_and_axis_context(monkeypatch):
 
 def test_mq_realtime_update_publishes_experiment_run_trays(monkeypatch):
     published_updates = []
-    from app.api.routes import storage as storage_route
-
-    monkeypatch.setattr(storage_route, "publish_storage_update", lambda keys: published_updates.append(list(keys)), raising=False)
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.publish_storage_update",
+        lambda keys: published_updates.append(list(keys)),
+    )
 
     publish_realtime_update()
 
@@ -1106,6 +1149,25 @@ class FakeMqEventRepository:
                 }
                 del self.runs_by_lab[lab_code]
                 break
+
+
+def test_process_laboratory_event_rejects_hostless_laboratory_before_repository_access():
+    repository = FakeMqEventRepository()
+
+    with pytest.raises(ValueError, match="仅支持 hostless 接口"):
+        process_laboratory_event(
+            "mes/v1/labs/LAB_HOT_HUMID_2/events/experiment-started",
+            {
+                "message_type": "EXPERIMENT_STARTED",
+                "message_id": "MSG-HH2-MQTT",
+                "lab_code": "LAB_HOT_HUMID_2",
+                "task_code": "TASK-HH2",
+            },
+            repository=repository,
+        )
+
+    assert repository.messages == []
+    assert repository.events == []
 
 
 def test_process_fixture_ready_rejects_event_without_fixture_install_id():

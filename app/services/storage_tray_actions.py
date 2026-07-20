@@ -3,6 +3,15 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from app.services.storage_schedule_patch import (
+    schedule_device,
+    schedule_experiment_code,
+    schedule_is_completed,
+    schedule_lab_code,
+    schedule_lab_id,
+    schedule_task_code,
+)
+
 
 SAMPLES_KEY = "mes.samples"
 STAGING_EVENTS_KEY = "mes.staging_events"
@@ -56,6 +65,33 @@ def normalize_text(value: Any) -> str:
 
 def as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def staging_dispatch_has_schedule(
+    schedules: Any,
+    *,
+    task_code: str,
+    experiment_code: str,
+    target_lab: str,
+    target_lab_code: str,
+    target_lab_id: Any,
+) -> bool:
+    normalized_lab_id = normalize_text(target_lab_id)
+    for schedule in as_list(schedules):
+        if (
+            not isinstance(schedule, dict)
+            or schedule_task_code(schedule) != task_code
+            or schedule_experiment_code(schedule) != experiment_code
+            or schedule_is_completed(schedule)
+        ):
+            continue
+        if normalized_lab_id and schedule_lab_id(schedule) == normalized_lab_id:
+            return True
+        if target_lab_code and schedule_lab_code(schedule) == target_lab_code:
+            return True
+        if target_lab and schedule_device(schedule) == target_lab:
+            return True
+    return False
 
 
 def room_config(room: str) -> dict[str, Any]:
@@ -300,6 +336,19 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
 
     normalized_tray_code = normalize_text(tray_code)
     task_code = primary_task_code(matches)
+    if (
+        config["event_room"] == STAGING_ROOM
+        and target_type == "lab"
+        and not staging_dispatch_has_schedule(
+            snapshot.get("mes.schedules"),
+            task_code=task_code,
+            experiment_code=target_experiment_code,
+            target_lab=target_lab,
+            target_lab_code=target_lab_code,
+            target_lab_id=target_lab_id,
+        )
+    ):
+        raise StorageTrayActionError("目标实验室没有当前有效排程。")
     appearance_metadata: dict[str, Any] = {}
     if config["event_room"] == APPEARANCE_ROOM:
         phase = appearance_phase(current_status)

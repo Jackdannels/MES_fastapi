@@ -267,7 +267,7 @@ function buildSelectedDevice(device = {}) {
 }
 
 // 维保操作只关心本次维保记录。
-function createMaintenanceForm(device = {}) {
+function createMaintenanceForm() {
   return {
     maintenanceType: "维修",
     record: "",

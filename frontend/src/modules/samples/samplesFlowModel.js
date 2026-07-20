@@ -306,7 +306,10 @@ const resolveExperimentRuntimeCutoffMap = ({
       if (!historyEntryAppliesToTray(entry, sample, normalizedTrayCode)) {
         return;
       }
-      const restoreTarget = parseWithdrawalRestoreTarget(entry?.detail, normalizedTaskCode);
+      const parsedRestoreTarget = parseWithdrawalRestoreTarget(entry?.detail, normalizedTaskCode);
+      const restoreTarget = parsedRestoreTarget && isAxisPartialProgressStatus(entry?.status)
+        ? { ...parsedRestoreTarget, status: normalizeText(entry.status) }
+        : parsedRestoreTarget;
       if (!withdrawalRestoreTargetInvalidatesRuntime(restoreTarget)) {
         return;
       }
@@ -1198,6 +1201,29 @@ const buildTrayFlowTimeMap = (input = {}) => {
     const latestWithdrawalRank = latestWithdrawalEntry
       ? resolveFlowStatusRank(latestWithdrawalEntry?.location, restoreTarget?.status || latestWithdrawalEntry?.status)
       : -1;
+    const restoreCycleBoundaryTime = latestWithdrawal && restoreTarget
+      ? historyEntries.reduce((latestTime, entry) => {
+        const entryTime = entryTimeValue(entry);
+        if (!entryTime || entryTime >= latestWithdrawal.time) {
+          return latestTime;
+        }
+        const experimentEvent = parseExperimentHistoryDetail(entry?.detail, taskCode);
+        const restoredExperimentName = normalizeText(restoreTarget?.experimentName);
+        const historyExperimentName = normalizeText(experimentEvent?.experimentName);
+        if (restoredExperimentName && historyExperimentName && restoredExperimentName !== historyExperimentName) {
+          return latestTime;
+        }
+        const withdrawalStatus = normalizeText(latestWithdrawalEntry?.status);
+        const restoredStatus = isAxisPartialProgressStatus(withdrawalStatus)
+          ? withdrawalStatus
+          : normalizeText(restoreTarget?.status || withdrawalStatus);
+        const entryStatus = normalizeText(experimentEvent?.status || entry?.status);
+        const matchesRestoreBoundary = isAxisPartialProgressStatus(restoredStatus)
+          ? isAxisPartialProgressStatus(entryStatus)
+          : normalizeLifecycleStatus(entry?.location, entryStatus) === normalizeLifecycleStatus(latestWithdrawalEntry?.location, restoredStatus);
+        return matchesRestoreBoundary ? Math.max(latestTime, entryTime) : latestTime;
+      }, 0)
+      : 0;
     const shouldIgnoreHistoryTime = (entry, label, entryLocation, historyExperimentEvent = null) => {
       if (!latestWithdrawal) {
         return false;
@@ -1206,13 +1232,16 @@ const buildTrayFlowTimeMap = (input = {}) => {
       if (entryTime >= latestWithdrawal.time) {
         return false;
       }
-      const labelRank = resolveFlowStatusRank(entryLocation, label);
-      if (labelRank <= latestWithdrawalRank) {
-        return false;
-      }
       const restoredExperimentName = normalizeText(restoreTarget?.experimentName);
       const historyExperimentName = normalizeText(historyExperimentEvent?.experimentName);
       if (restoredExperimentName && historyExperimentName && restoredExperimentName !== historyExperimentName) {
+        return false;
+      }
+      if (restoreCycleBoundaryTime) {
+        return entryTime > restoreCycleBoundaryTime;
+      }
+      const labelRank = resolveFlowStatusRank(entryLocation, label);
+      if (labelRank <= latestWithdrawalRank) {
         return false;
       }
       return true;
@@ -1238,8 +1267,12 @@ const buildTrayFlowTimeMap = (input = {}) => {
           timeHistoryMap,
         );
       } else {
+        const withdrawalStatus = normalizeText(latestWithdrawalEntry?.status);
+        const restoreStatusForLabel = isAxisPartialProgressStatus(withdrawalStatus)
+          ? withdrawalStatus
+          : restoreTarget?.status || withdrawalStatus;
         const restoreLabel = normalizeHistoryFlowLabel(
-          restoreTarget?.status || latestWithdrawalEntry?.status,
+          restoreStatusForLabel,
           latestWithdrawalEntry?.location,
         );
         const withdrawalTimeSource = [APPEARANCE_STOCKED_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS].includes(restoreLabel)
@@ -1261,6 +1294,14 @@ const buildTrayFlowTimeMap = (input = {}) => {
         ? POST_EXPERIMENT_STAGING_STOCKED_STATUS
         : trayStatus;
       if (trayStatusLabel === APPEARANCE_SENT_STATUS_LABEL) {
+        return;
+      }
+      if (
+        latestWithdrawalEntry
+        && historyEntryAppliesToTray(latestWithdrawalEntry, sample, trayCode)
+        && isAxisPartialProgressStatus(latestWithdrawalEntry?.status)
+        && isAxisPartialProgressStatus(trayStatusLabel)
+      ) {
         return;
       }
       recordLatestFlowTime(trayStatusLabel, tray?.updated_at, "fallback");

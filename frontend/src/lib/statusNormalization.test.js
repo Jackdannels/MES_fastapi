@@ -4,7 +4,6 @@ import {
   TASK_STATUS_COMPLETED,
   TASK_STATUS_RUNNING,
   TASK_STATUS_WAITING,
-  TRANSFER_STATUS_ARRIVED,
   normalizeExperimentStatusLabel,
   normalizeTaskStatusLabel,
   isExperimentCompletedStatus,

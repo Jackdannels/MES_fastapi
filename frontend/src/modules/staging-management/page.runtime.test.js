@@ -843,6 +843,7 @@ describe("StagingManagementPage runtime", () => {
     expect(remoteSnapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_out")).toHaveLength(1);
 
     await mounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
+    await settlePage(mounted);
 
     expect(mounted.text()).not.toContain("今日已出库");
     expect(fetch).toHaveBeenCalledWith(
@@ -1021,6 +1022,7 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-scan-code"]').setValue(trayCode);
     await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
     await mounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
+    await settlePage(mounted);
 
     let updatedSample = remoteSnapshot[STORAGE_KEYS.samples].find((sample) => sample.code === `${taskCode}-SP-001`);
     expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
@@ -1080,6 +1082,7 @@ describe("StagingManagementPage runtime", () => {
     expect(destinationModal.text()).not.toContain("送至外观检测间");
 
     await appearanceMounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
+    await settlePage(appearanceMounted);
 
     updatedSample = remoteSnapshot[STORAGE_KEYS.samples].find((sample) => sample.code === `${taskCode}-SP-001`);
     expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({

@@ -289,11 +289,6 @@ const completedAxisCodesForExperiment = ({ experimentCode, experimentRunSteps = 
     });
 };
 
-const resolveScheduledAxisCodes = ({ experimentCode, experiments = [], experimentRunSteps = [], form, schedules = [] }) => {
-  const selection = resolveScheduledAxisSelection({ experimentCode, experiments, experimentRunSteps, form, schedules });
-  return selection.axisCodes;
-};
-
 const resolveScheduledAxisSelection = ({ experimentCode, experiments = [], experimentRunSteps = [], form, schedules = [] }) => {
   const explicitAxisCodes = normalizeAxisCodes(form?.axis_codes ?? form?.axisCodes);
   const hasExplicitAxisSelection = explicitAxisCodes.length > 0;
@@ -353,13 +348,6 @@ const buildExperimentCandidates = ({ taskCode, experiments, tasks }) => {
   }
 
   return taskList.flatMap((task) => buildFallbackExperimentsForTask(task));
-};
-
-const isDeviceInMaintenanceWindow = (device, now = serverNowDate()) => {
-  const startAt = parseDate(device?.maintenance_start_at ?? device?.maintenanceStartAt);
-  const endAt = parseDate(device?.maintenance_end_at ?? device?.maintenanceEndAt);
-  const current = parseDate(now) || serverNowDate();
-  return Boolean(startAt && startAt <= current && (!endAt || current <= endAt));
 };
 
 const isExpiredMaintenanceWindow = (device, now = serverNowDate()) => {

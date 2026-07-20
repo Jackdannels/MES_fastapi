@@ -5,6 +5,18 @@ import { describe, expect, test } from "vitest";
 
 const visualizationStylesPath = resolve(process.cwd(), "src/modules/visualization/styles.css");
 const visualizationPagePath = resolve(process.cwd(), "src/modules/visualization/page.vue");
+const visualizationScreenPaths = [
+  "analysisScreen.js",
+  "currentLabTasksScreen.js",
+  "labProcessScreen.js",
+  "labScheduleScreen.js",
+  "stagingSamplesScreen.js",
+  "statusScreens.js",
+  "taskPlanScreen.js",
+].map((file) => resolve(process.cwd(), "src/modules/visualization/screens", file));
+const readVisualizationSource = () => [visualizationPagePath, ...visualizationScreenPaths]
+  .map((path) => readFileSync(path, "utf8"))
+  .join("\n");
 
 describe("visualization styles", () => {
   test("lab-process single preview fits viewport height and avoids a duplicate outer frame", () => {
@@ -38,7 +50,7 @@ describe("visualization styles", () => {
 
   test("schedule screen uses task color on every occupied cell", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
-    const pageSource = readFileSync(visualizationPagePath, "utf8");
+    const pageSource = readVisualizationSource();
 
     expect(pageSource).toContain("scheduleSlotTaskColor(slot, activeItem)");
     expect(pageSource).toContain("\"--schedule-task-color\": taskColor");
@@ -54,7 +66,7 @@ describe("visualization styles", () => {
 
   test("schedule screen rotates overlapping plans with a low-profile breathing light rail", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
-    const pageSource = readFileSync(visualizationPagePath, "utf8");
+    const pageSource = readVisualizationSource();
 
     expect(pageSource).toContain("SCHEDULE_SLOT_ROTATION_INTERVAL_MS = 4200");
     expect(pageSource).toContain("has-rotating-items");
@@ -125,7 +137,7 @@ describe("visualization styles", () => {
 
   test("layout A uses connector direction classes so wrapped row starts do not draw stray horizontal lines", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
-    const pageSource = readFileSync(visualizationPagePath, "utf8");
+    const pageSource = readVisualizationSource();
 
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\.is-connector-none::before\s*{[^}]*display:\s*none;/s);
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-flow-step\.is-connector-forward::before\s*{[^}]*left:\s*calc\(-50% - 6px\);[^}]*width:\s*calc\(100% \+ 12px\);[^}]*height:\s*2px;/s);
@@ -137,7 +149,7 @@ describe("visualization styles", () => {
 
   test("compact lab process also uses connector direction classes instead of default wrapped horizontal lines", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
-    const pageSource = readFileSync(visualizationPagePath, "utf8");
+    const pageSource = readVisualizationSource();
 
     expect(source).toMatch(/\.visual-board\.is-compact \.visual-flow-line\s*{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);[^}]*grid-template-rows:\s*repeat\(4,\s*minmax\(28px,\s*auto\)\);/s);
     expect(source).toMatch(/\.visual-board\.is-compact \.visual-flow-step\.is-connector-none::before\s*{[^}]*display:\s*none;/s);
@@ -173,7 +185,7 @@ describe("visualization styles", () => {
 
   test("staging sample screen defines full and compact industrial board layouts", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
-    const pageSource = readFileSync(visualizationPagePath, "utf8");
+    const pageSource = readVisualizationSource();
 
     expect(source).toContain(".visual-staging-board");
     expect(source).toContain(".visual-staging-overview");
@@ -202,7 +214,7 @@ describe("visualization styles", () => {
 
   test("today task plan screen enlarges real-data table text and fills cells", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
-    const pageSource = readFileSync(visualizationPagePath, "utf8");
+    const pageSource = readVisualizationSource();
 
     expect(pageSource).toContain("实验数量");
     expect(pageSource).toContain("todayTaskPlanView");
@@ -225,7 +237,7 @@ describe("visualization styles", () => {
 
   test("current lab task screen defines state tones and running-only countdown styles", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
-    const pageSource = readFileSync(visualizationPagePath, "utf8");
+    const pageSource = readVisualizationSource();
 
     expect(pageSource).toContain("key: \"current-lab-tasks\"");
     expect(pageSource).toContain("return CurrentLabTasksScreen");

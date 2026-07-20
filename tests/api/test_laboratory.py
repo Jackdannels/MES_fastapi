@@ -317,6 +317,77 @@ def test_laboratory_start_experiment_updates_ready_hot_humid_second_lab_through_
     ]
 
 
+def test_fixture_ready_operation_rejects_non_hostless_laboratory(monkeypatch):
+    client, _storage = build_client(monkeypatch, base_payloads([]))
+
+    response = client.post(
+        "/api/laboratory/operations",
+        json={
+            "operationType": "fixtureReady",
+            "taskCode": "TASK-501",
+            "experimentCode": "EXP-A",
+            "labCode": "LAB_SALT",
+            "labName": "盐雾试验室",
+            "trayCodes": ["TP-501"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert "仅支持 mqtt 接口" in response.json()["detail"]
+
+
+def test_hostless_fixture_ready_operation_still_calls_shared_service(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    calls = []
+    monkeypatch.setattr(
+        laboratory_route,
+        "apply_laboratory_task_operation",
+        lambda snapshot, **kwargs: calls.append(kwargs) or {"samples": snapshot.get("samples", [])},
+    )
+    monkeypatch.setattr(
+        laboratory_route,
+        "run_atomic_laboratory_operation",
+        lambda operation, **_kwargs: operation({"tasks": [{"code": "TASK-501"}], "samples": []}),
+    )
+    client, _storage = build_client(monkeypatch, base_payloads([]))
+
+    response = client.post(
+        "/api/laboratory/operations",
+        json={
+            "operationType": "fixtureReady",
+            "taskCode": "TASK-501",
+            "experimentCode": "EXP-D",
+            "labCode": "LAB_HOT_HUMID_2",
+            "labName": "高低温湿热二室",
+            "trayCodes": ["TP-HH2-501"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["operation_type"] == "fixtureReady"
+    assert calls[0]["lab_name"] == "高低温湿热二室"
+    assert calls[0]["tray_codes"] == ["TP-HH2-501"]
+
+
+def test_start_endpoint_rejects_non_hostless_laboratory_before_shared_service(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    calls = []
+    monkeypatch.setattr(laboratory_route, "start_storage_laboratory_experiment", lambda *args, **kwargs: calls.append((args, kwargs)))
+    client, _storage = build_client(monkeypatch, base_payloads([]))
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-A/start",
+        json={"labCode": "LAB_SALT", "labName": "盐雾试验室"},
+    )
+
+    assert response.status_code == 422
+    assert "仅支持 mqtt 接口" in response.json()["detail"]
+    assert calls == []
+
+
 def test_laboratory_complete_experiment_clears_stale_tray_target(monkeypatch):
     sample = sample_with_history(
         "实验进行中",

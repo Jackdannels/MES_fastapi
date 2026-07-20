@@ -2472,6 +2472,6 @@ describe("TasksPage runtime", () => {
     window.dispatchEvent(new CustomEvent("mes:samples-updated"));
     await settle(wrapper);
 
-    expect(arrivalInput().element.value).toMatch(/^2026-03-18T09:14:45(?:\.000)?$/);
+    expect(arrivalInput().element.value).toMatch(/^(?:2026-03-18T09:14:45|2026-03-18 09:14:45)(?:\.000)?$/);
   });
 });

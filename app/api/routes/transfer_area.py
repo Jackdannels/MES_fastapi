@@ -1,63 +1,83 @@
 from __future__ import annotations
 
 import math
-import re
 from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Body, Header, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
-
 from app.api.routes.storage import publish_storage_update, tray_has_scoped_partial_axis_batch_completion
-from app.core.axis_codes import sort_axis_codes
 from app.core.storage_backend import get_storage_backend, normalize_experiment_status_text, normalize_storage_payload
-from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
+from app.core.time_utils import now_business_text, parse_business_datetime
 from app.services.appearance_inspection import (
-    APPEARANCE_EVENT_ROOM,
-    APPEARANCE_STOCK_OUT_ACTION,
     PRE_EXPERIMENT_APPEARANCE_STATUS,
     experiment_requires_appearance_inspection,
 )
-from app.services.laboratory_completion import tray_assigned_experiments_are_completed
-from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock, clear_fixture_ready_marker
+from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
 from app.services.storage_atomic import merge_concurrent_storage_updates
+from app.api.routes.transfer_area_commands import (
+    APPEARANCE_STORED_STATUS,
+    HANDOVER_LOCATION,
+    STOCK_TRAY_CODE_PATTERN,
+    STOCK_TRAY_ID_BASE,
+    STAGING_LOCATION,
+    TASK_STATUS_PENDING,
+    TASK_STATUS_STORED,
+    TASK_TRAY_ID_BASE,
+    TRANSFER_HISTORY_ACTIONS,
+    TRAY_CODE_PATTERN,
+    TRAY_OUTBOUND_STATUSES,
+    TRAY_QR_PREFIX,
+    apply_confirm_storage,
+    apply_dispatch,
+    apply_reload,
+    apply_task_allocation,
+    apply_tray_withdrawal as apply_tray_withdrawal_command,
+    ensure_tray_can_lookup_withdrawal,
+    ensure_tray_currently_in_handover,
+    normalize_tray_scan_code,
+    tray_is_currently_stocked_in_staging,
+    validate_saved_experiment_tray_allocation,
+)
+from app.api.routes.transfer_area_schemas import (
+    DEFAULT_TRAY_LIMIT,
+    MAX_TRAY_LIMIT,
+    TRAY_QR_TYPE,
+    ExperimentTrayAllocationPayload,
+    TaskAllocationRequest,
+    TrayAllocationPayload,
+    TrayDispatchRequest,
+    TrayPrintBarcodeRequest,
+    TrayWithdrawDispatchRequest,
+)
+from app.api.routes.transfer_area_views import (
+    as_list,
+    build_experiment_summary,
+    build_sample_experiment_map,
+    experiment_type_label,
+    normalize_text,
+    sample_code,
+    sample_key,
+    sample_serial_sort_key,
+    sample_sort_key,
+    sample_task_code,
+    task_code,
+    task_key,
+)
 
 router = APIRouter(prefix="/api/transfer-area", tags=["transfer-area"])
 
-TASK_STATUS_PENDING = "未入库"
-TASK_STATUS_STORED = "到货"
 TASK_STATUS_RETURNED = "厂家收回"
 RETURNED_REENTRY_BLOCK_REASON = "该任务已厂家收回，不能重新入库。"
-HANDOVER_LOCATION = "接驳区"
 NOT_IN_HANDOVER_DISPATCH_DETAIL = "该托盘当前不在接驳区，不能从接驳区出库"
 TRAY_STATUS_ASSIGNED = "已预分配"
 TRAY_STATUS_PENDING = "待入库"
 TRAY_STATUS_STORED = "到货"
-DEFAULT_TRAY_LIMIT = 16
-MAX_TRAY_LIMIT = 16
 TRANSFER_OVERVIEW_SAMPLE_CODE_LIMIT = 12
 SYSTEM_TRAY_TOTAL = 10 
-STAGING_LOCATION = "恒温恒湿间（暂存间）"
 STAGING_STOCKED_TRANSFER_BLOCK_DETAIL = "该托盘已在暂存间入库，请从暂存间出库"
 SCHEDULE_RESET_WARNING = "当前任务已有排程，重新分配/重新入库后将清空排程信息，需要重新排程。"
-APPEARANCE_LOCATION = "外观检测间"
-APPEARANCE_STORED_STATUS = "实验后外观检测间存放"
 POST_EXPERIMENT_STAGING_SENT_STATUS = "送至暂存间"
 POST_EXPERIMENT_STAGING_STOCKED_STATUS = "实验后暂存间存放"
-WITHDRAW_BLOCKED_TRAY_STATUSES = {
-    "已到达实验室",
-    "工装夹具安装",
-    "实验准备就绪",
-    "实验进行中",
-    "实验中",
-    "实验已完成",
-    "实验完成",
-    "实验已经完成",
-    POST_EXPERIMENT_STAGING_STOCKED_STATUS,
-    "送至外观检测间",
-    "实验后外观检测间存放",
-    "厂家收回",
-}
 TRANSFER_STORAGE_UPDATE_KEYS = (
     "mes.tasks",
     "mes.samples",
@@ -81,37 +101,6 @@ EXCLUDED_TASK_STATUS_KEYWORDS = (
     "任务已完成",
     "厂家收回",
 )
-TASK_TRAY_ID_BASE = 1000
-STOCK_TRAY_ID_BASE = 2000
-TRAY_CODE_PATTERN = re.compile(r"-TP-(\d+)$")
-STOCK_TRAY_CODE_PATTERN = re.compile(r"^STOCK-TP-(\d+)$")
-TRANSFER_HISTORY_ACTIONS = {"样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"}
-TRAY_OUTBOUND_STATUSES = {
-    "送至暂存间",
-    POST_EXPERIMENT_STAGING_SENT_STATUS,
-    "已到达暂存间",
-    "送至实验室",
-    "已到达实验室",
-    "工装夹具安装",
-    "实验准备就绪",
-    "实验进行中",
-    "实验已完成",
-    POST_EXPERIMENT_STAGING_STOCKED_STATUS,
-    "送至外观检测间",
-    "实验后外观检测间存放",
-    PRE_EXPERIMENT_APPEARANCE_STATUS,
-    "厂家收回",
-}
-TRAY_LAB_REDISPATCH_STATUSES = {
-    "已到达暂存间",
-    POST_EXPERIMENT_STAGING_STOCKED_STATUS,
-    "送至外观检测间",
-    "实验后外观检测间存放",
-    PRE_EXPERIMENT_APPEARANCE_STATUS,
-    "实验完成",
-    "实验已经完成",
-    "实验已完成",
-}
 STARTED_EXPERIMENT_TRAY_STATUSES = (
     "实验进行中",
     "实验中",
@@ -138,76 +127,8 @@ STORED_OR_DISPATCHED_SAMPLE_STATUSES = {
     *TRAY_OUTBOUND_STATUSES,
     *STARTED_EXPERIMENT_TRAY_STATUSES,
 }
-TRAY_QR_TYPE = "QRCODE"
-TRAY_QR_PREFIX = "MES-TRAY:"
-
-
-class TrayAllocationPayload(BaseModel):
-    tray_id: int = Field(alias="trayId")
-    sample_ids: list[str] = Field(default_factory=list, alias="sampleIds")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class ExperimentTrayAllocationPayload(BaseModel):
-    experiment_code: str = Field(alias="experimentCode")
-    tray_ids: list[int] = Field(default_factory=list, alias="trayIds")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class TaskAllocationRequest(BaseModel):
-    tray_limit: int = Field(default=DEFAULT_TRAY_LIMIT, alias="trayLimit", ge=1, le=MAX_TRAY_LIMIT)
-    trays: list[TrayAllocationPayload] = Field(default_factory=list)
-    experiment_trays: list[ExperimentTrayAllocationPayload] = Field(default_factory=list, alias="experimentTrays")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class TrayPrintBarcodeRequest(BaseModel):
-    barcode_type: str = Field(default=TRAY_QR_TYPE, alias="barcodeType")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class TrayDispatchRequest(BaseModel):
-    target_type: str = Field(alias="targetType")
-    target_name: str = Field(alias="targetName")
-    experiment_code: str = Field(default="", alias="experimentCode")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class TrayWithdrawDispatchRequest(BaseModel):
-    reason: str = ""
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-def normalize_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
 def is_handover_stored_status(value: Any) -> bool:
     return normalize_text(value) == TASK_STATUS_STORED
-
-
-def as_list(value: Any) -> list[Any]:
-    return list(value) if isinstance(value, list) else []
-
-
-def normalize_axis_codes(value: Any) -> list[str]:
-    raw_values = value if isinstance(value, list) else str(value or "").replace("，", ",").split(",") if isinstance(value, str) else []
-    axis_codes: list[str] = []
-    seen: set[str] = set()
-    for item in raw_values:
-        axis_code = normalize_text(item)
-        if not axis_code or axis_code in seen:
-            continue
-        seen.add(axis_code)
-        axis_codes.append(axis_code)
-    return sort_axis_codes(axis_codes)
-
 
 def now_text() -> str:
     return now_business_text(include_seconds=False)
@@ -215,45 +136,6 @@ def now_text() -> str:
 
 def parse_datetime_value(value: Any) -> datetime | None:
     return parse_business_datetime(value)
-
-
-def is_staging_device(value: Any) -> bool:
-    return "暂存间" in normalize_text(value)
-
-
-def device_is_unavailable(device: dict[str, Any] | None) -> bool:
-    if not device:
-        return False
-    status = normalize_text(device.get("status"))
-    start_at = parse_datetime_value(device.get("maintenance_start_at") or device.get("maintenanceStartAt"))
-    end_at = parse_datetime_value(device.get("maintenance_end_at") or device.get("maintenanceEndAt"))
-    now = now_business_datetime()
-    if any(keyword in status for keyword in ["停用", "禁用", "不可用"]):
-        return True
-    if any(keyword in status for keyword in ["维修", "保养"]) and not (end_at and end_at < now):
-        return True
-    return bool(start_at and start_at <= now and (not end_at or now <= end_at))
-
-
-def find_unavailable_device(snapshot: dict[str, list[dict[str, Any]]], device_name: str) -> dict[str, Any] | None:
-    normalized_device = normalize_text(device_name)
-    for device in snapshot.get("devices", []):
-        if normalized_device not in {normalize_text(device.get("code")), normalize_text(device.get("name"))}:
-            continue
-        if device_is_unavailable(device):
-            return device
-    return None
-
-
-def has_formal_schedule(snapshot: dict[str, list[dict[str, Any]]], task_code_value: str, experiment_code_value: str) -> bool:
-    return any(
-        normalize_text(item.get("task_code")) == task_code_value
-        and normalize_text(item.get("experiment_code")) == experiment_code_value
-        and normalize_text(item.get("device"))
-        and not is_staging_device(item.get("device"))
-        for item in snapshot["schedules"]
-    )
-
 
 def schedule_is_completed(schedule: dict[str, Any]) -> bool:
     return normalize_experiment_status_text(schedule.get("status")) in {"实验已完成", "实验完成", "实验已经完成"}
@@ -266,26 +148,6 @@ def task_has_schedule(snapshot: dict[str, list[dict[str, Any]]], task_code_value
         for schedule in as_list(snapshot.get("schedules"))
         if isinstance(schedule, dict)
     )
-
-
-def reset_task_schedules_for_reschedule(snapshot: dict[str, list[dict[str, Any]]], task_code_value: str) -> bool:
-    normalized_task_code = normalize_text(task_code_value)
-    if not normalized_task_code or not task_has_schedule(snapshot, normalized_task_code):
-        return False
-
-    snapshot["schedules"] = [
-        schedule
-        for schedule in snapshot["schedules"]
-        if normalize_text(schedule.get("task_code") or schedule.get("taskCode")) != normalized_task_code
-    ]
-    timestamp = now_business_text()
-    for experiment in snapshot["experiments"]:
-        if normalize_text(experiment.get("task_code") or experiment.get("taskCode")) != normalized_task_code:
-            continue
-        experiment["status"] = "待排程"
-        experiment["unscheduled_since"] = timestamp
-    return True
-
 
 def read_snapshot() -> dict[str, list[dict[str, Any]]]:
     storage = get_storage_backend()
@@ -339,36 +201,6 @@ def write_snapshot(
         publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS), source=source, request_id=request_id)
     else:
         publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS))
-
-
-def task_code(task: dict[str, Any]) -> str:
-    return normalize_text(task.get("code"))
-
-
-def task_key(task: dict[str, Any]) -> str:
-    return normalize_text(task.get("id")) or task_code(task)
-
-
-def sample_key(sample: dict[str, Any]) -> str:
-    return normalize_text(sample.get("id")) or normalize_text(sample.get("code"))
-
-
-def sample_code(sample: dict[str, Any]) -> str:
-    return normalize_text(sample.get("code"))
-
-
-def sample_task_code(sample: dict[str, Any]) -> str:
-    return normalize_text(sample.get("task_code"))
-
-
-def sample_sort_key(sample: dict[str, Any]) -> tuple[str, str]:
-    return (sample_code(sample), sample_key(sample))
-
-
-def sample_serial_sort_key(sample: dict[str, Any]) -> tuple[int, str, str]:
-    matched = re.search(r"-SP-(\d+)$", sample_code(sample))
-    serial = int(matched.group(1)) if matched else 1000
-    return (serial, sample_code(sample), sample_key(sample))
 
 
 def parse_positive_int(value: Any) -> int:
@@ -598,87 +430,12 @@ def task_arrival_time(task: dict[str, Any]) -> str:
 def has_saved_allocation(task_samples: list[dict[str, Any]]) -> bool:
     return bool(task_samples) and all(as_list(sample.get("trays")) for sample in task_samples)
 
-
-def task_experiment_code_set(task: dict[str, Any], experiments: list[dict[str, Any]]) -> set[str]:
-    return {
-        normalize_text(experiment.get("experiment_code"))
-        for experiment in experiments
-        if normalize_text(experiment.get("task_code")) == task_code(task)
-        and normalize_text(experiment.get("experiment_code"))
-    }
-
-
-def validate_complete_experiment_tray_refs(
-    task_experiment_codes: set[str],
-    loaded_tray_refs: set[Any],
-    experiment_tray_refs_by_code: dict[str, set[Any]],
-) -> None:
-    if not task_experiment_codes:
-        return
-    selected_experiment_codes = {
-        experiment_code
-        for experiment_code, tray_refs in experiment_tray_refs_by_code.items()
-        if tray_refs
-    }
-    if selected_experiment_codes - task_experiment_codes:
-        raise HTTPException(status_code=400, detail="实验托盘分配信息不完整")
-    if selected_experiment_codes != task_experiment_codes:
-        raise HTTPException(status_code=400, detail="每个实验都必须至少分配一个托盘")
-    selected_loaded_tray_refs = {
-        tray_ref
-        for tray_refs in experiment_tray_refs_by_code.values()
-        for tray_ref in tray_refs
-    }
-    if not selected_loaded_tray_refs.issubset(loaded_tray_refs):
-        raise HTTPException(status_code=400, detail="实验托盘分配引用了无效托盘")
-    if loaded_tray_refs and selected_loaded_tray_refs != loaded_tray_refs:
-        raise HTTPException(status_code=400, detail="有样品的托盘必须至少分配一个实验")
-
-
-def validate_saved_experiment_tray_allocation(
-    task: dict[str, Any],
-    task_samples: list[dict[str, Any]],
-    experiments: list[dict[str, Any]],
-    experiment_trays: list[dict[str, Any]],
-) -> None:
-    loaded_tray_codes = {
-        normalize_text(tray.get("tray_code"))
-        for sample in task_samples
-        for tray in as_list(sample.get("trays"))
-        if normalize_text(tray.get("tray_code"))
-    }
-    experiment_tray_refs_by_code: dict[str, set[str]] = {}
-    task_code_value = task_code(task)
-    for entry in experiment_trays:
-        if normalize_text(entry.get("task_code")) != task_code_value:
-            continue
-        experiment_code = normalize_text(entry.get("experiment_code"))
-        tray_code = normalize_text(entry.get("tray_code"))
-        if not experiment_code or not tray_code:
-            continue
-        experiment_tray_refs_by_code.setdefault(experiment_code, set()).add(tray_code)
-    validate_complete_experiment_tray_refs(
-        task_experiment_code_set(task, experiments),
-        loaded_tray_codes,
-        experiment_tray_refs_by_code,
-    )
-
-
 def encode_task_tray_id(serial: int) -> int:
     return TASK_TRAY_ID_BASE + serial
 
 
 def encode_stock_tray_id(serial: int) -> int:
     return STOCK_TRAY_ID_BASE + serial
-
-
-def decode_tray_id(task_code_value: str, tray_id: int) -> tuple[int, str]:
-    if tray_id >= STOCK_TRAY_ID_BASE:
-        serial = tray_id - STOCK_TRAY_ID_BASE
-        return serial, f"STOCK-TP-{serial:03d}"
-    serial = tray_id - TASK_TRAY_ID_BASE
-    return serial, f"{task_code_value}-TP-{serial:03d}"
-
 
 def tray_serial_from_code(tray_code: str) -> int:
     stock_match = STOCK_TRAY_CODE_PATTERN.match(tray_code)
@@ -702,91 +459,12 @@ def build_tray_qr_content(tray_code_value: str) -> str:
     normalized = normalize_text(tray_code_value)
     return f"{TRAY_QR_PREFIX}{normalized}" if normalized else ""
 
-
-def normalize_tray_scan_code(value: Any) -> str:
-    normalized = normalize_text(value)
-    if normalized.upper().startswith(TRAY_QR_PREFIX):
-        return normalized[len(TRAY_QR_PREFIX) :].strip()
-    return normalized
-
-
 def build_barcode_payload(tray_code_value: str, sample_count: int, barcode_id: int | None = None) -> dict[str, Any]:
     return {
         "barcodeId": barcode_id or max(9000, 9000 + tray_serial_from_code(tray_code_value)),
         "barcodeNo": tray_code_value,
         "barcodeContent": build_tray_qr_content(tray_code_value),
     }
-
-
-def append_history(sample: dict[str, Any], action: str, detail: str) -> None:
-    history = as_list(sample.get("history"))
-    history.insert(
-        0,
-        {
-            "id": f"sample-event-{normalize_text(sample.get('id')) or normalize_text(sample.get('code'))}-{len(history) + 1}",
-            "time": now_business_text(),
-            "action": action,
-            "location": normalize_text(sample.get("location")),
-            "owner": normalize_text(sample.get("owner")),
-            "status": normalize_text(sample.get("status")),
-            "detail": detail,
-        },
-    )
-    sample["history"] = history
-
-
-def clear_transfer_history(sample: dict[str, Any]) -> None:
-    sample["history"] = [
-        entry
-        for entry in as_list(sample.get("history"))
-        if normalize_text(entry.get("action")) not in TRANSFER_HISTORY_ACTIONS
-    ]
-
-
-def build_sample_experiment_map(
-    task: dict[str, Any],
-    task_samples: list[dict[str, Any]],
-    experiment_trays: list[dict[str, Any]],
-    experiment_samples: list[dict[str, Any]],
-) -> dict[str, list[str]]:
-    task_code_value = task_code(task)
-    sample_experiment_codes: dict[str, set[str]] = {}
-
-    for entry in experiment_samples:
-        if normalize_text(entry.get("task_code")) != task_code_value:
-            continue
-        sample_code_value = normalize_text(entry.get("sample_code"))
-        experiment_code_value = normalize_text(entry.get("experiment_code"))
-        if not sample_code_value or not experiment_code_value:
-            continue
-        sample_experiment_codes.setdefault(sample_code_value, set()).add(experiment_code_value)
-
-    tray_experiment_codes: dict[str, set[str]] = {}
-    for entry in experiment_trays:
-        if normalize_text(entry.get("task_code")) != task_code_value:
-            continue
-        tray_code_value = normalize_text(entry.get("tray_code"))
-        experiment_code_value = normalize_text(entry.get("experiment_code"))
-        if not tray_code_value or not experiment_code_value:
-            continue
-        tray_experiment_codes.setdefault(tray_code_value, set()).add(experiment_code_value)
-
-    for sample in task_samples:
-        sample_code_value = sample_code(sample)
-        if not sample_code_value:
-            continue
-        for tray in as_list(sample.get("trays")):
-            tray_code_value = normalize_text(tray.get("tray_code"))
-            if not tray_code_value:
-                continue
-            for experiment_code_value in tray_experiment_codes.get(tray_code_value, set()):
-                sample_experiment_codes.setdefault(sample_code_value, set()).add(experiment_code_value)
-
-    return {
-        sample_code_value: sorted(experiment_codes, key=lambda value: value)
-        for sample_code_value, experiment_codes in sample_experiment_codes.items()
-    }
-
 
 def serialize_sample(sample: dict[str, Any], task_status: str, experiment_codes: list[str] | None = None) -> dict[str, Any]:
     return {
@@ -978,10 +656,6 @@ def build_task_experiment_rows(
     return rows
 
 
-def experiment_type_label(experiment: dict[str, Any]) -> str:
-    return normalize_text(experiment.get("required_device")) or normalize_text(experiment.get("experiment_name"))
-
-
 def build_tray_experiment_labels(
     task: dict[str, Any],
     experiments: list[dict[str, Any]],
@@ -1005,18 +679,6 @@ def build_tray_experiment_labels(
         if label not in tray_labels[tray_code]:
             tray_labels[tray_code].append(label)
     return tray_labels
-
-
-def build_experiment_summary(task: dict[str, Any], experiments: list[dict[str, Any]]) -> str:
-    task_code_value = task_code(task)
-    labels: list[str] = []
-    for experiment in experiments:
-        if normalize_text(experiment.get("task_code")) != task_code_value:
-            continue
-        label = experiment_type_label(experiment)
-        if label and label not in labels:
-            labels.append(label)
-    return " / ".join(labels)
 
 
 def repair_pending_tray_codes(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> bool:
@@ -1424,244 +1086,6 @@ def serialize_tray_dispatch_payload(snapshot: dict[str, list[dict[str, Any]]], t
         ),
     }
 
-
-def staging_event_room(event: dict[str, Any]) -> str:
-    return "appearance" if normalize_text(event.get("room") or event.get("storage_room") or event.get("storageRoom")) == "appearance" else "staging"
-
-
-def staging_event_matches_room(event: dict[str, Any], room: str) -> bool:
-    target_room = "appearance" if normalize_text(room) == "appearance" else "staging"
-    return staging_event_room(event) == target_room
-
-
-def latest_staging_event_for_tray(
-    snapshot: dict[str, list[dict[str, Any]]],
-    tray_code: str,
-    *,
-    action: str = "",
-    room: str = "",
-) -> dict[str, Any] | None:
-    normalized_action = normalize_text(action)
-    matched_events = [
-        dict(event)
-        for event in as_list(snapshot.get("staging_events"))
-        if normalize_text(event.get("tray_code")) == normalize_text(tray_code)
-        and (not normalized_action or normalize_text(event.get("action")) == normalized_action)
-        and (not normalize_text(room) or staging_event_matches_room(event, room))
-    ]
-    if not matched_events:
-        return None
-    matched_events.sort(key=lambda event: (parse_datetime_value(event.get("time")) or datetime.min, normalize_text(event.get("id"))))
-    return matched_events[-1]
-
-
-def tray_is_currently_stocked_in_staging(snapshot: dict[str, list[dict[str, Any]]], tray_code: str) -> bool:
-    latest_event = latest_staging_event_for_tray(snapshot, tray_code, room="staging")
-    return normalize_text(latest_event.get("action") if latest_event else "") in {"stock_in", "stock_out_withdraw"}
-
-
-def sample_has_staging_dispatch_history(task_samples: list[dict[str, Any]], tray_code: str) -> bool:
-    normalized_tray_code = normalize_text(tray_code)
-    dispatch_entries: list[dict[str, Any]] = []
-    for sample in task_samples:
-        if not any(normalize_text(entry.get("tray_code")) == normalized_tray_code for entry in as_list(sample.get("trays"))):
-            continue
-        for history_entry in as_list(sample.get("history")):
-            if normalize_text(history_entry.get("action")) in {"暂存间扫码出库", "接驳区扫码出库", "送至实验室"}:
-                dispatch_entries.append(dict(history_entry))
-    if not dispatch_entries:
-        return False
-    dispatch_entries.sort(key=lambda entry: parse_datetime_value(entry.get("time")) or datetime.min)
-    return normalize_text(dispatch_entries[-1].get("action")) == "暂存间扫码出库"
-
-
-def latest_appearance_storage_status_for_tray(
-    task_samples: list[dict[str, Any]],
-    tray_code: str,
-    dispatch_time: datetime,
-) -> str:
-    normalized_tray_code = normalize_text(tray_code)
-    candidates: list[dict[str, Any]] = []
-    for sample in task_samples:
-        if not any(normalize_text(entry.get("tray_code")) == normalized_tray_code for entry in as_list(sample.get("trays"))):
-            continue
-        for history_entry in as_list(sample.get("history")):
-            action = normalize_text(history_entry.get("action"))
-            status = normalize_text(history_entry.get("status"))
-            if action != "外观检测间扫码入库":
-                continue
-            if status not in {APPEARANCE_STORED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS}:
-                continue
-            entry_time = parse_datetime_value(history_entry.get("time")) or datetime.min
-            if entry_time > dispatch_time:
-                continue
-            candidates.append(
-                {
-                    "status": status,
-                    "time": entry_time,
-                }
-            )
-    if not candidates:
-        return APPEARANCE_STORED_STATUS
-    candidates.sort(key=lambda entry: entry["time"])
-    return candidates[-1]["status"]
-
-
-def restore_status_for_withdrawal(
-    snapshot: dict[str, list[dict[str, Any]]],
-    task_samples: list[dict[str, Any]],
-    tray_code: str,
-) -> tuple[str, str, str]:
-    latest_stock_out_event = latest_staging_event_for_tray(snapshot, tray_code, action="stock_out")
-    if latest_stock_out_event:
-        if staging_event_matches_room(latest_stock_out_event, "appearance"):
-            dispatch_time = parse_datetime_value(latest_stock_out_event.get("time")) or datetime.max
-            return latest_appearance_storage_status_for_tray(task_samples, tray_code, dispatch_time), APPEARANCE_LOCATION, "appearance"
-        return "已到达暂存间", STAGING_LOCATION, "staging"
-    if sample_has_staging_dispatch_history(task_samples, tray_code):
-        return "已到达暂存间", STAGING_LOCATION, "staging"
-    return "到货", "接驳区", "handover"
-
-
-def tray_has_laboratory_progress(task_samples: list[dict[str, Any]], tray_code: str) -> bool:
-    normalized_tray_code = normalize_text(tray_code)
-    for sample in task_samples:
-        for entry in as_list(sample.get("trays")):
-            if normalize_text(entry.get("tray_code")) != normalized_tray_code:
-                continue
-            if normalize_text(entry.get("status")) in WITHDRAW_BLOCKED_TRAY_STATUSES:
-                return True
-    return False
-
-
-def tray_current_status(task_samples: list[dict[str, Any]], tray_code: str) -> str:
-    normalized_tray_code = normalize_text(tray_code)
-    for sample in task_samples:
-        for entry in as_list(sample.get("trays")):
-            if normalize_text(entry.get("tray_code")) == normalized_tray_code:
-                return normalize_text(entry.get("status")) or normalize_text(sample.get("status"))
-    return ""
-
-
-def tray_is_currently_in_handover(task_samples: list[dict[str, Any]], tray_code: str) -> bool:
-    normalized_tray_code = normalize_text(tray_code)
-    matched_samples = []
-    for sample in task_samples:
-        tray_entries = [
-            entry
-            for entry in as_list(sample.get("trays"))
-            if normalize_text(entry.get("tray_code")) == normalized_tray_code
-        ]
-        if not tray_entries:
-            continue
-        matched_samples.append(sample)
-        sample_status = normalize_text(sample.get("status") or sample.get("flow_status"))
-        sample_location = normalize_text(sample.get("location"))
-        if sample_location != HANDOVER_LOCATION or sample_status != TASK_STATUS_STORED:
-            return False
-        if any(normalize_text(entry.get("status")) != TASK_STATUS_STORED for entry in tray_entries):
-            return False
-    return bool(matched_samples)
-
-
-def ensure_tray_currently_in_handover(task_samples: list[dict[str, Any]], tray_code: str) -> None:
-    if not tray_is_currently_in_handover(task_samples, tray_code):
-        raise HTTPException(status_code=400, detail=NOT_IN_HANDOVER_DISPATCH_DETAIL)
-
-
-def ensure_tray_can_lookup_withdrawal(task_samples: list[dict[str, Any]], tray_code: str) -> None:
-    current_status = tray_current_status(task_samples, tray_code)
-    if tray_has_laboratory_progress(task_samples, tray_code):
-        raise HTTPException(status_code=400, detail="该托盘已进入试验间流程，不能撤回出库")
-    if current_status not in {"送至实验室", "送至暂存间"}:
-        raise HTTPException(status_code=400, detail="该托盘当前不在可撤回的出库状态")
-
-
-def apply_tray_withdrawal(
-    snapshot: dict[str, list[dict[str, Any]]],
-    task: dict[str, Any],
-    tray_code: str,
-    reason: str = "",
-) -> dict[str, Any]:
-    task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
-    current_status = tray_current_status(task_samples, tray_code)
-    if tray_has_laboratory_progress(task_samples, tray_code):
-        raise HTTPException(status_code=400, detail="该托盘已进入试验间流程，不能撤回出库")
-    if current_status not in {"送至实验室", "送至暂存间"}:
-        raise HTTPException(status_code=400, detail="该托盘当前不在可撤回的出库状态")
-
-    target_status, target_location, restore_scope = restore_status_for_withdrawal(snapshot, task_samples, tray_code)
-    timestamp = now_business_text()
-    normalized_tray_code = normalize_text(tray_code)
-    affected_count = 0
-    for sample in task_samples:
-        tray_matches = False
-        next_trays = []
-        for entry in as_list(sample.get("trays")):
-            normalized = dict(entry)
-            if normalize_text(normalized.get("tray_code")) == normalized_tray_code:
-                tray_matches = True
-                normalized["status"] = target_status
-                normalized["updated_at"] = timestamp
-                clear_fixture_ready_marker(normalized)
-            next_trays.append(normalized)
-        if not tray_matches:
-            continue
-        affected_count += 1
-        remaining_blocked_tray = any(
-            normalize_text(entry.get("tray_code")) != normalized_tray_code
-            and normalize_text(entry.get("status")) in WITHDRAW_BLOCKED_TRAY_STATUSES
-            for entry in next_trays
-        )
-        if not remaining_blocked_tray:
-            sample["location"] = target_location
-            sample["status"] = target_status
-            sample["flow_status"] = target_status
-        sample["updated_at"] = timestamp
-        sample["trays"] = next_trays
-        detail = f"{normalized_tray_code} 撤回出库至{target_status}"
-        if normalize_text(reason):
-            detail = f"{detail}（{normalize_text(reason)}）"
-        append_history(sample, "撤回出库", detail)
-
-    if affected_count == 0:
-        raise HTTPException(status_code=404, detail="未找到托盘")
-
-    if restore_scope in {"staging", "appearance"}:
-        latest_event = latest_staging_event_for_tray(snapshot, tray_code, action="stock_out", room=restore_scope) or {}
-        staging_event = {
-            "id": f"staging-event-{normalized_tray_code}-{len(snapshot['staging_events']) + 1}",
-            "tray_code": normalized_tray_code,
-            "task_code": task_code(task),
-            "action": "stock_out_withdraw",
-            "time": timestamp,
-            "operator": normalize_text(reason) or "撤回出库",
-            "target_lab": normalize_text(latest_event.get("target_lab")),
-            "target_experiment_code": normalize_text(latest_event.get("target_experiment_code")),
-        }
-        if restore_scope == "appearance":
-            staging_event["room"] = "appearance"
-        snapshot["staging_events"].append(staging_event)
-
-    write_snapshot(snapshot)
-    payload = serialize_tray_dispatch_payload(snapshot, task, tray_code)
-    return {
-        "ok": True,
-        "message": f"{normalized_tray_code}已撤回出库",
-        "affectedSampleCount": affected_count,
-        "restoredStatus": target_status,
-        "restoredLocation": target_location,
-        **payload,
-    }
-
-
-def update_task_samples_for_pending(task: dict[str, Any], task_samples: list[dict[str, Any]]) -> None:
-    for sample in task_samples:
-        sample["location"] = ""
-        sample["status"] = "运输中"
-        sample["flow_status"] = "运输中"
-
-
 @router.get("/bootstrap")
 def read_bootstrap() -> dict[str, Any]:
     snapshot = read_snapshot()
@@ -1722,7 +1146,6 @@ def read_tray_dispatch(tray_code: str) -> dict[str, Any]:
     ensure_tray_currently_in_handover(task_samples, tray_code)
     return serialize_tray_dispatch_payload(snapshot, task, tray_code)
 
-
 @router.post("/trays/{tray_code}/dispatch")
 def dispatch_tray(
     tray_code: str,
@@ -1741,19 +1164,6 @@ def dispatch_tray(
         raise HTTPException(status_code=400, detail=STAGING_STOCKED_TRANSFER_BLOCK_DETAIL)
     ensure_tray_currently_in_handover(task_samples, tray_code)
 
-    current_tray_status = ""
-    current_target_sub_experiment_code = ""
-    for sample in tray_samples:
-        for entry in as_list(sample.get("trays")):
-            if normalize_text(entry.get("tray_code")) == normalize_text(tray_code):
-                current_tray_status = normalize_text(entry.get("status"))
-                current_target_sub_experiment_code = normalize_text(entry.get("target_sub_experiment_code") or entry.get("targetSubExperimentCode"))
-                break
-        if current_tray_status:
-            break
-
-    target_type = normalize_text(request.target_type)
-    target_name = normalize_text(request.target_name)
     partial_axis_batch_completed = tray_has_scoped_partial_axis_batch_completion(
         task_code=task_code(task),
         tray_code=tray_code,
@@ -1764,126 +1174,21 @@ def dispatch_tray(
         experiment_trays=snapshot["experiment_trays"],
         schedules=snapshot["schedules"],
     )
-    assigned_experiment_codes = {
-        normalize_text(item.get("experiment_code") or item.get("experiment_no"))
-        for item in as_list(snapshot["experiment_trays"])
-        if normalize_text(item.get("task_code") or item.get("task_no")) == task_code(task)
-        and normalize_text(item.get("tray_code") or item.get("tray_no")) == normalize_text(tray_code)
-        and normalize_text(item.get("experiment_code") or item.get("experiment_no"))
-    }
-    axis_aware_experiment_codes: set[str] = set()
-    if current_target_sub_experiment_code or partial_axis_batch_completed:
-        axis_aware_experiment_codes.update(
-            normalize_text(item.get("experiment_code") or item.get("experiment_no"))
-            for item in as_list(snapshot["experiments"])
-            if normalize_text(item.get("task_code") or item.get("task_no")) == task_code(task)
-            and normalize_text(item.get("experiment_code") or item.get("experiment_no")) in assigned_experiment_codes
-            and normalize_axis_codes(item.get("axis_codes") or item.get("axisCodes"))
-        )
-        axis_aware_experiment_codes.update(
-            normalize_text(item.get("experiment_code") or item.get("experiment_no"))
-            for item in as_list(snapshot["schedules"])
-            if normalize_text(item.get("task_code") or item.get("task_no")) == task_code(task)
-            and normalize_text(item.get("experiment_code") or item.get("experiment_no")) in assigned_experiment_codes
-            and normalize_axis_codes(item.get("axis_codes") or item.get("axisCodes"))
-        )
-    completed_axis_experiment_codes = {
-        normalize_text(item.get("experiment_code") or item.get("experiment_no"))
-        for item in as_list(snapshot["experiments"])
-        if normalize_text(item.get("task_code") or item.get("task_no")) == task_code(task)
-        and normalize_text(item.get("experiment_code") or item.get("experiment_no")) in axis_aware_experiment_codes
-        and normalize_experiment_status_text(item.get("status") or item.get("experiment_status")) in {"实验已完成", "实验完成", "实验已经完成"}
-    }
-    if target_type == "staging":
-        axis_experiments_completed = bool(axis_aware_experiment_codes) and axis_aware_experiment_codes.issubset(completed_axis_experiment_codes)
-        non_axis_experiments_completed = not axis_aware_experiment_codes and tray_assigned_experiments_are_completed(
-            task_code=task_code(task),
-            tray_code=tray_code,
-            experiment_trays=snapshot["experiment_trays"],
-            experiment_run_trays=snapshot["experiment_run_trays"],
-        )
-        post_experiment_staging_dispatch = partial_axis_batch_completed or axis_experiments_completed or non_axis_experiments_completed
-        appearance_to_staging_dispatch = current_tray_status == APPEARANCE_STORED_STATUS
-        if current_tray_status in TRAY_OUTBOUND_STATUSES and not (post_experiment_staging_dispatch or appearance_to_staging_dispatch):
-            raise HTTPException(status_code=400, detail="该托盘已送往目标位置，请勿重复操作")
-        next_status = "送至暂存间"
-        next_location = STAGING_LOCATION
-        detail = normalize_text(tray_code)
-    elif target_type == "lab":
-        dispatch_payload = serialize_tray_dispatch_payload(snapshot, task, tray_code)
-        matched_destination = next(
-            (
-                item for item in dispatch_payload["destinations"]
-                if item["targetType"] == "lab"
-                and normalize_text(item.get("targetName")) == target_name
-                and normalize_text(item.get("experimentCode")) == normalize_text(request.experiment_code)
-                and bool(item.get("scheduled"))
-            ),
-            None,
-        )
-        if matched_destination is None:
-            raise HTTPException(status_code=400, detail="目标实验室与当前托盘不匹配")
-        unavailable_device = find_unavailable_device(snapshot, target_name)
-        if unavailable_device:
-            device_name = normalize_text(unavailable_device.get("code")) or target_name
-            raise HTTPException(status_code=400, detail=f"{device_name}设备维修中，禁止送至该实验室")
-        if (
-            current_tray_status in TRAY_OUTBOUND_STATUSES
-            and current_tray_status not in TRAY_LAB_REDISPATCH_STATUSES
-            and not partial_axis_batch_completed
-        ):
-            raise HTTPException(status_code=400, detail="该托盘已送往目标位置，请勿重复操作")
-        next_status = "送至实验室"
-        next_location = target_name
-        detail = f"{normalize_text(tray_code)} -> {target_name}"
-    else:
-        raise HTTPException(status_code=400, detail="请选择有效的目标位置")
-
-    timestamp = now_business_text()
-    dispatched_from_pre_appearance = target_type == "lab" and current_tray_status == PRE_EXPERIMENT_APPEARANCE_STATUS
-    for sample in tray_samples:
-        sample["location"] = next_location
-        sample["status"] = next_status
-        sample["flow_status"] = next_status
-        sample["updated_at"] = timestamp
-        next_trays = []
-        for entry in as_list(sample.get("trays")):
-            normalized = dict(entry)
-            if normalize_text(normalized.get("tray_code")) == normalize_text(tray_code):
-                normalized["status"] = next_status
-                normalized["updated_at"] = timestamp
-                clear_fixture_ready_marker(normalized)
-                if target_type == "lab":
-                    normalized["target_lab"] = target_name
-                    normalized["target_experiment_code"] = normalize_text(request.experiment_code)
-                else:
-                    normalized.pop("target_lab", None)
-                    normalized.pop("target_experiment_code", None)
-            next_trays.append(normalized)
-        sample["trays"] = next_trays
-        append_history(sample, next_status, detail)
-
-    if dispatched_from_pre_appearance:
-        normalized_tray_code = normalize_text(tray_code)
-        snapshot["staging_events"].append(
-            {
-                "id": f"staging-event-{normalized_tray_code}-{len(snapshot['staging_events']) + 1}",
-                "tray_code": normalized_tray_code,
-                "task_code": task_code(task),
-                "room": APPEARANCE_EVENT_ROOM,
-                "action": APPEARANCE_STOCK_OUT_ACTION,
-                "target_lab": target_name,
-                "target_experiment_code": normalize_text(request.experiment_code),
-                "target_type": "lab",
-                "time": timestamp,
-            }
-        )
-
-    write_snapshot(snapshot, update_source=update_source, update_request_id=update_request_id)
+    result = apply_dispatch(
+        snapshot,
+        task,
+        tray_samples,
+        tray_code,
+        request,
+        partial_axis_batch_completed=partial_axis_batch_completed,
+        serialize_dispatch=serialize_tray_dispatch_payload,
+        update_source=update_source,
+        update_request_id=update_request_id,
+        write_snapshot=write_snapshot,
+    )
     return {
         "ok": True,
-        "message": f"{normalize_text(tray_code)}已标记为{next_status}",
-        "affectedSampleCount": len(tray_samples),
+        **result,
         **serialize_tray_dispatch_payload(snapshot, task, tray_code),
     }
 
@@ -1898,7 +1203,6 @@ def read_tray_withdraw_dispatch(tray_code: str) -> dict[str, Any]:
     ensure_tray_can_lookup_withdrawal(task_samples, tray_code)
     return serialize_tray_dispatch_payload(snapshot, task, tray_code)
 
-
 @router.post("/trays/{tray_code}/withdraw-dispatch")
 def withdraw_dispatch_tray(tray_code: str, request: TrayWithdrawDispatchRequest = Body(...)) -> dict[str, Any]:
     tray_code = normalize_tray_scan_code(tray_code)
@@ -1906,8 +1210,13 @@ def withdraw_dispatch_tray(tray_code: str, request: TrayWithdrawDispatchRequest 
     task, _tray_samples = find_tray_samples(snapshot, tray_code)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
     ensure_task_not_returned(task, task_samples)
-    return apply_tray_withdrawal(snapshot, task, tray_code, request.reason)
-
+    result = apply_tray_withdrawal_command(snapshot, task, task_samples, tray_code, request.reason)
+    write_snapshot(snapshot)
+    return {
+        "ok": True,
+        **result,
+        **serialize_tray_dispatch_payload(snapshot, task, tray_code),
+    }
 
 @router.post("/tasks/{task_id}/allocate")
 def save_task_allocation(
@@ -1925,123 +1234,14 @@ def save_task_allocation(
         raise HTTPException(status_code=400, detail=current_reload_block_reason)
     if transfer_status_for_task(task, task_samples) != TASK_STATUS_PENDING:
         raise HTTPException(status_code=400, detail="该任务已到货，不能重新保存预接驳托盘。")
-    sample_map = {sample_key(sample): sample for sample in task_samples}
-    requested_ids = [sample_id for tray in request.trays for sample_id in tray.sample_ids]
-    requested_tray_count = sum(1 for tray in request.trays if tray.sample_ids)
-    max_assignable_count = max_assignable_tray_count(snapshot["samples"], task_samples)
 
-    if sorted(requested_ids) != sorted(sample_map.keys()):
-        raise HTTPException(status_code=400, detail="所有任务样品必须且只能分配到一个托盘中")
-    if len(set(requested_ids)) != len(requested_ids):
-        raise HTTPException(status_code=400, detail="样品不能重复分配到多个托盘")
-    if requested_tray_count > max_assignable_count:
-        raise HTTPException(
-            status_code=400,
-            detail=f"系统剩余托盘不足，当前最多可分配 {max_assignable_count} 个托盘。",
-        )
-    loaded_tray_ids = {tray.tray_id for tray in request.trays if tray.sample_ids}
-    task_experiment_codes = task_experiment_code_set(task, snapshot["experiments"])
-    if task_experiment_codes:
-        seen_experiment_codes: set[str] = set()
-        experiment_tray_refs_by_code: dict[str, set[int]] = {}
-        for selection in request.experiment_trays:
-            experiment_code = normalize_text(selection.experiment_code)
-            if not experiment_code:
-                continue
-            if experiment_code in seen_experiment_codes:
-                raise HTTPException(status_code=400, detail="实验托盘分配信息不完整")
-            seen_experiment_codes.add(experiment_code)
-            experiment_tray_refs_by_code[experiment_code] = set(selection.tray_ids)
-        validate_complete_experiment_tray_refs(
-            task_experiment_codes,
-            loaded_tray_ids,
-            experiment_tray_refs_by_code,
-        )
-
-    for sample in task_samples:
-        clear_transfer_history(sample)
-        sample["trays"] = []
-    update_task_samples_for_pending(task, task_samples)
-    next_experiment_trays = [
-        entry for entry in snapshot["experiment_trays"] if normalize_text(entry.get("task_code")) != task_code(task)
-    ]
-    next_experiment_samples = [
-        entry for entry in snapshot["experiment_samples"] if normalize_text(entry.get("task_code")) != task_code(task)
-    ]
-    snapshot["experiment_runs"] = [
-        entry for entry in snapshot["experiment_runs"] if normalize_text(entry.get("task_code")) != task_code(task)
-    ]
-    snapshot["experiment_run_trays"] = [
-        entry for entry in snapshot["experiment_run_trays"] if normalize_text(entry.get("task_code")) != task_code(task)
-    ]
-
-    tray_codes = []
-    tray_code_by_id: dict[int, str] = {}
-    tray_sample_codes_by_no: dict[str, list[str]] = {}
-    for tray in request.trays:
-        if len(tray.sample_ids) > request.tray_limit:
-            raise HTTPException(status_code=400, detail="单托盘样品数量超过统一上限")
-        _serial, tray_no = decode_tray_id(task_code(task), tray.tray_id)
-        tray_code_by_id[tray.tray_id] = tray_no
-        tray_sample_codes_by_no[tray_no] = []
-        if tray.sample_ids:
-            tray_codes.append(tray_no)
-        for sample_id in tray.sample_ids:
-            if sample_id not in sample_map:
-                raise HTTPException(status_code=400, detail="存在不属于当前任务的样品")
-            tray_sample_codes_by_no[tray_no].append(sample_code(sample_map[sample_id]))
-            sample_map[sample_id]["trays"].append(
-                {
-                    "tray_id": tray.tray_id,
-                    "tray_code": tray_no,
-                    "tray_type": "标准托盘",
-                    "quantity": 1,
-                    "status": TASK_STATUS_PENDING,
-                    "barcode_id": None,
-                    "barcode_no": None,
-                    "barcode_content": None,
-                    "barcode_type": None,
-                    "printed_at": None,
-                }
-            )
-            append_history(sample_map[sample_id], "样品分装托盘", tray_no)
-
-    for selection in request.experiment_trays:
-        experiment_code = normalize_text(selection.experiment_code)
-        if not experiment_code:
-            continue
-        experiment_sample_codes: set[str] = set()
-        for tray_id in selection.tray_ids:
-            tray_no = tray_code_by_id.get(tray_id)
-            if not tray_no:
-                continue
-            next_experiment_trays.append(
-                {
-                    "task_code": task_code(task),
-                    "experiment_code": experiment_code,
-                    "tray_code": tray_no,
-                }
-            )
-            experiment_sample_codes.update(
-                sample_code_value
-                for sample_code_value in tray_sample_codes_by_no.get(tray_no, [])
-                if sample_code_value
-            )
-        for sample_code_value in sorted(experiment_sample_codes):
-            next_experiment_samples.append(
-                {
-                    "task_code": task_code(task),
-                    "experiment_code": experiment_code,
-                    "sample_code": sample_code_value,
-                }
-            )
-
-    task["tray_limit"] = request.tray_limit
-    task["tray_codes"] = sorted(set(tray_codes))
-    task["transfer_status"] = TASK_STATUS_PENDING
-    task["updated_at"] = now_business_text()
-    snapshot["experiment_trays"] = next_experiment_trays
-    snapshot["experiment_samples"] = next_experiment_samples
+    apply_task_allocation(
+        snapshot,
+        task,
+        task_samples,
+        request,
+        max_assignable_count=max_assignable_tray_count(snapshot["samples"], task_samples),
+    )
     write_snapshot(
         snapshot,
         replace_task_codes={task_code(task)},
@@ -2125,7 +1325,6 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
         barcode["experimentLabels"] = tray_label_map.get(barcode["barcodeNo"], [])
     return {"ok": True, "message": "二维码已生成", "barcodes": printed, "workspace": workspace}
 
-
 @router.post("/tasks/{task_id}/confirm-storage")
 def confirm_task_storage(
     task_id: str,
@@ -2137,47 +1336,13 @@ def confirm_task_storage(
     task_samples, _changed = ensure_task_samples(snapshot, task)
     ensure_task_not_returned(task, task_samples)
     assigned_trays = [tray for tray in build_assigned_trays(task, task_samples, TASK_STATUS_PENDING) if tray["samples"]]
-
     if not assigned_trays:
         raise HTTPException(status_code=400, detail="当前任务没有待入库托盘")
     if not has_saved_allocation(task_samples):
         raise HTTPException(status_code=400, detail="请先保存托盘，再确认入库")
-    validate_saved_experiment_tray_allocation(
-        task,
-        task_samples,
-        snapshot["experiments"],
-        snapshot["experiment_trays"],
-    )
+    validate_saved_experiment_tray_allocation(task, task_samples, snapshot["experiments"], snapshot["experiment_trays"])
 
-    task["transfer_status"] = TASK_STATUS_STORED
-    now_iso = now_business_text()
-    if not task_arrival_time(task):
-        task["arrival_at"] = now_iso
-    task["updated_at"] = now_iso
-    for sample in task_samples:
-        sample["location"] = "接驳区"
-        sample["status"] = TASK_STATUS_STORED
-        sample["flow_status"] = TASK_STATUS_STORED
-        next_trays = []
-        for entry in as_list(sample.get("trays")):
-            normalized = dict(entry)
-            normalized["status"] = TRAY_STATUS_STORED
-            next_trays.append(normalized)
-        sample["trays"] = next_trays
-        append_history(sample, "任务已确认入库", task_code(task))
-
-    task_code_value = task_code(task)
-    for experiment in snapshot["experiments"]:
-        if normalize_text(experiment.get("task_code")) != task_code_value:
-            continue
-        experiment_code_value = normalize_text(experiment.get("experiment_code"))
-        if not experiment_code_value:
-            continue
-        if has_formal_schedule(snapshot, task_code_value, experiment_code_value):
-            experiment["unscheduled_since"] = ""
-            continue
-        experiment["unscheduled_since"] = now_iso
-
+    apply_confirm_storage(snapshot, task, task_samples)
     write_snapshot(snapshot, update_source=update_source, update_request_id=update_request_id)
     return {
         "ok": True,
@@ -2193,7 +1358,6 @@ def confirm_task_storage(
         ),
     }
 
-
 @router.post("/tasks/{task_id}/reload")
 def reload_task_storage(task_id: str) -> dict[str, Any]:
     snapshot = read_snapshot()
@@ -2202,29 +1366,8 @@ def reload_task_storage(task_id: str) -> dict[str, Any]:
     current_reload_block_reason = reload_block_reason(task_samples, task)
     if current_reload_block_reason:
         raise HTTPException(status_code=400, detail=current_reload_block_reason)
-    snapshot["experiment_trays"] = [
-        entry for entry in snapshot["experiment_trays"] if normalize_text(entry.get("task_code")) != task_code(task)
-    ]
-    snapshot["experiment_samples"] = [
-        entry for entry in snapshot["experiment_samples"] if normalize_text(entry.get("task_code")) != task_code(task)
-    ]
-    snapshot["experiment_runs"] = [
-        entry for entry in snapshot["experiment_runs"] if normalize_text(entry.get("task_code")) != task_code(task)
-    ]
-    snapshot["experiment_run_trays"] = [
-        entry for entry in snapshot["experiment_run_trays"] if normalize_text(entry.get("task_code")) != task_code(task)
-    ]
 
-    task["transfer_status"] = TASK_STATUS_PENDING
-    task["tray_codes"] = []
-    task["updated_at"] = now_business_text()
-    update_task_samples_for_pending(task, task_samples)
-
-    for sample in task_samples:
-        sample["trays"] = []
-        append_history(sample, "任务重新入库", task_code(task))
-
-    schedule_reset = reset_task_schedules_for_reschedule(snapshot, task_code(task))
+    schedule_reset = apply_reload(snapshot, task, task_samples)
     message = "任务已重新入库，已回到未入库列表"
     if schedule_reset:
         message = "任务已重新入库，已清空原有排程信息，需要重新排程。"

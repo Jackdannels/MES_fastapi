@@ -33,10 +33,27 @@ DEFAULT_LABS: tuple[dict[str, Any], ...] = (
 )
 
 TEST_TYPE_NAME_BY_CODE = {row["test_type_code"]: row["test_type_name"] for row in DEFAULT_TEST_TYPES}
+HOSTLESS_LAB_CODE = "LAB_HOT_HUMID_2"
+HOSTLESS_LAB_NAME = "高低温湿热二室"
+LAB_INTERFACE_MQTT = "mqtt"
+LAB_INTERFACE_HOSTLESS = "hostless"
 
 
 def normalize_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def require_laboratory_interface(expected: str, *, lab_code: Any = "", lab_name: Any = "") -> None:
+    code = normalize_text(lab_code).upper()
+    name = normalize_text(lab_name)
+    code_is_hostless = code == HOSTLESS_LAB_CODE
+    name_is_hostless = name == HOSTLESS_LAB_NAME
+    if code and name and code_is_hostless != name_is_hostless:
+        raise ValueError("lab_code 与 lab_name 不匹配")
+    actual = LAB_INTERFACE_HOSTLESS if code_is_hostless or name_is_hostless else LAB_INTERFACE_MQTT
+    if actual != expected:
+        label = name or code or "当前实验室"
+        raise ValueError(f"{label} 仅支持 {actual} 接口，不允许使用 {expected} 接口")
 
 
 def serialize_test_type(row: dict[str, Any]) -> dict[str, Any]:

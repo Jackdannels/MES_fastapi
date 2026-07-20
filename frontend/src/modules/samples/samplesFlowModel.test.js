@@ -943,7 +943,6 @@ describe("samplesFlowModel", () => {
       ],
     });
 
-    const labels = view.steps.map((step) => step.label);
     expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：已到达暂存间`);
     expect(view.steps.find((step) => step.label === "送至外观检测间")).toBeUndefined();
     expect(view.steps.find((step) => step.label === "实验后外观检测间存放")).toEqual(
@@ -9562,6 +9561,180 @@ describe("samplesFlowModel", () => {
     );
     expect(view.steps.find((step) => step.label === "四综合试验未完成")).toEqual(
       expect.objectContaining({ reached: false, time: "" }),
+    );
+  });
+
+  test("buildTrayFlowView restores comparison and fixture times from before an aborted continuation cycle", () => {
+    const taskCode = "SYLU-2026-08-002";
+    const trayCode = `${taskCode}-TP-001`;
+    const experimentCode = `${taskCode}-A`;
+    const view = buildTrayFlowView({
+      taskCode,
+      trayCode,
+      location: "冲击一室",
+      status: "冲击试验部分完成 1/2轴",
+      experiments: [
+        {
+          axis_codes: ["x+", "x-"],
+          experiment_code: experimentCode,
+          experiment_name: "冲击试验",
+          required_device: "冲击一室",
+          status: "冲击试验部分完成 1/2轴",
+          task_code: taskCode,
+        },
+        {
+          experiment_code: `${taskCode}-B`,
+          experiment_name: "盐雾试验",
+          required_device: "盐雾试验室",
+          status: "已排程",
+          task_code: taskCode,
+        },
+      ],
+      experimentTrays: [
+        { experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode },
+        { experiment_code: `${taskCode}-B`, task_code: taskCode, tray_code: trayCode },
+      ],
+      experimentRuns: [{
+        axis_codes: ["x+"],
+        ended_at: "2026-07-05 09:03:00",
+        experiment_code: experimentCode,
+        run_no: "RUN-IMPACT-FIRST",
+        status: "实验已完成",
+        sub_experiment_code: `${experimentCode}-AXIS-001`,
+        task_code: taskCode,
+        tray_codes: [trayCode],
+      }],
+      experimentRunTrays: [{
+        ended_at: "2026-07-05 09:03:00",
+        experiment_code: experimentCode,
+        run_no: "RUN-IMPACT-FIRST",
+        run_tray_status: "实验已完成",
+        sub_experiment_code: `${experimentCode}-AXIS-001`,
+        task_code: taskCode,
+        tray_code: trayCode,
+      }],
+      experimentRunSteps: [{
+        axis_code: "x+",
+        experiment_code: experimentCode,
+        run_no: "RUN-IMPACT-FIRST",
+        status: "实验已完成",
+        task_code: taskCode,
+      }],
+      schedules: [{
+        axis_codes: ["x-"],
+        device: "冲击一室",
+        experiment_code: experimentCode,
+        status: "已排程",
+        sub_experiment_code: `${experimentCode}-AXIS-002`,
+        task_code: taskCode,
+      }],
+      samples: [{
+        code: `${taskCode}-SP-001`,
+        location: "冲击一室",
+        status: "冲击试验部分完成 1/2轴",
+        task_code: taskCode,
+        trays: [{ quantity: 1, status: "冲击试验部分完成 1/2轴", tray_code: trayCode }],
+        history: [
+          { action: "实验任务撤回", detail: `${taskCode} / 冲击试验 / 撤回至冲击试验部分完成（试验间内撤回当前实验任务）`, location: "冲击一室", status: "冲击试验部分完成 1/2轴", time: "2026-07-05 10:03:00", tray_code: trayCode },
+          { action: "实验准备", detail: `${taskCode} / 冲击试验 / 实验准备就绪 / 托盘：${trayCode}`, location: "冲击一室", status: "实验准备就绪", time: "2026-07-05 10:02:30", tray_code: trayCode },
+          { action: "样品安装", detail: `${taskCode} / 冲击试验 / 工装夹具安装 / 托盘：${trayCode}`, location: "冲击一室", status: "工装夹具安装", time: "2026-07-05 10:02:00", tray_code: trayCode },
+          { action: "任务比对", detail: `${taskCode} / 冲击试验 / 已到达实验室 / 托盘：${trayCode}`, location: "冲击一室", status: "已到达实验室", time: "2026-07-05 10:01:00", tray_code: trayCode },
+          { action: "实验完成", detail: `${taskCode} / 冲击试验 / 冲击试验部分完成 1/2轴`, location: "冲击一室", status: "冲击试验部分完成 1/2轴", time: "2026-07-05 09:03:00", tray_code: trayCode },
+          { action: "实验准备", detail: `${taskCode} / 冲击试验 / 实验准备就绪 / 托盘：${trayCode}`, location: "冲击一室", status: "实验准备就绪", time: "2026-07-05 09:02:30", tray_code: trayCode },
+          { action: "样品安装", detail: `${taskCode} / 冲击试验 / 工装夹具安装 / 托盘：${trayCode}`, location: "冲击一室", status: "工装夹具安装", time: "2026-07-05 09:02:00", tray_code: trayCode },
+          { action: "任务比对", detail: `${taskCode} / 冲击试验 / 已到达实验室 / 托盘：${trayCode}`, location: "冲击一室", status: "已到达实验室", time: "2026-07-05 09:01:00", tray_code: trayCode },
+        ],
+      }],
+    });
+
+    expect(view.steps.find((step) => step.label === "已到达实验室")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-07-05 09:01:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "工装夹具安装")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-07-05 09:02:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "实验准备就绪")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-07-05 09:02:30" }),
+    );
+    expect(view.steps.find((step) => step.label === "冲击试验部分完成 1/2轴")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-07-05 09:03:00" }),
+    );
+  });
+
+  test("buildTrayFlowView keeps a single partial-axis flow when withdrawal detail omits axis counts", () => {
+    const taskCode = "SYLU-2026-08-003";
+    const trayCode = `${taskCode}-TP-001`;
+    const experimentCode = `${taskCode}-A`;
+    const view = buildTrayFlowView({
+      taskCode,
+      trayCode,
+      location: "冲击二室",
+      status: "冲击试验部分完成 3/6轴",
+      experiments: [{
+        axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+        experiment_code: experimentCode,
+        experiment_name: "冲击试验",
+        required_device: "冲击二室",
+        task_code: taskCode,
+      }],
+      experimentTrays: [{ experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode }],
+      experimentRuns: [{
+        axis_codes: ["x+", "x-", "y+"],
+        ended_at: "2026-08-03 09:03:00",
+        experiment_code: experimentCode,
+        run_no: "RUN-IMPACT-PARTIAL",
+        status: "实验已完成",
+        task_code: taskCode,
+        tray_codes: [trayCode],
+      }],
+      experimentRunTrays: [{
+        ended_at: "2026-08-03 09:03:00",
+        experiment_code: experimentCode,
+        run_no: "RUN-IMPACT-PARTIAL",
+        run_tray_status: "实验已完成",
+        task_code: taskCode,
+        tray_code: trayCode,
+      }],
+      experimentRunSteps: ["x+", "x-", "y+"].map((axisCode) => ({
+        axis_code: axisCode,
+        experiment_code: experimentCode,
+        run_no: "RUN-IMPACT-PARTIAL",
+        status: "实验已完成",
+        task_code: taskCode,
+      })),
+      schedules: [{
+        axis_codes: ["y-", "z+", "z-"],
+        device: "冲击二室",
+        experiment_code: experimentCode,
+        status: "已排程",
+        task_code: taskCode,
+      }],
+      samples: [{
+        code: `${taskCode}-SP-001`,
+        location: "冲击二室",
+        status: "冲击试验部分完成 3/6轴",
+        task_code: taskCode,
+        trays: [{ status: "冲击试验部分完成 3/6轴", tray_code: trayCode, updated_at: "2026-08-03 10:03:18" }],
+        history: [
+          { action: "实验任务撤回", detail: `${taskCode} / 冲击试验 / 撤回至冲击试验部分完成（试验间内撤回当前实验任务）`, location: "冲击二室", status: "冲击试验部分完成 3/6轴", time: "2026-08-03 10:03:18" },
+          { action: "样品安装", detail: `${taskCode} / 冲击试验 / 工装夹具安装 / 托盘：${trayCode}`, location: "冲击二室", status: "工装夹具安装", time: "2026-08-03 10:03:13" },
+          { action: "任务比对", detail: `${taskCode} / 冲击试验 / 已到达实验室 / 托盘：${trayCode}`, location: "冲击二室", status: "已到达实验室", time: "2026-08-03 10:03:11" },
+          { action: "实验完成", detail: `${taskCode} / 冲击试验 / 冲击试验部分完成 3/6轴`, location: "冲击二室", status: "冲击试验部分完成 3/6轴", time: "2026-08-03 09:03:00" },
+          { action: "样品安装", detail: `${taskCode} / 冲击试验 / 工装夹具安装 / 托盘：${trayCode}`, location: "冲击二室", status: "工装夹具安装", time: "2026-08-03 09:02:00" },
+          { action: "任务比对", detail: `${taskCode} / 冲击试验 / 已到达实验室 / 托盘：${trayCode}`, location: "冲击二室", status: "已到达实验室", time: "2026-08-03 09:01:00" },
+        ],
+      }],
+    });
+
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：冲击试验部分完成 3/6轴`);
+    expect(view.steps.find((step) => step.label === "已到达实验室")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-08-03 09:01:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "工装夹具安装")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-08-03 09:02:00" }),
+    );
+    expect(view.steps.find((step) => step.label === "冲击试验部分完成 3/6轴")).toEqual(
+      expect.objectContaining({ active: true, reached: true, time: "2026-08-03 09:03:00" }),
     );
   });
 

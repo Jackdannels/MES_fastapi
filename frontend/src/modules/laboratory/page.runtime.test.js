@@ -3454,7 +3454,7 @@ describe("LaboratoryPage runtime", () => {
       },
     ];
 
-    const mounted = await mountPage();
+    await mountPage();
 
     expect(resetTaskButton()?.hasAttribute("disabled")).toBe(true);
   });
@@ -3473,7 +3473,7 @@ describe("LaboratoryPage runtime", () => {
       },
     ];
 
-    const mounted = await mountPage();
+    await mountPage();
 
     expect(resetTaskButton()?.hasAttribute("disabled")).toBe(true);
   });
@@ -3514,7 +3514,7 @@ describe("LaboratoryPage runtime", () => {
       },
     ];
 
-    const mounted = await mountPage();
+    await mountPage();
 
     expect(resetTaskButton()?.hasAttribute("disabled")).toBe(false);
   });

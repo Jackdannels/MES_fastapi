@@ -108,21 +108,6 @@ function samplesHaveRunningTrayForTask(samples, taskCode) {
   });
 }
 
-function samplesHaveRunningTrayForExperiment({ experimentCode, experimentTrays = [], samples = [], taskCode }) {
-  const trayCodes = buildExperimentTrayCodeSet({ experimentCode, experimentTrays, taskCode });
-  if (trayCodes.size === 0) {
-    return false;
-  }
-  return asList(samples).some((sample) => {
-    if (!rowMatchesTask(sample, taskCode)) {
-      return false;
-    }
-    return asList(sample?.trays).some(
-      (tray) => trayCodes.has(rowTrayCode(tray)) && isExperimentRunningStatus(tray?.status),
-    );
-  });
-}
-
 function samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experimentTrays = [], samples = [], taskCode }) {
   const trayCodes = buildExperimentTrayCodeSet({ experimentCode, experimentTrays, taskCode });
   if (trayCodes.size === 0) {

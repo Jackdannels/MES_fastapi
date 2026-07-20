@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import Settings, settings
 from app.modules.registry import API_ROUTERS
+from app.api.routes.tasks import store_external_task_intake
 from app.services.mq_runtime import MqttRuntimeController
 from app.services.lims_rabbitmq import LimsRabbitRuntime
 from app.services.upper_computer_simulator import restart_upper_computer_simulator_auto_mode, stop_upper_computer_simulator
@@ -16,7 +17,7 @@ from app.web import routes as web_routes
 def create_app(app_settings: Settings | None = None) -> FastAPI:
     configured_settings = app_settings or settings
     mq_runtime = MqttRuntimeController(configured_settings)
-    lims_rabbit_runtime = LimsRabbitRuntime(configured_settings)
+    lims_rabbit_runtime = LimsRabbitRuntime(configured_settings, store_intake=store_external_task_intake)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):

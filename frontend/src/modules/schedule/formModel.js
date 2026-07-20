@@ -191,9 +191,10 @@ function buildScheduleEditForm(schedule) {
   }
 
   // 编辑表单会尽量把固定时段还原回上午/下午选项，否则回退到自定义时段。
+  const axisCodes = schedule?.axis_codes ?? schedule?.axisCodes;
   return {
     axis_batch_no: normalizeText(schedule?.axis_batch_no ?? schedule?.axisBatchNo),
-    axis_codes: Array.isArray(schedule?.axis_codes ?? schedule?.axisCodes) ? [...(schedule?.axis_codes ?? schedule?.axisCodes)] : [],
+    axis_codes: Array.isArray(axisCodes) ? [...axisCodes] : [],
     custom_end: endTime,
     custom_start: startTime,
     device: normalizeText(schedule?.device),

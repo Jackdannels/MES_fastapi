@@ -566,14 +566,14 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.get('[data-testid="schedule-axis-selector"]').text()).toContain("剩余轴向");
     expect(wrapper.get('[data-testid="schedule-axis-selector"]').text()).not.toContain("本次排程");
     expect(wrapper.findAll('[data-testid^="schedule-axis-requirement-"]').map((tag) => tag.text())).toEqual([
-      "Y+",
       "X-",
+      "Y+",
     ]);
     expect(wrapper.find('[data-testid="schedule-axis-requirement-y-plus"]').element.tagName).toBe("SPAN");
     expect(wrapper.find('[data-testid="schedule-axis-requirement-x-minus"]').element.tagName).toBe("SPAN");
     expect(wrapper.findAll('[data-testid^="schedule-axis-option-"]').map((button) => button.text())).toEqual([
-      "Y+",
       "X-",
+      "Y+",
     ]);
     expect(wrapper.find('[data-testid="schedule-axis-option-y-plus"]').element.tagName).toBe("BUTTON");
     expect(wrapper.find('[data-testid="schedule-axis-option-x-minus"]').element.tagName).toBe("BUTTON");

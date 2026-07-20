@@ -314,9 +314,8 @@ import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
-import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
+import { readStorageSnapshot, writeStorageTrayAction, writeStorageUpdates } from "@/lib/storageApi";
 import { formatLocalDateTime } from "@/lib/dateTime";
-import { writeStorageTrayAction, writeStorageUpdates } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { normalizeTrayScanCode } from "@/lib/trayQrCode";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
@@ -377,7 +376,6 @@ const overviewPageSize = 5;
 const currentStagingCurrentPage = ref(1);
 const scanInputRef = ref(null);
 const { focusScanInput } = useScanInputFocus(scanInputRef);
-const STORAGE_API_URL = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
 const STAGING_SNAPSHOT_KEYS = [
   STORAGE_KEYS.tasks,
   STORAGE_KEYS.devices,
@@ -393,14 +391,7 @@ const STAGING_SNAPSHOT_KEYS = [
 const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
 
 const readRawStorageSnapshot = async () => {
-  const response = await fetch(STORAGE_API_URL, {
-    headers: { Accept: "application/json" },
-    credentials: "include",
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to read storage snapshot: ${response.status} ${response.statusText}`);
-  }
-  const payload = await response.json();
+  const payload = await readStorageSnapshot(STAGING_SNAPSHOT_KEYS, { normalizeMissing: false });
   return payload && typeof payload === "object" ? payload : {};
 };
 

@@ -885,6 +885,36 @@ def test_storage_rejects_post_staging_stock_in_when_tray_has_unfinished_experime
     assert storage.read("mes.samples") == samples
 
 
+def test_storage_staging_stock_out_rejects_lab_without_active_schedule(monkeypatch):
+    samples = [
+        {
+            "code": "SP-STAGING-NO-SCHEDULE",
+            "location": "恒温恒湿间（暂存间）",
+            "status": "已到达暂存间",
+            "flow_status": "已到达暂存间",
+            "task_code": "TASK-STAGING-NO-SCHEDULE",
+            "trays": [{"tray_code": "TP-STAGING-NO-SCHEDULE", "status": "已到达暂存间", "quantity": 1}],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {"mes.samples": samples, "mes.staging_events": [], "mes.schedules": []},
+    )
+
+    response = client.post(
+        "/api/storage/rooms/staging/trays/TP-STAGING-NO-SCHEDULE/stock-out",
+        json={
+            "targetLab": "盐雾试验室",
+            "targetExperimentCode": "EXP-SALT-NO-SCHEDULE",
+            "targetType": "lab",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "目标实验室没有当前有效排程。"
+    assert storage.read("mes.staging_events") == []
+
+
 def test_storage_rejects_appearance_stock_in_when_tray_is_in_post_staging(monkeypatch):
     samples = [
         {
@@ -1500,7 +1530,22 @@ def test_storage_tray_stock_out_action_updates_only_target_tray_and_publishes_me
             "trays": [{"tray_code": "TP-STAGING-B", "status": "已到达暂存间", "quantity": 1}],
         },
     ]
-    client, storage = build_client(monkeypatch, {"mes.samples": samples, "mes.staging_events": []})
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.staging_events": [],
+            "mes.schedules": [
+                {
+                    "task_code": "TASK-STAGING-A",
+                    "experiment_code": "TASK-STAGING-A-A",
+                    "device": "冲击一室",
+                    "lab_code": "LAB_IMPACT_1",
+                    "status": "已排程",
+                }
+            ],
+        },
+    )
     monkeypatch.setattr(storage_route, "publish_storage_update", lambda keys, **kwargs: published.append((keys, kwargs)))
 
     response = client.post(
@@ -1561,7 +1606,15 @@ def test_storage_tray_action_validates_against_single_loaded_snapshot(monkeypatc
         "mes.experiment_run_steps": [],
         "mes.experiment_trays": [],
         "mes.experiment_run_trays": [],
-        "mes.schedules": [],
+        "mes.schedules": [
+            {
+                "task_code": "TASK-READ-COUNT",
+                "experiment_code": "TASK-READ-COUNT-A",
+                "device": "冲击一室",
+                "lab_code": "LAB_IMPACT_1",
+                "status": "已排程",
+            }
+        ],
         "mes.devices": [],
     })
     client, storage = build_client_with_storage(monkeypatch, storage)
@@ -1812,6 +1865,94 @@ def test_storage_tray_stock_in_action_allows_dispatched_pre_experiment_appearanc
     assert storage.read("mes.staging_events")[-1]["target_experiment_code"] == "EXP-MOLD"
 
 
+def test_storage_tray_stock_in_action_rejects_repeat_after_appearance_to_staging(monkeypatch):
+    samples = [
+        {
+            "code": "SP-PRE-APPEARANCE-STAGING-REPEAT",
+            "location": "霉菌试验室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "task_code": "TASK-PRE-APPEARANCE-STAGING-REPEAT",
+            "trays": [
+                {
+                    "tray_code": "TP-PRE-APPEARANCE-STAGING-REPEAT",
+                    "status": "送至实验室",
+                    "quantity": 1,
+                    "target_lab": "霉菌试验室",
+                    "target_experiment_code": "EXP-MOLD-STAGING-REPEAT",
+                }
+            ],
+        }
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.experiments": [
+                {
+                    "task_code": "TASK-PRE-APPEARANCE-STAGING-REPEAT",
+                    "experiment_code": "EXP-MOLD-STAGING-REPEAT",
+                    "experiment_name": "霉菌试验",
+                }
+            ],
+            "mes.staging_events": [
+                {
+                    "id": "pre-appearance-staging-in",
+                    "tray_code": "TP-PRE-APPEARANCE-STAGING-REPEAT",
+                    "task_code": "TASK-PRE-APPEARANCE-STAGING-REPEAT",
+                    "room": "appearance",
+                    "action": "stock_in",
+                    "appearance_phase": "pre_experiment",
+                    "target_experiment_code": "EXP-MOLD-STAGING-REPEAT",
+                    "time": "2026-06-06T21:40:00",
+                },
+                {
+                    "id": "pre-appearance-staging-out",
+                    "tray_code": "TP-PRE-APPEARANCE-STAGING-REPEAT",
+                    "task_code": "TASK-PRE-APPEARANCE-STAGING-REPEAT",
+                    "room": "appearance",
+                    "action": "stock_out",
+                    "appearance_phase": "pre_experiment",
+                    "target_lab": "恒温恒湿间（暂存间）",
+                    "target_type": "staging",
+                    "time": "2026-06-06T21:41:00",
+                },
+            ],
+        },
+    )
+
+    response = client.post(
+        "/api/storage/rooms/appearance/trays/TP-PRE-APPEARANCE-STAGING-REPEAT/stock-in",
+        json={"status": "实验前外观检测间存放", "location": "外观检测间"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该托盘已完成实验前外观检测并出库，不能重复入库外观检测间。"
+    assert storage.read("mes.staging_events") == [
+        {
+            "id": "pre-appearance-staging-in",
+            "tray_code": "TP-PRE-APPEARANCE-STAGING-REPEAT",
+            "task_code": "TASK-PRE-APPEARANCE-STAGING-REPEAT",
+            "room": "appearance",
+            "action": "stock_in",
+            "appearance_phase": "pre_experiment",
+            "target_experiment_code": "EXP-MOLD-STAGING-REPEAT",
+            "time": "2026-06-06T21:40:00",
+        },
+        {
+            "id": "pre-appearance-staging-out",
+            "tray_code": "TP-PRE-APPEARANCE-STAGING-REPEAT",
+            "task_code": "TASK-PRE-APPEARANCE-STAGING-REPEAT",
+            "room": "appearance",
+            "action": "stock_out",
+            "appearance_phase": "pre_experiment",
+            "target_lab": "恒温恒湿间（暂存间）",
+            "target_type": "staging",
+            "time": "2026-06-06T21:41:00",
+        },
+    ]
+
+
 def test_storage_tray_stock_in_action_allows_completed_appearance_required_experiment(monkeypatch):
     samples = [
         {
@@ -1952,7 +2093,21 @@ def test_storage_tray_stock_out_action_rejects_repeat_operation_from_latest_stat
             "trays": [{"tray_code": "TP-STAGING-REPEAT", "status": "已到达暂存间", "quantity": 1}],
         }
     ]
-    client, storage = build_client(monkeypatch, {"mes.samples": samples, "mes.staging_events": []})
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.samples": samples,
+            "mes.staging_events": [],
+            "mes.schedules": [
+                {
+                    "task_code": "TASK-STAGING-REPEAT",
+                    "experiment_code": "TASK-STAGING-REPEAT-A",
+                    "device": "冲击一室",
+                    "status": "已排程",
+                }
+            ],
+        },
+    )
     payload = {
         "targetLab": "冲击一室",
         "targetExperimentCode": "TASK-STAGING-REPEAT-A",
@@ -2019,7 +2174,18 @@ def test_storage_tray_actions_serialize_same_tray_stock_out_conflict(monkeypatch
             "trays": [{"tray_code": "TP-CONCURRENT", "status": "已到达暂存间", "quantity": 1}],
         }
     ]
-    storage = DelayedThreadSafeStorage({"mes.samples": samples, "mes.staging_events": []})
+    storage = DelayedThreadSafeStorage({
+        "mes.samples": samples,
+        "mes.staging_events": [],
+        "mes.schedules": [
+            {
+                "task_code": "TASK-CONCURRENT",
+                "experiment_code": "TASK-CONCURRENT-A",
+                "device": "冲击一室",
+                "status": "已排程",
+            }
+        ],
+    })
     client, storage = build_client_with_storage(monkeypatch, storage)
     responses = []
 
@@ -2064,7 +2230,18 @@ def test_storage_tray_actions_keep_distinct_tray_updates_when_requests_overlap(m
             "trays": [{"tray_code": "TP-CONCURRENT-B", "status": "已到达暂存间", "quantity": 1}],
         },
     ]
-    storage = DelayedThreadSafeStorage({"mes.samples": samples, "mes.staging_events": []})
+    storage = DelayedThreadSafeStorage({
+        "mes.samples": samples,
+        "mes.staging_events": [],
+        "mes.schedules": [
+            {
+                "task_code": "TASK-CONCURRENT-A",
+                "experiment_code": "TASK-CONCURRENT-A-A",
+                "device": "冲击一室",
+                "status": "已排程",
+            }
+        ],
+    })
     client, storage = build_client_with_storage(monkeypatch, storage)
     responses = {}
 

@@ -1,6 +1,3 @@
-import asyncio
-import json
-import threading
 from datetime import datetime
 from typing import Any, Dict
 
@@ -17,7 +14,6 @@ from app.services.appearance_inspection import (
     should_route_pre_experiment_appearance,
     target_requires_appearance_inspection,
 )
-from app.services.laboratory_completion import tray_assigned_experiments_are_completed
 from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
 from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
 from app.services.storage_atomic import merge_concurrent_storage_updates
@@ -36,6 +32,25 @@ from app.services.storage_schedule_patch import (
     validate_maintenance_time_order,
     validate_schedule_maintenance_conflicts,
 )
+from app.services.storage_update_bus import publish_storage_update, storage_update_event_stream as _storage_update_event_stream
+from app.services.storage_policies import (
+    SCHEDULE_FIXTURE_LOCKED_DETAIL,
+    SCHEDULE_LOCKED_AFTER_FIXTURE_STATUSES,
+    STAGING_STOCK_IN_BLOCKED_CURRENT_STATUSES,
+)
+from app.services.storage_maintenance_policy import (
+    device_is_unavailable as _device_is_unavailable,
+    validate_device_schedule_maintenance_conflicts,
+    validate_samples_maintenance_lock,
+)
+from app.services.storage_return_policy import HANDOVER_ARRIVAL_STATUSES, validate_samples_returned_rearrival
+from app.services.storage_lab_arrival_policy import validate_samples_lab_arrival
+from app.services.storage_appearance_policy import validate_samples_appearance_dispatch
+from app.services.storage_staging_policy import (
+    _normal_staging_reentry_is_partial_axis_batch,
+    _post_staging_reentry_is_completed,
+    tray_has_scoped_partial_axis_batch_completion,
+)
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 
@@ -44,7 +59,6 @@ LAB_ARRIVED_STATUS = "已到达实验室"
 LAB_ARRIVAL_REQUIRES_DISPATCH_DETAIL = "托盘尚未从接驳间出库，不能直接到达实验室"
 STAGING_STOCK_IN_BLOCKED_DETAIL = "该托盘已进入试验间流程，不能暂存间入库。"
 APPEARANCE_STOCK_IN_BLOCKED_DETAIL = "该托盘已进入试验间流程，不能外观检测间入库。"
-RETURNED_REARRIVAL_BLOCKED_DETAIL = "该托盘已厂家收回，不能再次到货。"
 STAGING_LOCATION_KEYWORD = "暂存间"
 POST_EXPERIMENT_STAGING_STOCKED_STATUS = "实验后暂存间存放"
 STAGING_INBOUND_STATUSES = {
@@ -56,35 +70,7 @@ APPEARANCE_INBOUND_STATUSES = {"送至外观检测间", "实验后外观检测�
 APPEARANCE_SOURCE_REQUIRED_DETAIL = "当前试验类型不支持进入外观检测间。"
 APPEARANCE_REPEAT_STOCK_IN_BLOCKED_DETAIL = "该托盘已完成实验前外观检测并出库，不能重复入库外观检测间。"
 APPEARANCE_DISPATCH_TARGET_REQUIRED_DETAIL = "目标实验室与当前托盘不匹配"
-RETURNED_STATUS = "厂家收回"
-HANDOVER_ARRIVAL_STATUSES = {"到货"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
-STAGING_STOCK_IN_BLOCKED_CURRENT_STATUSES = {
-    LAB_DISPATCHED_STATUS,
-    LAB_ARRIVED_STATUS,
-    "工装夹具安装",
-    "实验准备就绪",
-    "实验进行中",
-    "实验中",
-}
-PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS = {"任务比对", "样品安装", "实验确认", "开始实验", "实验开始"}
-PARTIAL_AXIS_REENTRY_RESET_ACTIONS = {"撤回出库", "实验任务撤回", "任务切换撤回"}
-LAB_MAINTENANCE_BLOCKED_STATUSES = {
-    LAB_DISPATCHED_STATUS,
-    LAB_ARRIVED_STATUS,
-    "工装夹具安装",
-    "实验准备就绪",
-    "实验进行中",
-    "实验中",
-}
-SCHEDULE_LOCKED_AFTER_FIXTURE_STATUSES = {
-    "工装夹具安装",
-    "实验准备就绪",
-    "实验进行中",
-    "实验中",
-    *COMPLETED_EXPERIMENT_STATUSES,
-}
-SCHEDULE_FIXTURE_LOCKED_DETAIL = "夹具安装后排程不可删除或重新排程。"
 TRAY_QR_PREFIX = "MES-TRAY:"
 SCHEDULE_LOCKED_FIELDS = {
     "device",
@@ -96,10 +82,6 @@ SCHEDULE_LOCKED_FIELDS = {
     "start_at",
     "task_code",
 }
-_STORAGE_UPDATE_SUBSCRIBERS: set[tuple[asyncio.AbstractEventLoop, asyncio.Queue[dict[str, Any]]]] = set()
-_STORAGE_UPDATE_SUBSCRIBERS_LOCK = threading.Lock()
-
-
 def _normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -357,94 +339,6 @@ def _record_sub_code(record: Any, *, experiment_code: str = "") -> str:
     return resolve_record_sub_experiment_code(record, experiment_code=experiment_code)
 
 
-def tray_has_scoped_partial_axis_batch_completion(
-    *,
-    task_code: str,
-    tray_code: str,
-    experiments: list[dict[str, Any]] | None = None,
-    experiment_runs: list[dict[str, Any]] | None = None,
-    experiment_run_steps: list[dict[str, Any]] | None = None,
-    experiment_run_trays: list[dict[str, Any]] | None = None,
-    experiment_trays: list[dict[str, Any]] | None = None,
-    schedules: list[dict[str, Any]] | None = None,
-) -> bool:
-    normalized_task_code = _normalize_text(task_code)
-    normalized_tray_code = _normalize_text(tray_code)
-    run_by_no = {
-        _run_no(run): run
-        for run in _as_list(experiment_runs)
-        if isinstance(run, dict) and _task_code(run) == normalized_task_code and _run_no(run)
-    }
-    schedule_by_id = {
-        _schedule_id(schedule): schedule
-        for schedule in _as_list(schedules)
-        if isinstance(schedule, dict) and _schedule_id(schedule)
-    }
-    completed_steps_by_run: dict[str, set[str]] = {}
-    for step in _as_list(experiment_run_steps):
-        if not isinstance(step, dict) or _task_code(step) != normalized_task_code:
-            continue
-        if not _is_completed_status(step.get("status")):
-            continue
-        axis_code = canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
-        if not axis_code:
-            continue
-        completed_steps_by_run.setdefault(_run_no(step), set()).add(axis_code)
-
-    completed_batches: dict[str, list[dict[str, Any]]] = {}
-    for relation in _as_list(experiment_run_trays):
-        if not isinstance(relation, dict):
-            continue
-        if _task_code(relation) != normalized_task_code or _normalize_text(relation.get("tray_code") or relation.get("tray_no")) != normalized_tray_code:
-            continue
-        if not _is_completed_status(relation.get("status") or relation.get("run_tray_status")):
-            continue
-        experiment_code = _experiment_code(relation)
-        run_no = _run_no(relation)
-        run = run_by_no.get(run_no)
-        if not experiment_code or not run or not _is_completed_status(run.get("status")):
-            continue
-        axes = set(completed_steps_by_run.get(run_no, set()))
-        axes.update(_normalize_axis_codes(run.get("axis_codes") or run.get("axisCodes")))
-        if not axes:
-            continue
-        run_schedule = schedule_by_id.get(_record_schedule_id(run))
-        sub_code = record_sub_experiment_code(relation) or record_sub_experiment_code(run)
-        if not sub_code and run_schedule:
-            sub_code = _record_sub_code(run_schedule, experiment_code=experiment_code)
-        if not sub_code:
-            continue
-        completed_batches.setdefault(experiment_code, []).append(
-            {
-                "axes": axes,
-                "schedule_id": _record_schedule_id(run),
-                "sub_experiment_code": sub_code,
-            }
-        )
-
-    for schedule in _as_list(schedules):
-        if not isinstance(schedule, dict) or _task_code(schedule) != normalized_task_code:
-            continue
-        if _is_completed_status(schedule.get("status") or schedule.get("schedule_status")):
-            continue
-        experiment_code = _experiment_code(schedule)
-        pending_axes = set(_normalize_axis_codes(schedule.get("axis_codes") or schedule.get("axisCodes")))
-        if not experiment_code or not pending_axes:
-            continue
-        schedule_id = _schedule_id(schedule)
-        schedule_sub_code = _record_sub_code(schedule, experiment_code=experiment_code)
-        if not schedule_sub_code:
-            continue
-        for completed_batch in completed_batches.get(experiment_code, []):
-            if schedule_id and schedule_id == completed_batch["schedule_id"]:
-                continue
-            if schedule_sub_code == completed_batch["sub_experiment_code"]:
-                continue
-            if pending_axes - completed_batch["axes"]:
-                return True
-    return False
-
-
 def _locked_schedule_fields_changed(current_schedule: Any, next_schedule: Any) -> bool:
     if not isinstance(current_schedule, dict) or not isinstance(next_schedule, dict):
         return True
@@ -623,26 +517,6 @@ def _appearance_inbound_state_changed(current_sample: Any, next_sample: Any, cur
     return current_values != next_values
 
 
-def _device_name(device: Any) -> str:
-    if not isinstance(device, dict):
-        return ""
-    return _normalize_text(device.get("code")) or _normalize_text(device.get("name"))
-
-
-def _device_is_unavailable(device: Any) -> bool:
-    if not isinstance(device, dict):
-        return False
-    status = _normalize_text(device.get("status"))
-    start_at = _parse_datetime(device.get("maintenance_start_at") or device.get("maintenanceStartAt"))
-    end_at = _parse_datetime(device.get("maintenance_end_at") or device.get("maintenanceEndAt"))
-    now = now_business_datetime()
-    if any(keyword in status for keyword in ["停用", "禁用", "不可用"]):
-        return True
-    if start_at:
-        return bool(start_at <= now and (not end_at or now <= end_at))
-    return any(keyword in status for keyword in ["维修", "保养"])
-
-
 def _normalize_future_maintenance_device_statuses(updates: dict[str, Any]) -> dict[str, Any]:
     devices = updates.get("mes.devices")
     if not isinstance(devices, list):
@@ -663,78 +537,6 @@ def _normalize_future_maintenance_device_statuses(updates: dict[str, Any]) -> di
     return {**updates, "mes.devices": normalized_devices}
 
 
-def _find_unavailable_device(devices: Any, lab_name: str) -> dict[str, Any] | None:
-    normalized_lab = _normalize_text(lab_name)
-    if not normalized_lab:
-        return None
-    for device in _as_list(devices):
-        if not isinstance(device, dict):
-            continue
-        if normalized_lab not in {_normalize_text(device.get("code")), _normalize_text(device.get("name"))}:
-            continue
-        if _device_is_unavailable(device):
-            return device
-    return None
-
-
-def _sample_was_dispatched(sample: Any) -> bool:
-    if not isinstance(sample, dict):
-        return False
-    return LAB_DISPATCHED_STATUS in {
-        _normalize_text(sample.get("status")),
-        _normalize_text(sample.get("flow_status")),
-    }
-
-
-def _sample_was_lab_arrived(sample: Any) -> bool:
-    if not isinstance(sample, dict):
-        return False
-    return LAB_ARRIVED_STATUS in {
-        _normalize_text(sample.get("status")),
-        _normalize_text(sample.get("flow_status")),
-    }
-
-
-def _sample_was_completed_experiment(sample: Any) -> bool:
-    if not isinstance(sample, dict):
-        return False
-    return bool(
-        {
-            _normalize_text(sample.get("status")),
-            _normalize_text(sample.get("flow_status")),
-        }
-        & COMPLETED_EXPERIMENT_STATUSES
-    )
-
-
-def _sample_has_lab_arrival_history(sample: Any) -> bool:
-    if not isinstance(sample, dict):
-        return False
-    for entry in _as_list(sample.get("history")):
-        if not isinstance(entry, dict):
-            continue
-        if LAB_ARRIVED_STATUS in {
-            _normalize_text(entry.get("status")),
-            _normalize_text(entry.get("flow_status")),
-        }:
-            return True
-        if LAB_ARRIVED_STATUS in _normalize_text(entry.get("detail")):
-            return True
-    return False
-
-
-def _tray_was_dispatched(sample: Any, tray: Any) -> bool:
-    return _status(tray) == LAB_DISPATCHED_STATUS or _sample_was_dispatched(sample)
-
-
-def _tray_was_lab_arrived(sample: Any, tray: Any) -> bool:
-    return _status(tray) == LAB_ARRIVED_STATUS or _sample_was_lab_arrived(sample)
-
-
-def _tray_was_completed_experiment(sample: Any, tray: Any) -> bool:
-    return _status(tray) in COMPLETED_EXPERIMENT_STATUSES or _sample_was_completed_experiment(sample)
-
-
 def _sample_has_blocked_lab_status(sample: Any) -> bool:
     if not isinstance(sample, dict):
         return False
@@ -751,32 +553,6 @@ def _tray_has_blocked_lab_status(sample: Any, tray: Any) -> bool:
     if isinstance(tray, dict):
         return _status(tray) in STAGING_STOCK_IN_BLOCKED_CURRENT_STATUSES
     return _sample_has_blocked_lab_status(sample)
-
-
-def _sample_was_returned(sample: Any) -> bool:
-    if not isinstance(sample, dict):
-        return False
-    return RETURNED_STATUS in {
-        _normalize_text(sample.get("status")),
-        _normalize_text(sample.get("flow_status")),
-        _normalize_text(sample.get("location")),
-    }
-
-
-def _tray_was_returned(sample: Any, tray: Any) -> bool:
-    return _status(tray) == RETURNED_STATUS or _sample_was_returned(sample)
-
-
-def _is_handover_arrival(sample: Any, tray: Any | None = None) -> bool:
-    if not isinstance(sample, dict):
-        return False
-    statuses = {
-        _normalize_text(sample.get("status")),
-        _normalize_text(sample.get("flow_status")),
-    }
-    if isinstance(tray, dict):
-        statuses.add(_status(tray))
-    return bool(statuses & HANDOVER_ARRIVAL_STATUSES)
 
 
 def _is_staging_inbound(sample: Any, tray: Any | None = None) -> bool:
@@ -907,317 +683,6 @@ def _has_latest_appearance_dispatch_to_staging(staging_events: Any, tray_code: s
     )
 
 
-def _is_lab_dispatch_outbound(sample: Any, tray: Any) -> bool:
-    if not isinstance(sample, dict):
-        return False
-    statuses = {
-        _normalize_text(sample.get("status")),
-        _normalize_text(sample.get("flow_status")),
-    }
-    if isinstance(tray, dict):
-        statuses.add(_status(tray))
-    return LAB_DISPATCHED_STATUS in statuses
-
-
-def _appearance_dispatch_target_is_allowed(next_sample: Any, next_tray: Any, experiments: Any) -> bool:
-    if not isinstance(next_sample, dict) or not isinstance(next_tray, dict):
-        return True
-    target_type = _normalize_text(next_tray.get("target_type") or next_tray.get("targetType"))
-    if target_type == "staging":
-        return True
-    target_lab = (
-        _normalize_text(next_tray.get("target_lab") or next_tray.get("targetLab"))
-        or _normalize_text(next_sample.get("location"))
-    )
-    target_experiment_code = _normalize_text(
-        next_tray.get("target_experiment_code")
-        or next_tray.get("targetExperimentCode")
-    )
-    return target_requires_appearance_inspection(
-        target_lab=target_lab,
-        target_experiment_code=target_experiment_code,
-        experiments=experiments,
-    )
-
-
-def _validate_samples_appearance_dispatch_transition(
-    current_samples: Any,
-    next_samples: Any,
-    experiments: Any,
-) -> None:
-    if not isinstance(next_samples, list):
-        return
-
-    current_by_code = _index_samples(current_samples)
-    if not current_by_code:
-        return
-
-    for next_sample in next_samples:
-        if not isinstance(next_sample, dict):
-            continue
-        current_sample = current_by_code.get(_sample_code(next_sample))
-        if not current_sample:
-            continue
-
-        current_trays = _index_trays(current_sample)
-        for next_tray in _as_list(next_sample.get("trays")):
-            if not isinstance(next_tray, dict):
-                continue
-            current_tray = current_trays.get(_tray_code(next_tray))
-            if not _is_pre_experiment_appearance_inbound(current_sample, current_tray):
-                continue
-            if not _is_lab_dispatch_outbound(next_sample, next_tray):
-                continue
-            if not _appearance_dispatch_target_is_allowed(next_sample, next_tray, experiments):
-                raise HTTPException(status_code=400, detail=APPEARANCE_DISPATCH_TARGET_REQUIRED_DETAIL)
-
-
-def _post_staging_reentry_is_completed(
-    sample: Any,
-    tray: Any,
-    experiments: Any,
-    experiment_runs: Any,
-    experiment_run_steps: Any,
-    experiment_trays: Any,
-    experiment_run_trays: Any,
-    schedules: Any,
-) -> bool:
-    if not isinstance(sample, dict) or not isinstance(tray, dict):
-        return False
-    task_code = _normalize_text(sample.get("task_code") or sample.get("task_no"))
-    tray_code = _tray_code(tray)
-    normalized_experiments = [item for item in _as_list(experiments) if isinstance(item, dict)]
-    normalized_experiment_runs = [item for item in _as_list(experiment_runs) if isinstance(item, dict)]
-    normalized_experiment_run_steps = [item for item in _as_list(experiment_run_steps) if isinstance(item, dict)]
-    normalized_experiment_trays = [item for item in _as_list(experiment_trays) if isinstance(item, dict)]
-    normalized_experiment_run_trays = [item for item in _as_list(experiment_run_trays) if isinstance(item, dict)]
-    normalized_schedules = [item for item in _as_list(schedules) if isinstance(item, dict)]
-    if tray_has_scoped_partial_axis_batch_completion(
-        task_code=task_code,
-        tray_code=tray_code,
-        experiments=normalized_experiments,
-        experiment_runs=normalized_experiment_runs,
-        experiment_run_steps=normalized_experiment_run_steps,
-        experiment_trays=normalized_experiment_trays,
-        experiment_run_trays=normalized_experiment_run_trays,
-        schedules=normalized_schedules,
-    ):
-        return True
-    assigned_experiment_codes = {
-        _experiment_code(item)
-        for item in normalized_experiment_trays
-        if _task_code(item) == task_code
-        and _normalize_text(item.get("tray_code") or item.get("tray_no")) == tray_code
-        and _experiment_code(item)
-    }
-    axis_aware_experiment_codes = {
-        _experiment_code(item)
-        for item in normalized_experiments
-        if _task_code(item) == task_code
-        and _experiment_code(item) in assigned_experiment_codes
-        and _normalize_axis_codes(item.get("axis_codes") or item.get("axisCodes"))
-    }
-    axis_aware_experiment_codes.update(
-        _experiment_code(item)
-        for item in normalized_schedules
-        if _task_code(item) == task_code
-        and _experiment_code(item) in assigned_experiment_codes
-        and _normalize_axis_codes(item.get("axis_codes") or item.get("axisCodes"))
-    )
-    if axis_aware_experiment_codes:
-        return _tray_axis_aware_experiments_are_completed(
-            task_code=task_code,
-            tray_code=tray_code,
-            axis_aware_experiment_codes=axis_aware_experiment_codes,
-            assigned_experiment_codes=assigned_experiment_codes,
-            schedules=normalized_schedules,
-            experiment_run_trays=normalized_experiment_run_trays,
-        )
-    return tray_assigned_experiments_are_completed(
-        task_code=task_code,
-        tray_code=tray_code,
-        experiment_trays=normalized_experiment_trays,
-        experiment_run_trays=normalized_experiment_run_trays,
-    )
-
-
-def _normal_staging_reentry_is_partial_axis_batch(
-    sample: Any,
-    tray: Any,
-    experiments: Any,
-    experiment_runs: Any,
-    experiment_run_steps: Any,
-    experiment_trays: Any,
-    experiment_run_trays: Any,
-    schedules: Any,
-) -> bool:
-    if not isinstance(sample, dict) or not isinstance(tray, dict):
-        return False
-    normalized_experiments = [item for item in _as_list(experiments) if isinstance(item, dict)]
-    normalized_experiment_runs = [item for item in _as_list(experiment_runs) if isinstance(item, dict)]
-    normalized_experiment_run_steps = [item for item in _as_list(experiment_run_steps) if isinstance(item, dict)]
-    normalized_experiment_trays = [item for item in _as_list(experiment_trays) if isinstance(item, dict)]
-    normalized_experiment_run_trays = [item for item in _as_list(experiment_run_trays) if isinstance(item, dict)]
-    normalized_schedules = [item for item in _as_list(schedules) if isinstance(item, dict)]
-    task_code = _normalize_text(sample.get("task_code") or sample.get("task_no"))
-    tray_code = _tray_code(tray)
-    if not tray_has_scoped_partial_axis_batch_completion(
-        task_code=task_code,
-        tray_code=tray_code,
-        experiments=normalized_experiments,
-        experiment_runs=normalized_experiment_runs,
-        experiment_run_steps=normalized_experiment_run_steps,
-        experiment_trays=normalized_experiment_trays,
-        experiment_run_trays=normalized_experiment_run_trays,
-        schedules=normalized_schedules,
-    ):
-        return False
-    return not _partial_axis_reentry_has_newer_lab_activity(
-        sample=sample,
-        task_code=task_code,
-        tray_code=tray_code,
-        experiment_runs=normalized_experiment_runs,
-        experiment_run_trays=normalized_experiment_run_trays,
-    )
-
-
-def _partial_axis_reentry_has_newer_lab_activity(
-    *,
-    sample: dict[str, Any],
-    task_code: str,
-    tray_code: str,
-    experiment_runs: list[dict[str, Any]],
-    experiment_run_trays: list[dict[str, Any]],
-) -> bool:
-    run_by_no = {_run_no(run): run for run in experiment_runs if _run_no(run)}
-    completion_times: list[datetime] = []
-    for relation in experiment_run_trays:
-        if (
-            _task_code(relation) != task_code
-            or _normalize_text(relation.get("tray_code") or relation.get("tray_no")) != tray_code
-            or not _is_completed_status(relation.get("status") or relation.get("run_tray_status"))
-        ):
-            continue
-        run = run_by_no.get(_run_no(relation), {})
-        for value in (
-            relation.get("ended_at"),
-            relation.get("endedAt"),
-            relation.get("updated_at"),
-            relation.get("updatedAt"),
-            run.get("ended_at"),
-            run.get("endedAt"),
-            run.get("updated_at"),
-            run.get("updatedAt"),
-        ):
-            if parsed := _parse_datetime(value):
-                completion_times.append(parsed)
-
-    for entry in _as_list(sample.get("history")):
-        if not isinstance(entry, dict):
-            continue
-        status_text = " ".join(
-            (_normalize_text(entry.get("status")), _normalize_text(entry.get("detail")))
-        )
-        if "部分完成" not in status_text or "轴" not in status_text:
-            continue
-        if parsed := _parse_datetime(entry.get("time") or entry.get("updated_at") or entry.get("updatedAt")):
-            completion_times.append(parsed)
-
-    latest_completion_time = max(completion_times) if completion_times else None
-    lifecycle_events: list[tuple[datetime, str]] = []
-    if latest_completion_time is not None:
-        for entry in _as_list(sample.get("history")):
-            if not isinstance(entry, dict):
-                continue
-            action = _normalize_text(entry.get("action"))
-            if action not in PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS | PARTIAL_AXIS_REENTRY_RESET_ACTIONS:
-                continue
-            event_time = _parse_datetime(entry.get("time") or entry.get("updated_at") or entry.get("updatedAt"))
-            if event_time is not None and event_time > latest_completion_time:
-                lifecycle_events.append((event_time, action))
-    if lifecycle_events:
-        latest_action = max(lifecycle_events, key=lambda item: item[0])[1]
-        if latest_action in PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS:
-            return True
-
-    for relation in experiment_run_trays:
-        if (
-            _task_code(relation) != task_code
-            or _normalize_text(relation.get("tray_code") or relation.get("tray_no")) != tray_code
-            or _normalize_text(relation.get("status") or relation.get("run_tray_status"))
-            not in STAGING_STOCK_IN_BLOCKED_CURRENT_STATUSES
-        ):
-            continue
-        run = run_by_no.get(_run_no(relation), {})
-        started_at = next(
-            (
-                parsed
-                for value in (
-                    relation.get("started_at"),
-                    relation.get("startedAt"),
-                    relation.get("created_at"),
-                    relation.get("createdAt"),
-                    run.get("started_at"),
-                    run.get("startedAt"),
-                    run.get("created_at"),
-                    run.get("createdAt"),
-                )
-                if (parsed := _parse_datetime(value)) is not None
-            ),
-            None,
-        )
-        if latest_completion_time is None or started_at is None or started_at >= latest_completion_time:
-            return True
-    return False
-
-
-def _tray_axis_aware_experiments_are_completed(
-    *,
-    task_code: str,
-    tray_code: str,
-    axis_aware_experiment_codes: set[str],
-    assigned_experiment_codes: set[str],
-    schedules: list[dict[str, Any]],
-    experiment_run_trays: list[dict[str, Any]],
-) -> bool:
-    if not axis_aware_experiment_codes:
-        return False
-    completed_by_experiment: dict[str, set[str]] = {}
-    completed_non_axis_experiment_codes: set[str] = set()
-    for relation in experiment_run_trays:
-        if (
-            _task_code(relation) != task_code
-            or _normalize_text(relation.get("tray_code") or relation.get("tray_no")) != tray_code
-            or not _is_completed_status(relation.get("status") or relation.get("run_tray_status"))
-        ):
-            continue
-        experiment_code = _experiment_code(relation)
-        if not experiment_code:
-            continue
-        sub_experiment_code = record_sub_experiment_code(relation)
-        if sub_experiment_code:
-            completed_by_experiment.setdefault(experiment_code, set()).add(sub_experiment_code)
-        else:
-            completed_non_axis_experiment_codes.add(experiment_code)
-
-    for experiment_code in axis_aware_experiment_codes:
-        required_sub_experiment_codes = {
-            _record_sub_code(schedule, experiment_code=experiment_code)
-            for schedule in schedules
-            if _task_code(schedule) == task_code
-            and _experiment_code(schedule) == experiment_code
-            and _normalize_axis_codes(schedule.get("axis_codes") or schedule.get("axisCodes"))
-            and _record_sub_code(schedule, experiment_code=experiment_code)
-        }
-        if not required_sub_experiment_codes:
-            return False
-        if not required_sub_experiment_codes.issubset(completed_by_experiment.get(experiment_code, set())):
-            return False
-
-    non_axis_experiment_codes = assigned_experiment_codes - axis_aware_experiment_codes
-    return non_axis_experiment_codes.issubset(completed_non_axis_experiment_codes)
-
-
 def _index_samples(samples: Any) -> dict[str, dict[str, Any]]:
     return {
         code: sample
@@ -1234,46 +699,6 @@ def _index_trays(sample: Any) -> dict[str, dict[str, Any]]:
         for tray in _as_list(sample.get("trays"))
         if isinstance(tray, dict) and (code := _tray_code(tray))
     }
-
-
-def _validate_samples_lab_arrival_transition(current_samples: Any, next_samples: Any) -> None:
-    if not isinstance(next_samples, list):
-        return
-
-    current_by_code = _index_samples(current_samples)
-    if not current_by_code:
-        return
-
-    for next_sample in next_samples:
-        if not isinstance(next_sample, dict):
-            continue
-        current_sample = current_by_code.get(_sample_code(next_sample))
-        if not current_sample:
-            continue
-
-        current_trays = _index_trays(current_sample)
-        next_trays = _as_list(next_sample.get("trays"))
-        arrived_tray_count = 0
-        for next_tray in next_trays:
-            if not isinstance(next_tray, dict) or _status(next_tray) != LAB_ARRIVED_STATUS:
-                continue
-            arrived_tray_count += 1
-            current_tray = current_trays.get(_tray_code(next_tray))
-            if _tray_was_lab_arrived(current_sample, current_tray):
-                continue
-            if _tray_was_completed_experiment(current_sample, current_tray) and _sample_has_lab_arrival_history(next_sample):
-                continue
-            if not _tray_was_dispatched(current_sample, current_tray):
-                raise HTTPException(status_code=400, detail=LAB_ARRIVAL_REQUIRES_DISPATCH_DETAIL)
-
-        next_sample_status = {
-            _normalize_text(next_sample.get("status")),
-            _normalize_text(next_sample.get("flow_status")),
-        }
-        if LAB_ARRIVED_STATUS in next_sample_status and arrived_tray_count == 0 and not _sample_was_dispatched(current_sample):
-            if _sample_was_lab_arrived(current_sample):
-                continue
-            raise HTTPException(status_code=400, detail=LAB_ARRIVAL_REQUIRES_DISPATCH_DETAIL)
 
 
 def _validate_samples_staging_reentry_transition(
@@ -1443,64 +868,6 @@ def _validate_samples_appearance_source_transition(
             raise HTTPException(status_code=400, detail=APPEARANCE_SOURCE_REQUIRED_DETAIL)
 
 
-def _validate_samples_returned_rearrival_transition(current_samples: Any, next_samples: Any) -> None:
-    if not isinstance(next_samples, list):
-        return
-
-    current_by_code = _index_samples(current_samples)
-    if not current_by_code:
-        return
-
-    for next_sample in next_samples:
-        if not isinstance(next_sample, dict):
-            continue
-        current_sample = current_by_code.get(_sample_code(next_sample))
-        if not current_sample:
-            continue
-
-        current_trays = _index_trays(current_sample)
-        for next_tray in _as_list(next_sample.get("trays")):
-            if not isinstance(next_tray, dict):
-                continue
-            current_tray = current_trays.get(_tray_code(next_tray))
-            if _tray_was_returned(current_sample, current_tray) and _is_handover_arrival(next_sample, next_tray):
-                raise HTTPException(status_code=400, detail=RETURNED_REARRIVAL_BLOCKED_DETAIL)
-
-        if _sample_was_returned(current_sample) and _is_handover_arrival(next_sample):
-            raise HTTPException(status_code=400, detail=RETURNED_REARRIVAL_BLOCKED_DETAIL)
-
-
-def _validate_samples_maintenance_lock(current_samples: Any, next_samples: Any, devices: Any) -> None:
-    if not isinstance(next_samples, list):
-        return
-
-    current_by_code = _index_samples(current_samples)
-    for next_sample in next_samples:
-        if not isinstance(next_sample, dict):
-            continue
-        current_sample = current_by_code.get(_sample_code(next_sample))
-        sample_statuses = {
-            _normalize_text(next_sample.get("status")),
-            _normalize_text(next_sample.get("flow_status")),
-        }
-        tray_statuses = {_status(tray) for tray in _as_list(next_sample.get("trays")) if isinstance(tray, dict)}
-        if not ((sample_statuses | tray_statuses) & LAB_MAINTENANCE_BLOCKED_STATUSES):
-            continue
-        current_statuses = {
-            _normalize_text(current_sample.get("status")) if isinstance(current_sample, dict) else "",
-            _normalize_text(current_sample.get("flow_status")) if isinstance(current_sample, dict) else "",
-        }
-        current_statuses.update(_status(tray) for tray in _as_list(current_sample.get("trays")) if isinstance(tray, dict))
-        current_location = _normalize_text(current_sample.get("location")) if isinstance(current_sample, dict) else ""
-        next_location = _normalize_text(next_sample.get("location"))
-        if next_location == current_location and (sample_statuses | tray_statuses) <= current_statuses:
-            continue
-        unavailable_device = _find_unavailable_device(devices, next_location)
-        if unavailable_device:
-            device_name = _device_name(unavailable_device) or next_location
-            raise HTTPException(status_code=400, detail=f"{device_name}设备维修中，禁止实验室操作")
-
-
 def _validate_fixture_locked_schedules(
     current_schedules: Any,
     next_schedules: Any,
@@ -1540,50 +907,6 @@ def _read_current_storage_value(storage: Any, current_snapshot: Dict[str, Any] |
     return storage.read(key)
 
 
-def _device_update_key(device: Any) -> str:
-    if not isinstance(device, dict):
-        return ""
-    return _normalize_text(device.get("code") or device.get("id") or device.get("lab_code") or device.get("labCode"))
-
-
-def _changed_device_rows(current_devices: Any, next_devices: Any) -> list[dict[str, Any]]:
-    current_rows = current_devices if isinstance(current_devices, list) else []
-    next_rows = next_devices if isinstance(next_devices, list) else []
-    current_by_key = {
-        _device_update_key(device): device
-        for device in current_rows if isinstance(device, dict) and _device_update_key(device)
-    }
-    return [
-        device
-        for device in next_rows if isinstance(device, dict)
-        if not _device_update_key(device) or current_by_key.get(_device_update_key(device)) != device
-    ]
-
-
-def _validate_device_schedule_maintenance_conflicts(storage: Any, updates: Dict[str, Any], current_snapshot: Dict[str, Any] | None) -> None:
-    if "mes.schedules" not in updates and "mes.devices" not in updates:
-        return
-    schedules = updates.get("mes.schedules", _read_current_storage_value(storage, current_snapshot, "mes.schedules"))
-    devices = updates.get("mes.devices", _read_current_storage_value(storage, current_snapshot, "mes.devices"))
-    changed_devices = None
-    if "mes.devices" in updates:
-        changed_devices = _changed_device_rows(
-            _read_current_storage_value(storage, current_snapshot, "mes.devices"),
-            devices,
-        )
-    try:
-        if changed_devices is not None:
-            validate_maintenance_time_order(changed_devices)
-        validate_schedule_maintenance_conflicts(
-            schedules if isinstance(schedules, list) else [],
-            devices if isinstance(devices, list) else [],
-            changed_devices=changed_devices,
-            changed_schedules=updates.get("mes.schedules") if isinstance(updates.get("mes.schedules"), list) else None,
-        )
-    except StorageSchedulePatchError as error:
-        raise HTTPException(status_code=error.status_code, detail=error.detail) from error
-
-
 def _validate_storage_update(storage: Any, updates: Dict[str, Any], current_snapshot: Dict[str, Any] | None = None) -> None:
     if "mes.schedules" in updates:
         _validate_fixture_locked_schedules(
@@ -1595,12 +918,12 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any], current_snap
             _read_current_storage_value(storage, current_snapshot, "mes.experiment_trays"),
             _read_current_storage_value(storage, current_snapshot, "mes.experiment_run_steps"),
         )
-    _validate_device_schedule_maintenance_conflicts(storage, updates, current_snapshot)
+    validate_device_schedule_maintenance_conflicts(storage, updates, current_snapshot)
     if "mes.samples" not in updates:
         return
     current_samples = _read_current_storage_value(storage, current_snapshot, "mes.samples")
     current_staging_events = _read_current_storage_value(storage, current_snapshot, "mes.staging_events")
-    _validate_samples_lab_arrival_transition(current_samples, updates["mes.samples"])
+    validate_samples_lab_arrival(current_samples, updates["mes.samples"])
     _validate_samples_staging_reentry_transition(
         current_samples,
         updates["mes.samples"],
@@ -1620,73 +943,17 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any], current_snap
         _read_current_storage_value(storage, current_snapshot, "mes.experiment_run_trays"),
         current_staging_events,
     )
-    _validate_samples_appearance_dispatch_transition(
+    validate_samples_appearance_dispatch(
         current_samples,
         updates["mes.samples"],
         _read_current_storage_value(storage, current_snapshot, "mes.experiments"),
     )
-    _validate_samples_returned_rearrival_transition(current_samples, updates["mes.samples"])
-    _validate_samples_maintenance_lock(
+    validate_samples_returned_rearrival(current_samples, updates["mes.samples"])
+    validate_samples_maintenance_lock(
         current_samples,
         updates["mes.samples"],
         _read_current_storage_value(storage, current_snapshot, "mes.devices"),
     )
-
-
-def publish_storage_update(keys: list[str], *, source: str = "", request_id: str = "") -> None:
-    payload = {
-        "keys": list(keys),
-        "updatedAt": now_business_text(),
-    }
-    if source:
-        payload["source"] = source
-    if request_id:
-        payload["requestId"] = request_id
-    with _STORAGE_UPDATE_SUBSCRIBERS_LOCK:
-        subscribers = list(_STORAGE_UPDATE_SUBSCRIBERS)
-    def enqueue(subscriber_queue: asyncio.Queue[dict[str, Any]]) -> None:
-        if subscriber_queue.full():
-            try:
-                subscriber_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                pass
-        try:
-            subscriber_queue.put_nowait(payload)
-        except asyncio.QueueFull:
-            pass
-
-    for subscriber_loop, subscriber_queue in subscribers:
-        if subscriber_loop.is_closed():
-            continue
-        try:
-            subscriber_loop.call_soon_threadsafe(enqueue, subscriber_queue)
-        except RuntimeError:
-            # The client may disconnect between the closed-loop check and delivery.
-            continue
-
-
-def _format_sse(payload: dict[str, Any]) -> str:
-    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-
-async def _storage_update_event_stream():
-    subscriber_loop = asyncio.get_running_loop()
-    subscriber_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=20)
-    subscriber = (subscriber_loop, subscriber_queue)
-    with _STORAGE_UPDATE_SUBSCRIBERS_LOCK:
-        _STORAGE_UPDATE_SUBSCRIBERS.add(subscriber)
-    try:
-        yield ": connected\n\n"
-        while True:
-            try:
-                payload = await asyncio.wait_for(subscriber_queue.get(), timeout=15)
-            except asyncio.TimeoutError:
-                yield ": keepalive\n\n"
-                continue
-            yield _format_sse(payload)
-    finally:
-        with _STORAGE_UPDATE_SUBSCRIBERS_LOCK:
-            _STORAGE_UPDATE_SUBSCRIBERS.discard(subscriber)
 
 
 @router.get("")

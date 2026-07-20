@@ -604,13 +604,31 @@ const hasAppearanceStockInBeforeLatestLabDispatch = ({ config, latestStorageEven
     return false;
   }
   const latestDispatchTime = parseTimeValue(latestStorageEvent?.time);
-  return asArray(trayStorageEvents).some((event) =>
-    eventMatchesRoom(event, config)
-    && normalizeText(event?.action) === "stock_out"
-    && normalizeText(event?.appearance_phase || event?.appearancePhase) === "pre_experiment"
-    && normalizeText(event?.target_experiment_code || event?.targetExperimentCode) === targetExperimentCode
-    && (!latestDispatchTime || parseTimeValue(event?.time) <= latestDispatchTime),
-  );
+  let dispatched = false;
+  asArray(trayStorageEvents)
+    .filter((event) => eventMatchesRoom(event, config))
+    .filter((event) => !latestDispatchTime || parseTimeValue(event?.time) <= latestDispatchTime)
+    .slice()
+    .sort((left, right) => parseTimeValue(left?.time) - parseTimeValue(right?.time))
+    .forEach((event) => {
+      const eventTargetCode = normalizeText(event?.target_experiment_code || event?.targetExperimentCode);
+      if (eventTargetCode && eventTargetCode !== targetExperimentCode) {
+        return;
+      }
+      const action = normalizeText(event?.action);
+      if (action === "stock_out_withdraw") {
+        dispatched = false;
+        return;
+      }
+      if (
+        (action === "stock_in" || action === "stock_out")
+        && normalizeText(event?.appearance_phase || event?.appearancePhase) === "pre_experiment"
+        && eventTargetCode === targetExperimentCode
+      ) {
+        dispatched = true;
+      }
+    });
+  return dispatched;
 };
 
 const collectTrayExperimentCodes = ({ taskCode, trayCode, experimentTrays }) => {
@@ -639,43 +657,6 @@ const hasPendingSiblingAxisSchedule = ({ experimentCode, schedules, subExperimen
     }
     return !COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(schedule?.status || schedule?.schedule_status || schedule?.scheduleStatus));
   });
-
-const trayHasPartialAxisRunCompletion = ({ experimentRunSteps, experimentRunTrays, experiments, schedules, taskCode, trayCode }) => {
-  const experimentMap = buildExperimentMap(experiments);
-  return asArray(experimentRunTrays).some((entry) => {
-    if (
-      normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) !== taskCode
-      || normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo) !== trayCode
-      || !COMPLETED_RUN_TRAY_STATUSES.has(normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status))
-    ) {
-      return false;
-    }
-    const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo);
-    const subExperimentCode = normalizeText(entry?.sub_experiment_code || entry?.subExperimentCode || entry?.sub_experiment_no || entry?.subExperimentNo);
-    if (!subExperimentCode) {
-      return false;
-    }
-    const experiment = experimentMap.get(experimentCode);
-    const progress = resolveAxisProgress({
-      experiment,
-      experimentCode,
-      experimentRunSteps,
-      experimentRunTrays,
-      experiments,
-      schedules,
-      subExperimentCode,
-      taskCode,
-      trayCode,
-    });
-    if (isAxisProgressIncomplete(progress) && Number(progress.completedCount) > 0) {
-      return true;
-    }
-    return (
-      Number(progress.completedCount) > 0
-      && hasPendingSiblingAxisSchedule({ experimentCode, schedules, subExperimentCode, taskCode })
-    );
-  });
-};
 
 const latestPartialAxisRunCompletionTime = ({ experimentRunSteps, experimentRunTrays, experiments, schedules, taskCode, trayCode }) => {
   const experimentMap = buildExperimentMap(experiments);
@@ -1027,7 +1008,7 @@ const resolveInboundKind = ({ config, isExplicitStagingInbound, status }) => {
   return { inboundKind: "allowed", inboundKindLabel: "允许暂存" };
 };
 
-const resolveTrayStatusLabel = ({ config, experiments, experimentRunSteps, experimentRunTrays, isPartialAxisInbound, isPostExperimentInbound, samples, status, taskCode, trayCode }) => {
+const resolveTrayStatusLabel = ({ config, isPartialAxisInbound, isPostExperimentInbound, status }) => {
   const normalizedStatus = normalizeText(status);
   if (config.key !== "staging" || !isCurrentStagingStatus(normalizedStatus, config)) {
     return normalizedStatus;
@@ -1212,7 +1193,7 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
       if (targetLab) {
         directExperimentCandidates.push({
           preferred: false,
-          scheduled: true,
+          scheduled: false,
           targetExperimentCode: nextExperimentCode,
           targetExperimentName: resolveExperimentName(experiment),
           targetIsFallback: true,
@@ -1221,7 +1202,7 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
           targetLabId: "",
           targetScheduleStartAt: "",
           targetScheduleEndAt: "",
-          targetUnavailableReason: "",
+          targetUnavailableReason: "当前实验尚未排程。",
         });
       }
     }

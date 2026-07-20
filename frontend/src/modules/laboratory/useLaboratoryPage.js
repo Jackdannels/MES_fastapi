@@ -22,17 +22,14 @@ import {
   markLaboratoryAttendanceWorkStarted,
   readLaboratoryAttendanceSession,
 } from "@/lib/attendanceApi";
-import { canonicalAxisCode, normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { serverNowDate } from "@/lib/serverClock";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
-import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
-import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
 import { resolveDeviceUnavailableReason } from "@/modules/schedule/model";
 import {
   buildLaboratoryChecklist,
@@ -45,20 +42,37 @@ import {
   LAB_READY_STATUS,
   getLaboratoryActionState,
   getLaboratoryOperationLock,
-  SALT_SPRAY_LAB,
   validateLaboratoryTrayScan,
 } from "./model";
+import {
+  countTrayRowSamples,
+  createDefaultLaboratoryConfig,
+  normalizeSelectedLabName,
+  readStoredLabName,
+  resolveLaboratoryConfig,
+  writeStoredLabName,
+} from "./laboratoryConfig";
+import {
+  COMPLETED_EXPERIMENT_RUN_STATUSES,
+  SWITCH_REVERTIBLE_TRAY_STATUSES,
+  TASK_SWITCH_LOCKED_TRAY_STATUSES,
+  formatAttendanceDuration,
+  formatErrorMessage,
+  formatFlowTimeForAttendance,
+  generateExperimentRunNo,
+  generateFixtureInstallId,
+  isResettableTrayStatus,
+  normalizeText,
+  resolveSubExperimentCode,
+  scheduleAxisCodes,
+  stepAxisCode,
+  stepRunNo,
+  stepStatus,
+} from "./pageHelpers";
 
 const RUNNING_MODAL_RESTORE_MS = 10_000;
 const COMPLETED_RUNNING_MODAL_AUTO_CLOSE_MS = 60_000;
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
-const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
-const SWITCH_REVERTIBLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
-const TASK_SWITCH_LOCKED_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS, "实验进行中", "实验中"]);
-const COMPLETED_EXPERIMENT_RUN_STATUSES = new Set(["实验完成", "实验已完成", "实验已经完成"]);
-const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
-const SALT_SPRAY_LAB_CODE = "LAB_SALT";
-const LABORATORY_SELECTED_LAB_STORAGE_KEY = "mes_laboratory_selected_lab_v1";
 const FIXTURE_CONFIRM_COUNTDOWN_SECONDS = 5;
 const FIXTURE_CONFIRM_SUCCESS_MS = 1000;
 const ATTENDANCE_LOGOUT_COUNTDOWN_SECONDS = 30;
@@ -74,125 +88,7 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
   STORAGE_KEYS.devices,
 ]);
 
-const normalizeText = (value) => String(value ?? "").trim();
-const formatFlowTimeForAttendance = (value) => {
-  const time = parseBusinessDateTimeToMs(value);
-  if (!Number.isFinite(time)) {
-    return "--:--";
-  }
-  return formatLocalDateTime(new Date(time), { includeSeconds: false }).slice(-5);
-};
-const formatAttendanceDuration = (elapsedSeconds) => {
-  const seconds = Math.max(0, Math.floor(Number(elapsedSeconds) || 0));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const remainingSeconds = seconds % 60;
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
-};
-const isResettableTrayStatus = (status) => {
-  const normalized = normalizeText(status);
-  return RESETTABLE_TRAY_STATUSES.has(normalized) || isAxisPartialProgressStatus(normalized);
-};
-const formatErrorMessage = (error) => normalizeText(error?.message || error) || "未知错误";
-const generateExperimentRunNo = () => `run-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`;
-const generateFixtureInstallId = () => `fixture-install-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-const stepAxisCode = (step) => canonicalAxisCode(step?.axis_code || step?.axisCode);
-const stepRunNo = (step) => normalizeText(step?.run_no || step?.runNo);
-const stepStatus = (step) => normalizeText(step?.status || step?.step_status || step?.stepStatus);
-const scheduleAxisCodes = (schedule) => normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes);
-const resolveSubExperimentCode = (value = {}) =>
-  normalizeText(value?.subExperimentCode ?? value?.sub_experiment_code ?? value?.sub_experiment_no ?? value?.subExperimentNo);
 
-const STATIC_LAB_CODES_BY_NAME = Object.freeze({
-  "冲击一室": "LAB_IMPACT_1",
-  "冲击二室": "LAB_IMPACT_2",
-  "振动一室": "LAB_VIBRATION_1",
-  "振动二室": "LAB_VIBRATION_2",
-  "四综合实验室": "LAB_COMPREHENSIVE",
-  "温度冲击一室": "LAB_TEMP_SHOCK_1",
-  "温度冲击二室": "LAB_TEMP_SHOCK_2",
-  "高低温湿热一室": "LAB_HOT_HUMID",
-  "高低温湿热二室": "LAB_HOT_HUMID_2",
-  "盐雾试验室": SALT_SPRAY_LAB_CODE,
-  "霉菌试验室": "LAB_MOLD",
-});
-const STATIC_LAB_NAMES = Array.from(new Set([
-  ...LABORATORY_OPTIONS.map((option) => option.label),
-  ...Object.keys(STATIC_LAB_CODES_BY_NAME),
-]));
-
-const createDefaultLaboratoryConfig = (labName = SALT_SPRAY_LAB) => ({
-  labCode: STATIC_LAB_CODES_BY_NAME[labName] || (labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_CODE : labName),
-  labId: labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_ID : (STATIC_LAB_CODES_BY_NAME[labName] || labName),
-  labName,
-  testTypeName: "",
-});
-
-const normalizeSelectedLabName = (value) => {
-  const rawValue = Array.isArray(value) ? value[0] : value;
-  return normalizeText(rawValue);
-};
-
-const readStoredLabName = () => {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return normalizeText(window.localStorage.getItem(LABORATORY_SELECTED_LAB_STORAGE_KEY));
-};
-
-const writeStoredLabName = (labName) => {
-  const normalizedLabName = normalizeText(labName);
-  if (!normalizedLabName || typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(LABORATORY_SELECTED_LAB_STORAGE_KEY, normalizedLabName);
-};
-
-const resolveLabId = (lab, labName) =>
-  normalizeText(lab?.mqttLabId || lab?.mqtt_lab_id)
-  || (normalizeText(lab?.code || lab?.lab_code) === SALT_SPRAY_LAB_CODE ? SALT_SPRAY_LAB_ID : normalizeText(lab?.code || lab?.lab_code))
-  || (labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_ID : (STATIC_LAB_CODES_BY_NAME[labName] || labName));
-const resolveLabCode = (lab, labName) =>
-  normalizeText(lab?.code || lab?.lab_code)
-  || STATIC_LAB_CODES_BY_NAME[labName]
-  || (labName === SALT_SPRAY_LAB ? SALT_SPRAY_LAB_CODE : normalizeText(labName));
-
-const resolveLaboratoryConfig = (masterLabs = [], selectedLabName = "") => {
-  const enabledLabs = (Array.isArray(masterLabs) ? masterLabs : []).filter((lab) => {
-    if (Number(lab?.status ?? 1) === 0) {
-      return false;
-    }
-    const type = normalizeText(lab?.type || lab?.lab_type);
-    return !type || type === "实验室";
-  });
-  const requestedLabName = normalizeSelectedLabName(selectedLabName);
-  const matchedRequestedLab = requestedLabName
-    ? enabledLabs.find((lab) => normalizeText(lab?.name || lab?.lab_name) === requestedLabName)
-    : null;
-  const matchedLab =
-    matchedRequestedLab
-    || enabledLabs.find((lab) => normalizeText(lab?.code || lab?.lab_code) === SALT_SPRAY_LAB_CODE)
-    || enabledLabs.find((lab) => normalizeText(lab?.name || lab?.lab_name) === SALT_SPRAY_LAB);
-  if (!matchedLab) {
-    const fallbackLabName = requestedLabName && STATIC_LAB_NAMES.includes(requestedLabName) ? requestedLabName : SALT_SPRAY_LAB;
-    return createDefaultLaboratoryConfig(fallbackLabName);
-  }
-  const labName = normalizeText(matchedLab?.name || matchedLab?.lab_name);
-  const resolvedLabName = labName || requestedLabName || SALT_SPRAY_LAB;
-  return {
-    labCode: resolveLabCode(matchedLab, resolvedLabName),
-    labId: resolveLabId(matchedLab, resolvedLabName),
-    labName: resolvedLabName,
-    testTypeName: normalizeText(matchedLab?.testTypeName || matchedLab?.test_type_name || matchedLab?.testType || matchedLab?.test_type),
-  };
-};
-
-const countTrayRowSamples = (trayRows) =>
-  (Array.isArray(trayRows) ? trayRows : []).reduce((total, row) => {
-    const sampleCodes = Array.isArray(row?.sampleCodes) ? row.sampleCodes : [];
-    const quantity = Number(row?.quantity);
-    return total + (sampleCodes.length || (Number.isFinite(quantity) && quantity > 0 ? quantity : 1));
-  }, 0);
 
 function useLaboratoryPage(options = {}) {
   const now = options.now;
