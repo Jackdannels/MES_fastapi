@@ -33,6 +33,25 @@ from app.services.storage_schedule_patch import (
     validate_schedule_maintenance_conflicts,
 )
 from app.services.storage_update_bus import publish_storage_update, storage_update_event_stream as _storage_update_event_stream
+from app.services.storage_read_helpers import (
+    _as_list,
+    _experiment_code,
+    _normalize_axis_codes,
+    _normalize_text,
+    _normalize_tray_scan_code,
+    _parse_datetime,
+    _record_axis_batch_no,
+    _record_axis_codes,
+    _record_schedule_id,
+    _record_sub_code,
+    _run_no,
+    _sample_code,
+    _schedule_id,
+    _status,
+    _task_code,
+    _tray_code,
+)
+
 from app.services.storage_policies import (
     SCHEDULE_FIXTURE_LOCKED_DETAIL,
     SCHEDULE_LOCKED_AFTER_FIXTURE_STATUSES,
@@ -71,7 +90,6 @@ APPEARANCE_SOURCE_REQUIRED_DETAIL = "当前试验类型不支持进入外观检�
 APPEARANCE_REPEAT_STOCK_IN_BLOCKED_DETAIL = "该托盘已完成实验前外观检测并出库，不能重复入库外观检测间。"
 APPEARANCE_DISPATCH_TARGET_REQUIRED_DETAIL = "目标实验室与当前托盘不匹配"
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
-TRAY_QR_PREFIX = "MES-TRAY:"
 SCHEDULE_LOCKED_FIELDS = {
     "device",
     "end_at",
@@ -82,53 +100,24 @@ SCHEDULE_LOCKED_FIELDS = {
     "start_at",
     "task_code",
 }
-def _normalize_text(value: Any) -> str:
-    return str(value or "").strip()
 
 
-def _normalize_tray_scan_code(value: Any) -> str:
-    normalized = _normalize_text(value)
-    if normalized.upper().startswith(TRAY_QR_PREFIX):
-        return normalized[len(TRAY_QR_PREFIX) :].strip()
-    return normalized
 
 
-def _as_list(value: Any) -> list[Any]:
-    return value if isinstance(value, list) else []
 
 
-def _parse_datetime(value: Any) -> datetime | None:
-    return parse_business_datetime(value)
 
 
-def _sample_code(sample: Any) -> str:
-    return _normalize_text(sample.get("code")) if isinstance(sample, dict) else ""
 
 
-def _tray_code(tray: Any) -> str:
-    return _normalize_text(tray.get("tray_code")) if isinstance(tray, dict) else ""
 
 
-def _task_code(row: Any) -> str:
-    if not isinstance(row, dict):
-        return ""
-    return _normalize_text(row.get("task_code") or row.get("taskCode") or row.get("code"))
 
 
-def _experiment_code(row: Any) -> str:
-    if not isinstance(row, dict):
-        return ""
-    return _normalize_text(row.get("experiment_code") or row.get("experimentCode"))
 
 
-def _status(value: Any) -> str:
-    if not isinstance(value, dict):
-        return ""
-    return _normalize_text(value.get("status")) or _normalize_text(value.get("flow_status"))
 
 
-def _schedule_id(schedule: Any) -> str:
-    return _normalize_text(schedule.get("id")) if isinstance(schedule, dict) else ""
 
 
 def _experiment_tray_codes(experiment_trays: Any, task_code: str, experiment_code: str) -> set[str]:
@@ -160,14 +149,8 @@ def _sample_has_fixture_locked_tray(sample: Any, tray_codes: set[str]) -> bool:
     return False
 
 
-def _record_axis_batch_no(record: Any) -> str:
-    return _normalize_text(record.get("axis_batch_no") or record.get("axisBatchNo")) if isinstance(record, dict) else ""
 
 
-def _record_axis_codes(record: Any) -> list[str]:
-    if not isinstance(record, dict):
-        return []
-    return _normalize_axis_codes(record.get("axis_codes") or record.get("axisCodes"))
 
 
 def _schedule_has_axis_scope(schedule: Any) -> bool:
@@ -278,22 +261,6 @@ def _schedule_is_fixture_locked(
     )
 
 
-def _normalize_axis_codes(value: Any) -> list[str]:
-    if isinstance(value, list):
-        raw_values = value
-    elif isinstance(value, str):
-        raw_values = value.replace("，", ",").split(",")
-    else:
-        raw_values = []
-    axis_codes: list[str] = []
-    seen: set[str] = set()
-    for item in raw_values:
-        axis_code = _normalize_text(item)
-        if not axis_code or axis_code in seen:
-            continue
-        seen.add(axis_code)
-        axis_codes.append(axis_code)
-    return sort_axis_codes(axis_codes)
 
 
 def _is_partially_completed_multi_axis_schedule(schedule: Any, experiment_run_steps: Any) -> bool:
@@ -321,22 +288,14 @@ def _is_partially_completed_multi_axis_schedule(schedule: Any, experiment_run_st
     return bool(completed_axis_codes) and not axis_code_set.issubset(completed_axis_codes)
 
 
-def _run_no(record: Any) -> str:
-    return _normalize_text(record.get("run_no") or record.get("runNo") or record.get("id")) if isinstance(record, dict) else ""
 
 
-def _record_schedule_id(record: Any) -> str:
-    return _normalize_text(record.get("schedule_id") or record.get("scheduleId") or record.get("schedule_no")) if isinstance(record, dict) else ""
 
 
 def _is_completed_status(value: Any) -> bool:
     return _normalize_text(value) in COMPLETED_EXPERIMENT_STATUSES
 
 
-def _record_sub_code(record: Any, *, experiment_code: str = "") -> str:
-    if not isinstance(record, dict):
-        return ""
-    return resolve_record_sub_experiment_code(record, experiment_code=experiment_code)
 
 
 def _locked_schedule_fields_changed(current_schedule: Any, next_schedule: Any) -> bool:

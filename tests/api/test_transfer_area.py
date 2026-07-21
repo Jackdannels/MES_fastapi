@@ -455,6 +455,80 @@ def test_transfer_area_dispatch_to_staging_updates_tray_samples_and_history(monk
     assert all(sample["history"][0]["action"] == "送至暂存间" for sample in updated_samples)
 
 
+def test_transfer_area_dispatch_to_staging_then_storage_api_stock_in_keeps_one_shared_tray_state(monkeypatch):
+    from app.api.routes import storage as storage_route
+    from app.api.routes import transfer_area as transfer_area_route
+    from app.api.routes import transfer_area_commands
+
+    storage = FakeTransferStorage(create_payloads())
+    seed_task_102_dispatch_data(storage, [])
+    monkeypatch.setattr(transfer_area_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(storage_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(transfer_area_commands, "now_business_text", lambda: "2026-07-21 09:00:00")
+    monkeypatch.setattr(storage_route, "now_business_text", lambda: "2026-07-21 09:01:00")
+    monkeypatch.setattr(transfer_area_route, "publish_storage_update", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(storage_route, "publish_storage_update", lambda *_args, **_kwargs: None)
+
+    app = FastAPI()
+    app.include_router(transfer_area_route.router)
+    app.include_router(storage_route.router)
+    client = TestClient(app)
+    tray_code = "SYLU-2026-03-102-TP-001"
+
+    dispatched = client.post(
+        f"/api/transfer-area/trays/{tray_code}/dispatch",
+        json={"targetType": "staging", "targetName": "恒温恒湿间（暂存间）"},
+    )
+    stocked_in = client.post(
+        f"/api/storage/rooms/staging/trays/{tray_code}/stock-in",
+        json={"operator": "暂存员A"},
+    )
+    transfer_lookup = client.get(f"/api/transfer-area/trays/{tray_code}/dispatch")
+
+    assert dispatched.status_code == 200
+    assert dispatched.json()["ok"] is True
+    assert dispatched.json()["message"] == f"{tray_code}已标记为送至暂存间"
+    assert dispatched.json()["affectedSampleCount"] == 2
+    assert dispatched.json()["tray"]["trayStatus"] == "送至暂存间"
+    assert stocked_in.status_code == 200
+    assert stocked_in.json() == {
+        "ok": True,
+        "trayCode": tray_code,
+        "row": {
+            "location": "恒温恒湿间（暂存间）",
+            "quantity": 2,
+            "status": "已到达暂存间",
+            "taskCode": "SYLU-2026-03-102",
+            "trayCode": tray_code,
+        },
+        "updatedKeys": ["mes.samples", "mes.staging_events"],
+    }
+    assert transfer_lookup.status_code == 400
+    assert transfer_lookup.json()["detail"] == "该托盘已在暂存间入库，请从暂存间出库"
+
+    updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102"]
+    assert len(updated_samples) == 2
+    assert all(sample["location"] == "恒温恒湿间（暂存间）" for sample in updated_samples)
+    assert all(sample["status"] == "已到达暂存间" for sample in updated_samples)
+    assert all(sample["flow_status"] == "已到达暂存间" for sample in updated_samples)
+    assert all(sample["trays"][0]["status"] == "已到达暂存间" for sample in updated_samples)
+    assert all([entry["action"] for entry in sample["history"][:2]] == ["暂存间扫码入库", "送至暂存间"] for sample in updated_samples)
+    assert all([entry["time"] for entry in sample["history"][:2]] == ["2026-07-21 09:01:00", "2026-07-21 09:00:00"] for sample in updated_samples)
+    assert storage.read("mes.staging_events") == [
+        {
+            "id": f"staging-event-{tray_code}-1",
+            "tray_code": tray_code,
+            "task_code": "SYLU-2026-03-102",
+            "room": "staging",
+            "action": "stock_in",
+            "time": "2026-07-21 09:01:00",
+            "operator": "暂存员A",
+            "location": "恒温恒湿间（暂存间）",
+            "status": "已到达暂存间",
+        }
+    ]
+
+
 def test_transfer_area_rejects_lab_dispatch_after_staging_stock_in(monkeypatch):
     client, storage = build_client(monkeypatch)
     tray_code = "SYLU-2026-03-102-TP-001"

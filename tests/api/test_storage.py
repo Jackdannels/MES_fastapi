@@ -2147,6 +2147,28 @@ def test_storage_tray_manufacturer_return_action_is_local_to_selected_tray(monke
         {
             "mes.samples": samples,
             "mes.tasks": [{"code": "TASK-RETURN", "transfer_status": "任务进行中"}],
+            "mes.experiments": [
+                {
+                    "task_code": "TASK-RETURN",
+                    "experiment_code": "TASK-RETURN-A",
+                    "experiment_name": "冲击试验",
+                    "status": "实验进行中",
+                }
+            ],
+            "mes.experiment_trays": [
+                {"task_code": "TASK-RETURN", "experiment_code": "TASK-RETURN-A", "tray_code": "TP-RETURN-A"},
+                {"task_code": "TASK-RETURN", "experiment_code": "TASK-RETURN-A", "tray_code": "TP-RETURN-B"},
+            ],
+            "mes.experiment_run_trays": [],
+            "mes.schedules": [
+                {
+                    "id": "schedule-return-active-sibling",
+                    "task_code": "TASK-RETURN",
+                    "experiment_code": "TASK-RETURN-A",
+                    "device": "冲击二室",
+                    "status": "已排程",
+                }
+            ],
             "mes.staging_events": [],
         },
     )
@@ -2160,7 +2182,74 @@ def test_storage_tray_manufacturer_return_action_is_local_to_selected_tray(monke
     assert updated_samples["SP-RETURN-A"]["trays"][0]["status"] == "厂家收回"
     assert updated_samples["SP-RETURN-B"] == samples[1]
     assert storage.read("mes.tasks")[0]["transfer_status"] == "任务进行中"
+    assert [schedule["id"] for schedule in storage.read("mes.schedules")] == ["schedule-return-active-sibling"]
     assert storage.read("mes.staging_events")[-1]["action"] == "manufacturer_return"
+
+
+def test_manufacturer_return_of_last_tray_releases_schedule_for_maintenance(monkeypatch):
+    task_code = "TASK-RETURN-MAINTENANCE"
+    tray_code = "TP-RETURN-MAINTENANCE"
+    devices = [{"code": "冲击二室", "name": "冲击二室", "status": "可用"}]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.devices": devices,
+            "mes.samples": [
+                {
+                    "code": "SP-RETURN-MAINTENANCE",
+                    "location": "恒温恒湿间（实验后暂存间）",
+                    "status": "实验后暂存间存放",
+                    "flow_status": "实验后暂存间存放",
+                    "task_code": task_code,
+                    "trays": [{"tray_code": tray_code, "status": "实验后暂存间存放", "quantity": 1}],
+                }
+            ],
+            "mes.tasks": [{"code": task_code, "transfer_status": "任务进行中"}],
+            "mes.experiments": [
+                {
+                    "task_code": task_code,
+                    "experiment_code": f"{task_code}-A",
+                    "experiment_name": "冲击试验",
+                    "status": "实验进行中",
+                }
+            ],
+            "mes.experiment_trays": [
+                {"task_code": task_code, "experiment_code": f"{task_code}-A", "tray_code": tray_code}
+            ],
+            "mes.experiment_run_trays": [],
+            "mes.schedules": [
+                {
+                    "id": "schedule-return-maintenance",
+                    "task_code": task_code,
+                    "experiment_code": f"{task_code}-A",
+                    "device": "冲击二室",
+                    "start_at": "2099-03-20 09:00",
+                    "end_at": "2099-03-20 11:00",
+                    "status": "已排程",
+                }
+            ],
+            "mes.staging_events": [],
+        },
+    )
+
+    returned = client.post(f"/api/storage/rooms/staging/trays/{tray_code}/manufacturer-return", json={})
+    maintenance = client.put(
+        "/api/storage",
+        json={
+            "mes.devices": [
+                {
+                    **devices[0],
+                    "maintenance_start_at": "2099-03-20 10:00",
+                    "maintenance_end_at": "",
+                    "maintenance_type": "计划保养",
+                }
+            ]
+        },
+    )
+
+    assert returned.status_code == 200
+    assert storage.read("mes.schedules") == []
+    assert maintenance.status_code == 200
 
 
 def test_storage_tray_actions_serialize_same_tray_stock_out_conflict(monkeypatch):

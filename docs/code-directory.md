@@ -20,9 +20,11 @@
 - `app/api/routes/`：按业务域拆分的 FastAPI 路由。
 - `app/api/routes/auth.py`：登录、认证相关接口。
 - `app/api/routes/storage.py`：存储快照、前端数据持久化、实时更新发布接口。
+- `app/services/storage_read_helpers.py`：存储流程的文本、时间、托盘、任务、排程和轴范围只读归一化 helper；不负责状态写入。
 - `app/api/routes/tasks.py`：任务相关接口。
 - `app/api/routes/laboratory.py`：实验室流程相关接口。
 - `app/api/routes/transfer_area.py`：交接区/暂存/托盘分配相关接口和工作台业务逻辑。
+- `app/api/routes/transfer_area_read_views.py`：交接区只读状态计算、工作区/概览序列化和托盘派发查询视图；不负责快照写入或事务。
 - `app/api/routes/mq.py`：MQTT 管理或调试相关接口。
 - `app/api/routes/master_data.py`：主数据读取接口。
 - `app/api/routes/crud_factory.py`：通用 CRUD 路由工厂。

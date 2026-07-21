@@ -619,7 +619,7 @@ def _apply_staging_returned_tasks(payload: Dict[str, Any]) -> tuple[Dict[str, An
     return normalized, True
 
 
-def _apply_terminal_experiments_for_returned_trays(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+def apply_terminal_experiments_for_returned_trays(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
     experiment_trays = [
         dict(item)
         for item in (payload.get("mes.experiment_trays") if isinstance(payload.get("mes.experiment_trays"), list) else [])
@@ -845,7 +845,7 @@ def _normalize_payload(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
     normalized, returned_changed = _apply_staging_returned_tasks(normalized)
     if returned_changed:
         changed = True
-    normalized, terminal_experiment_changed = _apply_terminal_experiments_for_returned_trays(normalized)
+    normalized, terminal_experiment_changed = apply_terminal_experiments_for_returned_trays(normalized)
     if terminal_experiment_changed:
         changed = True
     return normalized, changed

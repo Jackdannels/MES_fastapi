@@ -7,6 +7,15 @@
 - 高低温湿热二室 has no upper computer. This laboratory only uses mock mode via hostless local simulation; do not remove or "clean up" this exception by mistake.
 - Keep task, tray, laboratory, process, storage, and device workflow business rules shared between MQTT events and any local hostless simulation. The only allowed difference is the physical device interface boundary for 高低温湿热二室.
 
+# Refactoring Behavior-Parity Guard
+
+- For every refactor that touches task, tray, laboratory, process, storage, device, history, status derivation, or state transitions, reserve one additional independent agent as the behavior-parity reviewer before implementation starts. This agent must not edit production code or the acceptance tests under review.
+- Before the first production-code edit, use the same deterministic fixture or isolated database snapshot to capture executable characterization tests or a reproducible baseline for the affected real scenarios. Freeze business time and generated identifiers where they affect results, then compare the same inputs and snapshot after the refactor.
+- Every previously fixed real workflow defect in the affected area must remain as a named regression scenario; its assertions must not be deleted, skipped, relaxed, or replaced with implementation-detail checks.
+- The parity review must cover, where applicable: HTTP status and response body, database state and event/history records, cross-page tray status/target/time derivation, and both MQTT and hostless simulation paths. Preserve the 高低温湿热二室 exception.
+- Observable business behavior is zero-difference by default. Normalize only non-business transport metadata such as MQTT envelopes, acknowledgements, request IDs, and response headers; permissions, business state, event meaning, and business timestamps must remain identical. Any intentional behavior change must be identified, approved by the user, and covered by a dedicated test instead of being treated as refactoring.
+- A refactor is complete only after the relevant targeted tests, full backend tests, full frontend tests, and frontend lint pass, and the behavior-parity reviewer reports the commands and an explicit `APPROVE` or `REJECT`. Reuse `frontend/src/modules/samples/trayFlowConsistency.test.js` for cross-page consistency and the existing laboratory API/service tests for MQTT and hostless simulation where applicable.
+
 # Ponytail Mode Routing
 
 - Use Ponytail `lite` by default.

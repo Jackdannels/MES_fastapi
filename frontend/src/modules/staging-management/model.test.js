@@ -4382,7 +4382,7 @@ describe("staging-management model", () => {
     }));
   });
 
-  test("allows partial axis trays in staging to stock out to another unfinished experiment without a schedule", () => {
+  test("shows only the active scheduled lab after partial impact or vibration completion", () => {
     const snapshot = createSnapshot();
     const taskCode = "SYLU-2026-07-003";
     const trayCode = `${taskCode}-TP-001`;
@@ -4530,14 +4530,9 @@ describe("staging-management model", () => {
     });
 
     expect(stockInResult.error).toBe("");
-    expect(stagedRow?.targetDestinations.map((destination) => destination.targetLab)).toEqual([
-      "振动二室",
-      "盐雾试验室",
-    ]);
-    expect(stagedRow?.targetDestinations.find((destination) => destination.targetLab === "盐雾试验室")).toEqual(
-      expect.objectContaining({ scheduled: false, targetUnavailableReason: "当前实验尚未排程。" }),
-    );
-    expect(stockOutResult.error).toBe("当前实验尚未排程。");
+    expect(stagedRow?.targetDestinations.map((destination) => destination.targetLab)).toEqual(["振动二室"]);
+    expect(stagedRow?.targetDestinations.every((destination) => destination.scheduled)).toBe(true);
+    expect(stockOutResult.error).toBe("请选择有效的目标实验室后再出库。");
     expect(stockOutResult.snapshot[STORAGE_KEYS.staging_events]).toHaveLength(
       stockInResult.snapshot[STORAGE_KEYS.staging_events].length,
     );

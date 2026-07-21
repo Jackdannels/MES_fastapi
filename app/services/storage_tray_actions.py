@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
+from app.core.storage_backend import apply_terminal_experiments_for_returned_trays
 from app.services.storage_schedule_patch import (
     schedule_device,
     schedule_experiment_code,
@@ -16,6 +17,7 @@ from app.services.storage_schedule_patch import (
 SAMPLES_KEY = "mes.samples"
 STAGING_EVENTS_KEY = "mes.staging_events"
 TASKS_KEY = "mes.tasks"
+SCHEDULES_KEY = "mes.schedules"
 
 STAGING_ROOM = "staging"
 APPEARANCE_ROOM = "appearance"
@@ -507,11 +509,22 @@ def build_manufacturer_return_updates(snapshot: dict[str, Any], *, room: str, tr
             "target_lab": RETURNED_STATUS,
         }
     )
-    return {
+    returned_snapshot = dict(snapshot)
+    returned_snapshot.update({
         TASKS_KEY: maybe_mark_task_returned(tasks, updated_samples, task_code),
         SAMPLES_KEY: updated_samples,
         STAGING_EVENTS_KEY: events,
+    })
+    terminal_snapshot, _changed = apply_terminal_experiments_for_returned_trays(returned_snapshot)
+    updates = {
+        TASKS_KEY: terminal_snapshot[TASKS_KEY],
+        SAMPLES_KEY: terminal_snapshot[SAMPLES_KEY],
+        STAGING_EVENTS_KEY: terminal_snapshot[STAGING_EVENTS_KEY],
     }
+    for key in ("mes.experiments", SCHEDULES_KEY, "mes.experiment_run_trays"):
+        if terminal_snapshot.get(key) != snapshot.get(key):
+            updates[key] = terminal_snapshot.get(key, [])
+    return updates
 
 
 def summarize_tray_row(samples: list[Any], tray_code: str) -> dict[str, Any]:

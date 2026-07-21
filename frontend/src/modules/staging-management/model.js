@@ -7,7 +7,6 @@ import { formatLocalDateTime } from "@/lib/dateTime";
 import { resolveActiveDeviceMaintenance } from "@/lib/deviceMaintenance";
 import { serverNowDate } from "@/lib/serverClock";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
-import { getLabsForTestType } from "@/lib/labs";
 import { labIdentityMatches, resolveScheduleLabCode } from "@/lib/labIdentity";
 import { normalizeTrayScanCode } from "@/lib/trayQrCode";
 import { isAxisProgressIncomplete, resolveAxisProgress } from "@/modules/experiment-progress/axisProgress";
@@ -1134,19 +1133,6 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
   });
 
   const scheduledCandidates = [];
-  const directExperimentCandidates = [];
-  const resolveDirectExperimentLab = (experiment, fallbackName = "") => {
-    const experimentName = resolveExperimentName(experiment, fallbackName);
-    const requiredDevice = normalizeText(experiment?.required_device || experiment?.requiredDevice);
-    const mappedLabs = getLabsForTestType(experimentName);
-    if (requiredDevice && !isStagingDestination(requiredDevice) && mappedLabs.includes(requiredDevice)) {
-      return requiredDevice;
-    }
-    if (requiredDevice && !isStagingDestination(requiredDevice) && !requiredDevice.endsWith("试验")) {
-      return requiredDevice;
-    }
-    return mappedLabs[0] || (isStagingDestination(requiredDevice) ? "" : requiredDevice);
-  };
   candidateExperiments.forEach((experiment) => {
     const nextExperimentCode = normalizeText(experiment?.experiment_code);
     const scheduledDestinations = asArray(schedules)
@@ -1188,24 +1174,6 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
       return;
     }
 
-    if (row?.isPartialAxisInbound) {
-      const targetLab = resolveDirectExperimentLab(experiment);
-      if (targetLab) {
-        directExperimentCandidates.push({
-          preferred: false,
-          scheduled: false,
-          targetExperimentCode: nextExperimentCode,
-          targetExperimentName: resolveExperimentName(experiment),
-          targetIsFallback: true,
-          targetLab,
-          targetLabCode: "",
-          targetLabId: "",
-          targetScheduleStartAt: "",
-          targetScheduleEndAt: "",
-          targetUnavailableReason: "当前实验尚未排程。",
-        });
-      }
-    }
   });
 
   scheduledCandidates.sort(
@@ -1287,12 +1255,8 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
     return finalizeDestinations([...directScheduledCandidates, ...appearanceStagingDestination]);
   }
 
-  if (scheduledCandidates.length || directExperimentCandidates.length || trayExperimentCodes.size > 0) {
-    const scheduledExperimentCodes = new Set(scheduledCandidates.map((candidate) => candidate.targetExperimentCode));
-    const remainingDirectCandidates = directExperimentCandidates.filter((candidate) =>
-      !scheduledExperimentCodes.has(candidate.targetExperimentCode),
-    );
-    return finalizeDestinations([...scheduledCandidates, ...remainingDirectCandidates, ...appearanceStagingDestination]);
+  if (scheduledCandidates.length || trayExperimentCodes.size > 0) {
+    return finalizeDestinations([...scheduledCandidates, ...appearanceStagingDestination]);
   }
 
   return finalizeDestinations(appearanceStagingDestination);
