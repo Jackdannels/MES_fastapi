@@ -1703,6 +1703,91 @@ def test_laboratory_operations_merge_against_latest_snapshot_when_parallel_labs_
     assert samples["SP-B"]["trays"][0]["status"] == "工装夹具安装"
 
 
+def test_atomic_laboratory_operation_uses_scoped_sample_persistence_when_available():
+    class ScopedStorage(FakeLaboratoryStorage):
+        def __init__(self, payloads):
+            super().__init__(payloads)
+            self.scoped_sample_codes = []
+
+        def write_many_scoped(self, updates):
+            sample_patch = list(updates.get("mes.samples", []))
+            self.scoped_sample_codes.append([sample["code"] for sample in sample_patch])
+            existing_samples = {sample["code"]: sample for sample in self.payloads["mes.samples"]}
+            existing_samples.update({sample["code"]: sample for sample in sample_patch})
+            self.payloads["mes.samples"] = list(existing_samples.values())
+            for key, value in updates.items():
+                if key != "mes.samples":
+                    self.payloads[key] = list(value)
+
+    storage = ScopedStorage(
+        {
+            "mes.tasks": [{"code": "TASK-SCOPED"}],
+            "mes.experiments": [
+                {"task_code": "TASK-SCOPED", "experiment_code": "EXP-A", "experiment_name": "冲击试验"},
+                {"task_code": "TASK-SCOPED", "experiment_code": "EXP-B", "experiment_name": "霉菌试验"},
+            ],
+            "mes.experiment_trays": [
+                {"task_code": "TASK-SCOPED", "experiment_code": "EXP-A", "tray_code": "TP-A"},
+                {"task_code": "TASK-SCOPED", "experiment_code": "EXP-B", "tray_code": "TP-B"},
+            ],
+            "mes.experiment_samples": [
+                {"task_code": "TASK-SCOPED", "experiment_code": "EXP-A", "sample_code": "SP-A"},
+                {"task_code": "TASK-SCOPED", "experiment_code": "EXP-B", "sample_code": "SP-B"},
+            ],
+            "mes.samples": [
+                {
+                    "code": "SP-A",
+                    "task_code": "TASK-SCOPED",
+                    "status": "工装夹具安装",
+                    "flow_status": "工装夹具安装",
+                    "location": "冲击一室",
+                    "trays": [{"tray_code": "TP-A", "quantity": 1, "status": "工装夹具安装"}],
+                    "history": [],
+                },
+                {
+                    "code": "SP-B",
+                    "task_code": "TASK-SCOPED",
+                    "status": "工装夹具安装",
+                    "flow_status": "工装夹具安装",
+                    "location": "霉菌试验室",
+                    "trays": [{"tray_code": "TP-B", "quantity": 1, "status": "工装夹具安装"}],
+                    "history": [],
+                },
+                {
+                    "code": "SP-A-PEER",
+                    "task_code": "TASK-SCOPED",
+                    "status": "工装夹具安装",
+                    "flow_status": "工装夹具安装",
+                    "location": "冲击一室",
+                    "trays": [{"tray_code": "TP-A", "quantity": 1, "status": "工装夹具安装"}],
+                    "history": [],
+                },
+            ],
+        }
+    )
+
+    run_atomic_laboratory_operation(
+        operation=lambda snapshot: apply_laboratory_task_operation(
+            snapshot,
+            operation_type="fixtureReady",
+            task_code="TASK-SCOPED",
+            experiment_code="EXP-A",
+            lab_name="冲击一室",
+            tray_codes=["TP-A"],
+            occurred_at="2026-07-22 15:00:00",
+        ),
+        publish_storage_update=None,
+        resource_keys=["lab:冲击一室", "tray:TP-A"],
+        storage=storage,
+    )
+
+    assert storage.scoped_sample_codes == [["SP-A", "SP-A-PEER"]]
+    samples = {sample["code"]: sample for sample in storage.payloads["mes.samples"]}
+    assert samples["SP-A"]["trays"][0]["fixture_ready"] is True
+    assert "fixture_ready" not in samples["SP-A-PEER"]["trays"][0]
+    assert "fixture_ready" not in samples["SP-B"]["trays"][0]
+
+
 def test_laboratory_withdraw_current_ignores_stale_staging_history_after_prior_withdraw(monkeypatch):
     client, storage = build_client(
         monkeypatch,

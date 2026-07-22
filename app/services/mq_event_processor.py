@@ -24,6 +24,7 @@ from app.services.laboratory_operations import (
     acquire_laboratory_storage_commit_lock,
     merge_scoped_samples,
     scope_snapshot_samples_for_experiment as scope_laboratory_samples_for_experiment,
+    write_laboratory_updates,
 )
 from app.services.laboratory_start import start_storage_laboratory_experiment
 from app.services.storage_update_bus import publish_storage_update
@@ -648,8 +649,7 @@ class MySQLMqEventRepository:
                 planned_hours=planned_hours,
                 planned_end_at=planned_end_at,
             )
-            storage.write_many(
-                {
+            updates = {
                     "mes.tasks": result["tasks"],
                     "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
                     "mes.schedules": result["schedules"],
@@ -658,6 +658,10 @@ class MySQLMqEventRepository:
                     "mes.experiment_run_trays": result["experimentRunTrays"],
                     "mes.experiment_run_steps": result.get("experimentRunSteps", []),
                 }
+            write_laboratory_updates(
+                storage,
+                updates,
+                scoped_samples=result["samples"],
             )
         return {
             "run_no": run_no,
@@ -703,8 +707,7 @@ class MySQLMqEventRepository:
                 planned_hours=run.get("planned_hours"),
                 planned_end_at=normalize_text(run.get("planned_end_at")),
             )
-            storage.write_many(
-                {
+            updates = {
                     "mes.tasks": result["tasks"],
                     "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
                     "mes.schedules": result["schedules"],
@@ -713,6 +716,10 @@ class MySQLMqEventRepository:
                     "mes.experiment_run_trays": result["experimentRunTrays"],
                     "mes.experiment_run_steps": result.get("experimentRunSteps", snapshot.get("experiment_run_steps", [])),
                 }
+            write_laboratory_updates(
+                storage,
+                updates,
+                scoped_samples=result["samples"],
             )
 
     def mark_run_ended(
@@ -768,8 +775,7 @@ class MySQLMqEventRepository:
                     tray_codes=tray_codes,
                     completed_at=occurred_at,
                 )
-            storage.write_many(
-                {
+            updates = {
                     "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
                     "mes.experiments": result["experiments"],
                     "mes.schedules": result["schedules"],
@@ -777,6 +783,10 @@ class MySQLMqEventRepository:
                     "mes.experiment_run_trays": result["experimentRunTrays"],
                     "mes.experiment_run_steps": result.get("experimentRunSteps", snapshot.get("experiment_run_steps", [])),
                 }
+            write_laboratory_updates(
+                storage,
+                updates,
+                scoped_samples=result["samples"],
             )
 
 

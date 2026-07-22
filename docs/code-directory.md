@@ -95,6 +95,7 @@
 - `frontend/src/modules/laboratory/model.js`：实验室流程状态、动作和视图模型。
 - `frontend/src/modules/laboratory/laboratoryConstants.js`：实验室状态、流程节点和共享状态集合。
 - `frontend/src/modules/laboratory/laboratoryHistory.js`：实验室撤回使用的历史记录、接驳/暂存与外观存放快照解析。
+- `frontend/src/modules/laboratory/laboratoryTrayEligibility.js`：托盘派发资格、共享托盘操作锁、终态和部分轴向作用域判断。
 - `frontend/src/modules/laboratory/workflowState.js`：实验室比对、安装、确认等纯工作流状态转换。
 - `frontend/src/modules/laboratory/useLaboratoryPage.js`：实验室页面组合式状态。
 - `frontend/src/modules/login/`：登录模块。

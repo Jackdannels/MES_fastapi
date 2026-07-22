@@ -401,10 +401,47 @@ def apply_laboratory_task_operation(
     merged_samples = merge_scoped_samples(snapshot.get("samples", []), next_samples)
     return {
         "affectedSampleCount": affected_sample_count,
+        "affectedSamples": next_samples,
         "affectedTrayCodes": sorted(touched_tray_codes),
         "samples": merged_samples,
         "status": next_status,
     }
+
+
+def write_laboratory_updates(
+    storage: Any,
+    updates: dict[str, Any],
+    *,
+    scoped_samples: list[dict[str, Any]] | None = None,
+) -> None:
+    scoped_writer = getattr(storage, "write_many_scoped", None)
+    if callable(scoped_writer) and scoped_samples is not None and "mes.samples" in updates:
+        all_samples = [sample for sample in as_list(updates["mes.samples"]) if isinstance(sample, dict)]
+        selected_codes = {normalize_text(sample.get("code")) for sample in scoped_samples if normalize_text(sample.get("code"))}
+        selected_trays = {
+            normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo"))
+            for sample in scoped_samples
+            for tray in as_list(sample.get("trays"))
+            if isinstance(tray, dict)
+        }
+        while selected_trays:
+            previous_size = len(selected_codes)
+            for sample in all_samples:
+                sample_code = normalize_text(sample.get("code"))
+                tray_codes = {
+                    normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo"))
+                    for tray in as_list(sample.get("trays"))
+                    if isinstance(tray, dict)
+                }
+                if sample_code in selected_codes or selected_trays.intersection(tray_codes):
+                    selected_codes.add(sample_code)
+                    selected_trays.update(tray_codes)
+            if len(selected_codes) == previous_size:
+                break
+        sample_patch = [sample for sample in all_samples if normalize_text(sample.get("code")) in selected_codes]
+        scoped_writer({**updates, "mes.samples": sample_patch or scoped_samples})
+        return
+    storage.write_many(updates)
 
 
 def run_atomic_laboratory_operation(
@@ -430,7 +467,11 @@ def run_atomic_laboratory_operation(
                 for result_key, storage_key in optional_update_keys.items():
                     if result_key in result:
                         updates[storage_key] = result[result_key]
-            storage.write_many(updates)
+            write_laboratory_updates(
+                storage,
+                updates,
+                scoped_samples=result.get("affectedSamples"),
+            )
             if publish_storage_update:
                 publish_storage_update(list(dict.fromkeys([*update_keys, *updates.keys()])))
             return result

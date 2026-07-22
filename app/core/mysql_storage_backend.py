@@ -79,6 +79,7 @@ from app.core.mysql_storage_sample_write import (
     load_existing_managed_tray_ids,
     load_tray_id_map,
     replace_samples,
+    replace_sample_patch,
     update_sample_primary_tray_ids,
     upsert_tray_rows,
     upsert_sample_rows,
@@ -265,6 +266,9 @@ class MySQLMesStorageBackend(StorageBackend):
     def _replace_samples(self, cursor, samples: list[dict[str, Any]]) -> None:
         replace_samples(cursor, samples)
 
+    def _replace_sample_patch(self, cursor, samples: list[dict[str, Any]]) -> None:
+        replace_sample_patch(cursor, samples)
+
     def _load_tasks(self, cursor) -> list[dict[str, Any]]:
         return load_tasks(cursor)
 
@@ -337,7 +341,7 @@ class MySQLMesStorageBackend(StorageBackend):
             samples=samples,
         )
 
-    def _write_many_internal(self, updates: Dict[str, Any]) -> None:
+    def _write_many_internal(self, updates: Dict[str, Any], *, patch_samples: bool = False) -> None:
         self._ensure_schema_extensions()
         relational_updates = {key: updates.get(key) for key in RELATIONAL_STORAGE_KEYS if key in updates}
         snapshot_updates = self._serialize_snapshot_updates(updates)
@@ -353,7 +357,10 @@ class MySQLMesStorageBackend(StorageBackend):
                 if "mes.streams" in relational_updates:
                     self._replace_streams(cursor, relational_updates["mes.streams"] or [])
                 if "mes.samples" in relational_updates:
-                    self._replace_samples(cursor, relational_updates["mes.samples"] or [])
+                    if patch_samples:
+                        self._replace_sample_patch(cursor, relational_updates["mes.samples"] or [])
+                    else:
+                        self._replace_samples(cursor, relational_updates["mes.samples"] or [])
                 if "mes.experiments" in relational_updates:
                     self._replace_experiments(cursor, relational_updates["mes.experiments"] or [])
                 if "mes.experiment_runs" in relational_updates:
@@ -468,3 +475,18 @@ class MySQLMesStorageBackend(StorageBackend):
             if not normalized_updates:
                 return
             self._write_many_internal(normalized_updates)
+
+    def write_many_scoped(self, updates: Dict[str, Any]) -> None:
+        with self._write_lock:
+            normalized_updates = {
+                key: (
+                    _normalize_value(key, value if isinstance(value, dict) else {})
+                    if key == STORAGE_META_KEY
+                    else _normalize_value(key, value if isinstance(value, list) else [])
+                )
+                for key, value in updates.items()
+                if key in STORAGE_KEYS or key == STORAGE_META_KEY
+            }
+            if not normalized_updates:
+                return
+            self._write_many_internal(normalized_updates, patch_samples=True)

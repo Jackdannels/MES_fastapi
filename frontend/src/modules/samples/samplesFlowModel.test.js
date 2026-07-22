@@ -9738,8 +9738,8 @@ describe("samplesFlowModel", () => {
     );
   });
 
-  test("buildTrayFlowView keeps historical partial impact time before later completed experiments after withdrawal hops", () => {
-    const taskCode = "SYLU-2026-08-001";
+  test("buildTrayFlowView folds 2/6 and 4/6 impact stages into one final completion after another experiment and manufacturer return", () => {
+    const taskCode = "SYLU-2026-07-029";
     const trayCode = `${taskCode}-TP-001`;
     const impactExperimentCode = `${taskCode}-A`;
     const saltExperimentCode = `${taskCode}-B`;
@@ -9764,11 +9764,11 @@ describe("samplesFlowModel", () => {
             { action: "任务比对", detail: `${taskCode} / 冲击试验 / 已到达实验室 / 托盘：${trayCode}`, location: "冲击一室", status: "已到达实验室", time: "2026-07-02 14:23:35", tray_code: trayCode },
             { action: "实验完成", detail: `${taskCode} / 盐雾试验 / 实验已完成`, location: "盐雾试验室", status: "实验已完成", time: "2026-07-02 14:19:40", tray_code: trayCode },
             { action: "实验完成", detail: `${taskCode} / 四综合试验 / 实验已完成`, location: "四综合实验室", status: "实验已完成", time: "2026-07-02 14:17:57", tray_code: trayCode },
-            { action: "实验任务撤回", detail: `${taskCode} / 冲击试验 / 撤回至冲击试验部分完成（试验间内撤回当前实验任务）`, location: "冲击一室", status: "冲击试验部分完成 1/2轴", time: "2026-07-02 13:51:41", tray_code: trayCode },
+            { action: "实验完成", detail: `${taskCode} / 冲击试验 / 冲击试验部分完成 4/6轴`, location: "冲击一室", status: "冲击试验部分完成 4/6轴", time: "2026-07-02 13:51:41", tray_code: trayCode },
             { action: "任务比对", detail: `${taskCode} / 冲击试验 / 已到达实验室 / 托盘：${trayCode}`, location: "冲击一室", status: "已到达实验室", time: "2026-07-02 13:51:16", tray_code: trayCode },
             { action: "实验任务撤回", detail: `${taskCode} / 四综合试验 / 撤回至振动试验已完成（试验间内撤回当前实验任务）`, location: "振动一室", status: "实验已完成", time: "2026-07-02 13:50:02", tray_code: trayCode },
             { action: "实验完成", detail: `${taskCode} / 振动试验 / 实验已完成`, location: "振动一室", status: "实验已完成", time: "2026-07-02 13:49:45", tray_code: trayCode },
-            { action: "实验完成", detail: `${taskCode} / 冲击试验 / 冲击试验部分完成 1/2轴`, location: "冲击一室", status: "冲击试验部分完成 1/2轴", time: "2026-07-02 13:49:23", tray_code: trayCode },
+            { action: "实验完成", detail: `${taskCode} / 冲击试验 / 冲击试验部分完成 2/6轴`, location: "冲击一室", status: "冲击试验部分完成 2/6轴", time: "2026-07-02 13:49:23", tray_code: trayCode },
           ],
           trays: [
             {
@@ -9782,7 +9782,7 @@ describe("samplesFlowModel", () => {
         },
       ],
       experiments: [
-        { axis_codes: ["y+", "z-"], experiment_code: impactExperimentCode, experiment_name: "冲击试验", required_device: "冲击一室", task_code: taskCode },
+        { axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"], experiment_code: impactExperimentCode, experiment_name: "冲击试验", required_device: "冲击一室", task_code: taskCode },
         { experiment_code: saltExperimentCode, experiment_name: "盐雾试验", required_device: "盐雾试验室", task_code: taskCode },
         { experiment_code: comprehensiveExperimentCode, experiment_name: "四综合试验", required_device: "四综合实验室", task_code: taskCode },
         { axis_codes: ["x+", "y+", "y-", "z-"], experiment_code: vibrationExperimentCode, experiment_name: "振动试验", required_device: "振动一室", task_code: taskCode },
@@ -9794,22 +9794,25 @@ describe("samplesFlowModel", () => {
         { experiment_code: vibrationExperimentCode, task_code: taskCode, tray_code: trayCode },
       ],
       experimentRuns: [
-        { axis_codes: ["y+"], ended_at: "2026-07-02 13:49:23", experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-1", status: "实验已完成", task_code: taskCode, tray_codes: [trayCode] },
+        { axis_codes: ["x+", "x-"], ended_at: "2026-07-02 13:49:23", experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-1", status: "实验已完成", task_code: taskCode, tray_codes: [trayCode] },
+        { axis_codes: ["y+", "y-"], ended_at: "2026-07-02 13:51:41", experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-2", status: "实验已完成", task_code: taskCode, tray_codes: [trayCode] },
         { axis_codes: ["x+", "y+", "y-", "z-"], ended_at: "2026-07-02 13:49:45", experiment_code: vibrationExperimentCode, run_no: "RUN-VIBRATION", status: "实验已完成", task_code: taskCode, tray_codes: [trayCode] },
         { ended_at: "2026-07-02 14:17:57", experiment_code: comprehensiveExperimentCode, run_no: "RUN-COMPREHENSIVE", status: "实验已完成", task_code: taskCode, tray_codes: [trayCode] },
         { ended_at: "2026-07-02 14:19:40", experiment_code: saltExperimentCode, run_no: "RUN-SALT", status: "实验已完成", task_code: taskCode, tray_codes: [trayCode] },
-        { axis_codes: ["z-"], ended_at: "2026-07-02 14:23:48", experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-2", status: "实验已完成", task_code: taskCode, tray_codes: [trayCode] },
+        { axis_codes: ["z+", "z-"], ended_at: "2026-07-02 14:23:48", experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-3", status: "实验已完成", task_code: taskCode, tray_codes: [trayCode] },
       ],
       experimentRunTrays: [
         { ended_at: "2026-07-02 13:49:23", experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-1", run_tray_status: "实验已完成", task_code: taskCode, tray_code: trayCode },
+        { ended_at: "2026-07-02 13:51:41", experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-2", run_tray_status: "实验已完成", task_code: taskCode, tray_code: trayCode },
         { ended_at: "2026-07-02 13:49:45", experiment_code: vibrationExperimentCode, run_no: "RUN-VIBRATION", run_tray_status: "实验已完成", task_code: taskCode, tray_code: trayCode },
         { ended_at: "2026-07-02 14:17:57", experiment_code: comprehensiveExperimentCode, run_no: "RUN-COMPREHENSIVE", run_tray_status: "实验已完成", task_code: taskCode, tray_code: trayCode },
         { ended_at: "2026-07-02 14:19:40", experiment_code: saltExperimentCode, run_no: "RUN-SALT", run_tray_status: "实验已完成", task_code: taskCode, tray_code: trayCode },
-        { ended_at: "2026-07-02 14:23:48", experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-2", run_tray_status: "实验已完成", task_code: taskCode, tray_code: trayCode },
+        { ended_at: "2026-07-02 14:23:48", experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-3", run_tray_status: "实验已完成", task_code: taskCode, tray_code: trayCode },
       ],
       experimentRunSteps: [
-        { axis_code: "y+", experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-1", status: "实验已完成", task_code: taskCode },
-        { axis_code: "z-", experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-2", status: "实验已完成", task_code: taskCode },
+        ...["x+", "x-"].map((axisCode) => ({ axis_code: axisCode, experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-1", status: "实验已完成", task_code: taskCode })),
+        ...["y+", "y-"].map((axisCode) => ({ axis_code: axisCode, experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-2", status: "实验已完成", task_code: taskCode })),
+        ...["z+", "z-"].map((axisCode) => ({ axis_code: axisCode, experiment_code: impactExperimentCode, run_no: "RUN-IMPACT-3", status: "实验已完成", task_code: taskCode })),
         ...["x+", "y+", "y-", "z-"].map((axisCode) => ({
           axis_code: axisCode,
           experiment_code: vibrationExperimentCode,
@@ -9821,13 +9824,11 @@ describe("samplesFlowModel", () => {
     });
 
     const labels = view.steps.map((step) => step.label);
-    expect(labels.indexOf("冲击试验部分完成 1/2轴")).toBeLessThan(labels.indexOf("振动试验已完成"));
     expect(labels.indexOf("振动试验已完成")).toBeLessThan(labels.indexOf("四综合试验已完成"));
     expect(labels.indexOf("四综合试验已完成")).toBeLessThan(labels.indexOf("盐雾试验已完成"));
     expect(labels.indexOf("盐雾试验已完成")).toBeLessThan(labels.indexOf("冲击试验已完成"));
-    expect(view.steps.find((step) => step.label === "冲击试验部分完成 1/2轴")).toEqual(
-      expect.objectContaining({ reached: true, active: false, time: "2026-07-02 13:49:23" }),
-    );
+    expect(labels.filter((label) => label === "冲击试验已完成")).toHaveLength(1);
+    expect(labels.some((label) => label.startsWith("冲击试验部分完成"))).toBe(false);
     expect(view.steps.find((step) => step.label === "冲击试验已完成")).toEqual(
       expect.objectContaining({ reached: true, active: false, time: "2026-07-02 14:23:48" }),
     );
@@ -9835,9 +9836,7 @@ describe("samplesFlowModel", () => {
       expect.objectContaining({ reached: true, active: false, time: "2026-07-02 14:24:31" }),
     );
     expect(labels.indexOf("实验后暂存间存放")).toBeGreaterThan(labels.indexOf("冲击试验已完成"));
-    expect(labels).not.toContain("送至暂存间");
-    expect(labels).not.toContain("已到达暂存间");
-    expect(view.steps.find((step) => step.label === "待继续冲击试验：剩余 1/2轴")).toBeFalsy();
+    expect(labels.some((label) => label.startsWith("待继续冲击试验"))).toBe(false);
     expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：厂家收回`);
   });
 
@@ -10179,5 +10178,62 @@ describe("samplesFlowModel", () => {
     expect(view.steps.find((step) => step.label === "冲击试验部分完成 3/6轴")).toEqual(
       expect.objectContaining({ active: false, reached: true, time: "2026-07-22 12:25:57" }),
     );
+  });
+
+  test("buildTrayFlowView shows one final impact completion for returned SYLU-2026-07-029 after all three axis batches", () => {
+    const taskCode = "SYLU-2026-07-029";
+    const trayCode = `${taskCode}-TP-001`;
+    const impactCode = `${taskCode}-A`;
+    const hotHumidCode = `${taskCode}-B`;
+    const comprehensiveCode = `${taskCode}-C`;
+    const impactRuns = [
+      { axes: ["z+", "z-"], endedAt: "2026-07-22 13:43:03", runNo: "RUN-IMPACT-1" },
+      { axes: ["x+", "x-"], endedAt: "2026-07-22 13:52:17", runNo: "RUN-IMPACT-2" },
+      { axes: ["y+", "y-"], endedAt: "2026-07-22 14:13:07", runNo: "RUN-IMPACT-3" },
+    ];
+    const view = buildTrayFlowView({
+      taskCode,
+      trayCode,
+      location: "厂家收回",
+      status: "厂家收回",
+      samples: [{
+        code: `${taskCode}-SP-001`,
+        task_code: taskCode,
+        location: "厂家收回",
+        status: "厂家收回",
+        flow_status: "厂家收回",
+        trays: [{ tray_code: trayCode, status: "厂家收回", target_lab: "冲击二室" }],
+        history: [
+          { action: "厂家收回", detail: `${trayCode} 厂家收回`, location: "厂家收回", status: "厂家收回", time: "2026-07-22 14:13:19", tray_code: trayCode },
+          { action: "实验完成", detail: `${taskCode} / 冲击试验 / 实验已完成`, location: "冲击二室", status: "实验已完成", time: "2026-07-22 14:13:07", tray_code: trayCode },
+          { action: "实验完成", detail: `${taskCode} / 高低温湿热试验 / 实验已完成`, location: "高低温湿热二室", status: "实验已完成", time: "2026-07-22 13:59:45", tray_code: trayCode },
+          { action: "实验完成", detail: `${taskCode} / 冲击试验 / 冲击试验部分完成 4/6轴`, location: "冲击二室", status: "冲击试验部分完成 4/6轴", time: "2026-07-22 13:52:17", tray_code: trayCode },
+          { action: "实验完成", detail: `${taskCode} / 冲击试验 / 冲击试验部分完成 2/6轴`, location: "冲击二室", status: "冲击试验部分完成 2/6轴", time: "2026-07-22 13:43:03", tray_code: trayCode },
+        ],
+      }],
+      experiments: [
+        { axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"], experiment_code: impactCode, experiment_name: "冲击试验", required_device: "冲击试验", status: "实验已完成", task_code: taskCode },
+        { experiment_code: hotHumidCode, experiment_name: "高低温湿热试验", required_device: "高低温湿热试验", status: "实验已完成", task_code: taskCode },
+        { experiment_code: comprehensiveCode, experiment_name: "四综合试验", required_device: "四综合试验", status: "实验已完成", task_code: taskCode },
+      ],
+      experimentTrays: [impactCode, hotHumidCode, comprehensiveCode].map((experimentCode) => ({ experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode })),
+      experimentRuns: [
+        ...impactRuns.map((run, index) => ({ axis_codes: run.axes, ended_at: run.endedAt, experiment_code: impactCode, run_no: run.runNo, status: "实验已完成", sub_experiment_code: `${impactCode}-AXIS-00${index + 1}`, task_code: taskCode, tray_codes: [trayCode] })),
+        { ended_at: "2026-07-22 13:59:45", experiment_code: hotHumidCode, run_no: "RUN-HOT-HUMID", status: "实验已完成", task_code: taskCode, tray_codes: [trayCode] },
+      ],
+      experimentRunTrays: [
+        ...impactRuns.map((run, index) => ({ ended_at: run.endedAt, experiment_code: impactCode, run_no: run.runNo, run_tray_status: "实验已完成", sub_experiment_code: `${impactCode}-AXIS-00${index + 1}`, task_code: taskCode, tray_code: trayCode })),
+        { ended_at: "2026-07-22 13:59:45", experiment_code: hotHumidCode, run_no: "RUN-HOT-HUMID", run_tray_status: "实验已完成", task_code: taskCode, tray_code: trayCode },
+        { ended_at: "2026-07-22 14:13:19", experiment_code: comprehensiveCode, run_no: "RETURNED-C", run_tray_status: "厂家收回", task_code: taskCode, tray_code: trayCode },
+      ],
+      experimentRunSteps: impactRuns.flatMap((run, index) => run.axes.map((axisCode) => ({ axis_code: axisCode, ended_at: run.endedAt, experiment_code: impactCode, run_no: run.runNo, status: "实验已完成", sub_experiment_code: `${impactCode}-AXIS-00${index + 1}`, task_code: taskCode }))),
+      schedules: [],
+    });
+
+    const impactSteps = view.steps.filter((step) => step.label.startsWith("冲击试验"));
+    expect(impactSteps).toEqual([
+      expect.objectContaining({ label: "冲击试验已完成", reached: true, time: "2026-07-22 14:13:07" }),
+    ]);
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：厂家收回`);
   });
 });

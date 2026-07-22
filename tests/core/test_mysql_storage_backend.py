@@ -341,6 +341,7 @@ def test_mysql_storage_backend_reexports_extracted_sample_write_helpers() -> Non
         "load_existing_managed_tray_ids",
         "load_tray_id_map",
         "replace_samples",
+        "replace_sample_patch",
         "update_sample_primary_tray_ids",
         "upsert_tray_rows",
         "upsert_sample_rows",
@@ -4097,6 +4098,45 @@ def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -
         "tasks:True",
         "schedule_task_ids",
         "progress_statuses",
+    ]
+
+
+def test_write_many_internal_uses_scoped_sample_patch_without_full_sample_replacement(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    calls = []
+
+    monkeypatch.setattr(backend, "_ensure_schema_extensions", lambda: None)
+    monkeypatch.setattr(backend, "_connect", lambda: _DummyConnection())
+    monkeypatch.setattr(backend, "_replace_samples", lambda cursor, rows: calls.append("full"))
+    monkeypatch.setattr(backend, "_replace_sample_patch", lambda cursor, rows: calls.append(("scoped", rows)))
+    monkeypatch.setattr(backend, "_backfill_schedule_task_ids", lambda cursor: None)
+    monkeypatch.setattr(backend, "_sync_progress_statuses", lambda cursor: None)
+
+    sample_patch = [{"code": "SP-1", "task_code": "TASK-1"}]
+    backend._write_many_internal({"mes.samples": sample_patch}, patch_samples=True)
+
+    assert calls == [("scoped", sample_patch)]
+
+
+def test_scoped_sample_patch_clears_only_affected_sample_tray_items() -> None:
+    class TrackingCursor:
+        def __init__(self):
+            self.executed = []
+
+        def execute(self, sql, params):
+            self.executed.append((" ".join(str(sql).split()), list(params)))
+
+    cursor = TrackingCursor()
+
+    mysql_storage_sample_write_module.clear_existing_sample_patch_links(cursor, [101, 102])
+
+    assert cursor.executed == [
+        ("UPDATE biz_sample SET tray_id = NULL WHERE sample_id IN (%s, %s)", [101, 102]),
+        ("DELETE FROM biz_sample_event WHERE sample_id IN (%s, %s)", [101, 102]),
+        ("DELETE FROM biz_tray_item WHERE sample_id IN (%s, %s)", [101, 102]),
     ]
 
 

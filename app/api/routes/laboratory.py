@@ -25,6 +25,7 @@ from app.services.laboratory_operations import (
     resolve_lab_name,
     run_atomic_laboratory_operation,
     scope_snapshot_samples_for_experiment,
+    write_laboratory_updates,
 )
 from app.services.laboratory_start import start_storage_laboratory_experiment
 from app.services.laboratory_withdrawal import (
@@ -189,9 +190,7 @@ def write_completion_snapshot(result: dict[str, Any]) -> None:
     }
     if "experimentRunSteps" in result:
         payload["mes.experiment_run_steps"] = result["experimentRunSteps"]
-    get_storage_backend().write_many(
-        payload
-    )
+    get_storage_backend().write_many(payload)
     publish_storage_update(list(LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS))
 
 
@@ -206,8 +205,10 @@ def write_start_snapshot(original_snapshot: dict[str, list[dict[str, Any]]], res
     }
     if "experimentRunSteps" in result:
         payload["mes.experiment_run_steps"] = result["experimentRunSteps"]
-    get_storage_backend().write_many(
-        payload
+    write_laboratory_updates(
+        get_storage_backend(),
+        payload,
+        scoped_samples=result["samples"],
     )
     publish_storage_update(list(LABORATORY_START_STORAGE_UPDATE_KEYS))
 

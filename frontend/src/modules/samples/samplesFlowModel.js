@@ -175,86 +175,6 @@ const experimentIdentityNames = (experiment) => uniqueNormalizedTexts([
   ...(Array.isArray(experiment?.aliases) ? experiment.aliases : []),
 ]);
 
-const flowExperimentPayload = (experiment, extra = {}) => ({
-  code: experiment.code,
-  name: experiment.name,
-  displayName: experiment.displayName,
-  experiment_name: experiment.experiment_name,
-  experimentName: experiment.experimentName,
-  experiment_type: experiment.experiment_type,
-  experimentType: experiment.experimentType,
-  test_type: experiment.test_type,
-  testType: experiment.testType,
-  required_device: experiment.required_device,
-  requiredDevice: experiment.requiredDevice,
-  destinationLab: experiment.destinationLab,
-  aliases: experiment.aliases,
-  ...extra,
-});
-
-const collectHistoricalPartialAxisExperiments = ({
-  completedTimeByCode = new Map(),
-  orderedExperiments = [],
-  samples = [],
-  taskCode = "",
-  trayCode = "",
-}) => {
-  const normalizedTaskCode = normalizeText(taskCode);
-  const normalizedTrayCode = normalizeText(trayCode);
-  if (!normalizedTaskCode || !normalizedTrayCode || orderedExperiments.length === 0) {
-    return [];
-  }
-
-  const latestPartialByExperiment = new Map();
-  asArray(samples).forEach((sample) => {
-    if (normalizeText(sample?.task_code) !== normalizedTaskCode) {
-      return;
-    }
-    const trayList = getSampleTrayList(sample);
-    const touchesTray = trayList.some((tray) => normalizeText(tray?.tray_code) === normalizedTrayCode);
-    if (!touchesTray) {
-      return;
-    }
-    asArray(sample?.history).forEach((entry) => {
-      if (WITHDRAWAL_ACTIONS.has(normalizeText(entry?.action))) {
-        return;
-      }
-      const parsed = parseExperimentHistoryDetail(entry?.detail, normalizedTaskCode);
-      if (!parsed || !isAxisPartialProgressStatus(parsed.status)) {
-        return;
-      }
-      const trayScoped = entryMatchesTrayCode(entry, normalizedTrayCode) || trayList.length === 1;
-      if (!trayScoped) {
-        return;
-      }
-      const experiment = orderedExperiments.find((candidate) =>
-        partialAxisStatusMatchesExperiment(parsed.status, candidate) ||
-        experimentIdentityNames(candidate).includes(normalizeText(parsed.experimentName)),
-      );
-      if (!experiment) {
-        return;
-      }
-      const completedAt = Number(completedTimeByCode.get(experiment.code)) || 0;
-      const partialAt = entryTimeValue(entry);
-      if (!completedAt || !partialAt || partialAt >= completedAt) {
-        return;
-      }
-      const partialTime = normalizeText(entry?.time || entry?.updated_at || entry?.created_at || entry?.timestamp);
-      const existing = latestPartialByExperiment.get(experiment.code);
-      if (!existing || partialAt >= existing.partialAt) {
-        latestPartialByExperiment.set(experiment.code, flowExperimentPayload(experiment, {
-          partialAt,
-          partialTime,
-          routeStatus: parsed.status,
-          state: "partial",
-        }));
-      }
-    });
-  });
-
-  return Array.from(latestPartialByExperiment.values());
-};
-
 const withdrawalRestoreTargetMatchesExperiment = (restoreTarget, experiment) => {
   const targetName = normalizeText(restoreTarget?.experimentName);
   return Boolean(targetName) && experimentIdentityNames(experiment).includes(targetName);
@@ -746,30 +666,6 @@ const buildTrayExperimentFlow = (input = {}) => {
     .filter(Boolean)
     .sort((left, right) => left.completedAt - right.completedAt);
   const completedCodeSet = new Set(completedExperiments.map((experiment) => experiment.code));
-  const completedTimeByCode = new Map(completedExperiments.map((experiment) => [experiment.code, Number(experiment.completedAt) || 0]));
-  const completedHistoricalPartialAxisExperiments = collectHistoricalPartialAxisExperiments({
-    completedTimeByCode,
-    orderedExperiments,
-    samples: input.samples,
-    taskCode,
-    trayCode,
-  });
-  const visibleCompletedHistoricalPartialAxisExperiments = completedHistoricalPartialAxisExperiments.filter((partialExperiment) => {
-    const experimentCode = normalizeText(partialExperiment?.code);
-    const partialAt = Number(partialExperiment?.partialAt) || 0;
-    const completedAt = Number(completedTimeByCode.get(experimentCode)) || 0;
-    if (!experimentCode || !partialAt || !completedAt || partialAt >= completedAt) {
-      return true;
-    }
-    const hasInterveningCompletedExperiment = completedExperiments.some((completedExperiment) => {
-      if (normalizeText(completedExperiment?.code) === experimentCode) {
-        return false;
-      }
-      const interveningAt = Number(completedExperiment?.completedAt) || 0;
-      return interveningAt > partialAt && interveningAt < completedAt;
-    });
-    return hasInterveningCompletedExperiment;
-  });
   const unfinishedExperiments = orderedExperiments.filter((experiment) => !completedCodeSet.has(experiment.code));
   const normalizedStatusIsCompleted = normalizeLifecycleStatus("", normalizedStatus) === "实验已完成";
   const explicitCompletedExperiment =
@@ -951,7 +847,6 @@ const buildTrayExperimentFlow = (input = {}) => {
 
   if (!currentExperiment) {
     const historicalPartialExperiments = [
-      ...visibleCompletedHistoricalPartialAxisExperiments,
       ...partialAxisExperiments.map((experiment) => ({
         ...experiment,
         partialAt: experimentRuntimeEventMap.get(experiment.code)?.timeValue || 0,
@@ -1053,7 +948,6 @@ const buildTrayExperimentFlow = (input = {}) => {
     );
   const historicalFlowExperiments = [
     ...completedExperiments.filter((experiment) => experiment.code !== currentExperiment.code),
-    ...visibleCompletedHistoricalPartialAxisExperiments.filter((experiment) => experiment.code !== currentExperiment.code),
     ...partialAxisExperiments
       .filter((experiment) => experiment.code !== currentExperiment.code)
       .map((experiment) => ({

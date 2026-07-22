@@ -41,6 +41,17 @@ def load_existing_managed_tray_ids(cursor) -> list[int]:
     return [row["tray_id"] for row in existing_tray_rows]
 
 
+def load_sample_ids(cursor, sample_codes: list[str]) -> list[int]:
+    if not sample_codes:
+        return []
+    placeholders = ", ".join(["%s"] * len(sample_codes))
+    cursor.execute(
+        f"SELECT sample_id, sample_no FROM biz_sample WHERE sample_no IN ({placeholders})",
+        sample_codes,
+    )
+    return [row["sample_id"] for row in cursor.fetchall()]
+
+
 def clear_existing_sample_links(cursor, existing_sample_ids: list[int], existing_tray_ids: list[int]) -> None:
     if existing_sample_ids:
         placeholders = ", ".join(["%s"] * len(existing_sample_ids))
@@ -59,6 +70,24 @@ def clear_existing_sample_links(cursor, existing_sample_ids: list[int], existing
             f"DELETE FROM biz_tray_item WHERE tray_id IN ({placeholders})",
             existing_tray_ids,
         )
+
+
+def clear_existing_sample_patch_links(cursor, existing_sample_ids: list[int]) -> None:
+    if not existing_sample_ids:
+        return
+    placeholders = ", ".join(["%s"] * len(existing_sample_ids))
+    cursor.execute(
+        f"UPDATE biz_sample SET tray_id = NULL WHERE sample_id IN ({placeholders})",
+        existing_sample_ids,
+    )
+    cursor.execute(
+        f"DELETE FROM biz_sample_event WHERE sample_id IN ({placeholders})",
+        existing_sample_ids,
+    )
+    cursor.execute(
+        f"DELETE FROM biz_tray_item WHERE sample_id IN ({placeholders})",
+        existing_sample_ids,
+    )
 
 
 def delete_missing_managed_samples(cursor, incoming_sample_codes: list[str]) -> None:
@@ -375,6 +404,30 @@ def replace_samples(cursor, samples: list[dict[str, Any]]) -> None:
 
     update_sample_primary_tray_ids(cursor, sample_primary_tray_id)
 
+    insert_sample_history_event_rows(
+        cursor,
+        build_sample_history_event_rows(managed_samples, sample_id_map, sample_task_id_map),
+    )
+
+
+def replace_sample_patch(cursor, samples: list[dict[str, Any]]) -> None:
+    managed_samples, sample_rows, incoming_sample_codes = build_managed_sample_write_rows(samples)
+    sample_status_by_code, tray_defs, _tray_order_by_sample = build_sample_tray_write_state(managed_samples)
+    incoming_tray_codes = sorted(tray_defs.keys())
+    clear_existing_sample_patch_links(cursor, load_sample_ids(cursor, incoming_sample_codes))
+
+    upsert_sample_rows(cursor, sample_rows)
+    sample_id_map, sample_task_id_map = load_sample_identity_maps(cursor, incoming_sample_codes)
+    upsert_tray_rows(cursor, tray_defs, sample_task_id_map)
+    tray_id_map = load_tray_id_map(cursor, incoming_tray_codes)
+    tray_item_rows, sample_primary_tray_id = build_tray_item_rows(
+        tray_defs,
+        tray_id_map,
+        sample_id_map,
+        sample_status_by_code,
+    )
+    insert_tray_item_rows(cursor, tray_item_rows)
+    update_sample_primary_tray_ids(cursor, sample_primary_tray_id)
     insert_sample_history_event_rows(
         cursor,
         build_sample_history_event_rows(managed_samples, sample_id_map, sample_task_id_map),

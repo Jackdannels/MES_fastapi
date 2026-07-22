@@ -1205,7 +1205,7 @@ function useLaboratoryPage(options = {}) {
   };
   const publishLaboratoryMqSafely = async (publisher, payload, actionLabel) => {
     if (!isMqttHostInterfaceMode()) {
-      return;
+      return false;
     }
     try {
       clearLaboratoryMqError();
@@ -1214,6 +1214,7 @@ function useLaboratoryPage(options = {}) {
       }
       await ensureHostInterfaceModeSynced();
       await publisher(payload);
+      return true;
     } catch (error) {
       laboratoryMqError.value = {
         detail: formatErrorMessage(error),
@@ -1227,6 +1228,7 @@ function useLaboratoryPage(options = {}) {
         confirmedModalOpen.value = false;
         readyPublishRetryAvailable.value = true;
       }
+      return false;
     }
   };
 
@@ -1458,6 +1460,14 @@ function useLaboratoryPage(options = {}) {
       void persistFixtureReadyForTask({ taskCode, trayCodes });
     }, 1000);
   };
+  const openFixtureConfirmPending = () => {
+    clearFixtureConfirmTimer();
+    clearFixtureConfirmSuccessTimer();
+    fixtureConfirmHostless.value = false;
+    fixtureConfirmSuccessModalOpen.value = false;
+    fixtureConfirmCountdown.value = FIXTURE_CONFIRM_COUNTDOWN_SECONDS;
+    fixtureConfirmModalOpen.value = true;
+  };
   const scheduleHostlessFixtureReady = ({ taskCode, trayCodes }) => {
     const capabilities = getCurrentLabHostInterfaceCapabilities();
     clearHostlessFixtureReadyTimer();
@@ -1638,9 +1648,14 @@ function useLaboratoryPage(options = {}) {
         });
       return;
     }
-    startFixtureConfirmCountdown({ taskCode: targetTaskCode, trayCodes: targetTrayCodes });
+    openFixtureConfirmPending();
     void persistOperation
       .then(() => publishLaboratoryMqSafely(publishLaboratoryFixtureInstall, payload, "夹具安装"))
+      .then((published) => {
+        if (published && !workflow.value.fixtureReadyDone) {
+          startFixtureConfirmCountdown({ taskCode: targetTaskCode, trayCodes: targetTrayCodes });
+        }
+      })
       .catch((error) => {
         laboratoryMqError.value = {
           detail: formatErrorMessage(error),
@@ -1801,7 +1816,7 @@ function useLaboratoryPage(options = {}) {
     if (!runningExperiment.value?.active) {
       return;
     }
-    const effectiveAxisCode = normalizeText(axisCode) || (currentAxisCompletion.value.enabled ? currentAxisCompletion.value.axisCode : "");
+    const effectiveAxisCode = normalizeText(axisCode);
     const runningSnapshot = { ...runningExperiment.value };
     const taskCode = normalizeText(currentTask.value?.taskCode);
     const experimentCode = normalizeText(currentTask.value?.experimentCode);
@@ -1878,21 +1893,19 @@ function useLaboratoryPage(options = {}) {
     }
   };
   const confirmCompleteExperiment = async () => {
-    if (currentAxisCompletion.value.enabled) {
-      await completeRunningExperiment({ axisCode: currentAxisCompletion.value.axisCode });
-      return;
-    }
     await completeRunningExperiment();
   };
-  const confirmCompleteAxisAndContinue = async () => {
-    const continuation = axisContinuation.value;
-    if (!continuation.canContinue) {
-      return;
-    }
-    await completeRunningExperiment({
-      axisCode: continuation.currentAxisCode,
-      keepModal: true,
-      nextAxisCode: continuation.nextAxisCode,
+  const confirmCompleteCurrentAxis = async () => {
+    await runWithAttendance(async () => {
+      const continuation = axisContinuation.value;
+      if (!continuation.currentAxisCode || (continuation.nextAxisCode && !continuation.canContinue)) {
+        return;
+      }
+      await completeRunningExperiment({
+        axisCode: continuation.currentAxisCode,
+        keepModal: Boolean(continuation.nextAxisCode),
+        nextAxisCode: continuation.nextAxisCode,
+      });
     });
   };
   const confirmCurrentTask = () => {
@@ -1965,7 +1978,7 @@ function useLaboratoryPage(options = {}) {
       confirmCompare,
     confirmResetPrompt,
     confirmResetTask,
-    confirmCompleteAxisAndContinue,
+    confirmCompleteCurrentAxis,
     confirmCompleteExperiment,
     confirmInstall,
     confirmReady,

@@ -683,32 +683,32 @@
             <p><strong>样品</strong> {{ runningModalExperiment.sampleCodes.length }} 个</p>
             <button class="laboratory-inline-link" type="button" @click="openRunningFullContent">查看全部</button>
             <p>
-              {{
-                currentAxisCompletion.enabled
-                  ? `确认后将把当前轴向 ${currentAxisCompletion.axisCode} 更新为已完成。`
-                  : `确认后将把当前${runningModalExperiment.experimentName || labName}更新为实验已完成。`
-              }}
+              确认后将把当前{{ runningModalExperiment.experimentName || labName }}更新为实验已完成。
             </p>
             <div class="laboratory-running-complete-prompt__actions">
               <button class="action-btn secondary" type="button" @click="closeCompleteConfirm">取消</button>
               <button class="action-btn" data-testid="laboratory-complete-experiment-confirm" type="button" @click="confirmCompleteExperiment">
-                {{ currentAxisCompletion.enabled ? "确认当前轴完成" : "确认实验完成" }}
+                确认实验完成
               </button>
             </div>
           </div>
           <div class="laboratory-running-actions">
-            <button v-if="!completePromptVisible && !runningModalExperiment.completed" class="action-btn" data-testid="laboratory-complete-experiment" type="button" @click="openCompleteConfirm">
-              {{ currentAxisCompletion.enabled ? "当前轴完成" : "实验完成" }}
+            <button v-if="!completePromptVisible && !runningModalExperiment.completed && !currentAxisCompletion.enabled" class="action-btn" data-testid="laboratory-complete-experiment" type="button" @click="openCompleteConfirm">
+              实验完成
             </button>
             <button
-              v-if="!completePromptVisible && !runningModalExperiment.completed && runningModalExperiment.axisContinuation?.nextAxisCode"
+              v-if="!completePromptVisible && !runningModalExperiment.completed && currentAxisCompletion.enabled"
               class="action-btn success"
               data-testid="laboratory-complete-axis-continue"
               type="button"
-              :disabled="!runningModalExperiment.axisContinuation?.canContinue"
-              @click="confirmCompleteAxisAndContinue"
+              :disabled="Boolean(runningModalExperiment.axisContinuation?.nextAxisCode) && !runningModalExperiment.axisContinuation?.canContinue"
+              @click="confirmCompleteCurrentAxis"
             >
-              当前轴向完成，继续进行下一实验 {{ runningModalExperiment.axisContinuation.nextAxisCode }}
+              {{
+                runningModalExperiment.axisContinuation?.nextAxisCode
+                  ? `当前轴向完成，继续进行下一实验 ${runningModalExperiment.axisContinuation.nextAxisCode}`
+                  : "当前轴向完成，完成本试验"
+              }}
             </button>
           </div>
         </div>
@@ -777,7 +777,7 @@ const {
   confirmCompare,
   confirmResetPrompt,
   confirmResetTask,
-  confirmCompleteAxisAndContinue,
+  confirmCompleteCurrentAxis,
   confirmCompleteExperiment,
   confirmInstall,
   confirmReady,

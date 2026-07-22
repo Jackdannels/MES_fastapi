@@ -1,6 +1,5 @@
 import { canonicalAxisCode, normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
-import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
 import { LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS } from "./laboratoryConstants";
 
 const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
@@ -28,7 +27,7 @@ export const formatAttendanceDuration = (elapsedSeconds) => {
 
 export const isResettableTrayStatus = (status) => {
   const normalized = normalizeText(status);
-  return RESETTABLE_TRAY_STATUSES.has(normalized) || isAxisPartialProgressStatus(normalized);
+  return RESETTABLE_TRAY_STATUSES.has(normalized);
 };
 
 export const formatErrorMessage = (error) => normalizeText(error?.message || error) || "未知错误";

@@ -1083,7 +1083,7 @@ describe("LaboratoryPage runtime", () => {
       schedule.id === "schedule-1" ? { ...schedule, status: "实验进行中" } : schedule,
     );
     snapshotState[STORAGE_KEYS.experiments] = (snapshotState[STORAGE_KEYS.experiments] || []).map((experiment) =>
-      experiment.experiment_code === "SYLU-2026-04-101-A" ? { ...experiment, axis_codes: ["x+", "x-"], status: "实验进行中" } : experiment,
+      experiment.experiment_code === "SYLU-2026-04-101-A" ? { ...experiment, axis_codes: ["x+"], status: "实验进行中" } : experiment,
     );
     snapshotState[STORAGE_KEYS.samples] = [
       {
@@ -1106,18 +1106,10 @@ describe("LaboratoryPage runtime", () => {
         step_no: 1,
         status: "实验进行中",
       },
-      {
-        run_no: "run-1",
-        task_code: "SYLU-2026-04-101",
-        experiment_code: "SYLU-2026-04-101-A",
-        axis_code: "x-",
-        step_no: 2,
-        status: "待执行",
-      },
     ];
 
     await mountPage();
-    document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushPageUpdates();
 
     const loginModal = document.body.querySelector('[data-testid="laboratory-attendance-login-modal"]');
@@ -2840,6 +2832,7 @@ describe("LaboratoryPage runtime", () => {
 
     const mounted = await mountPage();
 
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(true);
     await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
     await mounted.get('[data-testid="laboratory-compare-scan-input"]').setValue("SYLU-2026-07-001-TP-002");
     await mounted.get('[data-testid="laboratory-compare-scan-submit"]').trigger("click");
@@ -2849,6 +2842,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toBe(
       "当前托盘：SYLU-2026-07-001-TP-002 | 当前状态：已到达实验室",
     );
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(false);
   });
 
   test("collapses many task-list trays and opens a full tray detail modal", async () => {
@@ -3522,7 +3516,7 @@ describe("LaboratoryPage runtime", () => {
     expect(resetTaskButton()?.hasAttribute("disabled")).toBe(true);
   });
 
-  test("enables reset for a current partial-axis experiment tray", async () => {
+  test("disables reset when the current experiment is partially complete and the next axis schedule has not been compared", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.experiments] = [
       {
@@ -3560,7 +3554,10 @@ describe("LaboratoryPage runtime", () => {
 
     await mountPage();
 
-    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(false);
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(true);
+    await clickResetTask();
+    expect(wrapper.find('[data-testid="laboratory-reset-confirm-modal"].is-open').exists()).toBe(false);
+    expect(fetch.mock.calls.some(([input]) => String(input).includes("/withdraw-current"))).toBe(false);
   });
 
   test("withdraws only the current salt-spray experiment trays after double confirmation", async () => {
@@ -3648,7 +3645,7 @@ describe("LaboratoryPage runtime", () => {
     expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(1);
   });
 
-  test("withdraws the reset snapshot when the current task changes before confirmation", async () => {
+  test("withdraws the reset snapshot when another task selection is attempted before confirmation", async () => {
     const dispatchEventSpy = vi.spyOn(window, "dispatchEvent");
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.experiments] = [
@@ -3665,10 +3662,10 @@ describe("LaboratoryPage runtime", () => {
         code: "SYLU-2026-04-101-SP-001",
         location: "盐雾试验室",
         owner: "王工",
-        status: "振动试验部分完成 3/6轴",
-        flow_status: "振动试验部分完成 3/6轴",
+        status: "已到达实验室",
+        flow_status: "已到达实验室",
         task_code: "SYLU-2026-04-101",
-        trays: [{ quantity: 1, status: "振动试验部分完成 3/6轴", tray_code: "TP-001" }],
+        trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-001" }],
       },
       {
         code: "SYLU-2026-04-201-SP-001",
@@ -3690,7 +3687,7 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-select-task-SYLU-2026-04-201"]').trigger("click");
     await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
     await nextTick();
-    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(true);
+    expect(resetTaskButton()?.hasAttribute("disabled")).toBe(false);
 
     await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
     await nextTick();
@@ -4371,7 +4368,7 @@ describe("LaboratoryPage runtime", () => {
     expect(attendanceWorkStartCalls()[0][0]).toBe("/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/work/start");
   });
 
-  test("shows fixture countdown immediately but waits for install persistence before mqtt publish", async () => {
+  test("starts the fixture timeout only after install persistence and mqtt publish succeed", async () => {
     useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [
@@ -4436,11 +4433,17 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
     expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("5");
     expect(laboratoryMqCalls()).toHaveLength(0);
+    vi.advanceTimersByTime(1000);
+    await flushPageUpdates();
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("5");
 
     releaseLaboratoryOperation();
     await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
     await flushPageUpdates();
     expect(laboratoryMqCalls()).toHaveLength(1);
+    vi.advanceTimersByTime(1000);
+    await flushPageUpdates();
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("4");
   });
 
   test("uses local hostless MQTT fixture ready and start for hot humid laboratory two", async () => {
@@ -5729,6 +5732,7 @@ describe("LaboratoryPage runtime", () => {
       subExperimentCode: "vib-partial-axis-segment",
       trayCodes: ["TP-VIB-206"],
     }));
+    expect(document.body.querySelector('[data-testid="laboratory-complete-experiment"]')).toBeNull();
     expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeFalsy();
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("进行中");
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").not.toContain("实验已完成");
@@ -5918,7 +5922,7 @@ describe("LaboratoryPage runtime", () => {
     expect(axisButton?.hasAttribute("disabled")).toBe(true);
   });
 
-  test("treats the main completion action as current-axis completion for a running multi-axis experiment", async () => {
+  test("uses the unified axis action to complete the final axis and finish the experiment", async () => {
     reactiveRoute.query = { lab: "振动一室" };
     masterLabsState = [
       { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
@@ -5945,7 +5949,7 @@ describe("LaboratoryPage runtime", () => {
           task_code: "SYLU-2026-06-204",
           experiment_code: "SYLU-2026-06-204-A",
           device: "振动一室",
-          axis_codes: ["x+", "y-"],
+          axis_codes: ["x+"],
           sub_experiment_code: "vib-current-axis-segment",
           start_at: "2026-04-02T09:30:00.000Z",
           end_at: "2026-04-02T10:30:00.000Z",
@@ -5973,7 +5977,7 @@ describe("LaboratoryPage runtime", () => {
           device: "振动一室",
           tray_codes: ["TP-VIB-204"],
           status: "实验进行中",
-          axis_codes: ["x+", "y-"],
+          axis_codes: ["x+"],
           started_at: "2026-04-02T09:30:00.000Z",
           planned_end_at: "2026-04-02T10:30:00.000Z",
         },
@@ -5987,24 +5991,15 @@ describe("LaboratoryPage runtime", () => {
           step_no: 1,
           status: "实验进行中",
         },
-        {
-          run_no: "RUN-VIB-CURRENT-AXIS",
-          task_code: "SYLU-2026-06-204",
-          experiment_code: "SYLU-2026-06-204-A",
-          axis_code: "y-",
-          step_no: 2,
-          status: "待执行",
-        },
       ],
     };
 
     await mountPage();
-    const completeButton = document.body.querySelector('[data-testid="laboratory-complete-experiment"]');
+    const completeButton = document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]');
 
-    expect(completeButton?.textContent || "").toContain("当前轴完成");
+    expect(document.body.querySelector('[data-testid="laboratory-complete-experiment"]')).toBeNull();
+    expect(completeButton?.textContent || "").toContain("当前轴向完成，完成本试验");
     completeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await nextTick();
-    document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await waitForLaboratoryCompleteCount(1);
 
     const completeBody = JSON.parse(String(laboratoryCompleteCalls().at(-1)?.[1]?.body || "{}"));
