@@ -23,6 +23,8 @@ class FixedTerminalRepository(Protocol):
 
     def find_terminal(self, terminal_id: str) -> dict[str, Any] | None: ...
 
+    def list_terminals(self) -> list[dict[str, Any]]: ...
+
     def mark_authenticated(self, terminal_id: str) -> None: ...
 
 
@@ -42,6 +44,10 @@ class InMemoryFixedTerminalRepository:
         with self._lock:
             terminal = self._terminals.get(normalize_text(terminal_id))
             return deepcopy(terminal) if terminal else None
+
+    def list_terminals(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [deepcopy(terminal) for terminal in self._terminals.values()]
 
     def mark_authenticated(self, terminal_id: str) -> None:
         return None
@@ -127,6 +133,27 @@ class MySQLFixedTerminalRepository:
             return dict(row)
         return dict(zip(("terminal_id", "terminal_name", "secret_hash", "module", "lab_name", "active"), row))
 
+    def list_terminals(self) -> list[dict[str, Any]]:
+        self._ensure_schema()
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT terminal_id, terminal_name, secret_hash,
+                           bound_module AS module, bound_lab_name AS lab_name, active
+                    FROM sys_fixed_terminal
+                    WHERE active = 1
+                    ORDER BY terminal_name, terminal_id
+                    """
+                )
+                rows = cursor.fetchall()
+        if not rows:
+            return []
+        if isinstance(rows[0], dict):
+            return [dict(row) for row in rows]
+        columns = ("terminal_id", "terminal_name", "secret_hash", "module", "lab_name", "active")
+        return [dict(zip(columns, row)) for row in rows]
+
     def mark_authenticated(self, terminal_id: str) -> None:
         self._ensure_schema()
         with get_connection() as connection:
@@ -182,6 +209,9 @@ class FixedTerminalAuthService:
         if not terminal or not bool(terminal.get("active")):
             raise ValueError("terminal is not registered or disabled")
         return terminal
+
+    def list_active_terminals(self) -> list[dict[str, Any]]:
+        return [terminal for terminal in self.repository.list_terminals() if bool(terminal.get("active"))]
 
 
 _fixed_terminal_auth_service: FixedTerminalAuthService | None = None

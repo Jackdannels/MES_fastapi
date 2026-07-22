@@ -148,6 +148,7 @@ import TrayErrorSampleDialog from "@/components/shared/TrayErrorSampleDialog.vue
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
+import { useTerminalPresence } from "@/composables/useTerminalPresence";
 import { findFirstOverdueWaitingTaskCode, hasOverdueWaitingExperiment } from "@/lib/taskOverviewAlerts";
 import { serverNowMs } from "@/lib/serverClock";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -213,6 +214,8 @@ const pageTitle = computed(() => {
     ? `${currentLabName.value}操作台`
     : `${currentLabName.value}试验室操作台`;
 });
+
+useTerminalPresence({ pageTitle, route });
 
 const isActive = (name) => route.name === name;
 

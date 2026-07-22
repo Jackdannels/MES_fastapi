@@ -1,9 +1,9 @@
 param(
     [string]$ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path,
-    [string]$OutputDirectory = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v1.5"),
+    [string]$OutputDirectory = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v1.6"),
     [string]$OutputPath = "",
-    [string]$DesktopCopyPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v1.5.exe"),
-    [string]$LegacyDesktopCopyPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v1.4.exe")
+    [string]$DesktopCopyPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v1.6.exe"),
+    [string]$LegacyDesktopCopyPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v1.5.exe")
 )
 
 $ErrorActionPreference = "Stop"
@@ -115,8 +115,8 @@ public static class MESWorkstationShellRefresh
 
 $projectRootPath = (Resolve-Path -LiteralPath $ProjectRoot).Path
 $sourcePath = Join-Path $projectRootPath "scripts\client\MESWorkstationConfigurator.cs"
-$iconPath = Join-Path $OutputDirectory "mes-workbench-v1.5.ico"
-if (-not $OutputPath) { $OutputPath = Join-Path $OutputDirectory "MES工作台设置_v1.5.exe" }
+$iconPath = Join-Path $OutputDirectory "mes-workbench-v1.6.ico"
+if (-not $OutputPath) { $OutputPath = Join-Path $OutputDirectory "MES工作台设置_v1.6.exe" }
 if (-not (Test-Path -LiteralPath $sourcePath)) { throw "Cannot find configurator source: $sourcePath" }
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
@@ -136,22 +136,27 @@ try {
 }
 
 $releaseInfo = @"
-MES 工作台设置 v1.5
+MES 工作台设置 v1.6
 
 默认局域网地址：http://192.168.110.15:5173/
 所有试验间、接驳区、暂存间、外观检测间缩放：100%
 启动时自动清理专用 Edge 历史页面缩放记录
-图标：方案 B「智造六核」— mes-workbench-v1.5.ico
+新增：终端在线/IP/当前页面监听、远程刷新、远程关机与重启权限开关
+图标：方案 B「智造六核」— mes-workbench-v1.6.ico
 "@
 Set-Content -LiteralPath (Join-Path $OutputDirectory "版本说明.txt") -Value $releaseInfo -Encoding UTF8
 $svgPath = Join-Path $projectRootPath "assets\mes-workbench-v1.5.svg"
-if (Test-Path -LiteralPath $svgPath) { Copy-Item -LiteralPath $svgPath -Destination (Join-Path $OutputDirectory "mes-workbench-v1.5.svg") -Force }
+if (Test-Path -LiteralPath $svgPath) { Copy-Item -LiteralPath $svgPath -Destination (Join-Path $OutputDirectory "mes-workbench-v1.6.svg") -Force }
 $iconOptionsPath = Join-Path $projectRootPath "assets\mes-workbench-v1.4-icon-options.svg"
 if (Test-Path -LiteralPath $iconOptionsPath) { Copy-Item -LiteralPath $iconOptionsPath -Destination (Join-Path $OutputDirectory "mes-workbench-v1.4-icon-options.svg") -Force }
 $distPath = Join-Path $projectRootPath "frontend\dist"
 if (Test-Path -LiteralPath $distPath) { Copy-Item -LiteralPath $distPath -Destination (Join-Path $OutputDirectory "frontend-dist") -Recurse -Force }
 if ($LegacyDesktopCopyPath -and (Test-Path -LiteralPath $LegacyDesktopCopyPath)) {
-    Remove-Item -LiteralPath $LegacyDesktopCopyPath -Force
+    try {
+        Remove-Item -LiteralPath $LegacyDesktopCopyPath -Force
+    } catch {
+        Write-Warning "Legacy workstation configurator is in use and was kept: $LegacyDesktopCopyPath"
+    }
 }
 if ($DesktopCopyPath -and ((Resolve-Path -LiteralPath (Split-Path -Parent $DesktopCopyPath)).Path -ne (Resolve-Path -LiteralPath $OutputDirectory).Path)) {
     if (Test-Path -LiteralPath $DesktopCopyPath) { Remove-Item -LiteralPath $DesktopCopyPath -Force }

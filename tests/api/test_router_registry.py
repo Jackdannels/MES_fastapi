@@ -31,6 +31,7 @@ def test_api_router_registry_exposes_expected_prefixes():
         "/yt_object",
         "/api/attendance",
         "/api/system",
+        "/api/terminal-control",
         "/api/mq",
         "/api/laboratory",
     ]

@@ -19,6 +19,7 @@
 - `app/api/auth_session.py`：认证会话辅助逻辑。
 - `app/api/routes/`：按业务域拆分的 FastAPI 路由。
 - `app/api/routes/auth.py`：登录、认证相关接口。
+- `app/api/routes/terminal_control.py`：终端状态上报、管理端列表和刷新/关机/重启命令接口。
 - `app/api/routes/storage.py`：存储快照、前端数据持久化、实时更新发布接口。
 - `app/services/storage_read_helpers.py`：存储流程的文本、时间、托盘、任务、排程和轴范围只读归一化 helper；不负责状态写入。
 - `app/api/routes/tasks.py`：任务相关接口。
@@ -60,6 +61,7 @@
 - `app/services/mq_runtime.py`：MQTT 运行时管理。
 - `app/services/mq_subscriber.py`：MQTT 订阅。
 - `app/services/upper_computer_simulator.py`：上位机模拟服务。
+- `app/services/terminal_control.py`：固定终端在线心跳、页面状态、远程命令队列及权限判定服务。
 - `app/modules/registry.py`：后端模块注册信息。
 
 ## 前端路径
@@ -93,9 +95,14 @@
 - `frontend/src/modules/handover-system/`：交接系统入口页面和条码能力。
 - `frontend/src/modules/laboratory/`：实验室工作台模块。
 - `frontend/src/modules/laboratory/model.js`：实验室流程状态、动作和视图模型。
+- `frontend/src/modules/laboratory/laboratoryComparisonFeedback.js`：实验室托盘比对失败反馈纯函数，统一生成未出库、错误实验室、重复比对和其他实验占用提示。
 - `frontend/src/modules/laboratory/laboratoryConstants.js`：实验室状态、流程节点和共享状态集合。
 - `frontend/src/modules/laboratory/laboratoryHistory.js`：实验室撤回使用的历史记录、接驳/暂存与外观存放快照解析。
+- `frontend/src/modules/laboratory/laboratoryPresentation.js`：实验室展示层纯函数，负责计划时长、业务时间格式化、运行中实验倒计时和展示数据派生。
+- `frontend/src/modules/laboratory/laboratoryRunIndex.js`：实验运行与托盘关系的纯索引函数，负责运行中记录选择、已完成托盘集合和实验-托盘反向索引。
+- `frontend/src/modules/laboratory/laboratoryTaskFlow.js`：实验室任务流程纯派生函数，负责部分轴向展示、任务流程节点、当前实验上下文和最新完成节点激活。
 - `frontend/src/modules/laboratory/laboratoryTrayEligibility.js`：托盘派发资格、共享托盘操作锁、终态和部分轴向作用域判断。
+- `frontend/src/modules/laboratory/laboratoryTrayState.js`：实验室托盘状态纯函数，负责状态聚合、生命周期候选选择、样品/任务索引和当前实验状态恢复。
 - `frontend/src/modules/laboratory/workflowState.js`：实验室比对、安装、确认等纯工作流状态转换。
 - `frontend/src/modules/laboratory/useLaboratoryPage.js`：实验室页面组合式状态。
 - `frontend/src/modules/login/`：登录模块。
@@ -176,3 +183,6 @@
 - `docs/mqtt-interface-definition.json`：MQTT 接口定义。
 - `frontend/scripts/legacy-fallback-snapshot-report.mjs`：旧数据兜底扫描报告脚本。
 - `scripts/init_mysql_storage.py`：MySQL 存储初始化脚本。
+- `scripts/client/MESWorkstationConfigurator.cs`：固定工作台注册、开机启动、状态心跳和远程命令执行程序。
+- `scripts/client/MESTerminalManager.cs`：独立 Windows 终端状态与远程控制管理面板。
+- `scripts/build_terminal_manager.ps1`：将独立终端管理面板编译到桌面的构建脚本。

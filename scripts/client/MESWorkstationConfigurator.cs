@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Management;
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -25,6 +26,9 @@ namespace MESWorkstationConfigurator
         public string ProtectedTerminalSecret = "";
         public string RegisteredServerUrl = "";
         public string RegisteredStationKey = "";
+        public bool EnableStatusMonitoring = true;
+        public bool AllowRemoteReload = true;
+        public bool AllowRemotePowerControl = false;
     }
 
     public class StationOption
@@ -48,10 +52,12 @@ namespace MESWorkstationConfigurator
 
     internal static class LauncherRuntime
     {
-        internal const string Version = "v1.5";
+        internal const string Version = "v1.6";
+        internal const int HeartbeatIntervalMilliseconds = 5000;
         internal const int WorkstationZoomPercent = 100;
         internal const string DefaultServerUrl = "http://192.168.110.15:5173";
         internal const string RunValueName = "MESWorkstationLauncher";
+        internal const string ManagedAgentMutexName = @"Local\MESWorkstationManagedAgent";
         internal static readonly string InstallDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "MESWorkstation"
@@ -60,6 +66,7 @@ namespace MESWorkstationConfigurator
         internal static readonly string ConfigPath = Path.Combine(InstallDirectory, "config.xml");
         internal static readonly string LogPath = Path.Combine(InstallDirectory, "launcher.log");
         internal static readonly string EdgeProfilePath = Path.Combine(InstallDirectory, "EdgeProfile");
+        private static string lastKnownLocalIpAddress = String.Empty;
 
         internal static readonly List<StationOption> Stations = new List<StationOption>
         {
@@ -442,6 +449,170 @@ namespace MESWorkstationConfigurator
             }
         }
 
+        internal static void RunManagedWorkstation()
+        {
+            bool ownsMutex;
+            using (Mutex agentMutex = new Mutex(true, ManagedAgentMutexName, out ownsMutex))
+            {
+                if (!ownsMutex)
+                {
+                    Log("终端状态监听进程已在运行，本次重复启动直接退出。");
+                    return;
+                }
+
+                try
+                {
+                    LauncherConfig config = LoadConfig();
+                    LaunchConfiguredWorkstation(true);
+                    if (!config.EnableStatusMonitoring)
+                    {
+                        Log("终端状态监听未启用，启动器在打开工作台后退出。");
+                        return;
+                    }
+
+                    Log("终端状态监听已启动。");
+                    while (true)
+                    {
+                        try
+                        {
+                            config = LoadConfig();
+                            if (!config.EnableStatusMonitoring)
+                            {
+                                Log("终端状态监听已由配置关闭。");
+                                return;
+                            }
+                            Dictionary<string, object> heartbeat = PostTerminalHeartbeat(config);
+                            object commandValue;
+                            if (heartbeat.TryGetValue("command", out commandValue) && commandValue != null)
+                            {
+                                Dictionary<string, object> command = commandValue as Dictionary<string, object>;
+                                if (command != null) ExecuteRemoteCommand(config, command);
+                            }
+                        }
+                        catch (Exception exception)
+                        {
+                            Log("终端状态监听请求失败：" + exception.Message);
+                        }
+                        Thread.Sleep(HeartbeatIntervalMilliseconds);
+                    }
+                }
+                finally
+                {
+                    agentMutex.ReleaseMutex();
+                }
+            }
+        }
+
+        internal static void StartInstalledManagedWorkstation()
+        {
+            ProcessStartInfo startInfo = new ProcessStartInfo();
+            startInfo.FileName = InstalledExePath;
+            startInfo.Arguments = "--launch";
+            startInfo.WorkingDirectory = InstallDirectory;
+            startInfo.UseShellExecute = false;
+            startInfo.CreateNoWindow = true;
+            Process.Start(startInfo);
+        }
+
+        private static Dictionary<string, object> PostTerminalHeartbeat(LauncherConfig config)
+        {
+            string terminalSecret = UnprotectTerminalSecret(config.ProtectedTerminalSecret);
+            if (String.IsNullOrWhiteSpace(config.TerminalId) || String.IsNullOrWhiteSpace(terminalSecret))
+            {
+                throw new InvalidOperationException("固定终端凭据不完整，请重新保存设置。");
+            }
+            return PostJson(
+                NormalizeServerUrl(config.ServerUrl) + "/api/terminal-control/heartbeat",
+                new Dictionary<string, object>
+                {
+                    { "terminalId", config.TerminalId },
+                    { "terminalSecret", terminalSecret },
+                    { "machineName", Environment.MachineName },
+                    { "ipAddress", ResolveLocalIpAddress(config.ServerUrl) },
+                    { "configuredPath", FindStation(config.StationKey).Route },
+                    { "agentVersion", Version },
+                    { "allowReload", config.AllowRemoteReload },
+                    { "allowPower", config.AllowRemotePowerControl }
+                }
+            );
+        }
+
+        private static string ResolveLocalIpAddress(string serverUrl)
+        {
+            if (!String.IsNullOrWhiteSpace(lastKnownLocalIpAddress)) return lastKnownLocalIpAddress;
+            try
+            {
+                Uri server = new Uri(NormalizeServerUrl(serverUrl));
+                using (TcpClient client = new TcpClient())
+                {
+                    IAsyncResult connection = client.BeginConnect(server.Host, server.Port, null, null);
+                    if (!connection.AsyncWaitHandle.WaitOne(2000))
+                    {
+                        throw new TimeoutException("连接 MES 地址超时。");
+                    }
+                    client.EndConnect(connection);
+                    IPEndPoint endpoint = client.Client.LocalEndPoint as IPEndPoint;
+                    lastKnownLocalIpAddress = endpoint == null ? String.Empty : endpoint.Address.ToString();
+                    return lastKnownLocalIpAddress;
+                }
+            }
+            catch (Exception exception)
+            {
+                Log("获取终端局域网 IP 失败：" + exception.Message);
+                return String.Empty;
+            }
+        }
+
+        private static void CompleteRemoteCommand(LauncherConfig config, int commandId, bool success, string message)
+        {
+            PostJson(
+                NormalizeServerUrl(config.ServerUrl) + "/api/terminal-control/commands/" + commandId + "/complete",
+                new Dictionary<string, object>
+                {
+                    { "terminalId", config.TerminalId },
+                    { "terminalSecret", UnprotectTerminalSecret(config.ProtectedTerminalSecret) },
+                    { "success", success },
+                    { "message", message }
+                }
+            );
+        }
+
+        private static void ExecuteRemoteCommand(LauncherConfig config, Dictionary<string, object> command)
+        {
+            int commandId = Convert.ToInt32(command["commandId"]);
+            string action = Convert.ToString(command["action"] ?? String.Empty).Trim().ToLowerInvariant();
+            try
+            {
+                if (action == "reload")
+                {
+                    if (!config.AllowRemoteReload) throw new InvalidOperationException("终端未允许远程刷新。");
+                    LaunchConfiguredWorkstation(false);
+                    CompleteRemoteCommand(config, commandId, true, "Edge 已重新载入");
+                    return;
+                }
+                if (action == "shutdown" || action == "restart")
+                {
+                    if (!config.AllowRemotePowerControl) throw new InvalidOperationException("终端未允许远程电源控制。");
+                    string label = action == "shutdown" ? "关机" : "重启";
+                    CompleteRemoteCommand(config, commandId, true, "终端已接受" + label + "命令");
+                    ProcessStartInfo shutdown = new ProcessStartInfo();
+                    shutdown.FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "shutdown.exe");
+                    shutdown.Arguments = action == "shutdown" ? "/s /t 5 /f" : "/r /t 5 /f";
+                    shutdown.UseShellExecute = false;
+                    shutdown.CreateNoWindow = true;
+                    Process.Start(shutdown);
+                    Log("已执行远程" + label + "命令，commandId=" + commandId);
+                    return;
+                }
+                throw new InvalidOperationException("未知远程命令：" + action);
+            }
+            catch (Exception exception)
+            {
+                Log("远程命令执行失败，commandId=" + commandId + "：" + exception);
+                try { CompleteRemoteCommand(config, commandId, false, exception.Message); } catch { }
+            }
+        }
+
         private static void StopDedicatedEdge()
         {
             try
@@ -539,12 +710,15 @@ namespace MESWorkstationConfigurator
         private readonly Button saveButton = new Button();
         private readonly Button testButton = new Button();
         private readonly Button removeButton = new Button();
+        private readonly CheckBox monitorCheck = new CheckBox();
+        private readonly CheckBox reloadCheck = new CheckBox();
+        private readonly CheckBox powerCheck = new CheckBox();
 
         public ConfigForm()
         {
             Text = "MES 固定操作台设置 " + LauncherRuntime.Version;
-            ClientSize = new Size(600, 350);
-            MinimumSize = new Size(616, 389);
+            ClientSize = new Size(600, 455);
+            MinimumSize = new Size(616, 494);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
             BackColor = Color.FromArgb(245, 247, 250);
@@ -583,7 +757,28 @@ namespace MESWorkstationConfigurator
             Controls.Add(targetLabel);
 
             saveButton.Text = "保存并启用开机自启动";
-            saveButton.Location = new Point(30, 242);
+            AddLabel("远程管理", 31, 242);
+            monitorCheck.Text = "上报在线状态和当前页面";
+            monitorCheck.Location = new Point(150, 237);
+            monitorCheck.Size = new Size(230, 28);
+            monitorCheck.CheckedChanged += delegate
+            {
+                reloadCheck.Enabled = monitorCheck.Checked;
+                powerCheck.Enabled = monitorCheck.Checked;
+            };
+            Controls.Add(monitorCheck);
+
+            reloadCheck.Text = "允许管理端刷新界面";
+            reloadCheck.Location = new Point(150, 269);
+            reloadCheck.Size = new Size(200, 28);
+            Controls.Add(reloadCheck);
+
+            powerCheck.Text = "允许管理端关机/重启";
+            powerCheck.Location = new Point(360, 269);
+            powerCheck.Size = new Size(210, 28);
+            Controls.Add(powerCheck);
+
+            saveButton.Location = new Point(30, 318);
             saveButton.Size = new Size(220, 40);
             saveButton.BackColor = Color.FromArgb(28, 100, 210);
             saveButton.ForeColor = Color.White;
@@ -592,18 +787,18 @@ namespace MESWorkstationConfigurator
             Controls.Add(saveButton);
 
             testButton.Text = "立即测试打开 Edge";
-            testButton.Location = new Point(260, 242);
+            testButton.Location = new Point(260, 318);
             testButton.Size = new Size(170, 40);
             testButton.Click += TestClicked;
             Controls.Add(testButton);
 
             removeButton.Text = "取消开机自启动";
-            removeButton.Location = new Point(440, 242);
+            removeButton.Location = new Point(440, 318);
             removeButton.Size = new Size(130, 40);
             removeButton.Click += RemoveClicked;
             Controls.Add(removeButton);
 
-            statusLabel.Location = new Point(30, 300);
+            statusLabel.Location = new Point(30, 380);
             statusLabel.Size = new Size(540, 30);
             statusLabel.ForeColor = Color.FromArgb(45, 115, 65);
             Controls.Add(statusLabel);
@@ -628,6 +823,11 @@ namespace MESWorkstationConfigurator
             StationOption selected = LauncherRuntime.FindStation(config.StationKey);
             stationCombo.SelectedItem = selected;
             if (stationCombo.SelectedIndex < 0) stationCombo.SelectedIndex = 0;
+            monitorCheck.Checked = config.EnableStatusMonitoring;
+            reloadCheck.Checked = config.AllowRemoteReload;
+            powerCheck.Checked = config.AllowRemotePowerControl;
+            reloadCheck.Enabled = monitorCheck.Checked;
+            powerCheck.Enabled = monitorCheck.Checked;
             statusLabel.Text = LauncherRuntime.IsAutoStartEnabled()
                 ? "当前状态：已启用开机自启动"
                 : "当前状态：尚未启用开机自启动";
@@ -642,6 +842,9 @@ namespace MESWorkstationConfigurator
             config.ServerUrl = LauncherRuntime.NormalizeServerUrl(serverText.Text);
             config.StationKey = selected.Key;
             config.ZoomPercent = LauncherRuntime.WorkstationZoomPercent;
+            config.EnableStatusMonitoring = monitorCheck.Checked;
+            config.AllowRemoteReload = monitorCheck.Checked && reloadCheck.Checked;
+            config.AllowRemotePowerControl = monitorCheck.Checked && powerCheck.Checked;
             return config;
         }
 
@@ -665,9 +868,10 @@ namespace MESWorkstationConfigurator
                 LauncherConfig config = ReadFormConfig();
                 LauncherRuntime.EnsureTerminalRegistration(config);
                 LauncherRuntime.InstallAutoStart(config);
+                LauncherRuntime.StartInstalledManagedWorkstation();
                 statusLabel.Text = "设置成功：固定终端已绑定 " + LauncherRuntime.FindStation(config.StationKey).Label;
                 MessageBox.Show(
-                    "设置成功。\n\n该电脑已注册为固定终端，开机后会自动认证并进入绑定界面。",
+                    "设置成功。\n\n该电脑已注册为固定终端，工作台和状态监听正在启动；以后开机会自动认证并进入绑定界面。",
                     "MES 工作台",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information
@@ -749,7 +953,7 @@ namespace MESWorkstationConfigurator
             {
                 try
                 {
-                    LauncherRuntime.LaunchConfiguredWorkstation(true);
+                    LauncherRuntime.RunManagedWorkstation();
                     return 0;
                 }
                 catch
