@@ -1,4 +1,4 @@
-// 负责设备台账状态、维保表单、维保计划和点位管理流程。
+// 负责设备台账状态、维保表单和维保计划流程。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useDialogState } from "@/composables/useDialogState";
@@ -15,7 +15,6 @@ import { resolveTaskStatus, STATUS_COMPLETED, STATUS_WAITING } from "@/modules/s
 import {
   MAINTENANCE_DEVICE_STATUS,
   appendDevice,
-  appendPoint,
   buildDeviceForm,
   buildDeviceMetrics,
   buildDeviceRows,
@@ -23,13 +22,9 @@ import {
   buildMaintenancePlanForm,
   buildSelectedDevice,
   buildTestTypeOptions,
-  buildVisiblePointRows,
-  createConnectionForm,
   createDeviceForm,
   createMaintenanceForm,
   createMaintenancePlanForm,
-  createPointForm,
-  createPointRows,
   normalizeMaintenancePlan,
   resolveStatusClass,
   resolveMaintenanceScheduleImpact,
@@ -44,6 +39,7 @@ const isUnavailableDeviceStatus = (status) => {
 };
 const isPlannedMaintenanceType = (type) => normalizeText(type).startsWith("计划");
 const MAINTENANCE_SCHEDULE_CONFLICT_WARNING = "请先调整或删除该设备维修窗口内的排程";
+const MAINTENANCE_START_TIME_WARNING = "开始时间不得早于当前时间";
 const MAINTENANCE_END_TIME_WARNING = "结束时间必须晚于开始时间";
 const maintenanceTypeToStatus = (type) => (normalizeText(type).includes("保养") ? "保养" : "维修");
 const isRunningExperimentStatus = (status) => ["实验进行中", "实验中"].includes(normalizeText(status));
@@ -109,16 +105,11 @@ function useDevicesPage() {
   const maintenancePlanDevice = ref(null);
   const maintenancePlanWarning = ref("");
   const maintenanceConflictDetail = ref(null);
-  const pointForm = ref(createPointForm());
-  const connectionForm = ref(createConnectionForm());
-  const pointRows = ref(createPointRows());
-  const pointQuery = ref("");
   const deviceDrawer = useDialogState();
   const editDeviceModal = useDialogState();
   const maintenancePlanModal = useDialogState();
   const maintenanceConflictModal = useDialogState();
   const runningRepairChoiceModal = useDialogState();
-  const pointModal = useDialogState();
   const runningRepairChoiceDetail = ref(null);
   const now = ref(serverNowDate());
   let deviceClockTimer = null;
@@ -138,6 +129,11 @@ function useDevicesPage() {
   const metrics = computed(() => buildDeviceMetrics(baseRows.value));
   const locationOptions = computed(() => buildLocationOptions(rawDevices.value));
   const maintenancePlanIsPlanned = computed(() => isPlannedMaintenanceType(maintenancePlanForm.value.type));
+  const maintenancePlanStartMin = computed(() => {
+    const minute = 60 * 1000;
+    const nextSelectableTime = new Date(Math.ceil(now.value.getTime() / minute) * minute);
+    return toBusinessDateTimeValue(nextSelectableTime).replace(" ", "T").slice(0, 16);
+  });
   const maintenancePlanEndMin = computed(() => {
     const startAt = parseTime(maintenancePlanForm.value.startAt);
     if (startAt === null) {
@@ -146,7 +142,6 @@ function useDevicesPage() {
     return toBusinessDateTimeValue(new Date(startAt + 60 * 1000)).replace(" ", "T").slice(0, 16);
   });
   const testTypeOptions = computed(() => buildTestTypeOptions(rawDevices.value));
-  const visiblePointRows = computed(() => buildVisiblePointRows(pointRows.value, pointQuery.value));
   const editDeviceStatusClass = computed(() => resolveStatusClass(deviceForm.value.status));
   const hasFuturePlannedMaintenance = computed(() => {
     const startAt = parseTime(deviceForm.value.maintenance_start_at);
@@ -780,6 +775,18 @@ function useDevicesPage() {
       maintenancePlanWarning.value = MAINTENANCE_END_TIME_WARNING;
       return;
     }
+    const existingStartAt = parseTime(maintenancePlanDevice.value?.maintenanceStartAt);
+    const unchangedExistingPlan = startAt !== null
+      && startAt === existingStartAt
+      && normalizeText(form.type) === normalizeText(maintenancePlanDevice.value?.maintenanceType);
+    if (
+      isPlannedMaintenanceType(form.type)
+      && (startAt === null || startAt < serverNowDate().getTime())
+      && !unchangedExistingPlan
+    ) {
+      maintenancePlanWarning.value = MAINTENANCE_START_TIME_WARNING;
+      return;
+    }
     const impact = resolveMaintenanceScheduleImpact({
       deviceCode,
       endAt: form.endAt,
@@ -897,25 +904,6 @@ function useDevicesPage() {
     flushPendingStorageRefresh();
   };
 
-  const openPointModal = () => {
-    pointModal.openWith({ id: "point-modal" });
-  };
-
-  const closePointModal = () => {
-    pointModal.close();
-    flushPendingStorageRefresh();
-  };
-
-  const savePoint = () => {
-    const nextPoints = appendPoint(pointRows.value, pointForm.value);
-    if (nextPoints.length === pointRows.value.length) {
-      return;
-    }
-    pointRows.value = nextPoints;
-    pointForm.value = createPointForm();
-    closePointModal();
-  };
-
   const loadDevicesPage = async () => {
     const snapshot = await loadSnapshot();
     rawConflicts.value = Array.isArray(snapshot[STORAGE_KEYS.conflicts]) ? snapshot[STORAGE_KEYS.conflicts] : [];
@@ -939,7 +927,6 @@ function useDevicesPage() {
     || maintenancePlanModal.open.value
     || maintenanceConflictModal.open.value
     || runningRepairChoiceModal.open.value
-    || pointModal.open.value
   );
 
   const storageRefresh = useStorageSnapshotRefresh({
@@ -1025,11 +1012,9 @@ function useDevicesPage() {
     closeDeviceDrawer,
     closeEditDevice,
     closeMaintenancePlan,
-    closePointModal,
     confirmMaintenanceConflict,
     confirmRunningRepairComplete,
     confirmRunningRepairReschedule,
-    connectionForm,
     createNewDevice,
     deviceDrawerOpen: deviceDrawer.open,
     deviceForm,
@@ -1045,6 +1030,7 @@ function useDevicesPage() {
     maintenanceRecordRows,
     maintenancePlanForm,
     maintenancePlanEndMin,
+    maintenancePlanStartMin,
     maintenancePlanIsPlanned,
     maintenancePlanWarning,
     maintenancePlanOpen: maintenancePlanModal.open,
@@ -1052,18 +1038,12 @@ function useDevicesPage() {
     openDeviceDrawer,
     openEditDevice,
     openMaintenancePlan,
-    openPointModal,
-    pointForm,
-    pointModalOpen: pointModal.open,
-    pointQuery,
-    pointRows: visiblePointRows,
     query,
     runningRepairChoiceDetail,
     runningRepairChoiceOpen: runningRepairChoiceModal.open,
     saveCurrentDevice,
     saveEditedDevice,
     saveMaintenancePlan,
-    savePoint,
     selectedDevice,
     setDeviceAvailable,
     sortDirection,

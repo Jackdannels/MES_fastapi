@@ -1,5 +1,6 @@
 import asyncio
 from copy import deepcopy
+from datetime import datetime
 import threading
 
 from fastapi import FastAPI
@@ -2252,6 +2253,215 @@ def test_manufacturer_return_of_last_tray_releases_schedule_for_maintenance(monk
     assert maintenance.status_code == 200
 
 
+def test_manufacturer_return_of_completed_real_workflow_bypasses_manual_schedule_delete_lock(monkeypatch):
+    from app.api.routes import storage as storage_route
+
+    monkeypatch.setattr(storage_route, "now_business_text", lambda: "2026-07-22 10:00:00")
+    task_code = "SYLU-2026-07-021"
+    tray_code = f"{task_code}-TP-001"
+    experiment_codes = [f"{task_code}-{suffix}" for suffix in ("A", "B", "C")]
+    sub_experiment_codes = {
+        experiment_codes[0]: [f"{experiment_codes[0]}-AXIS-001", f"{experiment_codes[0]}-AXIS-002"],
+        experiment_codes[2]: [f"{experiment_codes[2]}-AXIS-001", f"{experiment_codes[2]}-AXIS-002"],
+    }
+    schedules = [
+        {
+            "id": "schedule-vibration-axis-001",
+            "task_code": task_code,
+            "experiment_code": experiment_codes[0],
+            "sub_experiment_code": sub_experiment_codes[experiment_codes[0]][0],
+            "axis_codes": ["x+", "x-", "y+"],
+            "device": "振动一室",
+            "status": "实验已完成",
+        },
+        {
+            "id": "schedule-vibration-axis-002",
+            "task_code": task_code,
+            "experiment_code": experiment_codes[0],
+            "sub_experiment_code": sub_experiment_codes[experiment_codes[0]][1],
+            "axis_codes": ["y-", "z+", "z-"],
+            "device": "振动一室",
+            "status": "实验已完成",
+        },
+        {
+            "id": "schedule-salt",
+            "task_code": task_code,
+            "experiment_code": experiment_codes[1],
+            "device": "盐雾试验室",
+            "status": "实验已完成",
+        },
+        {
+            "id": "schedule-impact-axis-001",
+            "task_code": task_code,
+            "experiment_code": experiment_codes[2],
+            "sub_experiment_code": sub_experiment_codes[experiment_codes[2]][0],
+            "axis_codes": ["x+", "x-", "y+"],
+            "device": "冲击一室",
+            "status": "实验已完成",
+        },
+        {
+            "id": "schedule-impact-axis-002",
+            "task_code": task_code,
+            "experiment_code": experiment_codes[2],
+            "sub_experiment_code": sub_experiment_codes[experiment_codes[2]][1],
+            "axis_codes": ["y-", "z+", "z-"],
+            "device": "冲击一室",
+            "status": "实验已完成",
+        },
+    ]
+    run_trays = [
+        {
+            "run_no": f"run-{index}",
+            "task_code": task_code,
+            "experiment_code": schedule["experiment_code"],
+            "sub_experiment_code": schedule.get("sub_experiment_code"),
+            "tray_code": tray_code,
+            "run_tray_status": "实验已完成",
+        }
+        for index, schedule in enumerate(schedules, start=1)
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.tasks": [{"code": task_code, "status": "任务已完成", "transfer_status": "到货"}],
+            "mes.samples": [
+                {
+                    "code": f"{task_code}-SP-{index:03d}",
+                    "task_code": task_code,
+                    "location": "恒温恒湿间（实验后暂存间）",
+                    "status": "实验后暂存间存放",
+                    "flow_status": "实验后暂存间存放",
+                    "trays": [{"tray_code": tray_code, "status": "实验后暂存间存放", "quantity": 1}],
+                    "history": [],
+                }
+                for index in range(1, 3)
+            ],
+            "mes.experiments": [
+                {
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "status": "实验已完成",
+                }
+                for experiment_code in experiment_codes
+            ],
+            "mes.experiment_trays": [
+                {"task_code": task_code, "experiment_code": experiment_code, "tray_code": tray_code}
+                for experiment_code in experiment_codes
+            ],
+            "mes.experiment_run_trays": run_trays,
+            "mes.schedules": schedules,
+            "mes.staging_events": [],
+        },
+    )
+
+    response = client.post(f"/api/storage/rooms/staging/trays/{tray_code}/manufacturer-return", json={})
+
+    assert response.status_code == 200
+    assert storage.read("mes.schedules") == []
+    assert storage.read("mes.experiment_run_trays") == run_trays
+    assert storage.read("mes.tasks")[0]["transfer_status"] == "厂家收回"
+    for sample in storage.read("mes.samples"):
+        assert sample["location"] == "厂家收回"
+        assert sample["status"] == "厂家收回"
+        assert sample["trays"][0]["status"] == "厂家收回"
+        assert sample["history"][-1] == {
+            "id": f"sample-event-{sample['code']}-1",
+            "time": "2026-07-22 10:00:00",
+            "action": "厂家收回",
+            "location": "厂家收回",
+            "owner": "扫码登记",
+            "status": "厂家收回",
+            "detail": f"{tray_code} 厂家收回",
+        }
+    assert storage.read("mes.staging_events")[-1]["time"] == "2026-07-22 10:00:00"
+
+
+def test_manufacturer_return_after_partial_axis_completion_is_not_blocked_by_schedule_lock(monkeypatch):
+    from app.api.routes import storage as storage_route
+
+    monkeypatch.setattr(storage_route, "now_business_text", lambda: "2026-07-22 10:30:00")
+    task_code = "TASK-PARTIAL-RETURN"
+    experiment_code = f"{task_code}-A"
+    tray_code = f"{task_code}-TP-001"
+    first_sub_code = f"{experiment_code}-AXIS-001"
+    second_sub_code = f"{experiment_code}-AXIS-002"
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.tasks": [{"code": task_code, "status": "任务进行中"}],
+            "mes.samples": [
+                {
+                    "code": f"{task_code}-SP-001",
+                    "task_code": task_code,
+                    "location": "恒温恒湿间（实验后暂存间）",
+                    "status": "实验后暂存间存放",
+                    "flow_status": "实验后暂存间存放",
+                    "trays": [{"tray_code": tray_code, "status": "实验后暂存间存放", "quantity": 1}],
+                    "history": [],
+                }
+            ],
+            "mes.experiments": [
+                {
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "status": "冲击试验部分完成 3/6轴",
+                }
+            ],
+            "mes.experiment_trays": [
+                {"task_code": task_code, "experiment_code": experiment_code, "tray_code": tray_code}
+            ],
+            "mes.experiment_run_trays": [
+                {
+                    "run_no": "run-axis-001",
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "sub_experiment_code": first_sub_code,
+                    "tray_code": tray_code,
+                    "run_tray_status": "实验已完成",
+                }
+            ],
+            "mes.experiment_run_steps": [
+                {
+                    "run_no": "run-axis-001",
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "sub_experiment_code": first_sub_code,
+                    "axis_code": axis_code,
+                    "status": "实验已完成",
+                }
+                for axis_code in ("x+", "x-", "y+")
+            ],
+            "mes.schedules": [
+                {
+                    "id": "schedule-axis-001",
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "sub_experiment_code": first_sub_code,
+                    "axis_codes": ["x+", "x-", "y+"],
+                    "status": "实验已完成",
+                },
+                {
+                    "id": "schedule-axis-002",
+                    "task_code": task_code,
+                    "experiment_code": experiment_code,
+                    "sub_experiment_code": second_sub_code,
+                    "axis_codes": ["y-", "z+", "z-"],
+                    "status": "已排程",
+                },
+            ],
+            "mes.staging_events": [],
+        },
+    )
+
+    response = client.post(f"/api/storage/rooms/staging/trays/{tray_code}/manufacturer-return", json={})
+
+    assert response.status_code == 200
+    assert storage.read("mes.schedules") == []
+    assert storage.read("mes.experiments")[0]["status"] == "实验已完成"
+    assert storage.read("mes.samples")[0]["status"] == "厂家收回"
+    assert storage.read("mes.staging_events")[-1]["action"] == "manufacturer_return"
+
+
 def test_storage_tray_actions_serialize_same_tray_stock_out_conflict(monkeypatch):
     samples = [
         {
@@ -2414,7 +2624,7 @@ def test_storage_rejects_deleting_schedule_after_fixture_install(monkeypatch):
     response = client.put("/api/storage", json={"mes.schedules": []})
 
     assert response.status_code == 400
-    assert "夹具安装后排程不可删除" in response.json()["detail"]
+    assert "完成任务比对后排程不可删除" in response.json()["detail"]
     assert storage.read("mes.schedules") == schedules
 
 
@@ -2456,8 +2666,102 @@ def test_storage_rejects_rescheduling_after_fixture_install(monkeypatch):
     response = client.put("/api/storage/mes.schedules", json=attempted)
 
     assert response.status_code == 400
-    assert "夹具安装后排程不可删除" in response.json()["detail"]
+    assert "完成任务比对后排程不可删除" in response.json()["detail"]
     assert storage.read("mes.schedules") == schedules
+
+
+def test_storage_rejects_deleting_non_axis_schedule_after_task_comparison(monkeypatch):
+    schedules = [{
+        "id": "schedule-salt-compared",
+        "task_code": "TASK-COMPARED",
+        "experiment_code": "EXP-SALT",
+        "device": "盐雾试验室",
+        "status": "已排程",
+    }]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.schedules": schedules,
+            "mes.experiment_trays": [
+                {"task_code": "TASK-COMPARED", "experiment_code": "EXP-SALT", "tray_code": "TP-COMPARED"}
+            ],
+            "mes.samples": [{
+                "code": "SP-COMPARED",
+                "task_code": "TASK-COMPARED",
+                "status": "已到达实验室",
+                "flow_status": "已到达实验室",
+                "trays": [{"tray_code": "TP-COMPARED", "status": "已到达实验室", "quantity": 1}],
+            }],
+        },
+    )
+
+    response = client.put("/api/storage/mes.schedules", json=[])
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "完成任务比对后排程不可删除或重新排程。"
+    assert storage.read("mes.schedules") == schedules
+
+
+def test_storage_locks_compared_axis_schedule_but_allows_deleting_unstarted_sibling(monkeypatch):
+    task_code = "TASK-AXIS-COMPARED"
+    experiment_code = "EXP-IMPACT-COMPARED"
+    active_sub_experiment_code = f"{experiment_code}-AXIS-001"
+    future_sub_experiment_code = f"{experiment_code}-AXIS-002"
+    schedules = [
+        {
+            "id": "schedule-axis-compared",
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "sub_experiment_code": active_sub_experiment_code,
+            "axis_codes": ["x+", "x-", "y+", "y-"],
+            "device": "冲击一室",
+            "status": "已排程",
+        },
+        {
+            "id": "schedule-axis-future",
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "sub_experiment_code": future_sub_experiment_code,
+            "axis_codes": ["z+", "z-"],
+            "device": "冲击二室",
+            "status": "已排程",
+        },
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.schedules": schedules,
+            "mes.experiment_trays": [
+                {"task_code": task_code, "experiment_code": experiment_code, "tray_code": "TP-AXIS-COMPARED"}
+            ],
+            "mes.samples": [{
+                "code": "SP-AXIS-COMPARED",
+                "task_code": task_code,
+                "status": "已到达实验室",
+                "flow_status": "已到达实验室",
+                "trays": [{
+                    "tray_code": "TP-AXIS-COMPARED",
+                    "status": "已到达实验室",
+                    "target_sub_experiment_code": active_sub_experiment_code,
+                    "quantity": 1,
+                }],
+            }],
+        },
+    )
+
+    active_response = client.put("/api/storage/mes.schedules", json=[schedules[1]])
+    assert active_response.status_code == 400
+    assert storage.read("mes.schedules") == schedules
+
+    rescheduled = deepcopy(schedules)
+    rescheduled[0]["device"] = "冲击二室"
+    reschedule_response = client.put("/api/storage/mes.schedules", json=rescheduled)
+    assert reschedule_response.status_code == 400
+    assert storage.read("mes.schedules") == schedules
+
+    future_response = client.put("/api/storage/mes.schedules", json=[schedules[0]])
+    assert future_response.status_code == 200
+    assert storage.read("mes.schedules") == [schedules[0]]
 
 
 def test_storage_allows_deleting_untouched_future_axis_schedule_after_sibling_starts(monkeypatch):
@@ -2521,7 +2825,7 @@ def test_storage_allows_deleting_untouched_future_axis_schedule_after_sibling_st
     assert storage.read("mes.schedules") == [schedules[0]]
 
 
-def test_storage_allows_deleting_partially_completed_multi_axis_schedule(monkeypatch):
+def test_storage_rejects_deleting_partially_completed_multi_axis_schedule(monkeypatch):
     sub_experiment_code = "EXP-IMPACT#AXIS-001"
     schedules = [
         {
@@ -2579,8 +2883,9 @@ def test_storage_allows_deleting_partially_completed_multi_axis_schedule(monkeyp
 
     response = client.put("/api/storage", json={"mes.schedules": []})
 
-    assert response.status_code == 200
-    assert storage.read("mes.schedules") == []
+    assert response.status_code == 400
+    assert "完成任务比对后排程不可删除" in response.json()["detail"]
+    assert storage.read("mes.schedules") == schedules
     assert storage.read("mes.experiment_run_steps") == experiment_run_steps
 
 
@@ -2677,6 +2982,100 @@ def test_storage_rejects_maintenance_window_ending_at_or_before_start(monkeypatc
     assert response.status_code == 422
     assert response.json()["detail"] == "维保结束时间必须晚于开始时间"
     assert storage.read("mes.devices") == existing_devices
+
+
+def test_storage_keeps_end_time_error_when_planned_start_is_also_in_the_past(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.storage_schedule_patch.now_business_datetime",
+        lambda: datetime(2099, 3, 20, 7, 30),
+    )
+    existing_devices = [{"code": "冲击一室", "name": "冲击一室", "status": "可用"}]
+    client, storage = build_client(monkeypatch, {"mes.devices": existing_devices})
+    attempted_devices = [{
+        **existing_devices[0],
+        "maintenance_start_at": "2099-03-20 07:29",
+        "maintenance_end_at": "2099-03-20 07:28",
+        "maintenance_type": "计划维修",
+    }]
+
+    response = client.put("/api/storage", json={"mes.devices": attempted_devices})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "维保结束时间必须晚于开始时间"
+    assert storage.read("mes.devices") == existing_devices
+
+
+@pytest.mark.parametrize("maintenance_type", ["计划维修", "计划保养"])
+def test_storage_rejects_planned_maintenance_starting_before_current_time(monkeypatch, maintenance_type):
+    monkeypatch.setattr(
+        "app.services.storage_schedule_patch.now_business_datetime",
+        lambda: datetime(2099, 3, 20, 7, 30),
+    )
+    existing_devices = [{"code": "冲击一室", "name": "冲击一室", "status": "可用"}]
+    client, storage = build_client(monkeypatch, {"mes.devices": existing_devices})
+    attempted_devices = [
+        {
+            "code": "冲击一室",
+            "name": "冲击一室",
+            "status": "可用",
+            "maintenance_start_at": "2099-03-20 07:29",
+            "maintenance_end_at": "",
+            "maintenance_type": maintenance_type,
+        }
+    ]
+
+    response = client.put("/api/storage", json={"mes.devices": attempted_devices})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "维保开始时间不得早于当前时间"
+    assert storage.read("mes.devices") == existing_devices
+
+
+def test_storage_allows_planned_maintenance_starting_at_current_time(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.storage_schedule_patch.now_business_datetime",
+        lambda: datetime(2099, 3, 20, 7, 30),
+    )
+    existing_devices = [{"code": "冲击一室", "name": "冲击一室", "status": "可用"}]
+    attempted_devices = [
+        {
+            **existing_devices[0],
+            "maintenance_start_at": "2099-03-20 07:30",
+            "maintenance_end_at": "",
+            "maintenance_type": "计划维修",
+        }
+    ]
+    client, storage = build_client(monkeypatch, {"mes.devices": existing_devices})
+
+    response = client.put("/api/storage", json={"mes.devices": attempted_devices})
+
+    assert response.status_code == 200
+    assert storage.read("mes.devices") == attempted_devices
+
+
+def test_storage_allows_editing_a_device_with_an_unchanged_historical_plan(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.storage_schedule_patch.now_business_datetime",
+        lambda: datetime(2099, 3, 20, 7, 30),
+    )
+    existing_devices = [
+        {
+            "code": "冲击一室",
+            "name": "冲击一室",
+            "owner": "原负责人",
+            "status": "维修",
+            "maintenance_start_at": "2020-03-20 07:00",
+            "maintenance_end_at": "",
+            "maintenance_type": "计划保养",
+        }
+    ]
+    attempted_devices = [{**existing_devices[0], "owner": "新负责人"}]
+    client, storage = build_client(monkeypatch, {"mes.devices": existing_devices})
+
+    response = client.put("/api/storage", json={"mes.devices": attempted_devices})
+
+    assert response.status_code == 200
+    assert storage.read("mes.devices") == attempted_devices
 
 
 def test_storage_rejects_maintenance_end_time_without_a_valid_start_time(monkeypatch):

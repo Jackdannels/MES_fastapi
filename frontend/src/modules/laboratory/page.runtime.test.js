@@ -3440,6 +3440,50 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-reset-danger-modal"] .form-actions').classes()).toContain("form-actions--touch");
   });
 
+  test("submits only one withdrawal while the confirmation request is pending", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [{
+      code: "SYLU-2026-04-101-SP-001",
+      location: "盐雾试验室",
+      owner: "王工",
+      status: "已到达实验室",
+      flow_status: "已到达实验室",
+      task_code: "SYLU-2026-04-101",
+      trays: [{ quantity: 1, status: "已到达实验室", tray_code: "TP-001" }],
+    }];
+    const originalFetch = fetch.getMockImplementation();
+    let resolveWithdrawal;
+    fetch.mockImplementation((url, options) => {
+      if (String(url).includes("/withdraw-current")) {
+        return new Promise((resolve) => {
+          resolveWithdrawal = resolve;
+        });
+      }
+      return originalFetch(url, options);
+    });
+    const mounted = await mountPage();
+
+    await clickResetTask();
+    await mounted.get('[data-testid="laboratory-reset-confirm"]').trigger("click");
+    await nextTick();
+    const confirmButton = mounted.get('[data-testid="laboratory-reset-danger-confirm"]');
+    const firstSubmission = confirmButton.trigger("click");
+    await nextTick();
+
+    expect(confirmButton.attributes("disabled")).toBeDefined();
+    expect(confirmButton.text()).toContain("撤回中");
+    await confirmButton.trigger("click");
+    expect(fetch.mock.calls.filter(([url]) => String(url).includes("/withdraw-current"))).toHaveLength(1);
+
+    resolveWithdrawal({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, samples: snapshotState[STORAGE_KEYS.samples] }),
+    });
+    await firstSubmission;
+    await flushPageUpdates();
+  });
+
   test("disables the reset button while the current experiment is running", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [

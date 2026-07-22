@@ -16,6 +16,7 @@ import { formatDateTime, isRetentionDevice, normalizeText, resolveTaskStatus, ST
 const STARTED_STATUSES = new Set([
   EXPERIMENT_STATUS_RUNNING,
   EXPERIMENT_STATUS_COMPLETED,
+  "已到达实验室",
   "工装夹具安装",
   "实验准备就绪",
   "实验后暂存间存放",
@@ -25,6 +26,7 @@ const STARTED_STATUSES = new Set([
 ]);
 const ACTIVE_LAB_PROGRESS_STATUSES = new Set([
   EXPERIMENT_STATUS_RUNNING,
+  "已到达实验室",
   "工装夹具安装",
   "实验准备就绪",
   "实验中",
@@ -100,7 +102,14 @@ const buildExperimentNameMap = (experiments) =>
 const rowScheduleId = (row) => normalizeText(row?.schedule_id ?? row?.scheduleId ?? row?.schedule_no ?? row?.scheduleNo);
 const rowAxisBatchNo = (row) => normalizeText(row?.axis_batch_no ?? row?.axisBatchNo);
 const rowSubExperimentCode = (row) =>
-  normalizeText(row?.sub_experiment_code ?? row?.subExperimentCode ?? row?.sub_experiment_no ?? row?.subExperimentNo);
+  normalizeText(
+    row?.sub_experiment_code
+      ?? row?.subExperimentCode
+      ?? row?.sub_experiment_no
+      ?? row?.subExperimentNo
+      ?? row?.target_sub_experiment_code
+      ?? row?.targetSubExperimentCode,
+  );
 const rowAxisCodes = (row) => {
   const explicitAxisCodes = normalizeAxisCodes(row?.axis_codes ?? row?.axisCodes);
   if (explicitAxisCodes.length > 0) {

@@ -4,7 +4,7 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
-from app.core.time_utils import parse_business_datetime
+from app.core.time_utils import now_business_datetime, parse_business_datetime
 from app.services.storage_atomic import generic_item_key
 
 
@@ -22,6 +22,7 @@ COMPLETED_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
 MAINTENANCE_STATUSES = ("维修", "保养")
 SCHEDULE_MAINTENANCE_CONFLICT_DETAIL = "该设备处于维修状态，不可排程"
 MAINTENANCE_SCHEDULE_CONFLICT_DETAIL = "维保窗口内已有排程，请先调整或删除排程"
+MAINTENANCE_START_TIME_DETAIL = "维保开始时间不得早于当前时间"
 MAINTENANCE_END_TIME_DETAIL = "维保结束时间必须晚于开始时间"
 
 
@@ -144,7 +145,15 @@ def device_maintenance_window(device: Any) -> tuple[Any, Any] | None:
     return start_at, end_at
 
 
-def validate_maintenance_time_order(devices: list[dict[str, Any]]) -> None:
+def validate_maintenance_time_order(
+    devices: list[dict[str, Any]],
+    current_devices: list[dict[str, Any]] | None = None,
+) -> None:
+    current_by_key = {
+        (device_id(device) or device_code(device)): device
+        for device in current_devices or []
+        if isinstance(device, dict) and (device_id(device) or device_code(device))
+    }
     for device in devices:
         start_at = parse_business_datetime(device.get("maintenance_start_at") or device.get("maintenanceStartAt"))
         end_at = parse_business_datetime(device.get("maintenance_end_at") or device.get("maintenanceEndAt"))
@@ -152,6 +161,21 @@ def validate_maintenance_time_order(devices: list[dict[str, Any]]) -> None:
             raise StorageSchedulePatchError("维保结束时间需要有效的开始时间", status_code=422)
         if start_at and end_at and end_at <= start_at:
             raise StorageSchedulePatchError(MAINTENANCE_END_TIME_DETAIL, status_code=422)
+        maintenance_type = normalize_text(device.get("maintenance_type") or device.get("maintenanceType"))
+        current = current_by_key.get(device_id(device) or device_code(device))
+        current_start_at = parse_business_datetime(
+            current.get("maintenance_start_at") or current.get("maintenanceStartAt")
+        ) if current else None
+        current_type = normalize_text(
+            current.get("maintenance_type") or current.get("maintenanceType")
+        ) if current else ""
+        if (
+            maintenance_type in {"计划维修", "计划保养"}
+            and start_at
+            and start_at < now_business_datetime()
+            and (start_at != current_start_at or maintenance_type != current_type)
+        ):
+            raise StorageSchedulePatchError(MAINTENANCE_START_TIME_DETAIL, status_code=422)
 
 
 def schedule_status(schedule: Any) -> str:

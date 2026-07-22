@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+from threading import Lock
 from typing import Any
 
 from fastapi import APIRouter, Body, HTTPException
@@ -38,6 +39,7 @@ from app.services.laboratory_withdrawal import (
 )
 
 router = APIRouter(prefix="/api/laboratory", tags=["laboratory"])
+LABORATORY_WITHDRAW_LOCK = Lock()
 
 HANDOVER_LOCATION = "接驳区"
 LABORATORY_STORAGE_UPDATE_KEYS = ("mes.samples", "mes.staging_events")
@@ -793,6 +795,15 @@ def withdraw_current_experiment(
     task_code: str,
     experiment_code: str,
     request: LaboratoryWithdrawRequest = Body(default_factory=LaboratoryWithdrawRequest),
+) -> dict[str, Any]:
+    with LABORATORY_WITHDRAW_LOCK:
+        return _withdraw_current_experiment(task_code, experiment_code, request)
+
+
+def _withdraw_current_experiment(
+    task_code: str,
+    experiment_code: str,
+    request: LaboratoryWithdrawRequest,
 ) -> dict[str, Any]:
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)

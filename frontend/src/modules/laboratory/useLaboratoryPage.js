@@ -142,6 +142,7 @@ function useLaboratoryPage(options = {}) {
   const resetConfirmModalOpen = ref(false);
   const resetDangerModalOpen = ref(false);
   const resetTarget = ref(null);
+  const resetSubmitting = ref(false);
   const completePromptVisible = ref(false);
   const runningModalVisible = ref(false);
   const completedRunningExperiment = ref(null);
@@ -1735,6 +1736,9 @@ function useLaboratoryPage(options = {}) {
     flushPendingRealtimeRefresh();
   };
   const confirmResetTask = async () => {
+    if (resetSubmitting.value) {
+      return;
+    }
     const target = resetTarget.value;
     if (!resetTargetIsValid(target)) {
       resetDangerModalOpen.value = false;
@@ -1745,6 +1749,7 @@ function useLaboratoryPage(options = {}) {
       };
       return;
     }
+    resetSubmitting.value = true;
     try {
       clearLaboratoryMqError();
       clearHostlessTimers();
@@ -1776,6 +1781,8 @@ function useLaboratoryPage(options = {}) {
         detail: formatErrorMessage(error),
         title: "撤回任务失败",
       };
+    } finally {
+      resetSubmitting.value = false;
     }
   };
   const openCompleteConfirm = () => {
@@ -1995,6 +2002,7 @@ function useLaboratoryPage(options = {}) {
     recentTasks: computed(() => view.value.scheduleRows),
     resetConfirmModalOpen,
     resetDangerModalOpen,
+    resetSubmitting,
     runningExperiment,
     runningModalExperiment,
     runningModalVisible,

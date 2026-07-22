@@ -90,7 +90,7 @@
   color: var(--accent-2);
 }
 
-/* 设备台账和连接配置区块采用独立卡片排布。 */
+/* 设备台账区块采用独立卡片排布。 */
 .devices-registry-card {
   display: grid;
   gap: 16px;
@@ -98,16 +98,6 @@
 }
 
 .devices-table-card {
-  overflow: hidden;
-}
-
-.devices-connection-card {
-  display: grid;
-  gap: 16px;
-}
-
-/* 点位映射表保留裁切，避免内容溢出圆角容器。 */
-.devices-points-card {
   overflow: hidden;
 }
 

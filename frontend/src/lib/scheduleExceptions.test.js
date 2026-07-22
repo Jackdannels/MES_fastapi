@@ -27,8 +27,8 @@ describe("scheduleExceptions", () => {
             task_code: "TASK-001",
             history: [{ action: "任务已确认入库", time: "2099-03-19T07:15:00.000Z" }],
             location: "冲击一室",
-            status: "已到达实验室",
-            trays: [{ tray_code: "TASK-001-TP-001", status: "已到达实验室", quantity: 1 }],
+            status: "送至实验室",
+            trays: [{ tray_code: "TASK-001-TP-001", status: "送至实验室", quantity: 1 }],
           },
         ],
         [STORAGE_KEYS.schedules]: [
@@ -407,6 +407,58 @@ describe("scheduleExceptions", () => {
       expect.objectContaining({ experiment_code: "TASK-003-A", status: "待排程" }),
       expect.objectContaining({ experiment_code: "TASK-003-B", status: "实验已完成" }),
     ]);
+  });
+
+  test("keeps an expired axis schedule after task comparison", () => {
+    const now = new Date("2099-03-20T12:00:00.000Z");
+    const taskCode = "TASK-AXIS-COMPARED";
+    const experimentCode = "TASK-AXIS-COMPARED-I";
+    const subExperimentCode = `${experimentCode}-AXIS-001`;
+    const schedule = {
+      id: "schedule-axis-compared",
+      task_code: taskCode,
+      experiment_code: experimentCode,
+      device: "冲击一室",
+      start_at: "2099-03-20T08:00:00.000Z",
+      end_at: "2099-03-20T10:00:00.000Z",
+      status: "已排程",
+      sub_experiment_code: subExperimentCode,
+      axis_codes: ["x+", "x-", "y+", "y-"],
+    };
+    const result = reconcileScheduleExceptions(
+      {
+        [STORAGE_KEYS.conflicts]: [],
+        [STORAGE_KEYS.experiments]: [{
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "冲击试验",
+          status: "已排程",
+        }],
+        [STORAGE_KEYS.experiment_trays]: [
+          { task_code: taskCode, experiment_code: experimentCode, tray_code: "TP-AXIS-COMPARED" },
+        ],
+        [STORAGE_KEYS.samples]: [{
+          code: "SP-AXIS-COMPARED",
+          task_code: taskCode,
+          status: "已到达实验室",
+          trays: [{
+            tray_code: "TP-AXIS-COMPARED",
+            status: "已到达实验室",
+            target_experiment_code: experimentCode,
+            target_sub_experiment_code: subExperimentCode,
+            target_lab: "冲击一室",
+          }],
+          history: [],
+        }],
+        [STORAGE_KEYS.schedules]: [schedule],
+        [STORAGE_KEYS.tasks]: [{ code: taskCode, status: "已排程", test_type: "冲击试验" }],
+      },
+      { now },
+    );
+
+    expect(result.changed).toBe(false);
+    expect(result.snapshot[STORAGE_KEYS.schedules]).toEqual([schedule]);
+    expect(result.snapshot[STORAGE_KEYS.conflicts]).toEqual([]);
   });
 
   test("removes an expired unstarted axis schedule when sibling axes have started", () => {

@@ -6,11 +6,10 @@ import {
 } from "@/lib/statusNormalization";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
 
-const RUNNING_SCHEDULE_DELETE_MESSAGE = "实验已开始，不能删除排程";
-const RUNNING_SCHEDULE_RESCHEDULE_MESSAGE = "实验已开始，不能删除后重新排程";
+const RUNNING_SCHEDULE_DELETE_MESSAGE = "排程已完成任务比对，不能删除";
+const RUNNING_SCHEDULE_RESCHEDULE_MESSAGE = "排程已完成任务比对，不能删除后重新排程";
 const RUNNING_TASK_DELETE_MESSAGE = "任务存在进行中的实验，不能删除任务";
-const SCHEDULE_LOCKED_TRAY_STATUSES = new Set(["工装夹具安装", "实验准备就绪", "实验进行中", "实验中", "实验已完成", "实验完成", "实验已经完成"]);
-const AXIS_STEP_COMPLETED_STATUSES = new Set(["实验已完成", "实验完成", "实验已经完成"]);
+const SCHEDULE_LOCKED_TRAY_STATUSES = new Set(["已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", "实验中", "实验已完成", "实验完成", "实验已经完成"]);
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asList = (value) => (Array.isArray(value) ? value : []);
@@ -23,7 +22,6 @@ const rowTrayCode = (row) => normalizeText(row?.tray_code ?? row?.trayCode ?? ro
 const rowRunNo = (row) => normalizeText(row?.run_no ?? row?.runNo ?? row?.id);
 const rowScheduleId = (row) => normalizeText(row?.schedule_id ?? row?.scheduleId ?? row?.schedule_no ?? row?.scheduleNo);
 const rowAxisBatchNo = (row) => normalizeText(row?.axis_batch_no ?? row?.axisBatchNo);
-const rowAxisCode = (row) => normalizeText(row?.axis_code ?? row?.axisCode).toLowerCase();
 const rowSubExperimentCode = (row) =>
   normalizeText(row?.sub_experiment_code ?? row?.subExperimentCode ?? row?.sub_experiment_no ?? row?.subExperimentNo);
 
@@ -31,15 +29,11 @@ const rowHasRunningExperimentStatus = (row, fields = ["status"]) =>
   fields.some((field) => isExperimentRunningStatus(row?.[field]));
 const rowHasScheduleLockedStatus = (row, fields = ["status"]) =>
   fields.some((field) => SCHEDULE_LOCKED_TRAY_STATUSES.has(normalizeText(row?.[field])) || isExperimentRunningStatus(row?.[field]));
-const rowHasCompletedAxisStatus = (row) => AXIS_STEP_COMPLETED_STATUSES.has(normalizeText(row?.status ?? row?.step_status ?? row?.stepStatus));
 const taskHasRunningStatus = (task) => normalizeTaskStatusLabel(task?.status) === TASK_STATUS_RUNNING;
 
 const rowMatchesTask = (row, taskCode) => rowTaskCode(row) === normalizeText(taskCode);
 const rowMatchesExperiment = (row, taskCode, experimentCode) =>
   rowMatchesTask(row, taskCode) && rowExperimentCode(row) === normalizeText(experimentCode);
-
-const scheduleHasAxisScope = (schedule) =>
-  Boolean(rowSubExperimentCode(schedule) || rowAxisBatchNo(schedule) || normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes).length > 0);
 
 function rowMatchesScheduleScope(row, schedule, { allowLegacyExperimentFallback = false } = {}) {
   const taskCode = rowTaskCode(schedule);
@@ -108,8 +102,9 @@ function samplesHaveRunningTrayForTask(samples, taskCode) {
   });
 }
 
-function samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experimentTrays = [], samples = [], taskCode }) {
+function samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experimentTrays = [], samples = [], schedule, taskCode }) {
   const trayCodes = buildExperimentTrayCodeSet({ experimentCode, experimentTrays, taskCode });
+  const scheduleSubExperimentCode = rowSubExperimentCode(schedule);
   if (trayCodes.size === 0) {
     return false;
   }
@@ -117,14 +112,21 @@ function samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experiment
     if (!rowMatchesTask(sample, taskCode)) {
       return false;
     }
-    return asList(sample?.trays).some(
-      (tray) => trayCodes.has(rowTrayCode(tray)) && rowHasScheduleLockedStatus(tray),
-    );
+    return asList(sample?.trays).some((tray) => {
+      if (!trayCodes.has(rowTrayCode(tray)) || !rowHasScheduleLockedStatus(tray)) {
+        return false;
+      }
+      if (!scheduleSubExperimentCode) {
+        return true;
+      }
+      return normalizeText(tray?.target_sub_experiment_code ?? tray?.targetSubExperimentCode) === scheduleSubExperimentCode;
+    });
   });
 }
 
 function scheduleExperimentHasStarted({
   experimentRuns = [],
+  experimentRunSteps = [],
   experimentRunTrays = [],
   experimentTrays = [],
   samples = [],
@@ -169,51 +171,14 @@ function scheduleExperimentHasStarted({
   ) {
     return true;
   }
-  if (scheduleHasAxisScope(schedule)) {
-    return false;
+  if (
+    asList(experimentRunSteps).some(
+      (row) => rowHasScheduleLockedStatus(row) && rowMatchesScheduleScope(row, schedule),
+    )
+  ) {
+    return true;
   }
-  return samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experimentTrays, samples, taskCode });
-}
-
-function scheduleHasPartialCompletedAxes({
-  experimentRuns = [],
-  experimentRunSteps = [],
-  schedule,
-}) {
-  const taskCode = rowTaskCode(schedule);
-  const experimentCode = rowExperimentCode(schedule);
-  const subExperimentCode = rowSubExperimentCode(schedule);
-  const scheduledAxisCodes = normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes);
-  if (!taskCode || !experimentCode || !subExperimentCode || scheduledAxisCodes.length <= 1) {
-    return false;
-  }
-
-  const matchingRunNos = new Set(
-    asList(experimentRuns)
-      .filter((row) => rowMatchesExperiment(row, taskCode, experimentCode) && rowSubExperimentCode(row) === subExperimentCode)
-      .map(rowRunNo)
-      .filter(Boolean),
-  );
-  const scheduledAxisSet = new Set(scheduledAxisCodes);
-  const completedAxisCodes = new Set();
-  for (const step of asList(experimentRunSteps)) {
-    if (!rowMatchesExperiment(step, taskCode, experimentCode)) {
-      continue;
-    }
-    if (rowSubExperimentCode(step) !== subExperimentCode) {
-      continue;
-    }
-    const stepRunNo = rowRunNo(step);
-    if (matchingRunNos.size > 0 && stepRunNo && !matchingRunNos.has(stepRunNo)) {
-      continue;
-    }
-    const axisCode = rowAxisCode(step);
-    if (scheduledAxisSet.has(axisCode) && rowHasCompletedAxisStatus(step)) {
-      completedAxisCodes.add(axisCode);
-    }
-  }
-
-  return completedAxisCodes.size > 0 && completedAxisCodes.size < scheduledAxisCodes.length;
+  return samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experimentTrays, samples, schedule, taskCode });
 }
 
 function taskHasRunningExperiment({
@@ -256,6 +221,5 @@ export {
   RUNNING_SCHEDULE_RESCHEDULE_MESSAGE,
   RUNNING_TASK_DELETE_MESSAGE,
   scheduleExperimentHasStarted,
-  scheduleHasPartialCompletedAxes,
   taskHasRunningExperiment,
 };

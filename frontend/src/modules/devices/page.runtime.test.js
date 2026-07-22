@@ -20,9 +20,6 @@ const closeRunningRepairChoiceMock = vi.fn();
 const confirmRunningRepairCompleteMock = vi.fn();
 const confirmRunningRepairRescheduleMock = vi.fn();
 const closeDeviceDrawerMock = vi.fn();
-const openPointModalMock = vi.fn();
-const closePointModalMock = vi.fn();
-const savePointMock = vi.fn();
 
 const devicesState = reactive({
   canSetDeviceAvailable: false,
@@ -30,10 +27,10 @@ const devicesState = reactive({
   editDeviceOpen: false,
   maintenanceConflictOpen: false,
   maintenancePlanEndMin: "",
+  maintenancePlanStartMin: "",
   maintenancePlanIsPlanned: true,
   maintenancePlanWarning: "",
   maintenancePlanOpen: false,
-  pointModalOpen: false,
   runningRepairChoiceOpen: false,
 });
 const maintenancePlanFormState = reactive({
@@ -50,20 +47,9 @@ vi.mock("./useDevicesPage", () => ({
     closeDeviceDrawer: closeDeviceDrawerMock,
     closeEditDevice: closeEditDeviceMock,
     closeMaintenancePlan: closeMaintenancePlanMock,
-    closePointModal: closePointModalMock,
     confirmMaintenanceConflict: confirmMaintenanceConflictMock,
     confirmRunningRepairComplete: confirmRunningRepairCompleteMock,
     confirmRunningRepairReschedule: confirmRunningRepairRescheduleMock,
-    connectionForm: ref({
-      endpoint: "10.10.0.23",
-      functionCode: "03 读保持寄存器",
-      parity: "CRC",
-      pollingInterval: "1s",
-      port: "502",
-      protocol: "TCP",
-      retryPolicy: "3s / 2次",
-      stationId: "1",
-    }),
     createNewDevice: createNewDeviceMock,
     canSetDeviceAvailable: computed(() => devicesState.canSetDeviceAvailable),
     deviceDrawerOpen: computed(() => devicesState.deviceDrawerOpen),
@@ -111,6 +97,7 @@ vi.mock("./useDevicesPage", () => ({
     ]),
     maintenancePlanForm: ref(maintenancePlanFormState),
     maintenancePlanEndMin: computed(() => devicesState.maintenancePlanEndMin),
+    maintenancePlanStartMin: computed(() => devicesState.maintenancePlanStartMin),
     maintenancePlanIsPlanned: computed(() => devicesState.maintenancePlanIsPlanned),
     maintenancePlanWarning: computed(() => devicesState.maintenancePlanWarning),
     maintenancePlanOpen: computed(() => devicesState.maintenancePlanOpen),
@@ -122,29 +109,6 @@ vi.mock("./useDevicesPage", () => ({
     openEditDevice: openEditDeviceMock,
     openDeviceDrawer: openDeviceDrawerMock,
     openMaintenancePlan: openMaintenancePlanMock,
-    openPointModal: openPointModalMock,
-    pointForm: ref({
-      address: "",
-      dataType: "INT16",
-      frequency: "1s",
-      name: "",
-      note: "",
-      ratio: "1",
-      unit: "",
-    }),
-    pointModalOpen: computed(() => devicesState.pointModalOpen),
-    pointRows: computed(() => [
-      {
-        address: "40001",
-        dataType: "INT16",
-        frequency: "1s",
-        id: "point-1",
-        name: "温度",
-        note: "反应腔温度",
-        ratio: "0.1",
-        unit: "°C",
-      },
-    ]),
     query: ref(""),
     runningRepairChoiceDetail: ref({
       runningSchedules: [{ experiment_code: "TASK-001-A", id: "schedule-1", task_code: "TASK-001" }],
@@ -153,7 +117,6 @@ vi.mock("./useDevicesPage", () => ({
     saveCurrentDevice: saveCurrentDeviceMock,
     saveEditedDevice: saveEditedDeviceMock,
     saveMaintenancePlan: saveMaintenancePlanMock,
-    savePoint: savePointMock,
     selectedDevice: computed(() => ({
       code: "HPLC-01",
       name: "高效液相色谱仪",
@@ -171,10 +134,10 @@ describe("DevicesPage runtime", () => {
     devicesState.editDeviceOpen = false;
     devicesState.maintenanceConflictOpen = false;
     devicesState.maintenancePlanEndMin = "";
+    devicesState.maintenancePlanStartMin = "";
     devicesState.maintenancePlanIsPlanned = true;
     devicesState.maintenancePlanWarning = "";
     devicesState.maintenancePlanOpen = false;
-    devicesState.pointModalOpen = false;
     devicesState.runningRepairChoiceOpen = false;
     Object.assign(maintenancePlanFormState, {
       endAt: "",
@@ -198,17 +161,17 @@ describe("DevicesPage runtime", () => {
     expect(wrapper.find('[data-testid="device-add"]').exists()).toBe(false);
   });
 
-  test("opens the central maintenance records modal and point modal from Vue state", async () => {
+  test("opens the central maintenance records modal without removed Modbus cards", async () => {
     const wrapper = mount(DevicesPage);
 
     await wrapper.get('[data-testid="open-device-drawer"]').trigger("click");
-    await wrapper.get('[data-testid="open-point-modal"]').trigger("click");
 
     expect(openDeviceDrawerMock).toHaveBeenCalledTimes(1);
-    expect(openPointModalMock).toHaveBeenCalledTimes(1);
+    expect(wrapper.text()).not.toContain("Modbus 连接配置");
+    expect(wrapper.text()).not.toContain("点位映射");
+    expect(wrapper.find('[data-testid="open-point-modal"]').exists()).toBe(false);
 
     devicesState.deviceDrawerOpen = true;
-    devicesState.pointModalOpen = true;
     await wrapper.vm.$nextTick();
 
     expect(wrapper.find(".drawer.is-open").exists()).toBe(false);
@@ -262,10 +225,12 @@ describe("DevicesPage runtime", () => {
     const wrapper = mount(DevicesPage);
     devicesState.maintenancePlanOpen = true;
     maintenancePlanFormState.startAt = "2026-07-17T15:40";
+    devicesState.maintenancePlanStartMin = "2026-07-17T15:30";
     devicesState.maintenancePlanEndMin = "2026-07-17T15:41";
     await wrapper.vm.$nextTick();
 
     expect(wrapper.get('[data-testid="maintenance-end-at"]').attributes("min")).toBe("2026-07-17T15:41");
+    expect(wrapper.get('[data-testid="maintenance-start-at"]').attributes("min")).toBe("2026-07-17T15:30");
     expect(wrapper.get('[data-testid="maintenance-start-at"]').attributes("disabled")).toBeUndefined();
 
     devicesState.maintenancePlanIsPlanned = false;

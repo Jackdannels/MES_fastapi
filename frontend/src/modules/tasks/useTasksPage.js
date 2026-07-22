@@ -1,6 +1,6 @@
 // 负责任务受理页的新增、筛选、编辑和持久化流程。
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { serverNowDate } from "@/lib/serverClock";
+import { serverNowDate, serverNowMs } from "@/lib/serverClock";
 import { useRoute } from "vue-router";
 
 import { useDialogState } from "@/composables/useDialogState";
@@ -8,7 +8,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTableControls } from "@/composables/useTableControls";
 import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
-import { formatLocalDateTime } from "@/lib/dateTime";
+import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { readMasterTestTypes } from "@/lib/masterDataApi";
 import { notifyStorageSnapshotUpdated } from "@/lib/storageApi";
@@ -96,6 +96,7 @@ function useTasksPage() {
   const intakeForm = ref(createTaskIntakeForm());
   const editForm = ref(createTaskEditForm());
   const intakeWarning = ref("");
+  const intakeDueAtMin = ref("");
   const editWarning = ref("");
   const sampleCodesDraft = ref("");
   const sampleCodesWarning = ref("");
@@ -288,7 +289,13 @@ function useTasksPage() {
     window.history.replaceState(null, "", url);
   };
 
+  const refreshIntakeDueAtMin = () => {
+    const nextSelectableMinute = new Date(Math.ceil(serverNowMs() / 60_000) * 60_000);
+    intakeDueAtMin.value = formatLocalDateTime(nextSelectableMinute, { includeSeconds: false }).replace(" ", "T");
+  };
+
   const openIntakeModal = () => {
+    refreshIntakeDueAtMin();
     restoreIntakeDraft();
     intakeModal.openWith({ id: "task-intake-modal" });
   };
@@ -839,6 +846,11 @@ function useTasksPage() {
     const sampleCountWarning = validateTaskSampleCount(intakeForm.value.sample_count);
     if (sampleCountWarning) {
       intakeWarning.value = sampleCountWarning;
+      return;
+    }
+    const dueAtTime = parseBusinessDateTimeToMs(intakeForm.value.due_at);
+    if (Number.isFinite(dueAtTime) && dueAtTime < serverNowMs()) {
+      intakeWarning.value = "期望完成时间不能早于当前时间";
       return;
     }
 
@@ -1422,6 +1434,7 @@ function useTasksPage() {
     intakeExperimentModalOpen: intakeExperimentModal.open,
     intakeExperimentSummary,
     intakeExperimentTypeOptions,
+    intakeDueAtMin,
     isCompletedTaskDetail,
     isRunningTaskDetail,
     isTaskDetailLocked,

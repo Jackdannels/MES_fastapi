@@ -257,4 +257,21 @@ describe("PickerOnlyInput", () => {
     expect(wrapper.find(".picker-only-calendar").exists()).toBe(false);
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();
   });
+
+  test("treats a bare readonly attribute as externally readonly", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      attrs: {
+        readonly: "",
+      },
+      props: {
+        modelValue: "",
+        type: "date",
+      },
+    });
+
+    await wrapper.get("input").trigger("click");
+
+    expect(wrapper.find(".picker-only-calendar").exists()).toBe(false);
+    expect(wrapper.emitted("update:modelValue")).toBeUndefined();
+  });
 });

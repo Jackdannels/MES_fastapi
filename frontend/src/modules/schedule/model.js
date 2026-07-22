@@ -10,7 +10,6 @@ import {
   RUNNING_SCHEDULE_DELETE_MESSAGE,
   RUNNING_SCHEDULE_RESCHEDULE_MESSAGE,
   scheduleExperimentHasStarted,
-  scheduleHasPartialCompletedAxes,
 } from "@/lib/runningExperimentGuards";
 import { resolveTransferConfirmedAt } from "@/lib/transferArrivalTime";
 
@@ -2219,6 +2218,7 @@ function updateScheduleRecord({
   devices = [],
   experiments,
   experimentRuns = [],
+  experimentRunSteps = [],
   experimentRunTrays = [],
   experimentTrays = [],
   form,
@@ -2237,6 +2237,7 @@ function updateScheduleRecord({
   if (
     scheduleExperimentHasStarted({
       experimentRuns,
+      experimentRunSteps,
       experimentRunTrays,
       experimentTrays,
       samples,
@@ -2331,14 +2332,10 @@ function deleteScheduleRecord({
   if (
     scheduleExperimentHasStarted({
       experimentRuns,
+      experimentRunSteps,
       experimentRunTrays,
       experimentTrays,
       samples,
-      schedule: removedSchedule,
-    }) &&
-    !scheduleHasPartialCompletedAxes({
-      experimentRuns,
-      experimentRunSteps,
       schedule: removedSchedule,
     })
   ) {

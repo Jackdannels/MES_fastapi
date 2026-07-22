@@ -93,6 +93,9 @@
 - `frontend/src/modules/handover-system/`：交接系统入口页面和条码能力。
 - `frontend/src/modules/laboratory/`：实验室工作台模块。
 - `frontend/src/modules/laboratory/model.js`：实验室流程状态、动作和视图模型。
+- `frontend/src/modules/laboratory/laboratoryConstants.js`：实验室状态、流程节点和共享状态集合。
+- `frontend/src/modules/laboratory/laboratoryHistory.js`：实验室撤回使用的历史记录、接驳/暂存与外观存放快照解析。
+- `frontend/src/modules/laboratory/workflowState.js`：实验室比对、安装、确认等纯工作流状态转换。
 - `frontend/src/modules/laboratory/useLaboratoryPage.js`：实验室页面组合式状态。
 - `frontend/src/modules/login/`：登录模块。
 - `frontend/src/modules/process/`：过程控制模块。

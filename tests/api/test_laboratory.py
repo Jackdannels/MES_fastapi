@@ -371,6 +371,79 @@ def test_hostless_fixture_ready_operation_still_calls_shared_service(monkeypatch
     assert calls[0]["tray_codes"] == ["TP-HH2-501"]
 
 
+@pytest.mark.parametrize("lab_name", ["冲击一室", "高低温湿热二室"])
+def test_task_comparison_locks_the_exact_axis_schedule_for_all_laboratory_interfaces(monkeypatch, lab_name):
+    from app.api.routes import laboratory as laboratory_route
+    from app.api.routes import storage as storage_route
+
+    task_code = "TASK-COMPARE-LOCK"
+    experiment_code = "EXP-COMPARE-LOCK"
+    sub_experiment_code = f"{experiment_code}-AXIS-001"
+    schedules = [{
+        "id": "schedule-compare-lock",
+        "task_code": task_code,
+        "experiment_code": experiment_code,
+        "sub_experiment_code": sub_experiment_code,
+        "axis_codes": ["x+", "x-", "y+", "y-"],
+        "device": lab_name,
+        "status": "已排程",
+    }]
+    storage = FakeLaboratoryStorage({
+        "mes.tasks": [{"id": task_code, "code": task_code}],
+        "mes.experiments": [{
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "experiment_name": "冲击试验",
+        }],
+        "mes.schedules": schedules,
+        "mes.experiment_trays": [
+            {"task_code": task_code, "experiment_code": experiment_code, "tray_code": "TP-COMPARE-LOCK"}
+        ],
+        "mes.experiment_samples": [
+            {"task_code": task_code, "experiment_code": experiment_code, "sample_code": "SP-COMPARE-LOCK"}
+        ],
+        "mes.samples": [{
+            "code": "SP-COMPARE-LOCK",
+            "task_code": task_code,
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "trays": [{"tray_code": "TP-COMPARE-LOCK", "status": "送至实验室", "quantity": 1}],
+            "history": [],
+        }],
+    })
+    monkeypatch.setattr(laboratory_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(storage_route, "get_storage_backend", lambda: storage)
+    app = FastAPI()
+    app.include_router(laboratory_route.router)
+    app.include_router(storage_route.router)
+    client = TestClient(app)
+
+    compare_response = client.post(
+        "/api/laboratory/operations",
+        json={
+            "operationType": "compare",
+            "taskCode": task_code,
+            "experimentCode": experiment_code,
+            "subExperimentCode": sub_experiment_code,
+            "labName": lab_name,
+            "trayCodes": ["TP-COMPARE-LOCK"],
+        },
+    )
+    assert compare_response.status_code == 200
+    compared_sample = storage.read("mes.samples")[0]
+    assert compared_sample["trays"][0]["target_sub_experiment_code"] == sub_experiment_code
+
+    delete_response = client.post(
+        "/api/storage/schedules/patch",
+        json={"deletes": {"mes.schedules": ["schedule-compare-lock"]}},
+    )
+
+    assert delete_response.status_code == 400
+    assert delete_response.json()["detail"] == "完成任务比对后排程不可删除或重新排程。"
+    assert storage.read("mes.schedules") == schedules
+    assert storage.read("mes.samples")[0]["history"][0]["action"] == "任务比对"
+
+
 def test_start_endpoint_rejects_non_hostless_laboratory_before_shared_service(monkeypatch):
     from app.api.routes import laboratory as laboratory_route
 
@@ -3054,6 +3127,43 @@ def test_laboratory_withdraw_current_uses_sample_status_when_tray_status_lags(mo
     updated = storage.read("mes.samples")[0]
     assert updated["status"] == "实验已完成"
     assert updated["trays"][0]["status"] == "实验已完成"
+
+
+def test_laboratory_withdraw_endpoint_serializes_concurrent_requests(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Lock
+    from time import sleep
+
+    from app.api.routes import laboratory as laboratory_route
+
+    counter_lock = Lock()
+    active_calls = 0
+    max_active_calls = 0
+
+    def fake_withdraw(task_code, experiment_code, request):
+        nonlocal active_calls, max_active_calls
+        with counter_lock:
+            active_calls += 1
+            max_active_calls = max(max_active_calls, active_calls)
+        sleep(0.02)
+        with counter_lock:
+            active_calls -= 1
+        return {"ok": True, "taskCode": task_code, "experimentCode": experiment_code}
+
+    monkeypatch.setattr(laboratory_route, "_withdraw_current_experiment", fake_withdraw)
+    request = laboratory_route.LaboratoryWithdrawRequest()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(
+            lambda _: laboratory_route.withdraw_current_experiment("TASK-LOCK", "EXP-LOCK", request),
+            range(2),
+        ))
+
+    assert max_active_calls == 1
+    assert results == [
+        {"ok": True, "taskCode": "TASK-LOCK", "experimentCode": "EXP-LOCK"},
+        {"ok": True, "taskCode": "TASK-LOCK", "experimentCode": "EXP-LOCK"},
+    ]
 
 
 def test_laboratory_withdraw_current_rejects_running_or_finished_states(monkeypatch):

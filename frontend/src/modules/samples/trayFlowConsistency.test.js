@@ -918,6 +918,127 @@ describe("tray flow consistency", () => {
     expect(activeLabel(visualTray)).toBe("实验后外观检测间存放");
   });
 
+  test("keeps SYLU-2026-07-029 partial impact history while post-experiment appearance remains current across views", () => {
+    const taskCode = "SYLU-2026-07-029";
+    const trayCode = `${taskCode}-TP-001`;
+    const experimentCode = `${taskCode}-F`;
+    const runNo = "run-20260722122547582807";
+    const hotHumidExperimentCode = `${taskCode}-A`;
+    const hotHumidRunNo = "run-1784694613820-323";
+    const snapshot = {
+      tasks: [{ code: taskCode, name: "029真实流程回归", test_type: "高低温湿热试验 / 四综合试验 / 盐雾试验 / 温度冲击试验 / 霉菌试验 / 冲击试验 / 振动试验", status: "任务进行中" }],
+      experiments: [
+        { experiment_code: hotHumidExperimentCode, experiment_name: "高低温湿热试验", required_device: "高低温湿热试验", status: "实验进行中", task_code: taskCode },
+        { experiment_code: `${taskCode}-B`, experiment_name: "四综合试验", required_device: "四综合试验", status: "待排程", task_code: taskCode },
+        { experiment_code: `${taskCode}-C`, experiment_name: "盐雾试验", required_device: "盐雾试验", status: "实验进行中", task_code: taskCode },
+        { experiment_code: `${taskCode}-D`, experiment_name: "温度冲击试验", required_device: "温度冲击试验", status: "待排程", task_code: taskCode },
+        { experiment_code: `${taskCode}-E`, experiment_name: "霉菌试验", required_device: "霉菌试验", status: "已排程", task_code: taskCode },
+        { axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"], experiment_code: experimentCode, experiment_name: "冲击试验", required_device: "冲击试验", status: "实验进行中", task_code: taskCode },
+        { axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"], experiment_code: `${taskCode}-G`, experiment_name: "振动试验", required_device: "振动试验", status: "待排程", task_code: taskCode },
+      ],
+      experimentTrays: ["A", "B", "C", "D", "E", "F", "G"].map((suffix) => ({ experiment_code: `${taskCode}-${suffix}`, task_code: taskCode, tray_code: trayCode })),
+      experimentRuns: [
+        { ended_at: "2026-07-22 12:30:43", experiment_code: hotHumidExperimentCode, run_no: hotHumidRunNo, status: "实验已完成", task_code: taskCode, tray_codes: [trayCode] },
+        { axis_codes: ["y-", "z+", "z-"], ended_at: "2026-07-22 12:25:57", experiment_code: experimentCode, run_no: runNo, status: "实验已完成", sub_experiment_code: `${experimentCode}-AXIS-001`, task_code: taskCode, tray_codes: [trayCode] },
+      ],
+      experimentRunTrays: [
+        { ended_at: "2026-07-22 12:30:43", experiment_code: hotHumidExperimentCode, run_no: hotHumidRunNo, run_tray_status: "实验已完成", task_code: taskCode, tray_code: trayCode },
+        { ended_at: "2026-07-22 12:25:57", experiment_code: experimentCode, run_no: runNo, run_tray_status: "实验已完成", sub_experiment_code: `${experimentCode}-AXIS-001`, task_code: taskCode, tray_code: trayCode },
+      ],
+      experimentRunSteps: ["y-", "z+", "z-"].map((axisCode) => ({
+        axis_code: axisCode,
+        ended_at: "2026-07-22 12:25:57",
+        experiment_code: experimentCode,
+        run_no: runNo,
+        status: "实验已完成",
+        sub_experiment_code: `${experimentCode}-AXIS-001`,
+        task_code: taskCode,
+      })),
+      samples: [{
+        code: `${taskCode}-SP-001`,
+        flow_status: "实验后外观检测间存放",
+        history: [
+          { action: "实验任务撤回", detail: `${taskCode} / 冲击试验 / 撤回至实验后外观检测间存放（试验间内撤回当前实验任务）`, location: "外观检测间", status: "实验后外观检测间存放", time: "2026-07-22 12:32:46", tray_code: trayCode },
+          { action: "任务比对", detail: `${taskCode} / 冲击试验 / 已到达实验室 / 托盘：${trayCode}`, location: "冲击二室", status: "已到达实验室", time: "2026-07-22 12:31:49", tray_code: trayCode },
+          { action: "外观检测间扫码出库", detail: `${trayCode} 送至 冲击二室`, location: "冲击二室", status: "送至实验室", time: "2026-07-22 12:31:23", tray_code: trayCode },
+          { action: "外观检测间扫码入库", detail: `${trayCode} 实验后外观检测间存放`, location: "外观检测间", status: "实验后外观检测间存放", time: "2026-07-22 12:31:15", tray_code: trayCode },
+          { action: "实验完成", detail: `${taskCode} / 高低温湿热试验 / 实验已完成`, location: "高低温湿热二室", status: "实验已完成", time: "2026-07-22 12:30:43", tray_code: trayCode },
+          { action: "实验完成", detail: `${taskCode} / 冲击试验 / 冲击试验部分完成 3/6轴`, location: "冲击二室", status: "冲击试验部分完成 3/6轴", time: "2026-07-22 12:25:57", tray_code: trayCode },
+        ],
+        location: "外观检测间",
+        status: "实验后外观检测间存放",
+        task_code: taskCode,
+        trays: [{
+          quantity: 1,
+          status: "实验后外观检测间存放",
+          target_experiment_code: experimentCode,
+          target_lab: "冲击二室",
+          tray_code: trayCode,
+          updated_at: "2026-07-22 12:32:46",
+        }],
+      }],
+      schedules: [
+        { device: "高低温湿热二室", experiment_code: hotHumidExperimentCode, id: "schedule-hot-humid", lab_code: "LAB_HOT_HUMID_2", status: "实验进行中", task_code: taskCode },
+        { axis_codes: ["y-", "z+", "z-"], device: "冲击二室", experiment_code: experimentCode, id: "schedule-impact-finished-axes", lab_code: "LAB_IMPACT_2", status: "实验进行中", sub_experiment_code: `${experimentCode}-AXIS-001`, task_code: taskCode },
+        { axis_codes: ["x-", "y+"], device: "冲击二室", experiment_code: experimentCode, id: "schedule-impact-remaining-axes", lab_code: "LAB_IMPACT_2", status: "已排程", sub_experiment_code: `${experimentCode}-AXIS-002`, task_code: taskCode },
+      ],
+      stagingEvents: [
+        { action: "stock_in", appearance_phase: "post_experiment", location: "外观检测间", room: "appearance", status: "实验后外观检测间存放", task_code: taskCode, time: "2026-07-22 12:31:15", tray_code: trayCode },
+        { action: "stock_out", appearance_phase: "post_experiment", room: "appearance", target_experiment_code: experimentCode, target_lab: "冲击二室", task_code: taskCode, time: "2026-07-22 12:31:23", tray_code: trayCode },
+        { action: "stock_out_withdraw", room: "appearance", target_experiment_code: experimentCode, target_lab: "冲击二室", task_code: taskCode, time: "2026-07-22 12:32:46", tray_code: trayCode },
+      ],
+    };
+
+    const directFlow = buildTrayFlowView({
+      ...snapshot,
+      currentExperimentCode: experimentCode,
+      location: "外观检测间",
+      status: "实验后外观检测间存放",
+      taskCode,
+      trayCode,
+    });
+    const laboratoryFlow = buildLaboratoryWorkbenchView({
+      ...snapshot,
+      labCode: "LAB_IMPACT_2",
+      labName: "冲击二室",
+      selectedTrayCode: trayCode,
+    }).selectedTrayFlow;
+    const overviewRow = buildTrayOverviewRows({
+      ...snapshot,
+      totalSlots: 1,
+      unassignedExperimentLabel: "未分配",
+    })[0];
+    const visualizationFlow = buildLabProcessPanels({
+      ...snapshot,
+      labNames: ["冲击二室"],
+    })[0]?.trays.find((tray) => tray.trayCode === trayCode);
+
+    [directFlow, laboratoryFlow, visualizationFlow].forEach((flow) => {
+      expect(flow.status).toBe("实验后外观检测间存放");
+      expect(flow.canonicalStatus).toBe("实验后外观检测间存放");
+      expect(activeLabel(flow)).toBe("实验后外观检测间存放");
+      expect(flow.steps.find((step) => step.label === "实验后外观检测间存放")).toEqual(
+        expect.objectContaining({ active: true, time: "2026-07-22 12:32:46" }),
+      );
+      expect(flow.steps.find((step) => step.label === "高低温湿热试验已完成")).toEqual(
+        expect.objectContaining({ active: false, reached: true, time: "2026-07-22 12:30:43" }),
+      );
+      expect(flow.steps.find((step) => step.label === "冲击试验部分完成 3/6轴")).toEqual(
+        expect.objectContaining({ active: false, reached: true, time: "2026-07-22 12:25:57" }),
+      );
+    });
+    [directFlow, laboratoryFlow].forEach((flow) => {
+      expect(flow.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：实验后外观检测间存放`);
+    });
+    expect(overviewRow).toEqual(expect.objectContaining({
+      canonicalStatus: "实验后外观检测间存放",
+      currentLocation: "外观检测间",
+      currentStatus: "实验后外观检测间存放",
+      taskCode,
+      trayCode,
+    }));
+  });
+
   test("treats high-low temperature humidity as requiring pre-experiment appearance inspection in tray flow", () => {
     const taskCode = "SYLU-2026-06-023";
     const trayCode = "SYLU-2026-06-023-TP-001";

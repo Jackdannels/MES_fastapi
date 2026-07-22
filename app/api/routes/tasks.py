@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body, HTTPException, Query, status
 from app.core.axis_codes import sort_axis_codes
 from app.core.demo_data_reset import run_demo_reset
 from app.core.storage_backend import get_storage_backend
-from app.core.time_utils import now_business_text
+from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
 from app.api.routes.storage import publish_storage_update, _validate_fixture_locked_schedules
 from app.services.attendance_service import get_attendance_service
 from app.services import external_task_intake_service
@@ -57,6 +57,8 @@ SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不�
 COMPLETED_TASK_EDIT_LOCKED_MESSAGE = "任务已完成，仅允许修改任务名称"
 RUNNING_TASK_EDIT_LOCKED_MESSAGE = "任务进行中，仅允许修改任务名称"
 RUNNING_TASK_DELETE_MESSAGE = "任务存在进行中的实验，不能删除任务"
+DUE_AT_PAST_MESSAGE = "期望完成时间不能早于当前时间"
+DUE_AT_INVALID_MESSAGE = "期望完成时间格式不正确"
 RUNNING_EXPERIMENT_STATUSES = {"实验进行中", "实验中"}
 RUNNING_TASK_STATUSES = {"任务进行中", "实验进行中", "实验中"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
@@ -76,6 +78,17 @@ def is_storage_confirmed_status(value: Any) -> bool:
 
 def as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
+
+
+def validate_internal_due_at(value: Any) -> None:
+    normalized = normalize_text(value)
+    if not normalized:
+        return
+    due_at = parse_business_datetime(normalized)
+    if due_at is None:
+        raise HTTPException(status_code=400, detail=DUE_AT_INVALID_MESSAGE)
+    if due_at < now_business_datetime():
+        raise HTTPException(status_code=400, detail=DUE_AT_PAST_MESSAGE)
 
 
 def sample_task_code(sample: dict[str, Any]) -> str:
@@ -583,6 +596,8 @@ def add_task_to_snapshot(
     if not normalize_text(next_task.get("name")):
         next_task["name"] = build_default_task_name(task_code(next_task), tasks)
     next_task["sample_count"] = validate_sample_count(next_task.get("sample_count"))
+    if source == INTERNAL_SOURCE:
+        validate_internal_due_at(next_task.get("due_at"))
     next_task["arrival_at"] = ""
     next_task["status"] = "待排程"
     next_task["created_at"] = normalize_text(next_task.get("created_at")) or now_business_text()

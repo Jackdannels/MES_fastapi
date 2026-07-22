@@ -1,5 +1,5 @@
 import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
-import { SALT_SPRAY_LAB } from "./model";
+import { SALT_SPRAY_LAB } from "./laboratoryConstants";
 
 const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
 const SALT_SPRAY_LAB_CODE = "LAB_SALT";

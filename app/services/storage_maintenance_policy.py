@@ -129,11 +129,13 @@ def validate_device_schedule_maintenance_conflicts(
     schedules = updates.get("mes.schedules", read_current("mes.schedules"))
     devices = updates.get("mes.devices", read_current("mes.devices"))
     changed_devices = None
+    current_devices = None
     if "mes.devices" in updates:
-        changed_devices = _changed_device_rows(read_current("mes.devices"), devices)
+        current_devices = read_current("mes.devices")
+        changed_devices = _changed_device_rows(current_devices, devices)
     try:
         if changed_devices is not None:
-            validate_maintenance_time_order(changed_devices)
+            validate_maintenance_time_order(changed_devices, _rows(current_devices))
         validate_schedule_maintenance_conflicts(
             schedules if isinstance(schedules, list) else [],
             devices if isinstance(devices, list) else [],

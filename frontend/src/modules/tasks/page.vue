@@ -142,8 +142,8 @@
           </div>
         </div>
         <div class="form-field">
-          <label>期望完成日期</label>
-          <PickerOnlyInput v-model="intakeForm.due_at" type="date" name="due_at" />
+          <label>期望完成时间</label>
+          <PickerOnlyInput v-model="intakeForm.due_at" type="datetime-local" name="due_at" :min="intakeDueAtMin" />
         </div>
         <div class="form-field">
           <label>到样日期</label>
@@ -665,6 +665,7 @@ const {
   intakeExperimentModalOpen,
   intakeExperimentSummary,
   intakeExperimentTypeOptions,
+  intakeDueAtMin,
   isTaskDetailLocked,
   intakeModalOpen,
   intakeSampleCodePreview,

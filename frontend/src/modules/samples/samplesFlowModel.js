@@ -324,6 +324,28 @@ const resolveExperimentRuntimeCutoffMap = ({
       if (!experimentCode) {
         return;
       }
+      const hasCommittedPartialAxisHistory = asArray(sample?.history).some((candidate) => {
+        const candidateTime = entryTimeValue(candidate);
+        if (!candidateTime || candidateTime >= withdrawalTime || WITHDRAWAL_ACTIONS.has(normalizeText(candidate?.action))) {
+          return false;
+        }
+        const parsedCandidate = parseExperimentHistoryDetail(candidate?.detail, normalizedTaskCode);
+        return parsedCandidate
+          && isAxisPartialProgressStatus(parsedCandidate.status)
+          && historyEntryAppliesToTray(candidate, sample, normalizedTrayCode)
+          && (
+            partialAxisStatusMatchesExperiment(parsedCandidate.status, matchedExperiment)
+            || experimentIdentityNames(matchedExperiment).includes(normalizeText(parsedCandidate.experimentName))
+          );
+      });
+      if (
+        hasCommittedPartialAxisHistory
+        && ["已到达暂存间", APPEARANCE_STOCKED_STATUS].includes(
+          normalizeLifecycleStatus("", restoreTarget?.status),
+        )
+      ) {
+        return;
+      }
       cutoffMap.set(experimentCode, Math.max(cutoffMap.get(experimentCode) || 0, withdrawalTime));
     });
   });

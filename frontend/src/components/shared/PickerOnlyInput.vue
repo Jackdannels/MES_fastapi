@@ -197,7 +197,8 @@ const inputAttrs = computed(() => {
   delete rest.class;
   return rest;
 });
-const isExternallyReadonly = computed(() => Boolean(inputAttrs.value.readonly || inputAttrs.value.disabled));
+const isExternallyReadonly = computed(() => [inputAttrs.value.readonly, inputAttrs.value.disabled]
+  .some((value) => value !== undefined && value !== null && value !== false));
 const hasCalendar = computed(() => props.type !== "time");
 const hasTime = computed(() => props.type !== "date");
 const displayValue = computed(() => {

@@ -75,135 +75,6 @@
     </table>
   </section>
 
-  <section class="card section devices-connection-card">
-    <h3>Modbus 连接配置</h3>
-    <div class="form-grid">
-      <div class="form-field">
-        <label>协议</label>
-        <select v-model="connectionForm.protocol">
-          <option>TCP</option>
-          <option>RTU</option>
-        </select>
-      </div>
-      <div class="form-field">
-        <label>IP/串口</label>
-        <input v-model="connectionForm.endpoint" type="text" placeholder="TCP: 10.10.0.23 / RTU: COM3" />
-      </div>
-      <div class="form-field">
-        <label>端口/波特率</label>
-        <input v-model="connectionForm.port" type="text" placeholder="TCP: 502 / RTU: 9600" />
-      </div>
-      <div class="form-field">
-        <label>从站地址</label>
-        <AppNumberInput v-model="connectionForm.stationId" placeholder="例如：1" />
-      </div>
-      <div class="form-field">
-        <label>功能码</label>
-        <select v-model="connectionForm.functionCode">
-          <option>03 读保持寄存器</option>
-          <option>04 读输入寄存器</option>
-          <option>01 读线圈</option>
-          <option>02 读离散输入</option>
-        </select>
-      </div>
-      <div class="form-field">
-        <label>采样周期</label>
-        <input v-model="connectionForm.pollingInterval" type="text" placeholder="例如：1s" />
-      </div>
-      <div class="form-field">
-        <label>超时/重试</label>
-        <input v-model="connectionForm.retryPolicy" type="text" placeholder="例如：3s / 2次" />
-      </div>
-      <div class="form-field">
-        <label>数据校验</label>
-        <select v-model="connectionForm.parity">
-          <option>CRC</option>
-          <option>无</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-actions">
-      <button class="action-btn" type="button">测试连接</button>
-      <button class="action-btn secondary" type="button">保存配置</button>
-    </div>
-  </section>
-
-  <section class="card section devices-points-card">
-    <h3>点位映射</h3>
-    <div class="toolbar">
-      <input v-model="pointQuery" class="search-input" placeholder="筛选点位/地址/单位" />
-      <button class="action-btn" data-testid="open-point-modal" type="button" @click="openPointModal">新增点位</button>
-      <button class="action-btn secondary" type="button">导入模板</button>
-    </div>
-    <table class="table" id="point-table">
-      <thead>
-        <tr>
-          <th>序号</th>
-          <th>点位名称</th>
-          <th>寄存器地址</th>
-          <th>数据类型</th>
-          <th>比例系数</th>
-          <th>单位</th>
-          <th>频率</th>
-          <th>备注</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="(point, index) in pointRows" :key="point.id">
-          <td>{{ index + 1 }}</td>
-          <td>{{ point.name }}</td>
-          <td>{{ point.address }}</td>
-          <td>{{ point.dataType }}</td>
-          <td>{{ point.ratio }}</td>
-          <td>{{ point.unit }}</td>
-          <td>{{ point.frequency }}</td>
-          <td>{{ point.note }}</td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
-
-  <AppModal :open="pointModalOpen" title="新增点位" @close="closePointModal">
-    <div class="form-grid">
-      <div class="form-field">
-        <label>点位名称</label>
-        <input v-model="pointForm.name" type="text" placeholder="例如：温度" />
-      </div>
-      <div class="form-field">
-        <label>寄存器地址</label>
-        <input v-model="pointForm.address" type="text" placeholder="40001" />
-      </div>
-      <div class="form-field">
-        <label>数据类型</label>
-        <select v-model="pointForm.dataType">
-          <option>INT16</option>
-          <option>UINT16</option>
-          <option>FLOAT32</option>
-        </select>
-      </div>
-      <div class="form-field">
-        <label>比例系数</label>
-        <input v-model="pointForm.ratio" type="text" placeholder="0.1" />
-      </div>
-      <div class="form-field">
-        <label>单位</label>
-        <input v-model="pointForm.unit" type="text" placeholder="°C" />
-      </div>
-      <div class="form-field">
-        <label>采样频率</label>
-        <input v-model="pointForm.frequency" type="text" placeholder="1s" />
-      </div>
-      <div class="form-field" style="grid-column: 1 / -1;">
-        <label>备注</label>
-        <textarea v-model="pointForm.note" placeholder="说明点位用途"></textarea>
-      </div>
-    </div>
-    <template #footer>
-      <button class="action-btn" type="button" @click="savePoint">保存点位</button>
-      <button class="action-btn secondary" type="button" @click="closePointModal">取消</button>
-    </template>
-  </AppModal>
-
   <AppModal :open="editDeviceOpen" title="编辑设备" @close="closeEditDevice">
     <div class="form-grid">
       <div class="form-field">
@@ -262,6 +133,7 @@
         <PickerOnlyInput
           v-model="maintenancePlanForm.startAt"
           :disabled="!maintenancePlanIsPlanned"
+          :min="maintenancePlanStartMin || undefined"
           data-testid="maintenance-start-at"
           name="maintenance_start_at"
           type="datetime-local"
@@ -381,7 +253,6 @@ defineOptions({
 });
 
 import AppModal from "@/components/shared/AppModal.vue";
-import AppNumberInput from "@/components/shared/AppNumberInput.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useDevicesPage } from "./useDevicesPage";
 
@@ -392,11 +263,9 @@ const {
   closeDeviceDrawer,
   closeEditDevice,
   closeMaintenancePlan,
-  closePointModal,
   confirmMaintenanceConflict,
   confirmRunningRepairComplete,
   confirmRunningRepairReschedule,
-  connectionForm,
   deviceDrawerOpen,
   deviceForm,
   deviceLifecycleActionLabel,
@@ -409,6 +278,7 @@ const {
   maintenanceRecordRows,
   maintenancePlanForm,
   maintenancePlanEndMin,
+  maintenancePlanStartMin,
   maintenancePlanIsPlanned,
   maintenancePlanWarning,
   maintenancePlanOpen,
@@ -416,17 +286,11 @@ const {
   openEditDevice,
   openDeviceDrawer,
   openMaintenancePlan,
-  openPointModal,
-  pointForm,
-  pointModalOpen,
-  pointQuery,
-  pointRows,
   query,
   runningRepairChoiceDetail,
   runningRepairChoiceOpen,
   saveEditedDevice,
   saveMaintenancePlan,
-  savePoint,
   selectedDevice,
   setDeviceAvailable,
   sortDirection,

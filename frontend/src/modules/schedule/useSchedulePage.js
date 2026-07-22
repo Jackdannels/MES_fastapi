@@ -1019,6 +1019,7 @@ function useSchedulePage() {
       devices: rawDevices.value,
       experiments: rawExperiments.value,
       experimentRuns: rawExperimentRuns.value,
+      experimentRunSteps: rawExperimentRunSteps.value,
       experimentRunTrays: rawExperimentRunTrays.value,
       experimentTrays: rawExperimentTrays.value,
       form: editForm.value,

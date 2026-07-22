@@ -1,4 +1,4 @@
-// 提供设备页所需的行数据、表单和点位管理工厂与映射函数。
+// 提供设备页所需的行数据、表单和映射函数。
 import { withRequiredLabDevices } from "@/lib/deviceLedger";
 import { LAB_LOCATIONS, LAB_TEST_MAP, TEST_PREFIX_MAP } from "@/lib/labs.js";
 import { labIdentityMatches, scheduleMatchesLab } from "@/lib/labIdentity";
@@ -14,39 +14,6 @@ const MAINTENANCE_DEVICE_STATUS = REPAIR_DEVICE_STATUS;
 const DISABLED_DEVICE_STATUS = "停用";
 const COMPLETED_SCHEDULE_STATUSES = new Set(["实验已完成", "实验完成", "实验已经完成"]);
 const PLANNED_MAINTENANCE_TYPES = new Set(["计划保养", "计划维修"]);
-
-const DEFAULT_POINT_ROWS = Object.freeze([
-  {
-    address: "40001",
-    dataType: "INT16",
-    frequency: "1s",
-    id: "point-1",
-    name: "温度",
-    note: "反应腔温度",
-    ratio: "0.1",
-    unit: "°C",
-  },
-  {
-    address: "40003",
-    dataType: "INT16",
-    frequency: "2s",
-    id: "point-2",
-    name: "压力",
-    note: "进样压力",
-    ratio: "0.01",
-    unit: "MPa",
-  },
-  {
-    address: "40005",
-    dataType: "FLOAT32",
-    frequency: "5s",
-    id: "point-3",
-    name: "流量",
-    note: "泵流量",
-    ratio: "1",
-    unit: "mL/min",
-  },
-]);
 
 // 设备页所有输入都先转成干净字符串，便于后续构造表单和展示行。
 const normalizeText = (value) => String(value ?? "").trim();
@@ -416,79 +383,8 @@ function syncDeviceTypeWithLocation(location, fallbackType = "") {
   return normalizeText(mappedType) || normalizeText(fallbackType);
 }
 
-function createConnectionForm() {
-  return {
-    endpoint: "10.10.0.23",
-    functionCode: "03 读保持寄存器",
-    parity: "CRC",
-    pollingInterval: "1s",
-    port: "502",
-    protocol: "TCP",
-    retryPolicy: "3s / 2次",
-    stationId: "1",
-  };
-}
-
-function createPointForm() {
-  return {
-    address: "",
-    dataType: "INT16",
-    frequency: "1s",
-    name: "",
-    note: "",
-    ratio: "1",
-    unit: "",
-  };
-}
-
-function createPointRows() {
-  return DEFAULT_POINT_ROWS.map((row) => ({ ...row }));
-}
-
-// 点位搜索在名称、地址、数据类型、单位和备注几个字段上同时生效。
-function buildVisiblePointRows(points, query) {
-  const pointList = Array.isArray(points) ? points : [];
-  const normalizedQuery = normalizeText(query).toLowerCase();
-  if (!normalizedQuery) {
-    return pointList;
-  }
-
-  return pointList.filter((point) =>
-    [
-      point?.name,
-      point?.address,
-      point?.dataType,
-      point?.unit,
-      point?.note,
-    ].some((value) => normalizeText(value).toLowerCase().includes(normalizedQuery)),
-  );
-}
-
-function appendPoint(points, form) {
-  const name = normalizeText(form?.name);
-  const address = normalizeText(form?.address);
-  if (!name || !address) {
-    return Array.isArray(points) ? points.slice() : [];
-  }
-
-  // 新增点位时保持不可变更新，避免直接修改当前列表引用。
-  const pointList = Array.isArray(points) ? points.map((point) => ({ ...point })) : [];
-  pointList.unshift({
-    address,
-    dataType: normalizeText(form?.dataType) || "INT16",
-    frequency: normalizeText(form?.frequency) || "1s",
-    id: createId("point"),
-    name,
-    note: normalizeText(form?.note),
-    ratio: normalizeText(form?.ratio) || "1",
-    unit: normalizeText(form?.unit),
-  });
-  return pointList;
-}
-
 export {
   MAINTENANCE_DEVICE_STATUS,
-  appendPoint,
   appendDevice,
   buildDeviceForm,
   buildDeviceMetrics,
@@ -497,13 +393,9 @@ export {
   buildLocationOptions,
   buildSelectedDevice,
   buildTestTypeOptions,
-  buildVisiblePointRows,
-  createConnectionForm,
   createDeviceForm,
   createMaintenanceForm,
   createMaintenancePlanForm,
-  createPointForm,
-  createPointRows,
   isDeviceInMaintenanceWindow,
   isScheduleExperimentRunning,
   normalizeMaintenancePlan,

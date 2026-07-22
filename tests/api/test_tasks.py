@@ -186,6 +186,31 @@ def test_manual_task_creation_forces_internal_source(monkeypatch):
     assert response.json()["source"] == "内部新增"
 
 
+def test_manual_task_creation_rejects_due_time_before_current_business_time(monkeypatch):
+    from datetime import datetime
+
+    from app.api.routes import tasks as tasks_route
+
+    monkeypatch.setattr(tasks_route, "now_business_datetime", lambda: datetime(2026, 7, 22, 10, 30, 0))
+    client = build_client(monkeypatch)
+
+    response = client.post(
+        "/api/tasks",
+        json={
+            "code": "SYLU-2026-07-099",
+            "name": "过期期望完成时间任务",
+            "contact": "张三",
+            "contact_info": "13800001234",
+            "sample_count": "2",
+            "test_types": ["盐雾试验"],
+            "due_at": "2026-07-22 10:29",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "期望完成时间不能早于当前时间"
+
+
 def test_lims_external_intake_stays_out_of_tasks_until_accepted(monkeypatch):
     from app.api.routes import tasks as tasks_route
 
@@ -920,7 +945,8 @@ def test_update_task_rejects_empty_test_types_without_falling_back_to_task_name(
     assert "演示任务002" not in stored_task["test_type"]
 
 
-def test_update_task_rejects_removing_schedule_after_fixture_install(monkeypatch):
+@pytest.mark.parametrize("locked_status", ["已到达实验室", "工装夹具安装"])
+def test_update_task_rejects_removing_schedule_after_task_comparison(monkeypatch, locked_status):
     client = build_client(
         monkeypatch,
         tasks=[
@@ -960,9 +986,9 @@ def test_update_task_rejects_removing_schedule_after_fixture_install(monkeypatch
             {
                 "code": "SP-INSTALLED",
                 "task_code": "TASK-INSTALLED",
-                "status": "工装夹具安装",
-                "flow_status": "工装夹具安装",
-                "trays": [{"tray_code": "TP-INSTALLED", "status": "工装夹具安装"}],
+                "status": locked_status,
+                "flow_status": locked_status,
+                "trays": [{"tray_code": "TP-INSTALLED", "status": locked_status}],
             }
         ],
     )
@@ -983,11 +1009,12 @@ def test_update_task_rejects_removing_schedule_after_fixture_install(monkeypatch
     )
 
     assert response.status_code == 400
-    assert "夹具安装后排程不可删除" in response.json()["detail"]
+    assert "完成任务比对后排程不可删除" in response.json()["detail"]
     assert client.app.state.storage.read("mes.schedules")[0]["id"] == "schedule-installed"
 
 
-def test_delete_task_rejects_schedule_removal_after_fixture_install(monkeypatch):
+@pytest.mark.parametrize("locked_status", ["已到达实验室", "工装夹具安装"])
+def test_delete_task_rejects_schedule_removal_after_task_comparison(monkeypatch, locked_status):
     client = build_client(
         monkeypatch,
         tasks=[
@@ -1019,9 +1046,9 @@ def test_delete_task_rejects_schedule_removal_after_fixture_install(monkeypatch)
             {
                 "code": "SP-INSTALLED",
                 "task_code": "TASK-INSTALLED",
-                "status": "工装夹具安装",
-                "flow_status": "工装夹具安装",
-                "trays": [{"tray_code": "TP-INSTALLED", "status": "工装夹具安装"}],
+                "status": locked_status,
+                "flow_status": locked_status,
+                "trays": [{"tray_code": "TP-INSTALLED", "status": locked_status}],
             }
         ],
     )
@@ -1029,7 +1056,7 @@ def test_delete_task_rejects_schedule_removal_after_fixture_install(monkeypatch)
     response = client.delete("/api/tasks/task-installed")
 
     assert response.status_code == 400
-    assert "夹具安装后排程不可删除" in response.json()["detail"]
+    assert "完成任务比对后排程不可删除" in response.json()["detail"]
     assert client.app.state.storage.read("mes.tasks")[0]["id"] == "task-installed"
 
 

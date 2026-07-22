@@ -587,16 +587,16 @@
 }
 
 .laboratory-flow-steps li.is-reached {
-  border-color: rgba(var(--industrial-accent-rgb), 0.52);
-  background: rgba(var(--industrial-accent-rgb), 0.16);
-  color: var(--accent);
+  border-color: #38a27b;
+  background: #153b32;
+  color: #ddfff4;
 }
 
 .laboratory-flow-steps li.is-active {
-  border-color: rgba(34, 211, 238, 0.42);
-  background: rgba(34, 211, 238, 0.14);
-  color: #67e8f9;
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.12);
+  border-color: #60a5fa;
+  background: #163f78;
+  color: #f4f8ff;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.18);
 }
 
 .laboratory-flow-steps--tray li {

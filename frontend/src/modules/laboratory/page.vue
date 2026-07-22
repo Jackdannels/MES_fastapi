@@ -603,8 +603,8 @@
         </div>
       </div>
       <template #footer>
-        <button class="action-btn secondary laboratory-reset-modal-button" data-testid="laboratory-reset-danger-cancel" type="button" @click="closeResetDanger">取消</button>
-        <button class="action-btn danger laboratory-reset-modal-button" data-testid="laboratory-reset-danger-confirm" type="button" @click="confirmResetTask">确认撤回</button>
+        <button class="action-btn secondary laboratory-reset-modal-button" data-testid="laboratory-reset-danger-cancel" type="button" :disabled="resetSubmitting" @click="closeResetDanger">取消</button>
+        <button class="action-btn danger laboratory-reset-modal-button" data-testid="laboratory-reset-danger-confirm" type="button" :disabled="resetSubmitting" @click="confirmResetTask">{{ resetSubmitting ? "撤回中…" : "确认撤回" }}</button>
       </template>
     </AppModal>
 
@@ -809,6 +809,7 @@ const {
   recentTasks,
   resetConfirmModalOpen,
   resetDangerModalOpen,
+  resetSubmitting,
   runningExperiment,
   runningInteractionLocked,
   runningModalExperiment,

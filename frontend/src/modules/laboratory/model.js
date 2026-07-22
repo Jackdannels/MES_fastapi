@@ -1,11 +1,9 @@
 import {
-  SAMPLE_FLOW_STEPS,
   buildTrayFlowView,
   normalizeLifecycleStatus,
   synchronizeSamplesForTrayCodes,
 } from "@/modules/samples/samplesFlowModel";
 import { WITHDRAWAL_ACTIONS } from "@/modules/samples/sampleFlow.constants";
-import { resolveLabDestinationName } from "@/modules/samples/sampleFlow.experimentHelpers";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { serverNowDate, serverNowMs } from "@/lib/serverClock";
 import {
@@ -32,7 +30,6 @@ import {
   buildScheduleAxisProgressTrayCodes,
   entryMatchesTrayCode,
   historyEntryAppliesToTray,
-  parseExperimentHistoryDetail,
   relationIsCompleted,
   resolveRelationExperimentCode,
   resolveRelationRunNo,
@@ -54,42 +51,39 @@ import {
   stepRunNo,
   stepTaskCode,
 } from "./scheduleCompletion";
-
-const SALT_SPRAY_LAB = "盐雾试验室";
-const LAB_COMPARE_STATUS = "已到达实验室";
-const LAB_INSTALL_STATUS = "工装夹具安装";
-const LAB_READY_STATUS = "实验准备就绪";
-const LAB_RESET_STATUS = "送至实验室";
-const EXPERIMENT_COMPLETED_STATUS = "实验已完成";
-const PRE_DISPATCH_STAGING_LOCATION = "恒温恒湿间（暂存间）";
-const PRE_DISPATCH_STAGING_STATUS = "已到达暂存间";
-const APPEARANCE_INSPECTION_LOCATION = "外观检测间";
-const APPEARANCE_INSPECTION_STOCKED_STATUS = "实验后外观检测间存放";
-const PRE_EXPERIMENT_APPEARANCE_STOCKED_STATUS = "实验前外观检测间存放";
-const UNIFIED_TRAY_FLOW_STATUS_RANK = new Map(SAMPLE_FLOW_STEPS.map((step, index) => [step.label, index]));
-const PRE_DISPATCH_STATUSES = new Set(["到货", "已接收", "送至暂存间", "已到达暂存间"]);
-const AXIS_PARTIAL_REAL_FOLLOW_UP_STATUSES = new Set([
-  LAB_RESET_STATUS,
+import {
+  completeLaboratoryComparison,
+  completeLaboratoryInstallation,
+  confirmLaboratoryExperiment,
+  createLaboratoryWorkflow,
+  getLaboratoryActionState,
+} from "./workflowState";
+import {
+  APPEARANCE_INSPECTION_LOCATION,
+  APPEARANCE_STORAGE_STATUSES,
+  AXIS_PARTIAL_REAL_FOLLOW_UP_STATUSES,
+  EXPERIMENT_COMPLETED_STATUS,
+  LABORATORY_TASK_FLOW_INDEX,
+  LABORATORY_TASK_FLOW_STEPS,
   LAB_COMPARE_STATUS,
   LAB_INSTALL_STATUS,
   LAB_READY_STATUS,
-  "放置暂存间",
-  PRE_DISPATCH_STAGING_STATUS,
-]);
-const APPEARANCE_STORAGE_STATUSES = new Set([
-  APPEARANCE_INSPECTION_STOCKED_STATUS,
-  PRE_EXPERIMENT_APPEARANCE_STOCKED_STATUS,
-]);
-const RUNNING_EXPERIMENT_STATUSES = new Set(["实验进行中", "实验中"]);
-const LAB_DISPATCH_HISTORY_ACTIONS = new Set(["暂存间扫码出库", "外观检测间扫码出库", "接驳区扫码出库", "送至实验室"]);
-const LABORATORY_TASK_FLOW_STEPS = [
-  { key: "waiting", label: STATUS_WAITING },
-  { key: "scheduled", label: STATUS_SCHEDULED },
-  { key: "running", label: STATUS_RUNNING },
-  { key: "completed", label: STATUS_COMPLETED },
-  { key: "returned", label: STATUS_RETENTION },
-];
-const LABORATORY_TASK_FLOW_INDEX = new Map(LABORATORY_TASK_FLOW_STEPS.map((step, index) => [step.label, index]));
+  LAB_RESET_STATUS,
+  PRE_DISPATCH_STATUSES,
+  RUNNING_EXPERIMENT_STATUSES,
+  SALT_SPRAY_LAB,
+  UNIFIED_TRAY_FLOW_STATUS_RANK,
+} from "./laboratoryConstants";
+import {
+  buildLaboratoryHistoryEntry,
+  resolveLatestAnyExperimentHistorySnapshot,
+  resolveLatestExperimentHistorySnapshot,
+  resolveLatestExperimentHistoryStatus,
+  resolveLatestLaboratoryDispatchSnapshot,
+  resolvePreDispatchSnapshot,
+  resolvePreviousCompletedExperimentSnapshot,
+  resolvePreviousStableSnapshot,
+} from "./laboratoryHistory";
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const experimentHistoryStatusIsWithdrawal = (status) => normalizeText(status).startsWith("撤回至");
@@ -154,94 +148,6 @@ const uniqueValues = (values = []) => {
     seen.add(normalized);
     return true;
   });
-};
-
-const buildLaboratoryHistoryEntry = (sample, action, status, detail, now) => {
-  const history = Array.isArray(sample?.history) ? sample.history.slice() : [];
-  history.unshift({
-    action,
-    detail,
-    id: `laboratory-event-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-    location: normalizeText(sample?.location) || SALT_SPRAY_LAB,
-    owner: normalizeText(sample?.owner),
-    status,
-    time: now,
-  });
-  return history;
-};
-
-const resolvePreDispatchLocation = (status, location = "") => {
-  const normalizedLocation = normalizeText(location);
-  if (normalizedLocation) {
-    return normalizedLocation;
-  }
-  const normalizedStatus = normalizeText(status);
-  if (normalizedStatus === "到货" || normalizedStatus === "已接收") {
-    return "接驳区";
-  }
-  return PRE_DISPATCH_STAGING_LOCATION;
-};
-
-const resolvePreDispatchStatusFromLocation = (location) => {
-  const normalizedLocation = normalizeText(location);
-  if (normalizedLocation === PRE_DISPATCH_STAGING_LOCATION) {
-    return PRE_DISPATCH_STAGING_STATUS;
-  }
-  if (normalizedLocation === "接驳区" || normalizedLocation === "室外接驳区") {
-    return "到货";
-  }
-  return "";
-};
-
-const resolvePreDispatchSnapshot = (sample) => {
-  const history = asArray(sample?.history);
-  for (const entry of history) {
-    const status = normalizeText(entry?.status);
-    const location = normalizeText(entry?.location);
-    if (PRE_DISPATCH_STATUSES.has(status)) {
-      return {
-        location: resolvePreDispatchLocation(status, location),
-        status,
-        time: toTime(entry?.time) || -Infinity,
-      };
-    }
-    const statusFromLocation = resolvePreDispatchStatusFromLocation(location);
-    if (statusFromLocation) {
-      return {
-        location,
-        status: statusFromLocation,
-        time: toTime(entry?.time) || -Infinity,
-      };
-    }
-  }
-  return null;
-};
-
-const resolveAppearanceStorageSnapshot = (sample) => {
-  const candidates = asArray(sample?.history)
-    .map((entry) => {
-      const status = normalizeText(entry?.status);
-      const location = normalizeText(entry?.location);
-      const action = normalizeText(entry?.action);
-      const marksAppearanceStorage =
-        APPEARANCE_STORAGE_STATUSES.has(status)
-        || (
-          action === "外观检测间扫码入库"
-          && (!status || APPEARANCE_STORAGE_STATUSES.has(status) || location === APPEARANCE_INSPECTION_LOCATION)
-        );
-      if (!marksAppearanceStorage) {
-        return null;
-      }
-      return {
-        experimentName: "",
-        location: APPEARANCE_INSPECTION_LOCATION,
-        status: APPEARANCE_STORAGE_STATUSES.has(status) ? status : APPEARANCE_INSPECTION_STOCKED_STATUS,
-        time: toTime(entry?.time) || -Infinity,
-      };
-    })
-    .filter(Boolean)
-    .sort((left, right) => left.time - right.time);
-  return candidates[candidates.length - 1] || null;
 };
 
 const shouldRevertLaboratoryTrayStatus = (status, { includeRunning = false } = {}) => {
@@ -436,146 +342,6 @@ const buildSampleMap = (samples) => {
     sampleMap.set(taskCode, current);
   });
   return sampleMap;
-};
-
-const resolvePreviousCompletedExperimentSnapshot = (sample, taskCode, currentExperimentName) => {
-  const candidates = asArray(sample?.history)
-    .map((entry) => {
-      const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
-      if (!parsed || parsed.status !== "实验已完成" || parsed.experimentName === currentExperimentName) {
-        return null;
-      }
-      return {
-        experimentName: parsed.experimentName,
-        location: normalizeText(entry?.location) || normalizeText(sample?.location),
-        status: "实验已完成",
-        time: toTime(entry?.time) || -Infinity,
-      };
-    })
-    .filter(Boolean)
-    .sort((left, right) => left.time - right.time);
-  return candidates[candidates.length - 1] || null;
-};
-
-const resolvePreviousStableSnapshot = (sample, taskCode, currentExperimentName) => {
-  const preDispatchSnapshot = resolvePreDispatchSnapshot(sample);
-  const candidates = [
-    resolvePreviousCompletedExperimentSnapshot(sample, taskCode, currentExperimentName),
-    resolveAppearanceStorageSnapshot(sample),
-    preDispatchSnapshot ? {
-      ...preDispatchSnapshot,
-      experimentName: "",
-    } : null,
-  ].filter(Boolean);
-  candidates.sort((left, right) => left.time - right.time);
-  return candidates[candidates.length - 1];
-};
-
-const resolveLatestExperimentHistorySnapshot = ({ experimentName, sample, taskCode, trayCode = "" }) => {
-  const normalizedExperimentName = normalizeText(experimentName);
-  if (!normalizedExperimentName) {
-    return null;
-  }
-  const sampleTrayCodes = asArray(sample?.trays).map(resolveTrayCode).filter(Boolean);
-  let latestSnapshot = null;
-  let latestTime = -Infinity;
-  asArray(sample?.history).forEach((entry) => {
-    const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
-    if (!parsed || parsed.experimentName !== normalizedExperimentName) {
-      return;
-    }
-    if (trayCode && !historyEntryAppliesToTray(entry, sampleTrayCodes, trayCode)) {
-      return;
-    }
-    const eventTime = toTime(entry?.time) || 0;
-    if (eventTime > latestTime) {
-      latestSnapshot = {
-        status: parsed.status,
-        time: eventTime,
-      };
-      latestTime = eventTime;
-    }
-  });
-  return latestSnapshot;
-};
-
-const resolveLatestAnyExperimentHistorySnapshot = ({ sample, taskCode, trayCode = "" }) => {
-  const sampleTrayCodes = asArray(sample?.trays).map(resolveTrayCode).filter(Boolean);
-  let latestSnapshot = null;
-  let latestTime = -Infinity;
-  asArray(sample?.history).forEach((entry) => {
-    const parsed = parseExperimentHistoryDetail(entry?.detail, taskCode);
-    if (!parsed) {
-      return;
-    }
-    if (trayCode && !historyEntryAppliesToTray(entry, sampleTrayCodes, trayCode)) {
-      return;
-    }
-    const eventTime = toTime(entry?.time) || 0;
-    if (eventTime > latestTime) {
-      latestSnapshot = {
-        experimentName: parsed.experimentName,
-        status: parsed.status,
-        time: eventTime,
-      };
-      latestTime = eventTime;
-    }
-  });
-  return latestSnapshot;
-};
-
-const resolveLatestExperimentHistoryStatus = (input) =>
-  resolveLatestExperimentHistorySnapshot(input)?.status || null;
-
-const resolveLatestLaboratoryDispatchSnapshot = ({
-  currentExperimentCode = "",
-  currentLab = "",
-  sample,
-  trayCode = "",
-}) => {
-  const normalizedCurrentExperimentCode = normalizeText(currentExperimentCode);
-  const normalizedCurrentLab = normalizeText(currentLab);
-  const sampleTrayCodes = asArray(sample?.trays).map(resolveTrayCode).filter(Boolean);
-  let latestSnapshot = null;
-  let latestTime = -Infinity;
-  asArray(sample?.history).forEach((entry) => {
-    const status = normalizeLifecycleStatus(normalizeText(entry?.status || entry?.flow_status || entry?.flowStatus));
-    const action = normalizeText(entry?.action);
-    const targetType = normalizeText(entry?.target_type || entry?.targetType);
-    if (targetType && targetType !== "lab") {
-      return;
-    }
-    if (status !== LAB_RESET_STATUS && !LAB_DISPATCH_HISTORY_ACTIONS.has(action)) {
-      return;
-    }
-    if (trayCode && !historyEntryAppliesToTray(entry, sampleTrayCodes, trayCode)) {
-      return;
-    }
-    const targetLab = resolveLabDestinationName(
-      entry?.target_lab,
-      entry?.targetLab,
-      entry?.location,
-      entry?.location_desc,
-      entry?.locationDesc,
-      entry?.detail,
-    );
-    if (!targetLab) {
-      return;
-    }
-    const targetExperimentCode =
-      normalizeText(entry?.target_experiment_code || entry?.targetExperimentCode)
-      || (normalizedCurrentLab && targetLab === normalizedCurrentLab ? normalizedCurrentExperimentCode : "");
-    const eventTime = toTime(entry?.time) || 0;
-    if (eventTime > latestTime) {
-      latestSnapshot = {
-        targetExperimentCode,
-        targetLab,
-        time: eventTime,
-      };
-      latestTime = eventTime;
-    }
-  });
-  return latestSnapshot;
 };
 
 const experimentIsCompletedInSampleHistory = ({ experimentName, sample, taskCode, trayCode = "" }) =>
@@ -2853,7 +2619,11 @@ function buildLaboratoryWorkbenchView({
     selectedTrayRow && selectedTrayAxisStatus && selectedTrayHasAxisStatusEvidence
       ? {
           ...baseSelectedTrayFlow,
-          canonicalStatus: selectedTrayAxisStatus,
+          canonicalStatus: selectedTrayFlowShouldUseAxisStatus
+            ? selectedTrayAxisStatus
+            : selectedTrayFlowShouldUseLifecycleStatus
+            ? selectedTrayFlowLifecycleStatus
+            : baseSelectedTrayFlow.canonicalStatus,
           currentStatus: selectedTrayFlowShouldUseLifecycleStatus
             ? `当前托盘：${selectedTrayRow.trayCode} | 当前状态：${selectedTrayFlowLifecycleStatus}`
             : selectedTrayFlowShouldUseAxisStatus
@@ -2910,17 +2680,6 @@ function buildLaboratorySummary(scheduleRows = [], now = serverNowDate()) {
       const end = toTime(row?.endAt);
       return Number.isFinite(end) && end < nowTime;
     }).length,
-  };
-}
-
-function createLaboratoryWorkflow() {
-  return {
-    comparisonDone: false,
-    experimentConfirmed: false,
-    fixtureReadyDone: false,
-    hasCompared: false,
-    hasInstalled: false,
-    installationDone: false,
   };
 }
 
@@ -2986,97 +2745,7 @@ function buildLaboratoryWorkflowFromTask(task) {
   return workflow;
 }
 
-function getLaboratoryActionState(workflow = createLaboratoryWorkflow()) {
-  if (workflow.experimentConfirmed) {
-    return {
-      canCompare: false,
-      canInstallSample: false,
-      canMarkReady: false,
-    };
-  }
-  const hasComparedWaitingInstall = Object.prototype.hasOwnProperty.call(workflow, "hasComparedWaitingInstall")
-    ? workflow.hasComparedWaitingInstall
-    : !workflow.hasInstalled && (workflow.hasCompared || workflow.comparisonDone) && !workflow.installationDone;
-  const hasInstalledWaitingReady = Object.prototype.hasOwnProperty.call(workflow, "hasInstalledWaitingReady")
-    ? workflow.hasInstalledWaitingReady
-    : (workflow.hasInstalled || workflow.installationDone) && !workflow.experimentConfirmed;
-  const hasInProgressPreparation = Object.prototype.hasOwnProperty.call(workflow, "hasInProgressPreparation")
-    ? workflow.hasInProgressPreparation
-    : Boolean(workflow.hasInstalled);
-  const fixtureReadyDone = Object.prototype.hasOwnProperty.call(workflow, "fixtureReadyDone")
-    ? workflow.fixtureReadyDone
-    : false;
-  const hasCurrentLaboratoryDispatch = Object.prototype.hasOwnProperty.call(workflow, "hasCurrentLaboratoryDispatch")
-    ? workflow.hasCurrentLaboratoryDispatch
-    : true;
-  const hasActiveOtherExperimentRun = Object.prototype.hasOwnProperty.call(workflow, "hasActiveOtherExperimentRun")
-    ? workflow.hasActiveOtherExperimentRun
-    : false;
-  const hasComparableTrayWithoutActiveOtherExperiment = Object.prototype.hasOwnProperty.call(
-    workflow,
-    "hasComparableTrayWithoutActiveOtherExperiment",
-  )
-    ? workflow.hasComparableTrayWithoutActiveOtherExperiment
-    : false;
-  if (hasActiveOtherExperimentRun && !hasComparableTrayWithoutActiveOtherExperiment) {
-    return {
-      canCompare: false,
-      canInstallSample: false,
-      canMarkReady: false,
-    };
-  }
-  const canContinueComparingAvailableTrays =
-    hasActiveOtherExperimentRun && hasComparableTrayWithoutActiveOtherExperiment;
-  return {
-    canCompare:
-      hasCurrentLaboratoryDispatch
-      && !workflow.comparisonDone
-      && (!hasInProgressPreparation || canContinueComparingAvailableTrays),
-    canInstallSample: Boolean(hasComparedWaitingInstall),
-    canMarkReady: Boolean(hasInstalledWaitingReady && fixtureReadyDone),
-  };
-}
-
 const buildSaltSprayLaboratoryView = buildLaboratoryWorkbenchView;
-
-function completeLaboratoryComparison(workflow = createLaboratoryWorkflow()) {
-  return {
-    ...workflow,
-    comparisonDone: true,
-    experimentConfirmed: false,
-    hasCompared: true,
-    hasInstalled: false,
-    installationDone: false,
-  };
-}
-
-function completeLaboratoryInstallation(workflow = createLaboratoryWorkflow()) {
-  if (!(workflow.hasCompared || workflow.comparisonDone)) {
-    return { ...workflow };
-  }
-  return {
-    ...workflow,
-    hasCompared: true,
-    hasInstalled: true,
-    installationDone: true,
-    fixtureReadyDone: false,
-    experimentConfirmed: false,
-  };
-}
-
-function confirmLaboratoryExperiment(workflow = createLaboratoryWorkflow()) {
-  if (!(workflow.hasInstalled || workflow.installationDone) || !workflow.fixtureReadyDone) {
-    return { ...workflow };
-  }
-  return {
-    comparisonDone: true,
-    experimentConfirmed: true,
-    fixtureReadyDone: true,
-    hasCompared: true,
-    hasInstalled: true,
-    installationDone: true,
-  };
-}
 
 function buildLaboratoryProgressMessage(workflow, currentTask, labName = SALT_SPRAY_LAB) {
   if (!currentTask) {

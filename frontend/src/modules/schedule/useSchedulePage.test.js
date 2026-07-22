@@ -215,7 +215,7 @@ describe("useSchedulePage", () => {
   });
 
   test("does not keep an optimistic schedule when persistence fails", async () => {
-    mocks.writeStorageSchedulePatch.mockRejectedValueOnce(new Error("Failed to write storage schedule patch: 400 Bad Request，夹具安装后排程不可删除或重新排程。"));
+    mocks.writeStorageSchedulePatch.mockRejectedValueOnce(new Error("Failed to write storage schedule patch: 400 Bad Request，完成任务比对后排程不可删除或重新排程。"));
     const wrapper = mount(TestHarness);
     await settle(wrapper);
 
@@ -233,7 +233,7 @@ describe("useSchedulePage", () => {
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
     expect(mocks.writeStorageSchedulePatch).toHaveBeenCalledTimes(1);
     expect(wrapper.vm.scheduleWarning).toContain("排程保存失败");
-    expect(wrapper.vm.scheduleWarning).toContain("夹具安装后排程不可删除或重新排程");
+    expect(wrapper.vm.scheduleWarning).toContain("完成任务比对后排程不可删除或重新排程");
     expect(wrapper.vm.scheduleRows.map((row) => row.id)).toEqual(
       expect.arrayContaining(["schedule-1", "schedule-retention-1"]),
     );
@@ -366,7 +366,7 @@ describe("useSchedulePage", () => {
     await wrapper.vm.removeTaskDetailSchedule();
     await settle(wrapper);
     expect(wrapper.vm.taskDetailModalOpen).toBe(true);
-    expect(wrapper.vm.editWarning).toBe("实验已开始，不能删除排程");
+    expect(wrapper.vm.editWarning).toBe("排程已完成任务比对，不能删除");
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
 
     wrapper.vm.editWarning = "";
@@ -374,7 +374,7 @@ describe("useSchedulePage", () => {
     await settle(wrapper);
 
     expect(wrapper.vm.taskDetailModalOpen).toBe(true);
-    expect(wrapper.vm.editWarning).toBe("实验已开始，不能删除后重新排程");
+    expect(wrapper.vm.editWarning).toBe("排程已完成任务比对，不能删除后重新排程");
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
 
     await wrapper.vm.openTaskDetailModal("schedule-2");

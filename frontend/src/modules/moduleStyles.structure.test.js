@@ -110,7 +110,7 @@ describe("module style structure", () => {
     expect(tasksStylesSource).toContain(".tasks-list-card");
     expect(tasksStylesSource).toContain(".tasks-intake-form");
     expect(devicesStylesSource).toContain(".devices-registry-card");
-    expect(devicesStylesSource).toContain(".devices-points-card");
+    expect(devicesStylesSource).toContain(".devices-maintenance-records");
     expect(dataStylesSource).toContain(".data-monitor-card");
     expect(dataStylesSource).toContain(".data-report-card");
     expect(systemStylesSource).toContain(".system-roles-card");
@@ -119,7 +119,7 @@ describe("module style structure", () => {
     expect(tasksPageSource).toContain('class="card section tasks-list-card"');
     expect(tasksPageSource).toContain('class="tasks-intake-form"');
     expect(devicesPageSource).toContain('class="card section devices-registry-card"');
-    expect(devicesPageSource).toContain('class="card section devices-points-card"');
+    expect(devicesPageSource).toContain('class="devices-maintenance-records"');
     expect(dataPageSource).toContain('class="card section data-monitor-card"');
     expect(dataPageSource).toContain('class="card section data-report-card"');
     expect(systemPageSource).toContain('class="card section system-roles-card"');

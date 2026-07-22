@@ -4,7 +4,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Body, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from app.core.axis_codes import canonical_axis_code, sort_axis_codes
+from app.core.axis_codes import sort_axis_codes
 from app.core.storage_backend import STORAGE_KEYS, get_storage_backend
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
 from app.services.appearance_inspection import (
@@ -53,8 +53,8 @@ from app.services.storage_read_helpers import (
 )
 
 from app.services.storage_policies import (
-    SCHEDULE_FIXTURE_LOCKED_DETAIL,
-    SCHEDULE_LOCKED_AFTER_FIXTURE_STATUSES,
+    SCHEDULE_COMPARE_LOCKED_DETAIL,
+    SCHEDULE_LOCKED_AFTER_COMPARE_STATUSES,
     STAGING_STOCK_IN_BLOCKED_CURRENT_STATUSES,
 )
 from app.services.storage_maintenance_policy import (
@@ -91,6 +91,8 @@ APPEARANCE_REPEAT_STOCK_IN_BLOCKED_DETAIL = "该托盘已完成实验前外观�
 APPEARANCE_DISPATCH_TARGET_REQUIRED_DETAIL = "目标实验室与当前托盘不匹配"
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
 SCHEDULE_LOCKED_FIELDS = {
+    "axis_batch_no",
+    "axis_codes",
     "device",
     "end_at",
     "experiment_code",
@@ -98,6 +100,7 @@ SCHEDULE_LOCKED_FIELDS = {
     "lab_id",
     "planned_hours",
     "start_at",
+    "sub_experiment_code",
     "task_code",
 }
 
@@ -133,7 +136,7 @@ def _experiment_tray_codes(experiment_trays: Any, task_code: str, experiment_cod
     return codes
 
 
-def _sample_has_fixture_locked_tray(sample: Any, tray_codes: set[str]) -> bool:
+def _sample_has_fixture_locked_tray(sample: Any, tray_codes: set[str], schedule: Any) -> bool:
     if not isinstance(sample, dict):
         return False
     sample_statuses = {
@@ -144,20 +147,21 @@ def _sample_has_fixture_locked_tray(sample: Any, tray_codes: set[str]) -> bool:
         if not isinstance(tray, dict) or _tray_code(tray) not in tray_codes:
             continue
         tray_statuses = {_normalize_text(tray.get("status")), _normalize_text(tray.get("flow_status"))}
-        if (sample_statuses | tray_statuses) & SCHEDULE_LOCKED_AFTER_FIXTURE_STATUSES:
+        if not (sample_statuses | tray_statuses) & SCHEDULE_LOCKED_AFTER_COMPARE_STATUSES:
+            continue
+        schedule_sub_code = _record_sub_code(schedule, experiment_code=_experiment_code(schedule))
+        if not schedule_sub_code:
+            return True
+        tray_target_sub_code = _normalize_text(
+            tray.get("target_sub_experiment_code") or tray.get("targetSubExperimentCode")
+        )
+        if tray_target_sub_code == schedule_sub_code:
             return True
     return False
 
 
 
 
-
-
-def _schedule_has_axis_scope(schedule: Any) -> bool:
-    if not isinstance(schedule, dict):
-        return False
-    experiment_code = _experiment_code(schedule)
-    return bool(_record_sub_code(schedule, experiment_code=experiment_code) or _record_axis_batch_no(schedule) or _record_axis_codes(schedule))
 
 
 def _record_has_schedule_locked_status(record: Any) -> bool:
@@ -169,7 +173,7 @@ def _record_has_schedule_locked_status(record: Any) -> bool:
         _normalize_text(record.get("run_tray_status")),
         _normalize_text(record.get("experiment_status")),
     }
-    return bool(statuses & SCHEDULE_LOCKED_AFTER_FIXTURE_STATUSES)
+    return bool(statuses & SCHEDULE_LOCKED_AFTER_COMPARE_STATUSES)
 
 
 def _record_matches_schedule_scope(record: Any, schedule: Any, *, allow_legacy_experiment_fallback: bool = False) -> bool:
@@ -235,12 +239,22 @@ def _schedule_has_started_record(schedule: Any, experiment_runs: Any, experiment
     return False
 
 
+def _schedule_has_started_step(schedule: Any, experiment_run_steps: Any) -> bool:
+    return any(
+        isinstance(step, dict)
+        and _record_has_schedule_locked_status(step)
+        and _record_matches_schedule_scope(step, schedule)
+        for step in _as_list(experiment_run_steps)
+    )
+
+
 def _schedule_is_fixture_locked(
     schedule: Any,
     samples: Any,
     experiment_trays: Any,
     experiment_runs: Any = None,
     experiment_run_trays: Any = None,
+    experiment_run_steps: Any = None,
 ) -> bool:
     if not isinstance(schedule, dict):
         return False
@@ -250,42 +264,15 @@ def _schedule_is_fixture_locked(
         return False
     if _schedule_has_started_record(schedule, experiment_runs, experiment_run_trays):
         return True
-    if _schedule_has_axis_scope(schedule):
-        return False
+    if _schedule_has_started_step(schedule, experiment_run_steps):
+        return True
     tray_codes = _experiment_tray_codes(experiment_trays, task_code, experiment_code)
     if not tray_codes:
         return False
     return any(
-        _task_code(sample) == task_code and _sample_has_fixture_locked_tray(sample, tray_codes)
+        _task_code(sample) == task_code and _sample_has_fixture_locked_tray(sample, tray_codes, schedule)
         for sample in _as_list(samples)
     )
-
-
-
-
-def _is_partially_completed_multi_axis_schedule(schedule: Any, experiment_run_steps: Any) -> bool:
-    if not isinstance(schedule, dict):
-        return False
-    axis_codes = _normalize_axis_codes(schedule.get("axis_codes") or schedule.get("axisCodes"))
-    if len(axis_codes) < 2:
-        return False
-    axis_code_set = set(axis_codes)
-    task_code = _task_code(schedule)
-    experiment_code = _experiment_code(schedule)
-    sub_experiment_code = _record_sub_code(schedule, experiment_code=experiment_code)
-    if not sub_experiment_code:
-        return False
-    completed_axis_codes = {
-        canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
-        for step in _as_list(experiment_run_steps)
-        if isinstance(step, dict)
-        and _task_code(step) == task_code
-        and _experiment_code(step) == experiment_code
-        and record_sub_experiment_code(step) == sub_experiment_code
-        and _normalize_text(step.get("status")) in COMPLETED_EXPERIMENT_STATUSES
-        and canonical_axis_code(step.get("axis_code") or step.get("axisCode")) in axis_code_set
-    }
-    return bool(completed_axis_codes) and not axis_code_set.issubset(completed_axis_codes)
 
 
 
@@ -835,6 +822,8 @@ def _validate_fixture_locked_schedules(
     experiment_run_trays: Any,
     experiment_trays: Any,
     experiment_run_steps: Any,
+    *,
+    allow_terminal_schedule_cleanup: bool = False,
 ) -> None:
     if not isinstance(next_schedules, list):
         return
@@ -850,14 +839,15 @@ def _validate_fixture_locked_schedules(
             experiment_trays,
             experiment_runs,
             experiment_run_trays,
+            experiment_run_steps,
         ):
-            continue
-        if _is_partially_completed_multi_axis_schedule(current_schedule, experiment_run_steps):
             continue
         schedule_id = _schedule_id(current_schedule)
         next_schedule = next_by_id.get(schedule_id)
+        if schedule_id and next_schedule is None and allow_terminal_schedule_cleanup:
+            continue
         if not schedule_id or next_schedule is None or _locked_schedule_fields_changed(current_schedule, next_schedule):
-            raise HTTPException(status_code=400, detail=SCHEDULE_FIXTURE_LOCKED_DETAIL)
+            raise HTTPException(status_code=400, detail=SCHEDULE_COMPARE_LOCKED_DETAIL)
 
 
 def _read_current_storage_value(storage: Any, current_snapshot: Dict[str, Any] | None, key: str) -> Any:
@@ -866,7 +856,13 @@ def _read_current_storage_value(storage: Any, current_snapshot: Dict[str, Any] |
     return storage.read(key)
 
 
-def _validate_storage_update(storage: Any, updates: Dict[str, Any], current_snapshot: Dict[str, Any] | None = None) -> None:
+def _validate_storage_update(
+    storage: Any,
+    updates: Dict[str, Any],
+    current_snapshot: Dict[str, Any] | None = None,
+    *,
+    allow_terminal_schedule_cleanup: bool = False,
+) -> None:
     if "mes.schedules" in updates:
         _validate_fixture_locked_schedules(
             _read_current_storage_value(storage, current_snapshot, "mes.schedules"),
@@ -876,6 +872,7 @@ def _validate_storage_update(storage: Any, updates: Dict[str, Any], current_snap
             _read_current_storage_value(storage, current_snapshot, "mes.experiment_run_trays"),
             _read_current_storage_value(storage, current_snapshot, "mes.experiment_trays"),
             _read_current_storage_value(storage, current_snapshot, "mes.experiment_run_steps"),
+            allow_terminal_schedule_cleanup=allow_terminal_schedule_cleanup,
         )
     validate_device_schedule_maintenance_conflicts(storage, updates, current_snapshot)
     if "mes.samples" not in updates:
@@ -951,6 +948,7 @@ def _run_storage_tray_action(
     payload: dict[str, Any],
     source: str = "",
     request_id: str = "",
+    allow_terminal_schedule_cleanup: bool = False,
 ) -> dict[str, Any]:
     storage = get_storage_backend()
     action_time = now_business_text()
@@ -959,7 +957,12 @@ def _run_storage_tray_action(
         with acquire_laboratory_storage_commit_lock():
             snapshot = storage.read_all()
             updates = update_builder(snapshot, room=room, tray_code=normalized_tray_code, payload=payload, now=action_time)
-            _validate_storage_update(storage, updates, snapshot)
+            _validate_storage_update(
+                storage,
+                updates,
+                snapshot,
+                allow_terminal_schedule_cleanup=allow_terminal_schedule_cleanup,
+            )
             storage.write_many(updates)
     except StorageTrayActionError as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from error
@@ -1046,6 +1049,7 @@ def return_storage_room_tray_to_manufacturer(
         payload=payload if isinstance(payload, dict) else {},
         source=str(update_source or "").strip(),
         request_id=str(update_request_id or "").strip(),
+        allow_terminal_schedule_cleanup=True,
     )
 
 

@@ -776,6 +776,75 @@ describe("useDevicesPage", () => {
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
   });
 
+  test.each(["计划维修", "计划保养"])("rejects a past start time for %s", async (type) => {
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+    wrapper.vm.maintenancePlanForm.type = type;
+    wrapper.vm.maintenancePlanForm.startAt = "2099-03-20T07:29";
+
+    await wrapper.vm.saveMaintenancePlan();
+    await settle(wrapper);
+
+    expect(wrapper.vm.maintenancePlanStartMin).toBe("2099-03-20T07:30");
+    expect(wrapper.vm.maintenancePlanWarning).toBe("开始时间不得早于当前时间");
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+  });
+
+  test("keeps the end-time error when both planned times are invalid", async () => {
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+    wrapper.vm.maintenancePlanForm.type = "计划维修";
+    wrapper.vm.maintenancePlanForm.startAt = "2099-03-20T07:29";
+    wrapper.vm.maintenancePlanForm.endAt = "2099-03-20T07:28";
+
+    await wrapper.vm.saveMaintenancePlan();
+    await settle(wrapper);
+
+    expect(wrapper.vm.maintenancePlanWarning).toBe("结束时间必须晚于开始时间");
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+  });
+
+  test("allows editing an active plan when its past start time and type are unchanged", async () => {
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.devices": [{
+        code: "冲击一室",
+        maintenance_note: "原备注",
+        maintenance_start_at: "2099-03-20T07:00",
+        maintenance_type: "计划保养",
+        name: "冲击试验系统-1",
+        status: "保养",
+      }],
+      "mes.experiment_runs": [],
+      "mes.experiment_trays": [],
+      "mes.samples": [],
+      "mes.schedules": [],
+      "mes.conflicts": [],
+      "mes.experiments": [],
+      "mes.tasks": [],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+    wrapper.vm.maintenancePlanForm.note = "更新备注";
+
+    await wrapper.vm.saveMaintenancePlan();
+    await settle(wrapper);
+
+    expect(wrapper.vm.maintenancePlanWarning).toBe("");
+    expect(mocks.persistSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+      "mes.devices": [expect.objectContaining({
+        maintenance_note: "更新备注",
+        maintenance_start_at: "2099-03-20T07:00",
+        maintenance_type: "计划保养",
+      })],
+    }));
+  });
+
   test("clears a planned end time when the start time moves to or after it", async () => {
     const wrapper = mount(TestHarness);
     await settle(wrapper);

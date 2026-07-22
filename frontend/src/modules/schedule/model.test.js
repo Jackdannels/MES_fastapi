@@ -3372,7 +3372,7 @@ describe("schedulePageModel", () => {
       tasks: [{ code: "SYLU-2026-03-012", status: STATUS_SCHEDULED, test_type: "UNKNOWN" }],
     });
 
-    expect(result.error).toBe("实验已开始，不能删除后重新排程");
+    expect(result.error).toBe("排程已完成任务比对，不能删除后重新排程");
   });
 
   test("updateScheduleRecord allows rescheduling an untouched future axis schedule after a sibling schedule starts", () => {
@@ -3537,10 +3537,82 @@ describe("schedulePageModel", () => {
       tasks: [{ code: "SYLU-2026-03-001", status: "任务进行中", test_type: "UNKNOWN" }],
     });
 
-    expect(result.error).toBe("实验已开始，不能删除排程");
+    expect(result.error).toBe("排程已完成任务比对，不能删除");
     expect(result.schedules).toEqual([
       expect.objectContaining({ id: "schedule-running" }),
     ]);
+  });
+
+  test("deleteScheduleRecord blocks deleting a non-axis schedule after task comparison", () => {
+    const result = deleteScheduleRecord({
+      experiments: [{ task_code: "TASK-COMPARED", experiment_code: "EXP-SALT", experiment_name: "盐雾试验" }],
+      experimentTrays: [{ task_code: "TASK-COMPARED", experiment_code: "EXP-SALT", tray_code: "TP-COMPARED" }],
+      samples: [{
+        task_code: "TASK-COMPARED",
+        status: "已到达实验室",
+        trays: [{ tray_code: "TP-COMPARED", status: "已到达实验室" }],
+      }],
+      scheduleId: "schedule-salt-compared",
+      schedules: [{
+        id: "schedule-salt-compared",
+        task_code: "TASK-COMPARED",
+        experiment_code: "EXP-SALT",
+        device: "盐雾试验室",
+        status: STATUS_SCHEDULED,
+      }],
+      streams: [],
+      tasks: [{ code: "TASK-COMPARED", status: STATUS_SCHEDULED, test_type: "盐雾试验" }],
+    });
+
+    expect(result.error).toBe("排程已完成任务比对，不能删除");
+    expect(result.schedules).toEqual([expect.objectContaining({ id: "schedule-salt-compared" })]);
+  });
+
+  test("deleteScheduleRecord locks the compared axis schedule but allows deleting an independent unstarted sibling", () => {
+    const activeSubExperimentCode = "EXP-IMPACT-COMPARED-AXIS-001";
+    const futureSubExperimentCode = "EXP-IMPACT-COMPARED-AXIS-002";
+    const input = {
+      experiments: [{ task_code: "TASK-AXIS-COMPARED", experiment_code: "EXP-IMPACT-COMPARED", experiment_name: "冲击试验" }],
+      experimentTrays: [{ task_code: "TASK-AXIS-COMPARED", experiment_code: "EXP-IMPACT-COMPARED", tray_code: "TP-AXIS-COMPARED" }],
+      samples: [{
+        task_code: "TASK-AXIS-COMPARED",
+        status: "已到达实验室",
+        trays: [{
+          tray_code: "TP-AXIS-COMPARED",
+          status: "已到达实验室",
+          target_sub_experiment_code: activeSubExperimentCode,
+        }],
+      }],
+      schedules: [
+        {
+          id: "schedule-axis-compared",
+          task_code: "TASK-AXIS-COMPARED",
+          experiment_code: "EXP-IMPACT-COMPARED",
+          sub_experiment_code: activeSubExperimentCode,
+          axis_codes: ["x+", "x-", "y+", "y-"],
+          device: "冲击一室",
+          status: STATUS_SCHEDULED,
+        },
+        {
+          id: "schedule-axis-future",
+          task_code: "TASK-AXIS-COMPARED",
+          experiment_code: "EXP-IMPACT-COMPARED",
+          sub_experiment_code: futureSubExperimentCode,
+          axis_codes: ["z+", "z-"],
+          device: "冲击二室",
+          status: STATUS_SCHEDULED,
+        },
+      ],
+      streams: [],
+      tasks: [{ code: "TASK-AXIS-COMPARED", status: STATUS_SCHEDULED, test_type: "冲击试验" }],
+    };
+
+    const activeResult = deleteScheduleRecord({ ...input, scheduleId: "schedule-axis-compared" });
+    expect(activeResult.error).toBe("排程已完成任务比对，不能删除");
+
+    const futureResult = deleteScheduleRecord({ ...input, scheduleId: "schedule-axis-future" });
+    expect(futureResult.error).toBeUndefined();
+    expect(futureResult.schedules).toEqual([expect.objectContaining({ id: "schedule-axis-compared" })]);
   });
 
   test("deleteScheduleRecord allows deleting an untouched future axis schedule after a sibling schedule starts", () => {
@@ -3600,7 +3672,7 @@ describe("schedulePageModel", () => {
     ]);
   });
 
-  test("deleteScheduleRecord allows deleting a partially completed multi-axis schedule for rescheduling unfinished axes", () => {
+  test("deleteScheduleRecord blocks deleting an entire partially completed multi-axis schedule", () => {
     const result = deleteScheduleRecord({
       experiments: [
         {
@@ -3665,8 +3737,10 @@ describe("schedulePageModel", () => {
       tasks: [{ code: "SYLU-2026-06-219", status: "任务进行中", test_type: "冲击试验" }],
     });
 
-    expect(result.error).toBeUndefined();
-    expect(result.schedules).toEqual([]);
+    expect(result.error).toBe("排程已完成任务比对，不能删除");
+    expect(result.schedules).toEqual([
+      expect.objectContaining({ id: "schedule-axis-partial" }),
+    ]);
   });
 
   test("deleteScheduleRecord blocks deleting a schedule after fixture installation", () => {
@@ -3712,7 +3786,7 @@ describe("schedulePageModel", () => {
       tasks: [{ code: "SYLU-2026-03-011", status: STATUS_SCHEDULED, test_type: "UNKNOWN" }],
     });
 
-    expect(result.error).toBe("实验已开始，不能删除排程");
+    expect(result.error).toBe("排程已完成任务比对，不能删除");
     expect(result.schedules).toEqual([
       expect.objectContaining({ id: "schedule-installed" }),
     ]);

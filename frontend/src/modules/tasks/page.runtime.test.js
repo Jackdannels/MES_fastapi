@@ -839,7 +839,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("任务进行中（已完成1个实验）");
   });
 
-  test("shows date-only localized empty hints in the intake modal", async () => {
+  test("shows a localized date-time hint and current-time minimum in the intake modal", async () => {
     installApiFetchMock({
       tasks: [createTask()],
       samples: [],
@@ -852,7 +852,8 @@ describe("TasksPage runtime", () => {
     const dueInput = wrapper.get('input[name="due_at"]');
 
     expect(dueInput.attributes("type")).toBe("text");
-    expect(dueInput.attributes("data-format-hint")).toBe("年 / 月 / 日");
+    expect(dueInput.attributes("data-format-hint")).toBe("年 / 月 / 日 --:--");
+    expect(dueInput.attributes("min")).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
   });
 
   test("shows only the auto-writeback text for empty arrival fields before storage confirmation", async () => {
@@ -1224,7 +1225,10 @@ describe("TasksPage runtime", () => {
     const wrapper = mount(TasksPage);
     await settle(wrapper);
 
-    expect(wrapper.get('input[name="arrival_at"]').element.readOnly).toBe(true);
+    const intakeArrivalInput = wrapper.get('input[name="arrival_at"]');
+    expect(intakeArrivalInput.element.readOnly).toBe(true);
+    await intakeArrivalInput.trigger("click");
+    expect(wrapper.find(".picker-only-calendar").exists()).toBe(false);
 
     await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
     await settle(wrapper);

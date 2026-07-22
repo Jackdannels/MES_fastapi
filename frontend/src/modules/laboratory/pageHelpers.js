@@ -1,7 +1,7 @@
 import { canonicalAxisCode, normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
-import { LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS } from "./model";
+import { LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS } from "./laboratoryConstants";
 
 const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 export const SWITCH_REVERTIBLE_TRAY_STATUSES = RESETTABLE_TRAY_STATUSES;

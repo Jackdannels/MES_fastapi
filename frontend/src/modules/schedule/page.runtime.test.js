@@ -296,7 +296,7 @@ describe("SchedulePage runtime", () => {
     await wrapper.get('[data-testid="task-detail-delete"]').trigger("click");
     await settle(wrapper);
 
-    expect(wrapper.get('[data-testid="task-detail-warning"]').text()).toContain("实验已开始，不能删除排程");
+    expect(wrapper.get('[data-testid="task-detail-warning"]').text()).toContain("排程已完成任务比对，不能删除");
     expect(getStorage(SCHEDULES_KEY)).toEqual([
       expect.objectContaining({ id: "schedule-running" }),
     ]);
@@ -362,8 +362,8 @@ describe("SchedulePage runtime", () => {
         code: "TASK-001-SP-001",
         task_code: "TASK-001",
         location: PRIMARY_LAB,
-        status: "已到达实验室",
-        trays: [{ tray_code: "TASK-001-TP-001", status: "已到达实验室", quantity: 1 }],
+        status: "送至实验室",
+        trays: [{ tray_code: "TASK-001-TP-001", status: "送至实验室", quantity: 1 }],
         history: [],
       },
     ]);
