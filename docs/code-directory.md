@@ -114,6 +114,10 @@
 - `frontend/src/modules/laboratory/useLaboratoryFixtureConfirmation.js`：夹具安装确认弹窗、MQTT 等待倒计时和 hostless 自动确认计时控制。
 - `frontend/src/modules/laboratory/useLaboratoryRealtimeRefresh.js`：实验室快照更新暂停、待刷新合并和样品广播监听。
 - `frontend/src/modules/laboratory/laboratoryDeviceInterface.js`：实验室 MQTT/hostless 能力判断、接口模式同步和设备命令发布边界。
+- `frontend/src/modules/laboratory/laboratoryAxisContinuation.js`：实验运行轴向完成、未完成与同排程继续条件的纯派生函数。
+- `frontend/src/modules/laboratory/useLaboratoryOperationPersistence.js`：实验室比对、安装、就绪和实验完成的共享业务持久化编排。
+- `frontend/src/modules/laboratory/useLaboratoryResetFlow.js`：实验室任务撤回双确认、目标冻结和响应落地流程。
+- `frontend/src/modules/laboratory/useLaboratoryCompletionFlow.js`：实验完成、轴向继续、完成弹窗和考勤退出编排。
 - `frontend/src/modules/login/`：登录模块。
 - `frontend/src/modules/process/`：过程控制模块。
 - `frontend/src/modules/process/model.js`：过程控制基础模型。
@@ -145,21 +149,44 @@
 - `frontend/src/modules/samples/SamplesManagementPanel.vue`：样品管理面板。
 - `frontend/src/modules/samples/TrayManagementPanel.vue`：托盘管理面板。
 - `frontend/src/modules/schedule/`：排班模块。
-- `frontend/src/modules/schedule/model.js`：排班模型兼容入口和业务编排，负责排班状态、甘特图、冲突、任务状态派生和排班增删改。
+- `frontend/src/modules/schedule/model.js`：排班模型兼容入口，保持既有公共导出路径稳定。
 - `frontend/src/modules/schedule/sharedModel.js`：排班共享基础 helper，负责暂存设备识别、时段常量、文本/时间格式化、日期偏移、重叠判断和甘特槽状态。
 - `frontend/src/modules/schedule/formModel.js`：排班表单模型，负责手动排程默认状态、时段选项、编辑/重排表单、计划时长归一化和排程时间解析。
+- `frontend/src/modules/schedule/scheduleFoundationModel.js`：排程状态、轴向排程、设备锁定、维护冲突和基础候选规则。
+- `frontend/src/modules/schedule/scheduleLifecycleModel.js`：任务及排程生命周期、实验室候选、甘特片段和托盘状态证据派生。
+- `frontend/src/modules/schedule/scheduleRecordModel.js`：排程新增、编辑、删除、冲突检测和关联流记录更新。
+- `frontend/src/modules/schedule/scheduleViewModel.js`：排程表格、甘特图、冲突行、实验选项、实验室选项和统计卡片视图构建。
 - `frontend/src/modules/schedule/useSchedulePage.js`：排班页面组合式状态。
+- `frontend/src/modules/schedule/useScheduleFormState.js`：排程表单、轴向、实验室、设备和时长联动状态。
+- `frontend/src/modules/schedule/useScheduleRealtime.js`：排程页面快照刷新暂停、样品事件合并和弹窗关闭补刷。
 - `frontend/src/modules/staging-management/`：暂存间管理模块。
-- `frontend/src/modules/staging-management/model.js`：暂存间库存、扫描、指标和动作模型。
+- `frontend/src/modules/staging-management/model.js`：暂存间模型兼容入口，保持库存、视图和动作公共导出稳定。
+- `frontend/src/modules/staging-management/stagingStorageModel.js`：暂存/实验后暂存/外观检测的状态、事件、房间配置和入库证据解析。
+- `frontend/src/modules/staging-management/stagingExperimentModel.js`：托盘实验完成、部分轴向、目标实验室和允许去向派生。
+- `frontend/src/modules/staging-management/stagingRowsModel.js`：从快照聚合暂存托盘行，并处理终态任务和排程清理。
+- `frontend/src/modules/staging-management/stagingViewModel.js`：暂存库存分区、指标、总览和扫码详情视图构建。
+- `frontend/src/modules/staging-management/stagingActionModel.js`：暂存入库、出库、外观流转和厂家收回动作状态转换。
 - `frontend/src/modules/system/`：系统设置模块。
 - `frontend/src/modules/task-history/`：任务历史模块。
 - `frontend/src/modules/task-overview/`：任务总览模块。
 - `frontend/src/modules/tasks/`：任务管理模块。
 - `frontend/src/modules/tasks/model.js`：任务列表、状态和筛选模型。
 - `frontend/src/modules/tasks/useTasksPage.js`：任务页面组合式状态。
+- `frontend/src/modules/tasks/useTaskExperimentPickers.js`：任务实验类型、实验室和设备选择器状态及选项联动。
+- `frontend/src/modules/tasks/useTasksPersistence.js`：任务保存和删除的API持久化边界。
+- `frontend/src/modules/tasks/useTasksRealtime.js`：任务页面实时快照监听、编辑暂停和样品事件补刷。
+- `frontend/src/modules/tasks/useTasksTableView.js`：任务筛选、排序、分页和表格行派生。
+- `frontend/src/modules/tasks/useTaskMutationWorkflow.js`：任务编辑、实验变更、样品编号同步和删除持久化流程。
 - `frontend/src/modules/transfer-workbench/`：转运工作台共享模块。
 - `frontend/src/modules/transfer-workbench/TransferWorkbench.vue`：交接/预分配共用工作台页面组件。
 - `frontend/src/modules/transfer-workbench/TransferDispatchPanel.vue`：托盘派发面板。
+- `frontend/src/modules/transfer-workbench/transferTrayLayoutModel.js`：托盘布局、样品排序、容量重排和分配载荷纯函数。
+- `frontend/src/modules/transfer-workbench/useTransferBarcodePrinting.js`：条码预览、批量打印和打印确认组合逻辑。
+- `frontend/src/modules/transfer-workbench/useTransferWorkbenchExit.js`：转运工作台退出确认和模块切换逻辑。
+- `frontend/src/modules/transfer-workbench/useTransferWorkbenchOverview.js`：任务总览筛选、排序、分页和状态统计。
+- `frontend/src/modules/transfer-workbench/useTransferWorkbenchRealtime.js`：转运工作台快照刷新暂停、补刷和样品更新监听。
+- `frontend/src/modules/transfer-workbench/useTransferTrayAssignment.js`：托盘容量、实验分配、样品拖拽和保存校验状态。
+- `frontend/src/modules/transfer-workbench/useTransferWorkspacePersistence.js`：工作区加载、保存、确认入库和重载持久化编排。
 - `frontend/src/modules/transfer-workbench/useTransferDispatch.js`：派发流程组合式逻辑。
 - `frontend/src/modules/visualization/`：可视化大屏模块。
 - `frontend/src/modules/visualization/model.js`：可视化数据模型兼容入口，重导出实验室面板、三日排班和暂存展示 builder。

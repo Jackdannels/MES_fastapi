@@ -131,8 +131,11 @@ describe("handover system styles", () => {
 
   test("tray experiment tags use the same compact pill style as dispatch badges", () => {
     const componentPath = resolve(process.cwd(), "src/modules/transfer-workbench/TransferWorkbench.vue");
+    const barcodePath = resolve(process.cwd(), "src/modules/transfer-workbench/useTransferBarcodePrinting.js");
     const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
-    const componentSource = readFileSync(componentPath, "utf8");
+    const componentSource = [componentPath, barcodePath]
+      .map((path) => readFileSync(path, "utf8"))
+      .join("\n");
     const styleSource = readFileSync(stylesPath, "utf8");
 
     expect(styleSource).toMatch(/\.transfer-tray-experiment-tag\s*\{[^}]*min-height:\s*28px/i);

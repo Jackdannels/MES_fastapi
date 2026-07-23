@@ -537,37 +537,27 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppNumberInput from "@/components/shared/AppNumberInput.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import TrayErrorSampleDialog from "@/components/shared/TrayErrorSampleDialog.vue";
-import { logoutSession, resolveModuleHome, switchSessionModule } from "@/auth";
-import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
-import { buildExperimentTypeOptions, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
 import { useFeedback } from "@/composables/useFeedback";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
-import { buildQrCodeSvg } from "@/lib/qrCode";
-import { buildTrayQrPayload } from "@/lib/trayQrCode";
 import TransferDispatchPanel from "./TransferDispatchPanel.vue";
 import { useTransferDispatch } from "./useTransferDispatch";
+import { useTransferBarcodePrinting } from "./useTransferBarcodePrinting";
+import { useTransferWorkbenchExit } from "./useTransferWorkbenchExit";
+import { useTransferWorkbenchOverview } from "./useTransferWorkbenchOverview";
+import { useTransferWorkbenchRealtime } from "./useTransferWorkbenchRealtime";
+import { useTransferTrayAssignment } from "./useTransferTrayAssignment";
+import { useTransferWorkspacePersistence } from "./useTransferWorkspacePersistence";
 import {
   MODE_CONFIGS,
-  buildExperimentTagPrintCss,
-  buildOverviewSearchText,
-  buildPrintExperimentTags,
-  encodeHtml,
-  formatApiErrorDetail,
-  formatSampleCodePreview,
-  normalizeTaskRecord,
-  normalizeTaskStatus,
   normalizeText,
-  normalizeTrayLimit,
   overviewSampleOverflowCount,
   resolveExperimentDisplayName,
   resolveExperimentTagTone,
@@ -594,7 +584,6 @@ const props = defineProps({
   },
 });
 
-const API_BASE_URL = getFrontendApiBaseUrl();
 const router = useRouter();
 const pendingStatus = "未入库";
 const storedStatus = "到货";
@@ -602,51 +591,104 @@ const MAX_TRAY_LIMIT = 16;
 
 const activeWorkbenchView = ref("overview");
 const viewMode = ref("overview");
-const searchText = ref("");
-const taskTypeFilter = ref("");
-const taskStatusFilter = ref(pendingStatus);
 const taskOverview = ref([]);
+const {
+  clearFilters,
+  currentTaskPage,
+  overviewTaskNoSortDirection,
+  pagedTaskOverviewRows,
+  pendingTaskCount,
+  searchText,
+  setTaskPage,
+  setTaskStatusFilter,
+  storedTaskCount,
+  taskPageCount,
+  taskStatusFilter,
+  taskTypeFilter,
+  taskTypeOptions,
+  toggleOverviewTaskNoSort,
+} = useTransferWorkbenchOverview({ pendingStatus, taskOverview });
 const selectedTaskId = ref(null);
 const currentTask = ref(null);
-const assignedTrays = ref([]);
-const experiments = ref([]);
-const activeAssignmentMode = ref("task");
-const draftExperimentTraySelections = ref({});
-const availableInventory = ref([]);
-const trayLimit = ref(16);
-const trayLimitInputVersion = ref(0);
-const trayLimitInputKey = computed(() => `tray-limit-${trayLimit.value}-${trayLimitInputVersion.value}`);
-const overviewTaskNoSortDirection = ref("");
-const activeTrayIndex = ref(-1);
-const armedTrayIndex = ref(-1);
-const draggingSampleId = ref(null);
-const draggingFromTrayIndex = ref(-1);
-const selectedSampleId = ref(null);
-const selectedSampleTrayIndex = ref(-1);
-const isBootstrapLoading = ref(false);
-const bootstrapError = ref("");
-const allocationSaved = ref(false);
 const workbenchFeedback = useFeedback();
 const feedback = workbenchFeedback.message;
 const feedbackTone = workbenchFeedback.tone;
 const showWorkbenchFeedback = workbenchFeedback.show;
 const clearWorkbenchFeedback = workbenchFeedback.clear;
+const {
+  activeAssignmentMode,
+  activeTrayIndex,
+  addInventoryTray,
+  allocationReadOnly,
+  allocationSaved,
+  allocationValidationMessage,
+  allowTrayDrag,
+  assignedTrays,
+  availableInventory,
+  barcodePrintConfirmed,
+  buildAllocationPayload,
+  canConfirm,
+  canDragSamples,
+  canPersistAllocationDraft,
+  canPrint,
+  canResetWorkspace,
+  canSaveAllocation,
+  currentExperimentName,
+  draftExperimentTraySelections,
+  experimentSelectionLocked,
+  experiments,
+  handleDetailShellClick,
+  handleTrayDrop,
+  isExperimentMode,
+  isSampleSelected,
+  isStoredTask,
+  isTraySelectedForCurrentExperiment,
+  loadedTrayCount,
+  lockedOperationHint,
+  rebuildTrayExperimentLabels,
+  reloadBlockedReason,
+  remainingTrayCount,
+  removeTray,
+  resetInteractiveState,
+  selectTraySample,
+  selectionHintText,
+  setActiveTray,
+  setAssignmentMode,
+  setTrayLimit,
+  startDragging,
+  taskEditingLocked,
+  toggleExperimentTraySelection,
+  trayCapacityExceeded,
+  trayCapacityWarning,
+  trayLimit,
+  trayLimitInputKey,
+} = useTransferTrayAssignment({
+  currentTask,
+  mode: computed(() => props.mode),
+  pendingStatus,
+  selectedTaskId,
+  showWorkbenchFeedback,
+  storedStatus,
+});
 const printingAllBarcodes = ref(false);
 const barcodeModalVisible = ref(false);
 const barcodePreviewItems = ref([]);
-const barcodePrintConfirmed = ref(false);
 const sampleCodesModalVisible = ref(false);
 const sampleCodesModalTask = ref(null);
 const sampleCodesModalSampleCodes = computed(() => resolveOverviewSampleCodes(sampleCodesModalTask.value, { full: true }));
+const modeConfig = computed(() => MODE_CONFIGS[props.mode] || MODE_CONFIGS.handover);
+const showModeHeader = computed(() => props.showHeader && props.mode === "handover");
+const showDispatchPanel = computed(() => props.mode === "handover" && activeWorkbenchView.value === "dispatch");
+const showOverviewIntro = computed(() => props.mode !== "pre-allocation");
 const scheduleResetConfirmOpen = ref(false);
 const scheduleResetConfirmMessage = ref("");
-const lockedOperationHint = ref("");
-const SAVED_ALLOCATION_HINT = "托盘已保存，若想更改请重新入库";
-const taskPage = ref(1);
-const overviewPageSize = ref(3);
-const pendingTaskCount = ref(0);
-const storedTaskCount = ref(0);
-const exitDialogOpen = ref(false);
+const {
+  closeExitDialog,
+  confirmLogout,
+  exitDialogOpen,
+  handleLogout,
+  switchModule,
+} = useTransferWorkbenchExit(router);
 const ignoredStorageRequestIds = ref([]);
 let storageWriteSequence = 0;
 const trackOwnStorageRequest = (reason = "transfer") => {
@@ -656,20 +698,7 @@ const trackOwnStorageRequest = (reason = "transfer") => {
   return { requestId, source: "transfer-workbench" };
 };
 const transferDispatch = useTransferDispatch({ createStorageUpdateMeta: trackOwnStorageRequest });
-let flushPendingStorageRefresh = () => false;
-let hasPendingSamplesRefresh = false;
-
-watch([searchText, taskTypeFilter], () => {
-  taskPage.value = 1;
-});
-
-const errorSample = useTrayErrorSampleHandling({
-  onChanged: () => refreshTransferWorkspaceAfterTrayChange(),
-  onClose: async () => {
-    await refreshTransferWorkspaceAfterTrayChange();
-    flushPendingRealtimeRefresh();
-  },
-});
+let flushPendingRealtimeRefresh = () => false;
 
 const closeSampleCodesModal = () => {
   sampleCodesModalVisible.value = false;
@@ -693,614 +722,80 @@ const openSampleCodesModal = (task) => {
   sampleCodesModalVisible.value = true;
 };
 
-
-const updateOverviewTaskStatus = (taskId, status, progress) => {
-  const normalizedStatus = normalizeTaskStatus(status);
-  taskOverview.value = taskOverview.value.map((task) => (
-    task.taskId === taskId
-      ? {
-          ...task,
-          taskStatus: normalizedStatus,
-          taskProgress: progress ?? task.taskProgress,
-        }
-      : task
-  ));
-  pendingTaskCount.value = taskOverview.value.filter((task) => normalizeTaskStatus(task.taskStatus) === pendingStatus).length;
-  storedTaskCount.value = taskOverview.value.filter((task) => normalizeTaskStatus(task.taskStatus) === storedStatus).length;
-};
-
-const fetchJson = async (path, options) => {
-  const response = await fetch(buildApiUrl(path, API_BASE_URL), options);
-  let payload = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
-  if (!response.ok) {
-    throw new Error(formatApiErrorDetail(payload?.detail) || formatApiErrorDetail(payload?.message) || `请求失败（${response.status}）`);
-  }
-  return payload || {};
-};
-
-const isArchivedWorkspaceError = (error) => String(error instanceof Error ? error.message : error || "").includes("归档");
-
-const handleLogout = () => {
-  exitDialogOpen.value = true;
-};
-
-const closeExitDialog = () => {
-  exitDialogOpen.value = false;
-};
-
-const confirmLogout = async () => {
-  closeExitDialog();
-  await logoutSession();
-  router.replace("/login");
-};
-
-const switchModule = async (targetModule) => {
-  closeExitDialog();
-  const module = typeof targetModule === "string" ? targetModule : targetModule?.module;
-  const labName = typeof targetModule === "object" && targetModule !== null ? targetModule.labName : "";
-  const result = await switchSessionModule(module);
-  if (!result.ok) {
-    return;
-  }
-  if (module === "laboratory" && labName) {
-    await router.push({ path: "/laboratory", query: { lab: labName } });
-    return;
-  }
-  await router.push(resolveModuleHome(module));
-};
-
-const modeConfig = computed(() => MODE_CONFIGS[props.mode] || MODE_CONFIGS.handover);
-const showModeHeader = computed(() => props.showHeader && props.mode === "handover");
-const showDispatchPanel = computed(() => props.mode === "handover" && activeWorkbenchView.value === "dispatch");
-const showOverviewIntro = computed(() => props.mode !== "pre-allocation");
-const taskTypeOptions = computed(() =>
-  buildExperimentTypeOptions(taskOverview.value.map((task) => task.experimentTypeText || task.taskType)),
-);
-const filteredTaskOverview = computed(() => {
-  const query = searchText.value.trim().toLowerCase();
-  return taskOverview.value.filter((task) => {
-    const typeMatch = matchesExperimentTypeFilter(taskTypeFilter.value, task.experimentTypeText, task.taskType);
-    const statusMatch = !taskStatusFilter.value || normalizeTaskStatus(task.taskStatus) === taskStatusFilter.value;
-    const searchTextPool = task.overviewSearchText || buildOverviewSearchText(task);
-    return typeMatch && statusMatch && (!query || searchTextPool.includes(query));
-  });
-});
-const sortedTaskOverview = computed(() => {
-  const rows = filteredTaskOverview.value.slice();
-  if (!overviewTaskNoSortDirection.value) {
-    return rows;
-  }
-  const directionFactor = overviewTaskNoSortDirection.value === "desc" ? -1 : 1;
-  return rows.sort((left, right) => {
-    const taskNoCompare = String(left?.taskNo || "").localeCompare(String(right?.taskNo || ""), "zh-Hans-CN", {
-      numeric: true,
-      sensitivity: "base",
-    });
-    if (taskNoCompare !== 0) {
-      return taskNoCompare * directionFactor;
-    }
-    const leftSeq = Number.parseInt(left?.seq, 10);
-    const rightSeq = Number.parseInt(right?.seq, 10);
-    return ((Number.isFinite(leftSeq) ? leftSeq : 0) - (Number.isFinite(rightSeq) ? rightSeq : 0)) * directionFactor;
-  });
-});
-const taskPageCount = computed(() => Math.max(1, Math.ceil(sortedTaskOverview.value.length / overviewPageSize.value)));
-const currentTaskPage = computed(() => Math.min(taskPage.value, taskPageCount.value));
-const pagedTaskOverview = computed(() => sortedTaskOverview.value.slice((currentTaskPage.value - 1) * overviewPageSize.value, currentTaskPage.value * overviewPageSize.value));
-const pagedTaskOverviewRows = computed(() => {
-  const rows = pagedTaskOverview.value.map((task) => ({ ...task, rowKey: `task-${task.taskId}` }));
-  if (!rows.length) {
-    return rows;
-  }
-  const placeholderCount = Math.max(0, overviewPageSize.value - rows.length);
-  return [
-    ...rows,
-    ...Array.from({ length: placeholderCount }, (_, index) => ({
-      isPlaceholder: true,
-      placeholderIndex: index + 1,
-      rowKey: `placeholder-${currentTaskPage.value}-${index}`,
-    })),
-  ];
-});
-const rawAvailableInventoryCount = computed(() => availableInventory.value.length);
-const totalAssignedSampleCount = computed(() => assignedTrays.value.reduce((sum, tray) => sum + tray.samples.length, 0));
-const minimumTrayCount = computed(() => Math.max(1, Math.ceil(totalAssignedSampleCount.value / Math.max(1, trayLimit.value))));
-const loadedTrayCount = computed(() => assignedTrays.value.filter((tray) => tray.samples.length > 0).length);
-const isStoredTask = computed(() => normalizeTaskStatus(currentTask.value?.taskStatus) === storedStatus);
-const isExperimentMode = computed(() => activeAssignmentMode.value !== "task");
-const currentExperimentCode = computed(() => (isExperimentMode.value ? activeAssignmentMode.value : ""));
-const currentExperimentName = computed(() => resolveExperimentDisplayName(experiments.value.find((item) => item.experimentCode === currentExperimentCode.value)));
-const allocationReadOnly = computed(() => isStoredTask.value || allocationSaved.value);
-const experimentSelectionLocked = computed(() => allocationReadOnly.value);
-const taskEditingLocked = computed(() => allocationReadOnly.value || isExperimentMode.value);
-const canDragSamples = computed(() => !taskEditingLocked.value);
-const parseNonNegativeCount = (value) => {
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-};
-const explicitMaxAssignableTrayCount = computed(() => parseNonNegativeCount(currentTask.value?.maxAssignableTrayCount));
-const explicitRemainingTrayCount = computed(() => parseNonNegativeCount(currentTask.value?.remainingTrayCount));
-const hasTrayCapacityLimit = computed(() => explicitMaxAssignableTrayCount.value != null || explicitRemainingTrayCount.value != null);
-const maxAssignableTrayCount = computed(() => {
-  if (explicitMaxAssignableTrayCount.value != null) {
-    return explicitMaxAssignableTrayCount.value;
-  }
-  if (explicitRemainingTrayCount.value != null) {
-    return explicitRemainingTrayCount.value;
-  }
-  return loadedTrayCount.value + rawAvailableInventoryCount.value;
-});
-const remainingTrayCount = computed(() => {
-  const remainingAfterCurrentTask = Math.max(0, maxAssignableTrayCount.value - loadedTrayCount.value);
-  return Math.min(rawAvailableInventoryCount.value, remainingAfterCurrentTask);
-});
-const trayCapacityExceeded = computed(() => (
-  Boolean(selectedTaskId.value)
-  && hasTrayCapacityLimit.value
-  && loadedTrayCount.value > maxAssignableTrayCount.value
-));
-const trayCapacityWarning = computed(() => (
-  String(currentTask.value?.trayCapacityMessage || "").trim()
-  || `系统剩余托盘不足，当前最多可分配 ${maxAssignableTrayCount.value} 个托盘。`
-));
-const canPrint = computed(() => (
-  Boolean(selectedTaskId.value)
-  && loadedTrayCount.value > 0
-  && allocationSaved.value
-  && hasCompleteExperimentTrayAllocation.value
-  && !trayCapacityExceeded.value
-));
-const loadedTrayNos = computed(() => assignedTrays.value
-  .filter((tray) => Array.isArray(tray.samples) && tray.samples.length > 0)
-  .map((tray) => tray.trayNo));
-const requiresExperimentTrayAllocation = computed(() => experiments.value.length > 0);
-const everyExperimentHasTray = computed(() => experiments.value.every((experiment) => (
-  (draftExperimentTraySelections.value[experiment.experimentCode] || []).length > 0
-)));
-const everyLoadedTrayHasExperiment = computed(() => loadedTrayNos.value.every((trayNo) => (
-  experiments.value.some((experiment) => (draftExperimentTraySelections.value[experiment.experimentCode] || []).includes(trayNo))
-)));
-const hasCompleteExperimentTrayAllocation = computed(() => (
-  loadedTrayNos.value.length > 0
-  && (!requiresExperimentTrayAllocation.value || (everyExperimentHasTray.value && everyLoadedTrayHasExperiment.value))
-));
-const allocationValidationMessage = computed(() => {
-  if (!selectedTaskId.value || isStoredTask.value) {
-    return "";
-  }
-  if (trayCapacityExceeded.value) {
-    return trayCapacityWarning.value;
-  }
-  if (!requiresExperimentTrayAllocation.value) {
-    return "";
-  }
-  if (!everyExperimentHasTray.value) {
-    return "每个实验都必须至少分配一个托盘。";
-  }
-  if (!everyLoadedTrayHasExperiment.value) {
-    return "有样品的托盘必须至少分配一个实验。";
-  }
-  return "";
-});
-const canSaveAllocation = computed(() => (
-  Boolean(selectedTaskId.value)
-  && !isStoredTask.value
-  && !allocationSaved.value
-  && !trayCapacityExceeded.value
-  && (props.mode === "pre-allocation" || !isExperimentMode.value)
-  && hasCompleteExperimentTrayAllocation.value
-));
-const canPersistAllocationDraft = computed(() => (
-  Boolean(selectedTaskId.value)
-  && !isStoredTask.value
-  && !allocationSaved.value
-  && !trayCapacityExceeded.value
-  && hasCompleteExperimentTrayAllocation.value
-));
-const canConfirm = computed(() => (
-  Boolean(selectedTaskId.value)
-  && loadedTrayCount.value > 0
-  && (allocationSaved.value || (requiresExperimentTrayAllocation.value && canPersistAllocationDraft.value))
-  && !isStoredTask.value
-  && !trayCapacityExceeded.value
-  && hasCompleteExperimentTrayAllocation.value
-));
-const reloadBlockedReason = computed(() => {
-  if (!currentTask.value?.reloadBlocked) {
-    return "";
-  }
-  return props.mode === "pre-allocation"
-    ? "该任务已有托盘开始实验，不能重新分配。"
-    : "该任务已有托盘开始实验，不能重新入库。";
-});
-const canResetWorkspace = computed(() => {
-  if (!selectedTaskId.value) {
-    return false;
-  }
-  if (reloadBlockedReason.value) {
-    return false;
-  }
-  if (props.mode === "pre-allocation") {
-    return !isStoredTask.value;
-  }
-  return true;
-});
-const selectedSampleLabel = computed(() => {
-  for (const tray of assignedTrays.value) {
-    const sample = tray.samples.find((item) => item.sampleId === selectedSampleId.value);
-    if (sample) return sample.sampleNo;
-  }
-  return "";
-});
-const quickMoveTrayLabel = computed(() => assignedTrays.value[armedTrayIndex.value]?.trayNo || "");
-const selectionHintText = computed(() => {
-  if (lockedOperationHint.value) {
-    return lockedOperationHint.value;
-  }
-  if (selectedSampleLabel.value) {
-    return `已选样品：${selectedSampleLabel.value}`;
-  }
-  if (!isExperimentMode.value && quickMoveTrayLabel.value) {
-    return `目标托盘：${quickMoveTrayLabel.value}，点击其他托盘中的样品可快速移入。`;
-  }
-  return "";
+const {
+  applyWorkspace,
+  backToOverview,
+  bootstrapError,
+  confirmStorage,
+  executeReloadWorkspace,
+  fetchJson,
+  isBootstrapLoading,
+  loadBootstrap,
+  openTask,
+  persistAllocation,
+  refreshTransferWorkspaceAfterTrayChange,
+  reloadBootstrap,
+  reloadWorkspace,
+} = useTransferWorkspacePersistence({
+  activeAssignmentMode,
+  activeTrayIndex,
+  allocationSaved,
+  allocationValidationMessage,
+  assignedTrays,
+  availableInventory,
+  barcodeModalVisible,
+  barcodePreviewItems,
+  buildAllocationPayload,
+  canConfirm,
+  canPersistAllocationDraft,
+  canResetWorkspace,
+  canSaveAllocation,
+  clearWorkbenchFeedback,
+  currentTask,
+  draftExperimentTraySelections,
+  experiments,
+  flushPendingRealtimeRefresh: () => flushPendingRealtimeRefresh(),
+  mode: computed(() => props.mode),
+  openScheduleResetConfirm,
+  pendingStatus,
+  pendingTaskCount,
+  rebuildTrayExperimentLabels,
+  resetInteractiveState,
+  sampleCodesModalTask,
+  sampleCodesModalVisible,
+  selectedTaskId,
+  showWorkbenchFeedback,
+  storedStatus,
+  storedTaskCount,
+  taskOverview,
+  taskStatusFilter,
+  trackOwnStorageRequest,
+  trayLimit,
+  viewMode,
 });
 
-const clearFilters = () => {
-  searchText.value = "";
-  taskTypeFilter.value = "";
-  taskStatusFilter.value = "";
-  taskPage.value = 1;
-};
-
-const currentTaskCode = computed(() => String(currentTask.value?.taskNo || "").trim());
-
-const rebuildTrayExperimentLabels = () => {
-  const experimentNameMap = Object.fromEntries(experiments.value.map((experiment) => [experiment.experimentCode, resolveExperimentDisplayName(experiment)]));
-  assignedTrays.value = assignedTrays.value.map((tray) => {
-    const experimentCodes = Object.entries(draftExperimentTraySelections.value)
-      .filter(([, trayNos]) => Array.isArray(trayNos) && trayNos.includes(tray.trayNo))
-      .map(([experimentCode]) => experimentCode);
-    return {
-      ...tray,
-      experimentCodes,
-      experimentLabels: experimentCodes.map((experimentCode) => experimentNameMap[experimentCode] || experimentCode),
-    };
-  });
-};
-
-const resetExperimentAssignmentsForTrayLayout = () => {
-  const onlyTrayNo = assignedTrays.value.length === 1 ? assignedTrays.value[0]?.trayNo : "";
-  draftExperimentTraySelections.value = Object.fromEntries(
-    experiments.value.map((experiment) => [experiment.experimentCode, onlyTrayNo ? [onlyTrayNo] : []]),
-  );
-  rebuildTrayExperimentLabels();
-};
-
-const encodeTaskTrayId = (serial) => 1000 + serial;
-const sampleSort = (left, right) => String(left?.sampleNo || "").localeCompare(String(right?.sampleNo || ""));
-
-const createTaskTrayRef = (serial, limit) => ({
-  trayId: encodeTaskTrayId(serial),
-  trayNo: `${currentTaskCode.value || "TASK"}-TP-${String(serial).padStart(3, "0")}`,
-  trayType: "标准托盘",
-  capacity: limit,
-  currentTaskId: selectedTaskId.value,
+const errorSample = useTrayErrorSampleHandling({
+  onChanged: () => refreshTransferWorkspaceAfterTrayChange(),
+  onClose: async () => {
+    await refreshTransferWorkspaceAfterTrayChange();
+    flushPendingRealtimeRefresh();
+  },
 });
 
-const createInventorySlot = (slot, index, limit) => ({
-  trayId: Number.parseInt(slot?.trayId, 10) || 5000 + index + 1,
-  trayNo: String(slot?.trayNo || `INVENTORY-${index + 1}`),
-  trayType: slot?.trayType || "标准托盘",
-  capacity: Number.parseInt(slot?.capacity, 10) || limit,
-  currentTaskId: null,
+
+const transferRealtime = useTransferWorkbenchRealtime({
+  allocationReadOnly,
+  barcodeModalVisible,
+  errorSample,
+  ignoredStorageRequestIds,
+  printingAllBarcodes,
+  refreshTransferWorkspaceAfterTrayChange,
+  sampleCodesModalVisible,
+  selectedTaskId,
+  viewMode,
 });
-
-const normalizeInventoryRefs = (inventory, limit) => inventory.map((slot, index) => createInventorySlot(slot, index, limit));
-const buildInventorySlots = (count, limit) => normalizeInventoryRefs(Array.from({ length: count }, () => ({})), limit);
-const normalizeEditableTrays = (trays, limit) => trays.map((tray, index) => createEditableTray(createTaskTrayRef(index + 1, limit), limit, tray.samples));
-
-const collectOrderedSamples = (sourceTrays = assignedTrays.value) => sourceTrays
-  .flatMap((tray) => tray.samples.map((sample) => ({ ...sample })))
-  .sort(sampleSort);
-
-const createEditableTray = (trayRef, limit, samples = []) => {
-  const normalizedSamples = normalizeTraySamples(samples);
-  return {
-    trayId: trayRef.trayId,
-    trayNo: trayRef.trayNo,
-    trayType: trayRef.trayType || "标准托盘",
-    trayStatus: "已预分配",
-    capacity: limit,
-    loadQty: normalizedSamples.length,
-    samples: normalizedSamples,
-    barcode: null,
-    barcodeData: null,
-  };
-};
-
-const refreshEditableTrayState = (message = "") => {
-  assignedTrays.value = normalizeEditableTrays(assignedTrays.value, trayLimit.value);
-  availableInventory.value = buildInventorySlots(availableInventory.value.length, trayLimit.value);
-  resetExperimentAssignmentsForTrayLayout();
-  barcodePrintConfirmed.value = false;
-  allocationSaved.value = false;
-  lockedOperationHint.value = "";
-  if (message) {
-    showWorkbenchFeedback(message, "info");
-  }
-};
-
-const rebalanceTrayLayout = ({ limit = trayLimit.value, message = "" } = {}) => {
-  const normalizedLimit = normalizeTrayLimit(limit);
-  const orderedSamples = collectOrderedSamples();
-  const requiredCount = Math.max(1, Math.ceil(orderedSamples.length / normalizedLimit));
-  const totalTrayPoolCount = Math.max(requiredCount, assignedTrays.value.length + availableInventory.value.length);
-  const nextAssigned = Array.from({ length: requiredCount }, (_, index) => createEditableTray(createTaskTrayRef(index + 1, normalizedLimit), normalizedLimit, []));
-
-  orderedSamples.forEach((sample, index) => {
-    nextAssigned[Math.floor(index / normalizedLimit)].samples.push({
-      ...sample,
-      sampleStatus: pendingStatus,
-    });
-  });
-
-  assignedTrays.value = nextAssigned.map((tray) => createEditableTray(tray, normalizedLimit, tray.samples));
-  availableInventory.value = buildInventorySlots(totalTrayPoolCount - requiredCount, normalizedLimit);
-  trayLimit.value = normalizedLimit;
-  activeTrayIndex.value = -1;
-  armedTrayIndex.value = -1;
-  clearSelectedSample();
-  resetExperimentAssignmentsForTrayLayout();
-  barcodePrintConfirmed.value = false;
-  allocationSaved.value = false;
-  lockedOperationHint.value = "";
-  if (message) {
-    showWorkbenchFeedback(message, "info");
-  }
-};
-
-const resetInteractiveState = () => {
-  activeTrayIndex.value = -1;
-  armedTrayIndex.value = -1;
-  draggingSampleId.value = null;
-  draggingFromTrayIndex.value = -1;
-  selectedSampleId.value = null;
-  selectedSampleTrayIndex.value = -1;
-  barcodePrintConfirmed.value = false;
-  lockedOperationHint.value = "";
-};
-
-const applyWorkspace = (workspace) => {
-  currentTask.value = workspace?.task ? normalizeTaskRecord(workspace.task) : null;
-  experiments.value = Array.isArray(workspace?.experiments) ? workspace.experiments.map((experiment) => ({ ...experiment })) : [];
-  draftExperimentTraySelections.value = Object.fromEntries(
-    experiments.value.map((experiment) => [experiment.experimentCode, [...(experiment.assignedTrayNos || [])]]),
-  );
-  trayLimit.value = normalizeTrayLimit(workspace?.task?.trayLimit || 16);
-  assignedTrays.value = (workspace?.assignedTrays || []).map((tray) => ({
-    ...tray,
-    samples: Array.isArray(tray.samples)
-      ? tray.samples.map((sample) => ({
-          ...sample,
-          sampleStatus: normalizeTaskStatus(workspace?.task?.taskStatus) === storedStatus ? storedStatus : (sample.sampleStatus || pendingStatus),
-        }))
-      : [],
-    trayStatus: normalizeTaskStatus(workspace?.task?.taskStatus) === storedStatus ? storedStatus : tray.trayStatus,
-    experimentLabels: Array.isArray(tray.experimentLabels) ? [...tray.experimentLabels] : [],
-    experimentCodes: Array.isArray(tray.experimentCodes) ? [...tray.experimentCodes] : [],
-  }));
-  availableInventory.value = normalizeInventoryRefs(workspace?.trayInventory || [], trayLimit.value);
-  allocationSaved.value = Boolean(workspace?.allocationSaved);
-  activeAssignmentMode.value = "task";
-  rebuildTrayExperimentLabels();
-  resetInteractiveState();
-};
-
-const applyConfirmedStorageState = (progress = "已确认入库") => {
-  if (currentTask.value) {
-    currentTask.value = {
-      ...currentTask.value,
-      taskStatus: storedStatus,
-      taskProgress: progress,
-    };
-  }
-  assignedTrays.value = assignedTrays.value.map((tray) => ({
-    ...tray,
-    trayStatus: storedStatus,
-    samples: Array.isArray(tray.samples)
-      ? tray.samples.map((sample) => ({ ...sample, sampleStatus: storedStatus }))
-      : [],
-  }));
-};
-
-const applyWorkspaceSaveGuards = (workspace) => {
-  if (!workspace?.task || !currentTask.value) {
-    return;
-  }
-  const nextTask = normalizeTaskRecord(workspace.task);
-  currentTask.value = {
-    ...currentTask.value,
-    taskStatus: nextTask.taskStatus,
-    taskProgress: nextTask.taskProgress,
-    totalTrayCount: nextTask.totalTrayCount,
-    remainingTrayCount: nextTask.remainingTrayCount,
-    maxAssignableTrayCount: nextTask.maxAssignableTrayCount,
-    requiredTrayCount: nextTask.requiredTrayCount,
-    trayCapacityExceeded: nextTask.trayCapacityExceeded,
-    trayCapacityMessage: nextTask.trayCapacityMessage,
-    reloadBlocked: nextTask.reloadBlocked,
-    reloadBlockedReason: nextTask.reloadBlockedReason,
-    hasSchedules: nextTask.hasSchedules,
-    scheduleResetWarning: nextTask.scheduleResetWarning,
-  };
-  availableInventory.value = normalizeInventoryRefs(workspace.trayInventory || [], trayLimit.value);
-  allocationSaved.value = Boolean(workspace.allocationSaved);
-};
-
-const clearWorkspace = () => {
-  selectedTaskId.value = null;
-  currentTask.value = null;
-  experiments.value = [];
-  draftExperimentTraySelections.value = {};
-  trayLimit.value = 16;
-  assignedTrays.value = [];
-  availableInventory.value = [];
-  allocationSaved.value = false;
-  activeAssignmentMode.value = "task";
-  barcodeModalVisible.value = false;
-  barcodePreviewItems.value = [];
-  sampleCodesModalVisible.value = false;
-  sampleCodesModalTask.value = null;
-  resetInteractiveState();
-};
-
-const loadBootstrap = async ({ silent = false } = {}) => {
-  const showBlockingLoading = !silent || taskOverview.value.length === 0;
-  if (showBlockingLoading) {
-    isBootstrapLoading.value = true;
-  }
-  bootstrapError.value = "";
-  try {
-    const payload = await fetchJson("/api/transfer-area/bootstrap");
-    taskOverview.value = (payload.taskOverview || []).map((task) => normalizeTaskRecord(task));
-    if (selectedTaskId.value && !taskOverview.value.some((task) => task.taskId === selectedTaskId.value)) {
-      clearWorkspace();
-      viewMode.value = "overview";
-    }
-    pendingTaskCount.value = taskOverview.value.filter((task) => normalizeTaskStatus(task.taskStatus) === pendingStatus).length;
-    storedTaskCount.value = taskOverview.value.filter((task) => normalizeTaskStatus(task.taskStatus) === storedStatus).length;
-  } catch (error) {
-    if (showBlockingLoading) {
-      bootstrapError.value = error instanceof Error ? error.message : "请稍后重试";
-      taskOverview.value = [];
-      pendingTaskCount.value = 0;
-      storedTaskCount.value = 0;
-    }
-  } finally {
-    if (showBlockingLoading) {
-      isBootstrapLoading.value = false;
-    }
-  }
-};
-
-const loadWorkspace = async (taskId = selectedTaskId.value) => {
-  if (!taskId) return;
-  const knownStatus = normalizeTaskStatus(
-    currentTask.value?.taskId === taskId
-      ? currentTask.value?.taskStatus
-      : taskOverview.value.find((task) => task.taskId === taskId)?.taskStatus
-  );
-  const payload = await fetchJson(`/api/transfer-area/tasks/${taskId}/workspace`);
-  applyWorkspace(payload);
-  if (knownStatus === storedStatus && currentTask.value && normalizeTaskStatus(currentTask.value.taskStatus) !== storedStatus) {
-    currentTask.value = {
-      ...currentTask.value,
-      taskStatus: storedStatus,
-      taskProgress: currentTask.value.taskProgress || "已确认入库",
-    };
-  }
-};
-
-const refreshWorkspaceSaveGuards = async () => {
-  if (!selectedTaskId.value) {
-    return;
-  }
-  const workspace = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/workspace`);
-  applyWorkspaceSaveGuards(workspace);
-};
-
-const openTask = async (task) => {
-  selectedTaskId.value = task.taskId;
-  clearWorkbenchFeedback();
-  barcodeModalVisible.value = false;
-  barcodePreviewItems.value = [];
-  sampleCodesModalVisible.value = false;
-  sampleCodesModalTask.value = null;
-  viewMode.value = "detail";
-  try {
-    await loadWorkspace(task.taskId);
-  } catch (error) {
-    if (!isArchivedWorkspaceError(error)) {
-      throw error;
-    }
-    showWorkbenchFeedback(error instanceof Error ? error.message : "任务已归档", "error");
-    clearWorkspace();
-    viewMode.value = "overview";
-    await loadBootstrap();
-  }
-};
-
-const refreshTransferWorkspaceAfterTrayChange = async () => {
-  await loadBootstrap({ silent: true });
-  if (!selectedTaskId.value) {
-    return;
-  }
-  await loadWorkspace(selectedTaskId.value);
-};
-
-const isTransferRealtimeRefreshPaused = () => Boolean(
-  barcodeModalVisible.value
-  || sampleCodesModalVisible.value
-  || printingAllBarcodes.value
-  || errorSample.state.open
-  || errorSample.state.loading
-  || errorSample.state.submitting
-  || (viewMode.value === "detail" && selectedTaskId.value && !allocationReadOnly.value)
-);
-
-function flushPendingRealtimeRefresh() {
-  const flushedStorage = flushPendingStorageRefresh();
-  if (!hasPendingSamplesRefresh || isTransferRealtimeRefreshPaused()) {
-    return flushedStorage;
-  }
-  hasPendingSamplesRefresh = false;
-  if (!flushedStorage) {
-    void refreshTransferWorkspaceAfterTrayChange();
-  }
-  return true;
-}
-
-const handleSamplesUpdated = (event) => {
-  const source = String(event?.detail?.source || "").trim();
-  if (source === "transfer-workbench" || source === "tray-error-sample") {
-    return;
-  }
-  if (isTransferRealtimeRefreshPaused()) {
-    hasPendingSamplesRefresh = true;
-    return;
-  }
-  hasPendingSamplesRefresh = false;
-  void refreshTransferWorkspaceAfterTrayChange();
-};
-
-const storageRefresh = useStorageSnapshotRefresh({
-  keys: [
-    STORAGE_KEYS.tasks,
-    STORAGE_KEYS.samples,
-    STORAGE_KEYS.schedules,
-    STORAGE_KEYS.experiments,
-    STORAGE_KEYS.experiment_trays,
-    STORAGE_KEYS.experiment_samples,
-    STORAGE_KEYS.staging_events,
-  ],
-  refresh: refreshTransferWorkspaceAfterTrayChange,
-  paused: isTransferRealtimeRefreshPaused,
-  debounceMs: 100,
-  ignoreSource: "transfer-workbench",
-  ignoreRequestIds: ignoredStorageRequestIds,
-});
-flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
-
-const setTaskStatusFilter = (status) => {
-  taskStatusFilter.value = status;
-  taskPage.value = 1;
-};
+flushPendingRealtimeRefresh = transferRealtime.flushPendingRealtimeRefresh;
+const handleSamplesUpdated = transferRealtime.handleSamplesUpdated;
 
 const setActiveWorkbenchView = (nextView) => {
   if (props.mode !== "handover") {
@@ -1319,595 +814,30 @@ const setActiveWorkbenchView = (nextView) => {
   }
 };
 
-const reloadBootstrap = async () => {
-  await loadBootstrap();
-};
-
-const setTaskPage = (page) => {
-  const nextPage = Number.parseInt(page, 10);
-  taskPage.value = Math.min(taskPageCount.value, Math.max(1, Number.isFinite(nextPage) ? nextPage : 1));
-};
-
-const toggleOverviewTaskNoSort = () => {
-  overviewTaskNoSortDirection.value = overviewTaskNoSortDirection.value === "asc" ? "desc" : "asc";
-  taskPage.value = 1;
-};
-
-const backToOverview = async () => {
-  barcodeModalVisible.value = false;
-  sampleCodesModalVisible.value = false;
-  sampleCodesModalTask.value = null;
-  await loadBootstrap();
-  viewMode.value = "overview";
-  flushPendingRealtimeRefresh();
-};
-
-const clearSelectedSample = () => {
-  selectedSampleId.value = null;
-  selectedSampleTrayIndex.value = -1;
-};
-
-const showSavedAllocationHint = () => {
-  if (!allocationSaved.value) {
-    return false;
-  }
-  lockedOperationHint.value = SAVED_ALLOCATION_HINT;
-  return true;
-};
-
-const isSampleSelected = (sampleId) => selectedSampleId.value === sampleId;
-const isTraySelectedForCurrentExperiment = (trayNo) => (
-  isExperimentMode.value
-    && Array.isArray(draftExperimentTraySelections.value[currentExperimentCode.value])
-    && draftExperimentTraySelections.value[currentExperimentCode.value].includes(trayNo)
-);
-const normalizeTraySamples = (samples) => samples.slice().sort((a, b) => String(a.sampleNo || "").localeCompare(String(b.sampleNo || "")));
-
-const setAssignmentMode = (mode) => {
-  if (mode && mode !== "task" && showSavedAllocationHint()) {
-    return;
-  }
-  activeAssignmentMode.value = mode || "task";
-  clearSelectedSample();
-};
-
-const handleDetailShellClick = (event) => {
-  if (!isExperimentMode.value) {
-    return;
-  }
-  const target = event?.target;
-  if (!(target instanceof Element)) {
-    setAssignmentMode("task");
-    return;
-  }
-  if (
-    target.closest("button")
-    || target.closest("input")
-    || target.closest("select")
-    || target.closest("textarea")
-    || target.closest(".sample-tray-sample-tag")
-    || target.closest(".transfer-tray-card")
-    || target.closest(".transfer-detail-shell__top")
-  ) {
-    return;
-  }
-  setAssignmentMode("task");
-};
-
-const toggleExperimentTraySelection = (trayIndex) => {
-  if (!isExperimentMode.value || allocationReadOnly.value) {
-    showSavedAllocationHint();
-    return;
-  }
-  const tray = assignedTrays.value[trayIndex];
-  if (!tray) {
-    return;
-  }
-  const current = new Set(draftExperimentTraySelections.value[currentExperimentCode.value] || []);
-  if (current.has(tray.trayNo)) {
-    current.delete(tray.trayNo);
-  } else {
-    current.add(tray.trayNo);
-  }
-  draftExperimentTraySelections.value = {
-    ...draftExperimentTraySelections.value,
-    [currentExperimentCode.value]: Array.from(current).sort((left, right) => left.localeCompare(right, "zh-Hans-CN")),
-  };
-  rebuildTrayExperimentLabels();
-  allocationSaved.value = false;
-  activeTrayIndex.value = trayIndex;
-};
-
-const setActiveTray = (index) => {
-  if (isExperimentMode.value) {
-    toggleExperimentTraySelection(index);
-    return;
-  }
-  if (taskEditingLocked.value) {
-    showSavedAllocationHint();
-    return;
-  }
-  if (selectedSampleId.value != null && selectedSampleTrayIndex.value >= 0 && selectedSampleTrayIndex.value !== index) {
-    placeSelectedSampleToTray(index);
-    return;
-  }
-  activeTrayIndex.value = index;
-  armedTrayIndex.value = index;
-};
-
-const setTrayLimit = (value) => {
-  if (taskEditingLocked.value) return;
-  const nextLimit = normalizeTrayLimit(value);
-  if (nextLimit === trayLimit.value) return;
-  const requiredTrayCount = Math.max(1, Math.ceil(totalAssignedSampleCount.value / nextLimit));
-  if (nextLimit < trayLimit.value && requiredTrayCount > maxAssignableTrayCount.value) {
-    trayLimitInputVersion.value += 1;
-    showWorkbenchFeedback(trayCapacityWarning.value, "warning");
-    return;
-  }
-  rebalanceTrayLayout({ limit: nextLimit, message: `已将每盘数量上限调整为 ${nextLimit}，并重新分配托盘。` });
-};
-
-const allowTrayDrag = () => canDragSamples.value;
-
-const startDragging = (sampleId, trayIndex) => {
-  if (!canDragSamples.value) {
-    showSavedAllocationHint();
-    return;
-  }
-  draggingSampleId.value = sampleId;
-  draggingFromTrayIndex.value = trayIndex;
-  selectedSampleId.value = sampleId;
-  selectedSampleTrayIndex.value = trayIndex;
-};
-
-const placeSelectedSampleToTray = (targetIndex) => {
-  if (taskEditingLocked.value) {
-    showSavedAllocationHint();
-    return;
-  }
-  if (selectedSampleId.value == null || selectedSampleTrayIndex.value < 0) return;
-  const sourceTray = assignedTrays.value[selectedSampleTrayIndex.value];
-  const targetTray = assignedTrays.value[targetIndex];
-  if (!sourceTray || !targetTray || sourceTray === targetTray) return;
-  if (targetTray.samples.length >= trayLimit.value) {
-    showWorkbenchFeedback("目标托盘已达到上限。", "warning");
-    return;
-  }
-  const sampleIndex = sourceTray.samples.findIndex((sample) => sample.sampleId === selectedSampleId.value);
-  if (sampleIndex < 0) return;
-  const [sample] = sourceTray.samples.splice(sampleIndex, 1);
-  targetTray.samples = normalizeTraySamples([...targetTray.samples, sample]);
-  refreshEditableTrayState(`已将 ${sample.sampleNo} 移动到 ${targetTray.trayNo}`);
-  activeTrayIndex.value = targetIndex;
-  armedTrayIndex.value = targetIndex;
-  draggingSampleId.value = null;
-  draggingFromTrayIndex.value = -1;
-  clearSelectedSample();
-};
-
-const swapTraySamples = (sourceSampleId, sourceTrayIndex, targetSampleId, targetTrayIndex) => {
-  if (taskEditingLocked.value) {
-    showSavedAllocationHint();
-    return;
-  }
-  const sourceTray = assignedTrays.value[sourceTrayIndex];
-  const targetTray = assignedTrays.value[targetTrayIndex];
-  if (!sourceTray || !targetTray) return;
-  const sourceIndex = sourceTray.samples.findIndex((sample) => sample.sampleId === sourceSampleId);
-  const targetIndex = targetTray.samples.findIndex((sample) => sample.sampleId === targetSampleId);
-  if (sourceIndex < 0 || targetIndex < 0) return;
-  const sourceSample = sourceTray.samples[sourceIndex];
-  const targetSample = targetTray.samples[targetIndex];
-  sourceTray.samples.splice(sourceIndex, 1, targetSample);
-  targetTray.samples.splice(targetIndex, 1, sourceSample);
-  refreshEditableTrayState(`已交换 ${sourceSample.sampleNo} 与 ${targetSample.sampleNo}`);
-  activeTrayIndex.value = targetTrayIndex;
-  clearSelectedSample();
-};
-
-const selectTraySample = (sampleId, trayIndex) => {
-  if (taskEditingLocked.value) {
-    showSavedAllocationHint();
-    return;
-  }
-  if (armedTrayIndex.value >= 0 && armedTrayIndex.value !== trayIndex && selectedSampleId.value == null) {
-    selectedSampleId.value = sampleId;
-    selectedSampleTrayIndex.value = trayIndex;
-    placeSelectedSampleToTray(armedTrayIndex.value);
-    return;
-  }
-  if (selectedSampleId.value == null) {
-    selectedSampleId.value = sampleId;
-    selectedSampleTrayIndex.value = trayIndex;
-    activeTrayIndex.value = trayIndex;
-    return;
-  }
-  if (selectedSampleId.value === sampleId) {
-    clearSelectedSample();
-    return;
-  }
-  swapTraySamples(selectedSampleId.value, selectedSampleTrayIndex.value, sampleId, trayIndex);
-};
-
-const handleTrayDrop = (targetIndex) => {
-  if (taskEditingLocked.value) {
-    showSavedAllocationHint();
-    return;
-  }
-  if (draggingSampleId.value == null || draggingFromTrayIndex.value < 0) return;
-  selectedSampleId.value = draggingSampleId.value;
-  selectedSampleTrayIndex.value = draggingFromTrayIndex.value;
-  placeSelectedSampleToTray(targetIndex);
-  draggingSampleId.value = null;
-  draggingFromTrayIndex.value = -1;
-};
-
-const addInventoryTray = () => {
-  if (taskEditingLocked.value) return;
-  if (trayCapacityExceeded.value) {
-    showWorkbenchFeedback(trayCapacityWarning.value, "warning");
-    return;
-  }
-  if (remainingTrayCount.value <= 0) {
-    showWorkbenchFeedback("当前没有可用空托盘。", "warning");
-    return;
-  }
-  assignedTrays.value = normalizeEditableTrays(assignedTrays.value, trayLimit.value);
-  const nextSerial = assignedTrays.value.length + 1;
-  availableInventory.value = availableInventory.value.slice(1);
-  assignedTrays.value.push({
-    ...createTaskTrayRef(nextSerial, trayLimit.value),
-    trayStatus: "已预分配",
-    samples: [],
-    barcode: null,
-    barcodeData: null,
-    loadQty: 0,
-  });
-  refreshEditableTrayState("已新增空托盘，可继续调整样品摆放。");
-  activeTrayIndex.value = assignedTrays.value.length - 1;
-  armedTrayIndex.value = -1;
-};
-
-const removeTray = (index) => {
-  const tray = assignedTrays.value[index];
-  if (!tray) return;
-  if (taskEditingLocked.value) {
-    showSavedAllocationHint();
-    return;
-  }
-  if (assignedTrays.value.length <= minimumTrayCount.value) {
-    showWorkbenchFeedback("当前托盘数量已是最小值，不能继续删除。", "warning");
-    return;
-  }
-  rebalanceTrayLayout({
-    limit: trayLimit.value,
-    message: `已删除 ${tray.trayNo}，并自动重新分配样品。`,
-  });
-};
-
-const buildAllocationPayload = () => ({
-  trayLimit: trayLimit.value,
-  trays: assignedTrays.value.map((tray) => ({
-    trayId: tray.trayId,
-    sampleIds: tray.samples.map((sample) => sample.sampleId),
-  })),
-  experimentTrays: experiments.value.map((experiment) => ({
-    experimentCode: experiment.experimentCode,
-    trayIds: assignedTrays.value
-      .filter((tray) => (draftExperimentTraySelections.value[experiment.experimentCode] || []).includes(tray.trayNo))
-      .map((tray) => tray.trayId),
-  })),
+const {
+  closeBarcodeModal,
+  confirmBarcodePrint,
+  printAllTrayBarcodes,
+} = useTransferBarcodePrinting({
+  allocationSaved,
+  applyWorkspace,
+  assignedTrays,
+  barcodeModalVisible,
+  barcodePreviewItems,
+  barcodePrintConfirmed,
+  canPrint,
+  currentTask,
+  fetchJson,
+  flushPendingRealtimeRefresh: () => flushPendingRealtimeRefresh(),
+  isStoredTask,
+  modeConfig,
+  persistAllocation,
+  printingAllBarcodes,
+  sampleCodesModalTask,
+  sampleCodesModalVisible,
+  selectedTaskId,
+  showWorkbenchFeedback,
 });
-
-const buildBarcodeSvg = (value) => buildQrCodeSvg(value);
-
-const resolveBarcodeValue = (barcode, tray) => String(
-  barcode?.barcodeContent
-  || tray?.barcode?.barcodeContent
-  || buildTrayQrPayload(barcode?.barcodeNo || tray?.barcode?.barcodeNo || tray?.trayNo)
-  || "--",
-).trim() || "--";
-
-const resolveBarcodeDisplayNo = (barcode, tray) => String(
-  barcode?.barcodeNo
-  || tray?.barcode?.barcodeNo
-  || tray?.trayNo
-  || resolveBarcodeValue(barcode, tray),
-).trim() || "--";
-
-const persistAllocation = async (showMessage = true, { allowExperimentMode = false } = {}) => {
-  if (!selectedTaskId.value || isStoredTask.value) return false;
-  const canPersist = allowExperimentMode ? canPersistAllocationDraft.value : canSaveAllocation.value;
-  if (!canPersist) {
-    const message = allocationValidationMessage.value || "托盘分配尚未完成，请检查实验与托盘关系。";
-    if (showMessage) showWorkbenchFeedback(message, "warning");
-    return false;
-  }
-  try {
-    await refreshWorkspaceSaveGuards();
-    const canPersistAfterRefresh = allowExperimentMode ? canPersistAllocationDraft.value : canSaveAllocation.value;
-    if (!canPersistAfterRefresh) {
-      const message = allocationValidationMessage.value || "托盘分配尚未完成，请检查实验与托盘关系。";
-      if (showMessage) showWorkbenchFeedback(message, "warning");
-      return false;
-    }
-    const storageUpdateMeta = trackOwnStorageRequest("allocate");
-    const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/allocate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-MES-Update-Source": storageUpdateMeta.source,
-        "X-MES-Update-Request-Id": storageUpdateMeta.requestId,
-      },
-      body: JSON.stringify(buildAllocationPayload()),
-    });
-    applyWorkspace(payload.workspace);
-    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, {
-      detail: { source: "transfer-workbench", reason: "allocate", requestId: storageUpdateMeta.requestId },
-    }));
-    flushPendingRealtimeRefresh();
-    if (showMessage) showWorkbenchFeedback(payload.message, "success");
-    return true;
-  } catch (error) {
-    if (showMessage) {
-      showWorkbenchFeedback(error instanceof Error ? error.message : "托盘分配保存失败，请重试。", "error");
-    }
-    return false;
-  }
-};
-
-const closeBarcodeModal = () => {
-  barcodeModalVisible.value = false;
-  flushPendingRealtimeRefresh();
-};
-
-const buildBarcodeSummaryText = (taskNo, sampleCount) => `任务编号：${taskNo || "--"} | 样品数量：${sampleCount ?? 0}`;
-
-const buildPrintDocument = () => {
-  const cards = barcodePreviewItems.value.map((item) => `
-    <article class="print-card">
-      <header>
-        <strong>${encodeHtml(item.barcodeDisplayNo)}</strong>
-      </header>
-      <div class="print-card-body">
-        <div class="print-qr-panel">
-          <div class="print-barcode">${item.barcodeSvg || ""}</div>
-        </div>
-        <div class="print-info-panel">
-          <div class="print-field">
-            <span>托盘</span>
-            <strong>${encodeHtml(item.trayNo)}</strong>
-          </div>
-          <div class="print-field">
-            <span>内容</span>
-            <strong>${encodeHtml(item.summaryText || "-")}</strong>
-          </div>
-          <div class="print-field print-field--samples">
-            <span>样品编号</span>
-            <strong>${encodeHtml(item.sampleText || "-")}</strong>
-          </div>
-          ${buildPrintExperimentTags(item)}
-        </div>
-      </div>
-    </article>
-  `).join("");
-
-  return `
-    <!doctype html>
-    <html lang="zh-CN">
-      <head>
-        <meta charset="UTF-8" />
-        <title>${encodeHtml(modeConfig.value.printTitle)}</title>
-        <style>
-          @page { margin: 0; }
-          body { margin: 0; font-family: "IBM Plex Sans", "Microsoft YaHei", sans-serif; color: #10233f; }
-          .print-grid { display: grid; gap: 0; }
-          .print-card { box-sizing: border-box; width: 100%; border: 1px solid #cbd5e1; border-radius: 16px; padding: 16px; break-inside: avoid; }
-          .print-card header { margin-bottom: 14px; }
-          .print-card header strong { font-size: 16px; }
-          .print-card-body { display: grid; grid-template-columns: 252px minmax(0, 1fr); gap: 18px; align-items: start; }
-          .print-qr-panel { display: flex; align-items: flex-start; justify-content: center; }
-          .print-barcode { display: flex; align-items: center; justify-content: center; width: 244px; min-height: 244px; margin: 0; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; }
-          .print-barcode svg { width: 220px; height: 220px; flex: 0 0 auto; }
-          .print-info-panel { display: grid; gap: 10px; min-width: 0; }
-          .print-field { padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
-          .print-field span { display: block; margin-bottom: 5px; color: #64748b; font-size: 12px; font-weight: 700; }
-          .print-field strong { display: block; color: #0f172a; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
-          .print-field--samples strong { font-weight: 600; }
-          .print-experiment-tags { justify-content: flex-start; }
-          .transfer-tray-experiment-tags { display: flex; flex-wrap: wrap; gap: 8px; }
-          .transfer-tray-experiment-tag {
-            display: inline-flex;
-            align-items: center;
-            min-height: 28px;
-            padding: 4px 10px;
-            border-radius: 999px;
-            font-size: 12px;
-            font-weight: 700;
-            line-height: 1;
-            background: var(--tray-experiment-bg, rgba(14, 165, 233, 0.14));
-            border: 1px solid var(--tray-experiment-border, rgba(14, 165, 233, 0.45));
-            color: var(--tray-experiment-color, #7dd3fc);
-          }
-          @media screen and (max-width: 680px) {
-            .print-card-body { grid-template-columns: 1fr; }
-            .print-qr-panel { justify-content: flex-start; }
-          }
-${buildExperimentTagPrintCss()}
-        </style>
-      </head>
-      <body>
-        <section class="print-grid">${cards}</section>
-      </body>
-    </html>
-  `;
-};
-
-const printBarcodePreview = async () => {
-  const printFrame = document.createElement("iframe");
-  printFrame.setAttribute("aria-hidden", "true");
-  printFrame.style.position = "fixed";
-  printFrame.style.right = "0";
-  printFrame.style.bottom = "0";
-  printFrame.style.width = "0";
-  printFrame.style.height = "0";
-  printFrame.style.border = "0";
-  document.body.appendChild(printFrame);
-
-  const frameDocument = printFrame.contentDocument || printFrame.contentWindow?.document;
-  const frameWindow = printFrame.contentWindow;
-  if (!frameDocument || !frameWindow) {
-    document.body.removeChild(printFrame);
-    throw new Error("打印载体初始化失败");
-  }
-
-  if (typeof frameDocument.open === "function") {
-    frameDocument.open();
-  }
-  frameDocument.write(buildPrintDocument());
-  frameDocument.close();
-  await Promise.resolve();
-  await nextTick();
-
-  if (typeof frameWindow.focus === "function") {
-    try {
-      frameWindow.focus();
-    } catch {
-      // Some embedded print frames cannot receive focus; printing can continue.
-    }
-  }
-  if (typeof frameWindow.print === "function") {
-    try {
-      frameWindow.print();
-    } catch {
-      // Browser print dialogs may be blocked in tests or restricted contexts.
-    }
-  }
-
-  window.setTimeout(() => {
-    if (printFrame.parentNode) {
-      printFrame.parentNode.removeChild(printFrame);
-    }
-  }, 0);
-};
-
-const confirmBarcodePrint = async () => {
-  if (!barcodePreviewItems.value.length) {
-    showWorkbenchFeedback("当前没有可打印的二维码。", "warning");
-    return;
-  }
-  try {
-    await printBarcodePreview();
-  } catch (error) {
-    showWorkbenchFeedback(error instanceof Error ? error.message : "打印失败，请重试。", "error");
-    return;
-  }
-  barcodePrintConfirmed.value = true;
-  barcodeModalVisible.value = false;
-  flushPendingRealtimeRefresh();
-  showWorkbenchFeedback("已发起二维码打印。", "success");
-};
-
-const printAllTrayBarcodes = async () => {
-  if (!canPrint.value) return;
-  printingAllBarcodes.value = true;
-  try {
-    if (!isStoredTask.value && !allocationSaved.value) {
-      const saved = await persistAllocation(false);
-      if (!saved) return;
-    }
-    const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/print-barcodes`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ barcodeType: "QRCODE" }),
-    });
-    applyWorkspace(payload.workspace);
-    barcodePreviewItems.value = await Promise.all((payload.barcodes || []).map(async (barcode) => {
-      const tray = assignedTrays.value.find((item) => item.trayId === barcode.objectId);
-      const barcodeValue = resolveBarcodeValue(barcode, tray);
-      return {
-        ...barcode,
-        barcodeDisplayNo: resolveBarcodeDisplayNo(barcode, tray),
-        barcodeValue,
-        trayNo: tray?.trayNo || "--",
-        samples: tray?.samples?.map((sample) => sample.sampleNo) || [],
-        summaryText: buildBarcodeSummaryText(currentTask.value?.taskNo, tray?.samples?.length || 0),
-        sampleText: formatSampleCodePreview(tray?.samples?.map((sample) => sample.sampleNo)),
-        experimentLabels: Array.isArray(tray?.experimentLabels) ? [...tray.experimentLabels] : [],
-        experimentCodes: Array.isArray(tray?.experimentCodes) ? [...tray.experimentCodes] : [],
-        barcodeSvg: await buildBarcodeSvg(barcodeValue),
-      };
-    }));
-    barcodePrintConfirmed.value = false;
-    barcodeModalVisible.value = true;
-    sampleCodesModalVisible.value = false;
-    sampleCodesModalTask.value = null;
-    showWorkbenchFeedback(payload.message, "success");
-  } finally {
-    printingAllBarcodes.value = false;
-    flushPendingRealtimeRefresh();
-  }
-};
-
-const confirmStorage = async () => {
-  if (!canConfirm.value) return;
-  if (!allocationSaved.value) {
-    const saved = await persistAllocation(false, { allowExperimentMode: true });
-    if (!saved) return;
-  }
-  const storageUpdateMeta = trackOwnStorageRequest("confirm-storage");
-  const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/confirm-storage`, {
-    method: "POST",
-    headers: {
-      "X-MES-Update-Source": storageUpdateMeta.source,
-      "X-MES-Update-Request-Id": storageUpdateMeta.requestId,
-    },
-  });
-  const confirmedTaskId = selectedTaskId.value;
-  const confirmedProgress = payload?.workspace?.task?.taskProgress || "已确认入库";
-  applyWorkspace(payload.workspace);
-  applyConfirmedStorageState(confirmedProgress);
-  if (confirmedTaskId) {
-    updateOverviewTaskStatus(confirmedTaskId, storedStatus, confirmedProgress);
-  }
-  showWorkbenchFeedback(payload.message, "success");
-  window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, {
-    detail: { source: "transfer-workbench", reason: "confirm-storage", requestId: storageUpdateMeta.requestId },
-  }));
-  flushPendingRealtimeRefresh();
-  taskStatusFilter.value = storedStatus;
-};
-
-const executeReloadWorkspace = async () => {
-  if (!canResetWorkspace.value) return;
-  clearWorkbenchFeedback();
-  barcodeModalVisible.value = false;
-  barcodePreviewItems.value = [];
-  sampleCodesModalVisible.value = false;
-  sampleCodesModalTask.value = null;
-  const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/reload`, { method: "POST" });
-  applyWorkspace(payload.workspace);
-  activeTrayIndex.value = -1;
-  updateOverviewTaskStatus(selectedTaskId.value, pendingStatus, payload?.workspace?.task?.taskProgress || "样品已送达，待打印二维码");
-  showWorkbenchFeedback(props.mode === "pre-allocation"
-    ? (normalizeTaskStatus(payload?.workspace?.task?.taskStatus) === storedStatus ? "到货任务仅支持查看与打印。" : "任务已重新分配，可继续调整托盘方案。")
-    : payload.message, normalizeTaskStatus(payload?.workspace?.task?.taskStatus) === storedStatus ? "warning" : "success");
-  await loadBootstrap();
-  window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: "transfer-workbench", reason: "reload" } }));
-  flushPendingRealtimeRefresh();
-  taskStatusFilter.value = pendingStatus;
-};
-
-const reloadWorkspace = async () => {
-  if (!canResetWorkspace.value) return;
-  if (currentTask.value?.hasSchedules) {
-    openScheduleResetConfirm();
-    return;
-  }
-  await executeReloadWorkspace();
-};
-
 const confirmScheduleReset = async () => {
   closeScheduleResetConfirm();
   await executeReloadWorkspace();

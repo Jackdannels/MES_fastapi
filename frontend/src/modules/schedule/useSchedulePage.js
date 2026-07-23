@@ -1,44 +1,31 @@
-// 负责排程表单、看板状态、甘特行数据和持久化流程。
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
-import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { serverNowDate } from "@/lib/serverClock";
 import {
   analyzeTaskTrayConflict,
-  AXIS_CODE_OPTIONS,
   buildConflictRows,
-  buildExperimentOptions,
   buildGanttRows,
   buildLabOptions,
-  buildManualTaskOptions,
-  buildManualTimeSlotOptions,
   buildScheduleEditForm,
   buildScheduleRescheduleForm,
   buildScheduleRows,
   buildSummaryCards,
   buildTaskScheduledOverlays,
-  createManualScheduleForm,
   createScheduleEditForm,
   createScheduleRecord,
   deleteScheduleRecord,
   formatDateTime,
   isRetentionDevice,
-  isDeviceUnavailableForSchedule,
   normalizeText,
-  resolveDeviceUnavailableReason,
-  isManualScheduleSelectionLegal,
   PLANNED_DURATION_MAX_DAYS,
   PLANNED_DURATION_MAX_HOURS,
-  resolveLegalManualScheduleState,
-  resolveAxisScheduleDeviceLock,
   resolveScheduleTimes,
   STATUS_SCHEDULED,
   toLocalDateValue,
-  toLocalTimeValue,
   updateScheduleRecord,
 } from "./model";
 import { filterActiveTasks } from "@/lib/taskArchive";
@@ -47,9 +34,8 @@ import { readMasterLabs } from "@/lib/masterDataApi";
 import { RUNNING_SCHEDULE_RESCHEDULE_MESSAGE } from "@/lib/runningExperimentGuards";
 import { writeStorageSchedulePatch } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
-
-// 统一管理创建、编辑和查看排程记录所需的响应式状态。
+import { useScheduleFormState } from "./useScheduleFormState";
+import { useScheduleRealtime } from "./useScheduleRealtime";
 
 function useSchedulePage() {
   const { loadSnapshot } = useStorageSnapshot([
@@ -78,10 +64,6 @@ function useSchedulePage() {
   const rawStreams = ref([]);
   const rawTasks = ref([]);
   const masterLabs = ref([]);
-  const scheduleForm = ref(createManualScheduleForm());
-  const editForm = ref(createScheduleEditForm());
-  const scheduleWarning = ref("");
-  const editWarning = ref("");
   const scheduleSearch = ref("");
   const conflictSearch = ref("");
   const now = ref(serverNowDate());
@@ -93,12 +75,9 @@ function useSchedulePage() {
   const scheduleConflictModal = useDialogState();
   const exceptionModal = useDialogState();
   const pendingScheduleDraft = ref(null);
-  const scheduleFormWatchSuspended = ref(false);
   const ignoredStorageRequestIds = ref(new Set());
   let schedulePatchRequestSeq = 0;
   let clockTimer = null;
-  let flushPendingStorageRefresh = () => false;
-  let hasPendingSamplesRefresh = false;
 
   const buildFailureMessage = (prefix, error) => {
     const detail = normalizeText(error instanceof Error ? error.message : "");
@@ -136,80 +115,50 @@ function useSchedulePage() {
     return rawSchedules.value.filter((schedule) => activeTaskCodes.value.has(normalizeText(schedule?.task_code)));
   });
 
-  const taskOptions = computed(() =>
-    buildManualTaskOptions({
-      experiments: rawExperiments.value,
-      experimentRunSteps: rawExperimentRunSteps.value,
-      experimentTrays: rawExperimentTrays.value,
-      samples: rawSamples.value,
-      schedules: activeSchedules.value,
-      tasks: rawTasks.value,
-    }),
-  );
+  const {
+    buildLabOptionItems,
+    editCustomStartMinTime,
+    editForm,
+    editWarning,
+    experimentOptions,
+    isScheduleAxisSelected,
+    maintenanceLabNotice,
+    manualLabOptionItems,
+    manualLabOptions,
+    manualTimeSlotOptions,
+    resetScheduleForm,
+    resetScheduleFormForTask,
+    replaceScheduleForm,
+    scheduleAxisCodes,
+    scheduleAxisDisplayOptions,
+    scheduleAxisOptions,
+    scheduleAxisRequirementOptions,
+    scheduleCompletedAxisOptions,
+    scheduleCustomStartMinTime,
+    scheduleForm,
+    scheduleWarning,
+    selectedAxisLabel,
+    selectedExperimentOption,
+    selectedTaskOption,
+    setEditDurationUnit,
+    setScheduleDurationUnit,
+    showAxisSelector,
+    syncLabIdentityToForm,
+    syncManualScheduleLegality,
+    taskOptions,
+    toggleScheduleAxis,
+  } = useScheduleFormState({
+    activeSchedules,
+    masterLabs,
+    now,
+    rawDevices,
+    rawExperiments,
+    rawExperimentRunSteps,
+    rawExperimentTrays,
+    rawSamples,
+    rawTasks,
+  });
 
-  const experimentOptions = computed(() =>
-    buildExperimentOptions({
-      taskCode: scheduleForm.value.task_code,
-      experiments: rawExperiments.value,
-      experimentRunSteps: rawExperimentRunSteps.value,
-      samples: rawSamples.value,
-      schedules: activeSchedules.value,
-      tasks: rawTasks.value,
-    }),
-  );
-
-  const selectedTaskOption = computed(
-    () => taskOptions.value.find((option) => option.code === normalizeText(scheduleForm.value.task_code)) || null,
-  );
-  const selectedExperimentOption = computed(
-    () =>
-      experimentOptions.value.find((option) => option.code === normalizeText(scheduleForm.value.experiment_code)) || null,
-  );
-  const axisOptionByCode = new Map(AXIS_CODE_OPTIONS.map((option) => [option.code, option]));
-  const buildScheduleAxisOption = (axisCode) => {
-    const normalizedAxisCode = normalizeText(axisCode).toLowerCase();
-    return axisOptionByCode.get(normalizedAxisCode) || {
-      code: normalizedAxisCode,
-      label: normalizedAxisCode.toUpperCase(),
-      testId: normalizedAxisCode.replace("+", "plus").replace("-", "minus"),
-    };
-  };
-  const scheduleAxisRequirementOptions = computed(() => {
-    const axisCodes = normalizeAxisCodes(selectedExperimentOption.value?.axisCodes);
-    return axisCodes.map(buildScheduleAxisOption);
-  });
-  const scheduleCompletedAxisOptions = computed(() => {
-    const completedAxisCodes = normalizeAxisCodes(selectedExperimentOption.value?.completedAxisCodes);
-    return completedAxisCodes.map(buildScheduleAxisOption);
-  });
-  const scheduleAxisOptions = computed(() => {
-    const remainingAxisCodes = normalizeAxisCodes(selectedExperimentOption.value?.remainingAxisCodes);
-    return remainingAxisCodes.map(buildScheduleAxisOption);
-  });
-  const scheduleAxisCodes = computed(() => {
-    return normalizeAxisCodes(scheduleForm.value.axis_codes);
-  });
-  const scheduleAxisDisplayOptions = computed(() => scheduleAxisCodes.value.map(buildScheduleAxisOption));
-  const showAxisSelector = computed(() =>
-    Boolean(
-      selectedExperimentOption.value?.supportsAxisScheduling &&
-      (scheduleAxisRequirementOptions.value.length > 0 || scheduleAxisOptions.value.length > 0),
-    ),
-  );
-  const lockedAxisScheduleDevice = computed(() =>
-    resolveAxisScheduleDeviceLock({
-      experimentCode: scheduleForm.value.experiment_code,
-      experiments: rawExperiments.value,
-      form: scheduleForm.value,
-      schedules: activeSchedules.value,
-    }),
-  );
-  const selectedAxisLabel = computed(() =>
-    scheduleAxisCodes.value
-      .map((code) => normalizeText(code).toUpperCase())
-      .filter(Boolean)
-      .join(" / "),
-  );
   const normalizeScheduleAxisCodes = (schedule) =>
     normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes);
   const uniqueTextList = (values) => {
@@ -235,136 +184,6 @@ function useSchedulePage() {
     normalizeText(
       rawExperiments.value.find((entry) => normalizeText(entry?.experiment_code) === normalizeText(experimentCode))?.experiment_name,
     );
-
-  const findDevice = (deviceCode) =>
-    rawDevices.value.find((entry) => normalizeText(entry?.code) === normalizeText(deviceCode));
-  const resolveMasterLabName = (lab) =>
-    normalizeText(lab?.name || lab?.labName || lab?.lab_name || lab?.code || lab?.labCode || lab?.lab_code);
-  const resolveMasterLabCode = (lab) => normalizeText(lab?.code || lab?.labCode || lab?.lab_code);
-  const resolveMasterLabId = (lab) => lab?.lab_id ?? lab?.labId ?? lab?.id ?? "";
-  const findMasterLabByOptionValue = (value) => {
-    const normalizedValue = normalizeText(value);
-    if (!normalizedValue) {
-      return null;
-    }
-    return (
-      masterLabs.value.find((lab) => {
-        const labName = resolveMasterLabName(lab);
-        const labCode = resolveMasterLabCode(lab);
-        return labName === normalizedValue || labCode === normalizedValue;
-      }) || null
-    );
-  };
-  const buildLabIdentity = (value) => {
-    const lab = findMasterLabByOptionValue(value);
-    return {
-      lab_code: resolveMasterLabCode(lab),
-      lab_id: resolveMasterLabId(lab),
-    };
-  };
-  const syncLabIdentityToForm = (form, optionItems = []) => {
-    const selectedDevice = normalizeText(form?.device);
-    if (!form || !selectedDevice) {
-      if (form) {
-        form.lab_code = "";
-        form.lab_id = "";
-      }
-      return;
-    }
-    const option = (Array.isArray(optionItems) ? optionItems : [])
-      .find((entry) => normalizeText(entry?.value) === selectedDevice);
-    const identity = option || buildLabIdentity(selectedDevice);
-    form.lab_code = normalizeText(identity?.lab_code ?? identity?.labCode);
-    form.lab_id = identity?.lab_id ?? identity?.labId ?? "";
-  };
-  const buildUnavailableLabTitle = (deviceCode, device) => {
-    const name = normalizeText(deviceCode);
-    if (!name || !isDeviceUnavailableForSchedule(device, now.value)) {
-      return "";
-    }
-    const reason = resolveDeviceUnavailableReason(device, now.value);
-    if (reason === "disabled") {
-      return `${name}已停用，暂不可排程`;
-    }
-    if (reason === "unavailable") {
-      return `${name}不可用，暂不可排程`;
-    }
-    const startAt = normalizeText(device?.maintenance_start_at ?? device?.maintenanceStartAt);
-    const endAt = normalizeText(device?.maintenance_end_at ?? device?.maintenanceEndAt);
-    const range = startAt || endAt ? `（${formatDateTime(startAt)} - ${formatDateTime(endAt)}）` : "";
-    return `${name}维修中，暂不可排程${range}`;
-  };
-  const buildLabOptionItems = ({ options, selectedDevice = "" }) =>
-    (Array.isArray(options) ? options : []).map((option) => {
-      const value = normalizeText(option);
-      const device = findDevice(value);
-      const disabled = normalizeText(selectedDevice) !== value && isDeviceUnavailableForSchedule(device, now.value);
-      const title = disabled ? buildUnavailableLabTitle(value, device) : "";
-      const identity = buildLabIdentity(value);
-      return {
-        disabled,
-        label: value,
-        lab_code: identity.lab_code,
-        lab_id: identity.lab_id,
-        title,
-        value,
-      };
-    });
-  const buildMaintenanceLabNotice = (options = []) => {
-    const disabledOptions = (Array.isArray(options) ? options : [])
-      .filter((option) => option?.disabled && normalizeText(option?.title));
-    if (disabledOptions.length === 0) {
-      return "";
-    }
-    if (disabledOptions.length === 1) {
-      return normalizeText(disabledOptions[0]?.title);
-    }
-    const groupedBySuffix = [];
-    disabledOptions.forEach((option) => {
-      const label = normalizeText(option?.label);
-      const title = normalizeText(option?.title);
-      const suffix = label && title.startsWith(label) ? title.slice(label.length) : "";
-      if (!suffix) {
-        groupedBySuffix.push({ raw: title });
-        return;
-      }
-      const group = groupedBySuffix.find((entry) => entry.suffix === suffix);
-      if (group) {
-        group.labels.push(label);
-        return;
-      }
-      groupedBySuffix.push({ labels: [label], suffix });
-    });
-    return groupedBySuffix
-      .map((group) => group.raw || `${group.labels.join("、")}${group.suffix}`)
-      .join("；");
-  };
-
-  // 可选实验室由当前页签、任务试验类型以及已选设备共同决定。
-  const manualLabOptionItems = computed(() =>
-    buildLabOptionItems({
-      options: buildLabOptions({
-        masterLabs: masterLabs.value,
-        selectedDevice: normalizeText(scheduleForm.value.device),
-        testType: selectedExperimentOption.value?.requiredDevice || selectedTaskOption.value?.testType || "",
-      }).filter((option) => !lockedAxisScheduleDevice.value || normalizeText(option) === lockedAxisScheduleDevice.value),
-      selectedDevice: normalizeText(scheduleForm.value.device),
-    }),
-  );
-  const manualLabOptions = computed(() =>
-    manualLabOptionItems.value.filter((option) => !option.disabled).map((option) => option.value),
-  );
-  const maintenanceLabNotice = computed(() =>
-    buildMaintenanceLabNotice(manualLabOptionItems.value),
-  );
-  const manualTimeSlotOptions = computed(() =>
-    buildManualTimeSlotOptions({
-      device: scheduleForm.value.device,
-      now: now.value,
-      scheduleDate: scheduleForm.value.schedule_date,
-      schedules: activeSchedules.value,
-    }),
-  );
 
   const scheduleRows = computed(() => buildScheduleRows({
     experimentTrays: rawExperimentTrays.value,
@@ -396,18 +215,6 @@ function useSchedulePage() {
   });
   const canShowPreviousGanttWindow = computed(() => ganttWindowOffsetDays.value > 0);
   const canResetGanttWindow = computed(() => ganttWindowOffsetDays.value !== 0);
-  const resolveCustomStartMinTime = (form) => {
-    if (normalizeText(form?.time_slot) !== "custom") {
-      return "";
-    }
-    const selectedDate = normalizeText(form?.schedule_date);
-    if (!selectedDate || selectedDate !== toLocalDateValue(now.value)) {
-      return "";
-    }
-    return toLocalTimeValue(now.value);
-  };
-  const scheduleCustomStartMinTime = computed(() => resolveCustomStartMinTime(scheduleForm.value));
-  const editCustomStartMinTime = computed(() => resolveCustomStartMinTime(editForm.value));
   const getTodayStart = () => new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate());
   const getGanttDateOffset = (dateValue) => {
     const target = new Date(`${dateValue}T00:00:00`);
@@ -666,39 +473,6 @@ function useSchedulePage() {
     return patch;
   };
 
-  const resetScheduleForm = () => {
-    scheduleForm.value = createManualScheduleForm(now.value);
-    scheduleWarning.value = "";
-  };
-
-  const clearScheduleAxes = () => {
-    scheduleForm.value.axis_codes = [];
-    scheduleForm.value.axis_batch_no = "";
-  };
-
-  const toggleScheduleAxis = (axisCode) => {
-    const normalizedAxisCode = normalizeText(axisCode).toLowerCase();
-    if (!normalizedAxisCode) {
-      return;
-    }
-    const selectableAxisCodes = new Set(scheduleAxisOptions.value.map((option) => option.code));
-    if (!selectableAxisCodes.has(normalizedAxisCode)) {
-      return;
-    }
-    const selected = new Set(scheduleAxisCodes.value);
-    if (selected.has(normalizedAxisCode)) {
-      selected.delete(normalizedAxisCode);
-    } else {
-      selected.add(normalizedAxisCode);
-    }
-    scheduleForm.value.axis_codes = scheduleAxisOptions.value
-      .map((option) => option.code)
-      .filter((code) => selected.has(code));
-    scheduleWarning.value = "";
-  };
-
-  const isScheduleAxisSelected = (axisCode) => scheduleAxisCodes.value.includes(normalizeText(axisCode).toLowerCase());
-
   const openExceptionModal = () => {
     exceptionModal.openWith();
   };
@@ -706,96 +480,6 @@ function useSchedulePage() {
   const closeExceptionModal = () => {
     exceptionModal.close();
     flushPendingRealtimeRefresh();
-  };
-
-  const replaceScheduleForm = async (nextForm) => {
-    scheduleFormWatchSuspended.value = true;
-    scheduleForm.value = nextForm;
-    await nextTick();
-    scheduleFormWatchSuspended.value = false;
-  };
-
-  const normalizeDurationValue = (value, fallback, unit = "hours") => {
-    const parsed = Number.parseFloat(String(value ?? "").trim());
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      return fallback;
-    }
-    const max = unit === "days" ? PLANNED_DURATION_MAX_DAYS : PLANNED_DURATION_MAX_HOURS;
-    return Math.min(parsed, max);
-  };
-
-  const normalizeDayDurationValue = (value) => {
-    return Math.min(PLANNED_DURATION_MAX_DAYS, Math.max(0.5, Math.round(value * 2) / 2));
-  };
-
-  const normalizeHourDurationValue = (value) => {
-    return Math.min(PLANNED_DURATION_MAX_HOURS, Math.max(0.5, Math.round(value * 2) / 2));
-  };
-
-  const clampFormDurationValue = (form) => {
-    const unit = normalizeText(form?.planned_duration_unit) || "hours";
-    const max = unit === "days" ? PLANNED_DURATION_MAX_DAYS : PLANNED_DURATION_MAX_HOURS;
-    const parsed = Number.parseFloat(String(form?.planned_hours ?? "").trim());
-    if (Number.isFinite(parsed) && parsed > max) {
-      form.planned_hours = max;
-    }
-  };
-
-  const setDurationUnit = (formRef, nextUnit) => {
-    const form = formRef.value;
-    const currentUnit = normalizeText(form?.planned_duration_unit) || "hours";
-    if (currentUnit === nextUnit) {
-      return;
-    }
-    const currentValue = normalizeDurationValue(form?.planned_hours, currentUnit === "days" ? 0.5 : 3.5, currentUnit);
-    form.planned_duration_unit = nextUnit;
-    if (nextUnit === "days") {
-      form.planned_hours = normalizeDayDurationValue(Math.ceil(currentValue / 12) / 2);
-      return;
-    }
-    form.planned_hours = normalizeHourDurationValue(currentValue * 24);
-  };
-
-  const setScheduleDurationUnit = (unit) => {
-    setDurationUnit(scheduleForm, unit);
-  };
-
-  const setEditDurationUnit = (unit) => {
-    setDurationUnit(editForm, unit);
-  };
-
-  const resetScheduleFormForTask = async ({ taskCode, schedules }) => {
-    const baseForm = createManualScheduleForm(now.value);
-    const nextExperimentCode =
-      buildExperimentOptions({
-        taskCode,
-        experiments: rawExperiments.value,
-        experimentRunSteps: rawExperimentRunSteps.value,
-        samples: rawSamples.value,
-        schedules,
-        tasks: rawTasks.value,
-      })[0]?.code || "";
-
-    await replaceScheduleForm({
-      ...baseForm,
-      experiment_code: nextExperimentCode,
-      task_code: taskCode,
-    });
-    clearScheduleAxes();
-    scheduleWarning.value = "";
-  };
-
-  const syncManualScheduleLegality = () => {
-    // 固定时段如果已经落到非法时间片，会自动纠正到最近合法时段。
-    if (normalizeText(scheduleForm.value.time_slot) === "custom") {
-      return;
-    }
-
-    if (isManualScheduleSelectionLegal(scheduleForm.value, now.value)) {
-      return;
-    }
-
-    Object.assign(scheduleForm.value, resolveLegalManualScheduleState(now.value));
   };
 
   const syncRetentionClock = () => {
@@ -1167,59 +851,14 @@ function useSchedulePage() {
     }
   };
 
-  const refreshSchedulePageWithoutReset = () => {
-    void loadSchedulePage({ resetForm: false });
-  };
-
-  const isRealtimeRefreshPaused = () => Boolean(
-    scheduleDrawer.open.value
-    || taskDetailModal.open.value
-    || scheduleConflictModal.open.value
-    || exceptionModal.open.value
-  );
-
-  const flushPendingRealtimeRefresh = () => {
-    const flushedStorage = flushPendingStorageRefresh();
-    if (!hasPendingSamplesRefresh || isRealtimeRefreshPaused()) {
-      return flushedStorage;
-    }
-    hasPendingSamplesRefresh = false;
-    if (!flushedStorage) {
-      refreshSchedulePageWithoutReset();
-    }
-    return true;
-  };
-
-  const handleSamplesUpdated = () => {
-    if (isRealtimeRefreshPaused()) {
-      hasPendingSamplesRefresh = true;
-      return;
-    }
-    hasPendingSamplesRefresh = false;
-    refreshSchedulePageWithoutReset();
-  };
-
-  const storageRefresh = useStorageSnapshotRefresh({
-    keys: [
-      STORAGE_KEYS.conflicts,
-      STORAGE_KEYS.devices,
-      STORAGE_KEYS.experiments,
-      STORAGE_KEYS.experiment_runs,
-      STORAGE_KEYS.experiment_run_steps,
-      STORAGE_KEYS.experiment_run_trays,
-      STORAGE_KEYS.experiment_trays,
-      STORAGE_KEYS.samples,
-      STORAGE_KEYS.schedules,
-      STORAGE_KEYS.streams,
-      STORAGE_KEYS.tasks,
-    ],
-    refresh: () => loadSchedulePage({ resetForm: false }),
-    paused: isRealtimeRefreshPaused,
-    debounceMs: 100,
-    ignoreSource: "schedule-page",
-    ignoreRequestIds: () => ignoredStorageRequestIds.value,
+  const { flushPendingRealtimeRefresh } = useScheduleRealtime({
+    exceptionModal,
+    ignoredStorageRequestIds,
+    loadSchedulePage,
+    scheduleConflictModal,
+    scheduleDrawer,
+    taskDetailModal,
   });
-  flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
 
   const acknowledgeException = async (conflictId) => {
     const normalizedConflictId = normalizeText(conflictId);
@@ -1241,142 +880,15 @@ function useSchedulePage() {
     });
   };
 
-  watch(
-    () => scheduleForm.value.task_code,
-    () => {
-      if (scheduleFormWatchSuspended.value) {
-        return;
-      }
-      const firstExperimentCode = experimentOptions.value[0]?.code || "";
-      scheduleForm.value.experiment_code = firstExperimentCode;
-      scheduleForm.value.device = "";
-      scheduleForm.value.lab_code = "";
-      scheduleForm.value.lab_id = "";
-      clearScheduleAxes();
-      scheduleWarning.value = "";
-    },
-  );
-
-  watch(
-    () => scheduleForm.value.experiment_code,
-    () => {
-      if (scheduleFormWatchSuspended.value) {
-        return;
-      }
-      scheduleForm.value.device = "";
-      scheduleForm.value.lab_code = "";
-      scheduleForm.value.lab_id = "";
-      clearScheduleAxes();
-      scheduleWarning.value = "";
-    },
-  );
-
-  watch(
-    () => scheduleAxisOptions.value.map((option) => option.code).join("\u0001"),
-    () => {
-      if (scheduleFormWatchSuspended.value) {
-        return;
-      }
-      clearScheduleAxes();
-    },
-    { immediate: true },
-  );
-
-  const syncAutoSelectedScheduleDevice = () => {
-    if (scheduleFormWatchSuspended.value) {
-      return;
-    }
-    const availableLabs = manualLabOptionItems.value
-      .filter((option) => !option.disabled)
-      .filter((option) => normalizeText(option?.value));
-    const currentDevice = normalizeText(scheduleForm.value.device);
-    if (currentDevice && availableLabs.some((option) => normalizeText(option.value) === currentDevice)) {
-      return;
-    }
-    if (availableLabs.length === 1) {
-      scheduleForm.value.device = normalizeText(availableLabs[0].value);
-      syncLabIdentityToForm(scheduleForm.value, availableLabs);
-      return;
-    }
-    if (currentDevice) {
-      scheduleForm.value.device = "";
-      scheduleForm.value.lab_code = "";
-      scheduleForm.value.lab_id = "";
-    }
-  };
-
-  watch(
-    () => [scheduleForm.value.experiment_code, manualLabOptions.value.join("\u0001")],
-    syncAutoSelectedScheduleDevice,
-  );
-
-  watch(
-    () => scheduleForm.value.device,
-    () => {
-      syncLabIdentityToForm(scheduleForm.value, manualLabOptionItems.value);
-      scheduleWarning.value = "";
-    },
-  );
-
-  watch(
-    () => scheduleForm.value.time_slot,
-    (nextSlot) => {
-      if (nextSlot !== "custom") {
-        scheduleForm.value.custom_start = "";
-        scheduleForm.value.custom_end = "";
-      }
-    },
-  );
-
-  watch(
-    () => scheduleForm.value.planned_duration_unit,
-    () => {
-      clampFormDurationValue(scheduleForm.value);
-    },
-  );
-
-  watch(
-    () => scheduleForm.value.planned_hours,
-    () => {
-      clampFormDurationValue(scheduleForm.value);
-    },
-  );
-
-  watch(
-    () => editForm.value.time_slot,
-    (nextSlot) => {
-      if (nextSlot !== "custom") {
-        editForm.value.custom_start = "";
-        editForm.value.custom_end = "";
-      }
-    },
-  );
-
-  watch(
-    () => editForm.value.planned_duration_unit,
-    () => {
-      clampFormDurationValue(editForm.value);
-    },
-  );
-
-  watch(
-    () => editForm.value.planned_hours,
-    () => {
-      clampFormDurationValue(editForm.value);
-    },
-  );
-
   onMounted(() => {
     void loadSchedulePage();
     clockTimer = window.setInterval(syncRetentionClock, 1000);
-    window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
   });
 
   onBeforeUnmount(() => {
     if (clockTimer) {
       window.clearInterval(clockTimer);
     }
-    window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
   });
 
   const buildEditLabOptions = (selectedDevice, taskCode) => {

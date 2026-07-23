@@ -5,9 +5,7 @@ import { useRoute } from "vue-router";
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
-import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
-import { useTableControls } from "@/composables/useTableControls";
-import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes, matchesExperimentTypeFilter } from "@/lib/experimentTypes";
+import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes } from "@/lib/experimentTypes";
 import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { readMasterTestTypes } from "@/lib/masterDataApi";
@@ -15,19 +13,12 @@ import { notifyStorageSnapshotUpdated } from "@/lib/storageApi";
 import {
   acceptExternalTaskIntake as acceptExternalTaskIntakeByApi,
   createTask,
-  deleteTask as deleteTaskByApi,
-  readTasks,
   resetTasks as resetTasksByApi,
-  updateTask as updateTaskByApi,
 } from "@/lib/tasksApi";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import {
-  buildFilterOptions,
-  buildExternalIntakeRows,
   buildTaskCode,
   buildTaskEditForm,
   buildExperimentTypeAxisSummary,
-  buildTaskMetrics,
   buildTaskRows,
   buildTaskSampleCodes,
   DEFAULT_AXIS_CODES,
@@ -36,28 +27,25 @@ import {
   createTaskEditForm,
   createTaskIntakeForm,
   createTaskRecord,
-  deleteTaskSnapshot,
   formatAxisCodeLabel,
-  isAxisAwareExperimentType,
-  normalizeAxisCodes,
   normalizeAxisCodesByTestType,
   normalizeText,
   normalizeTaskSampleCount,
-  applyTaskSampleCodes,
-  splitSampleCodeText,
   syncTaskSamples,
-  updateTaskRecord,
-  validateSampleCodeDraft,
   validateTaskSampleCount,
   validateTaskTextFields,
 } from "./model";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
+import { useTasksTableView } from "./useTasksTableView";
+import { useTaskExperimentPickers } from "./useTaskExperimentPickers";
+import { useTasksPersistence } from "./useTasksPersistence";
+import { useTasksRealtime } from "./useTasksRealtime";
+import { useTaskMutationWorkflow } from "./useTaskMutationWorkflow";
 
 const TASK_INTAKE_HASH = "#task-intake-modal";
 const TASK_RESET_EVENT = "mes:open-task-reset";
 const EXTERNAL_TASK_INTAKE_EVENT = "mes:open-external-task-intake";
 const RESET_FEEDBACK_DISMISS_MS = 10000;
-const SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量";
 
 // 将存储快照与弹窗、抽屉、表格状态连接起来，供任务页统一使用。
 function useTasksPage() {
@@ -124,17 +112,33 @@ function useTasksPage() {
   const externalAcceptanceModal = useDialogState();
   const taskDrawer = useDialogState();
   let resetFeedbackTimer = null;
-  let flushPendingStorageRefresh = () => false;
-  let hasPendingSamplesRefresh = false;
 
-  const allRows = computed(() => buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value));
-  const externalTaskIntakeRows = computed(() => buildExternalIntakeRows(rawExternalTaskIntakes.value));
+  const {
+    currentPage,
+    externalTaskIntakeRows,
+    metrics,
+    pageCount,
+    query,
+    scopedStatusOptions,
+    setCurrentPage,
+    sortDirection,
+    sortKey,
+    testTypeOptions,
+    toggleSort,
+    visibleRows,
+  } = useTasksTableView({
+    rawExperiments,
+    rawExternalTaskIntakes,
+    rawSamples,
+    rawSchedules,
+    rawTasks,
+    selectedStatus,
+    selectedTestType,
+  });
   const selectedExternalSampleCodePreview = computed(() => {
     const row = selectedExternalTaskIntake.value;
     return row ? buildTaskSampleCodes(row.code, row.sampleCount, []).slice(0, 5) : [];
   });
-  const metrics = computed(() => buildTaskMetrics(allRows.value, externalTaskIntakeRows.value.length));
-  const filterOptions = computed(() => buildFilterOptions(allRows.value));
   const masterTestTypeOptions = computed(() =>
     buildExperimentTypeOptions(
       masterTestTypes.value
@@ -192,44 +196,6 @@ function useTasksPage() {
   const isCompletedTaskDetail = computed(() => normalizeText(editForm.value.status) === STATUS_COMPLETED);
   const isRunningTaskDetail = computed(() => normalizeText(editForm.value.status) === STATUS_RUNNING);
   const isTaskDetailLocked = computed(() => isCompletedTaskDetail.value || isRunningTaskDetail.value);
-
-  const typeFilteredRows = computed(() =>
-    allRows.value.filter((row) => {
-      // 实验类型先限定任务范围，状态选项和后续搜索都基于这个范围。
-      return matchesExperimentTypeFilter(selectedTestType.value, row.testType, row.experimentSummary);
-    }),
-  );
-
-  const scopedStatusOptions = computed(() => buildFilterOptions(typeFilteredRows.value).statusOptions);
-
-  const filteredRows = computed(() =>
-    typeFilteredRows.value.filter((row) => {
-      if (selectedStatus.value && row.displayStatus !== selectedStatus.value) {
-        return false;
-      }
-      return true;
-    }),
-  );
-
-  const { currentPage, pageCount, query, sortDirection, sortKey, visibleRows } = useTableControls({
-    rows: filteredRows,
-    searchFields: ["code", "name", "source", "experimentSummary", "testType", "displayStatus", "displayStatusLabel"],
-    pageSize: 8,
-  });
-
-  const toggleSort = (nextKey) => {
-    // 排序行为与其他页面保持一致：同列切换方向，换列恢复升序。
-    if (sortKey.value === nextKey) {
-      sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
-      return;
-    }
-    sortKey.value = nextKey;
-    sortDirection.value = "asc";
-  };
-
-  const setCurrentPage = (page) => {
-    currentPage.value = page;
-  };
 
   const syncIntakeDerivedFields = () => {
     intakeForm.value.test_type = intakeExperimentPlainSummary.value;
@@ -312,107 +278,6 @@ function useTasksPage() {
     flushPendingRealtimeRefresh();
   };
 
-  const toggleExperimentDraftType = (draftRef, experimentType) => {
-    const normalizedType = normalizeText(experimentType);
-    if (!normalizedType) {
-      return;
-    }
-    const currentTypes = Array.isArray(draftRef.value) ? [...draftRef.value] : [];
-    const targetIndex = currentTypes.findIndex((entry) => normalizeText(entry) === normalizedType);
-    if (targetIndex >= 0) {
-      currentTypes.splice(targetIndex, 1);
-    } else {
-      currentTypes.push(normalizedType);
-    }
-    draftRef.value = currentTypes;
-  };
-
-  const openIntakeExperimentPicker = () => {
-    intakeExperimentDraft.value = Array.isArray(intakeForm.value.test_types) ? [...intakeForm.value.test_types] : [];
-    intakeAxisDraftByTestType.value = normalizeAxisCodesByTestType(
-      intakeForm.value.axis_codes_by_test_type || intakeForm.value.axisCodesByTestType,
-      intakeExperimentDraft.value,
-    );
-    intakeExperimentModal.openWith({ id: "task-intake-test-types-modal" });
-  };
-
-  const closeIntakeExperimentPicker = () => {
-    intakeExperimentModal.close();
-    intakeExperimentDraft.value = [];
-    intakeAxisDraftByTestType.value = {};
-  };
-
-  const openIntakeAxisPicker = (experimentType) => {
-    const normalizedType = normalizeText(experimentType);
-    if (!isAxisAwareExperimentType(normalizedType)) {
-      return;
-    }
-    const existingCodes = normalizeAxisCodes(intakeAxisDraftByTestType.value?.[normalizedType]);
-    intakeAxisPickerType.value = normalizedType;
-    intakeAxisPickerCodes.value = existingCodes.length > 0 ? existingCodes : [...DEFAULT_AXIS_CODES];
-    intakeAxisModal.openWith({ id: "task-intake-axis-modal", experimentType: normalizedType });
-  };
-
-  const closeIntakeAxisPicker = () => {
-    intakeAxisModal.close();
-    intakeAxisPickerType.value = "";
-    intakeAxisPickerCodes.value = [];
-  };
-
-  const toggleIntakeAxisCode = (axisCode) => {
-    const normalizedCode = normalizeAxisCodes([axisCode])[0];
-    if (!normalizedCode) {
-      return;
-    }
-    const currentCodes = normalizeAxisCodes(intakeAxisPickerCodes.value);
-    intakeAxisPickerCodes.value = currentCodes.includes(normalizedCode)
-      ? currentCodes.filter((code) => code !== normalizedCode)
-      : [...currentCodes, normalizedCode];
-  };
-
-  const confirmIntakeAxisPicker = () => {
-    const experimentType = normalizeText(intakeAxisPickerType.value);
-    const axisCodes = normalizeAxisCodes(intakeAxisPickerCodes.value);
-    if (!experimentType || axisCodes.length === 0) {
-      intakeWarning.value = "请选择至少一个试验轴向";
-      return;
-    }
-    if (!intakeExperimentDraft.value.includes(experimentType)) {
-      intakeExperimentDraft.value = [...intakeExperimentDraft.value, experimentType];
-    }
-    intakeAxisDraftByTestType.value = {
-      ...intakeAxisDraftByTestType.value,
-      [experimentType]: axisCodes,
-    };
-    intakeWarning.value = "";
-    closeIntakeAxisPicker();
-  };
-
-  const toggleIntakeExperimentType = (experimentType) => {
-    const normalizedType = normalizeText(experimentType);
-    if (isAxisAwareExperimentType(normalizedType) && !intakeExperimentDraft.value.includes(normalizedType)) {
-      openIntakeAxisPicker(normalizedType);
-      return;
-    }
-    toggleExperimentDraftType(intakeExperimentDraft, experimentType);
-    if (isAxisAwareExperimentType(normalizedType)) {
-      const nextAxisDraft = { ...intakeAxisDraftByTestType.value };
-      delete nextAxisDraft[normalizedType];
-      intakeAxisDraftByTestType.value = nextAxisDraft;
-    }
-  };
-
-  const confirmIntakeExperimentPicker = () => {
-    intakeForm.value.test_types = Array.isArray(intakeExperimentDraft.value) ? [...intakeExperimentDraft.value] : [];
-    intakeForm.value.axis_codes_by_test_type = normalizeAxisCodesByTestType(
-      intakeAxisDraftByTestType.value,
-      intakeForm.value.test_types,
-    );
-    intakeWarning.value = "";
-    syncIntakeDerivedFields();
-    closeIntakeExperimentPicker();
-  };
-
   const sanitizeIntakeContactInfo = (event) => {
     const digits = normalizeText(event?.target?.value).replace(/\D/g, "").slice(0, 15);
     intakeForm.value.contact_info = digits;
@@ -421,105 +286,42 @@ function useTasksPage() {
     }
   };
 
-  const openEditExperimentPicker = () => {
-    if (isTaskDetailLocked.value) {
-      return;
-    }
-    editExperimentDraft.value = Array.isArray(editForm.value.test_types) ? [...editForm.value.test_types] : [];
-    editAxisDraftByTestType.value = normalizeAxisCodesByTestType(
-      editForm.value.axis_codes_by_test_type || editForm.value.axisCodesByTestType,
-      editExperimentDraft.value,
-    );
-    editExperimentModal.openWith({ id: "task-edit-test-types-modal" });
-  };
-
-  const closeEditExperimentPicker = () => {
-    editExperimentModal.close();
-    editAxisModal.close();
-    editExperimentDraft.value = [];
-    editAxisDraftByTestType.value = {};
-    editAxisPickerType.value = "";
-    editAxisPickerCodes.value = [];
-  };
-
-  const openEditAxisPicker = (experimentType) => {
-    const normalizedType = normalizeText(experimentType);
-    if (!isAxisAwareExperimentType(normalizedType)) {
-      return;
-    }
-    const existingCodes = normalizeAxisCodes(editAxisDraftByTestType.value?.[normalizedType]);
-    editAxisPickerType.value = normalizedType;
-    editAxisPickerCodes.value = existingCodes.length > 0 ? existingCodes : [...DEFAULT_AXIS_CODES];
-    editAxisModal.openWith({ id: "task-edit-axis-modal", experimentType: normalizedType });
-  };
-
-  const closeEditAxisPicker = () => {
-    editAxisModal.close();
-    editAxisPickerType.value = "";
-    editAxisPickerCodes.value = [];
-  };
-
-  const toggleEditAxisCode = (axisCode) => {
-    const normalizedCode = normalizeAxisCodes([axisCode])[0];
-    if (!normalizedCode) {
-      return;
-    }
-    const currentCodes = normalizeAxisCodes(editAxisPickerCodes.value);
-    editAxisPickerCodes.value = currentCodes.includes(normalizedCode)
-      ? currentCodes.filter((code) => code !== normalizedCode)
-      : [...currentCodes, normalizedCode];
-  };
-
-  const confirmEditAxisPicker = () => {
-    const experimentType = normalizeText(editAxisPickerType.value);
-    const axisCodes = normalizeAxisCodes(editAxisPickerCodes.value);
-    if (!experimentType || axisCodes.length === 0) {
-      editWarning.value = "请选择至少一个试验轴向";
-      return;
-    }
-    if (!editExperimentDraft.value.includes(experimentType)) {
-      editExperimentDraft.value = [...editExperimentDraft.value, experimentType];
-    }
-    editAxisDraftByTestType.value = {
-      ...editAxisDraftByTestType.value,
-      [experimentType]: axisCodes,
-    };
-    editWarning.value = "";
-    closeEditAxisPicker();
-  };
-
-  const removeEditAxisExperiment = () => {
-    const experimentType = normalizeText(editAxisPickerType.value);
-    if (!experimentType) {
-      closeEditAxisPicker();
-      return;
-    }
-    editExperimentDraft.value = editExperimentDraft.value.filter((entry) => normalizeText(entry) !== experimentType);
-    const nextAxisDraft = { ...editAxisDraftByTestType.value };
-    delete nextAxisDraft[experimentType];
-    editAxisDraftByTestType.value = nextAxisDraft;
-    closeEditAxisPicker();
-  };
-
-  const toggleEditExperimentType = (experimentType) => {
-    const normalizedType = normalizeText(experimentType);
-    if (isAxisAwareExperimentType(normalizedType)) {
-      openEditAxisPicker(normalizedType);
-      return;
-    }
-    toggleExperimentDraftType(editExperimentDraft, experimentType);
-  };
-
-  const confirmEditExperimentPicker = () => {
-    editForm.value.test_types = Array.isArray(editExperimentDraft.value) ? [...editExperimentDraft.value] : [];
-    editForm.value.test_type = buildExperimentTypeSummary(editForm.value.test_types);
-    editForm.value.axis_codes_by_test_type = normalizeAxisCodesByTestType(
-      editAxisDraftByTestType.value,
-      editForm.value.test_types,
-    );
-    editWarning.value = "";
-    closeEditExperimentPicker();
-  };
+  const {
+    closeEditAxisPicker,
+    closeEditExperimentPicker,
+    closeIntakeAxisPicker,
+    closeIntakeExperimentPicker,
+    confirmEditAxisPicker,
+    confirmEditExperimentPicker,
+    confirmIntakeAxisPicker,
+    confirmIntakeExperimentPicker,
+    openEditExperimentPicker,
+    openIntakeExperimentPicker,
+    removeEditAxisExperiment,
+    toggleEditAxisCode,
+    toggleEditExperimentType,
+    toggleIntakeAxisCode,
+    toggleIntakeExperimentType,
+  } = useTaskExperimentPickers({
+    editAxisDraftByTestType,
+    editAxisModal,
+    editAxisPickerCodes,
+    editAxisPickerType,
+    editExperimentDraft,
+    editExperimentModal,
+    editForm,
+    editWarning,
+    intakeAxisDraftByTestType,
+    intakeAxisModal,
+    intakeAxisPickerCodes,
+    intakeAxisPickerType,
+    intakeExperimentDraft,
+    intakeExperimentModal,
+    intakeForm,
+    intakeWarning,
+    isTaskDetailLocked,
+    syncIntakeDerivedFields,
+  });
 
   const openResetModal = () => {
     resetError.value = "";
@@ -793,46 +595,63 @@ function useTasksPage() {
     clearResetFeedback();
   };
 
-  const readAllTasks = () => readTasks({ includeArchived: true });
-
-  const buildSnapshotFallback = () => ({
-    [STORAGE_KEYS.external_task_intakes]: rawExternalTaskIntakes.value,
-    [STORAGE_KEYS.schedules]: rawSchedules.value,
-    [STORAGE_KEYS.samples]: rawSamples.value,
-    [STORAGE_KEYS.streams]: rawStreams.value,
-    [STORAGE_KEYS.experiments]: rawExperiments.value,
-    [STORAGE_KEYS.experiment_trays]: rawExperimentTrays.value,
-    [STORAGE_KEYS.experiment_samples]: rawExperimentSamples.value,
-    [STORAGE_KEYS.experiment_runs]: rawExperimentRuns.value,
-    [STORAGE_KEYS.experiment_run_trays]: rawExperimentRunTrays.value,
+  const {
+    applySnapshotArray,
+    buildSnapshotFallback,
+    persistRelated,
+    readAllTasks,
+  } = useTasksPersistence({
+    persistSnapshot,
+    rawExperimentRunTrays,
+    rawExperimentRuns,
+    rawExperimentSamples,
+    rawExperimentTrays,
+    rawExperiments,
+    rawExternalTaskIntakes,
+    rawSamples,
+    rawSchedules,
+    rawStreams,
   });
-
-  const applySnapshotArray = (snapshot, key, target) => {
-    if (Array.isArray(snapshot?.[key])) {
-      target.value = snapshot[key];
-    }
-  };
-
-  const persistRelated = async (updates) => {
-    // 任务已切到独立 API，当前只把关联集合继续写回快照桥接层。
-    await persistSnapshot(updates);
-    if (Array.isArray(updates[STORAGE_KEYS.schedules])) {
-      rawSchedules.value = updates[STORAGE_KEYS.schedules];
-    }
-    if (Array.isArray(updates[STORAGE_KEYS.samples])) {
-      rawSamples.value = updates[STORAGE_KEYS.samples];
-    }
-    if (Array.isArray(updates[STORAGE_KEYS.streams])) {
-      rawStreams.value = updates[STORAGE_KEYS.streams];
-    }
-    if (Array.isArray(updates[STORAGE_KEYS.experiment_trays])) {
-      rawExperimentTrays.value = updates[STORAGE_KEYS.experiment_trays];
-    }
-    if (Array.isArray(updates[STORAGE_KEYS.experiment_samples])) {
-      rawExperimentSamples.value = updates[STORAGE_KEYS.experiment_samples];
-    }
-  };
-
+  const {
+    closeScheduledExperimentRemovalConfirm,
+    confirmScheduledExperimentRemoval,
+    deleteTask,
+    saveSampleCodes,
+    updateTask,
+  } = useTaskMutationWorkflow({
+    arraysEqual,
+    buildFailureMessage,
+    closeSampleCodesEditor,
+    closeTaskDrawer,
+    editForm,
+    editWarning,
+    experimentCodeOf,
+    isTaskDetailLocked,
+    loadError,
+    loadTasksPage: (...args) => loadTasksPage(...args),
+    persistRelated,
+    rawExperimentRuns,
+    rawExperimentRunTrays,
+    rawExperiments,
+    rawExperimentSamples,
+    rawExperimentTrays,
+    rawSamples,
+    rawSchedules,
+    rawStreams,
+    rawTasks,
+    readAllTasks,
+    resolveScheduledExperimentRemoval,
+    resetSamplesForExperimentTypeChange,
+    sampleCodesDraft,
+    sampleCodesWarning,
+    sampleCountChanged,
+    scheduledExperimentRemovalDraft,
+    scheduledExperimentRemovalModal,
+    taskCodeOf,
+    taskDetailSampleCodes,
+    taskHasSelectedExperiments,
+    taskStorageConfirmed,
+  });
   const submitTask = async () => {
     const textWarning = validateTaskTextFields(intakeForm.value, { requireContact: true });
     if (textWarning) {
@@ -894,318 +713,6 @@ function useTasksPage() {
     }
     savedIntakeDraft.value = cloneIntakeForm(intakeForm.value);
     intakeWarning.value = "任务草稿已保存";
-  };
-
-  const closeScheduledExperimentRemovalConfirm = () => {
-    scheduledExperimentRemovalModal.close();
-    scheduledExperimentRemovalDraft.value = null;
-  };
-
-  const performTaskUpdate = async (draft, options = {}) => {
-    const { previousCode, tasks, updatedTask, affectedCodes = new Set(), experimentTypesChanged = false } = draft;
-    const confirmRemoval = Boolean(options.confirmRemoveScheduledExperiments);
-
-    try {
-      await updateTaskByApi(
-        editForm.value.id,
-        confirmRemoval
-          ? { ...updatedTask, confirm_remove_scheduled_experiments: true }
-          : updatedTask,
-      );
-      rawTasks.value = tasks;
-    } catch (error) {
-      editWarning.value = buildFailureMessage("任务更新失败，请稍后重试", error);
-      return;
-    }
-
-    // 任务号或样品数变化后，需要同步样品侧的任务绑定和编号。
-    const syncedSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode, { preserveExistingCodes: true });
-    const nextSamples = experimentTypesChanged
-      ? resetSamplesForExperimentTypeChange(syncedSamples, taskCodeOf(updatedTask))
-      : syncedSamples;
-    const relatedUpdates = {
-      [STORAGE_KEYS.samples]: nextSamples,
-    };
-    if (experimentTypesChanged) {
-      const taskCodesToClean = new Set([previousCode, taskCodeOf(updatedTask)].map((code) => normalizeText(code)).filter(Boolean));
-      relatedUpdates[STORAGE_KEYS.schedules] = rawSchedules.value.filter(
-        (schedule) => !taskCodesToClean.has(taskCodeOf(schedule)),
-      );
-      relatedUpdates[STORAGE_KEYS.experiment_trays] = rawExperimentTrays.value.filter(
-        (entry) => !taskCodesToClean.has(taskCodeOf(entry)),
-      );
-      relatedUpdates[STORAGE_KEYS.experiment_samples] = rawExperimentSamples.value.filter(
-        (entry) => !taskCodesToClean.has(taskCodeOf(entry)),
-      );
-    } else if (affectedCodes.size > 0) {
-      const taskCodesToClean = new Set([previousCode, taskCodeOf(updatedTask)].map((code) => normalizeText(code)).filter(Boolean));
-      relatedUpdates[STORAGE_KEYS.schedules] = rawSchedules.value.filter(
-        (schedule) => !(taskCodesToClean.has(taskCodeOf(schedule)) && affectedCodes.has(experimentCodeOf(schedule))),
-      );
-      relatedUpdates[STORAGE_KEYS.experiment_trays] = rawExperimentTrays.value.filter(
-        (entry) => !(taskCodesToClean.has(taskCodeOf(entry)) && affectedCodes.has(experimentCodeOf(entry))),
-      );
-      relatedUpdates[STORAGE_KEYS.experiment_samples] = rawExperimentSamples.value.filter(
-        (entry) => !(taskCodesToClean.has(taskCodeOf(entry)) && affectedCodes.has(experimentCodeOf(entry))),
-      );
-    }
-    try {
-      await persistRelated(relatedUpdates);
-    } catch (error) {
-      closeTaskDrawer();
-      loadError.value = buildFailureMessage("任务已更新，但关联数据保存失败，请刷新后确认", error);
-      return;
-    }
-
-    closeTaskDrawer();
-    closeScheduledExperimentRemovalConfirm();
-    try {
-      await loadTasksPage();
-      loadError.value = "";
-    } catch (error) {
-      loadError.value = buildFailureMessage("任务已更新，但任务列表刷新失败，请刷新后确认", error);
-    }
-  };
-
-  const updateCompletedTaskName = async (originalTask) => {
-    const updatedTask = {
-      ...originalTask,
-      name: normalizeText(editForm.value.name),
-    };
-    const textWarning = validateTaskTextFields(updatedTask);
-    if (textWarning) {
-      editWarning.value = textWarning;
-      return;
-    }
-
-    try {
-      const savedTask = await updateTaskByApi(editForm.value.id, updatedTask);
-      const nextTask = savedTask && typeof savedTask === "object" ? savedTask : updatedTask;
-      rawTasks.value = rawTasks.value.map((task) =>
-        normalizeText(task?.id) === normalizeText(editForm.value.id) ? nextTask : task
-      );
-    } catch (error) {
-      editWarning.value = buildFailureMessage("任务更新失败，请稍后重试", error);
-      return;
-    }
-
-    closeTaskDrawer();
-    try {
-      await loadTasksPage();
-      loadError.value = "";
-    } catch (error) {
-      loadError.value = buildFailureMessage("任务已更新，但任务列表刷新失败，请刷新后确认", error);
-    }
-  };
-
-  const updateTask = async () => {
-    const originalTask = rawTasks.value.find((task) => normalizeText(task?.id) === normalizeText(editForm.value.id));
-    if (!originalTask) {
-      return;
-    }
-    if (isTaskDetailLocked.value) {
-      await updateCompletedTaskName(originalTask);
-      return;
-    }
-    if (Array.isArray(editForm.value.test_types)) {
-      editForm.value.test_type = buildExperimentTypeSummary(editForm.value.test_types);
-    }
-    if (!Array.isArray(editForm.value.test_types) || editForm.value.test_types.length === 0) {
-      editWarning.value = "请选择至少一个试验类型";
-      return;
-    }
-    const sampleCountWarning = validateTaskSampleCount(editForm.value.sample_count);
-    if (sampleCountWarning) {
-      editWarning.value = sampleCountWarning;
-      return;
-    }
-    const { previousCode, tasks } = updateTaskRecord(rawTasks.value, editForm.value);
-    const updatedTask = tasks.find((task) => normalizeText(task?.id) === normalizeText(editForm.value.id));
-    if (!updatedTask) {
-      return;
-    }
-    const originalTypes = collectExperimentTypes(originalTask?.test_types, originalTask?.test_type);
-    const nextTypes = collectExperimentTypes(updatedTask?.test_types, updatedTask?.test_type);
-    const experimentTypesChanged = !arraysEqual(originalTypes, nextTypes);
-    if (sampleCountChanged(originalTask, updatedTask) && taskStorageConfirmed(originalTask, rawSamples.value) && taskHasSelectedExperiments(originalTask)) {
-      editWarning.value = SAMPLE_COUNT_LOCKED_MESSAGE;
-      return;
-    }
-    if (experimentTypesChanged && taskStorageConfirmed(originalTask, rawSamples.value)) {
-      editWarning.value = "该任务样品已在接驳区确认到货，不允许更改实验类型";
-      return;
-    }
-
-    const scheduledRemoval = experimentTypesChanged
-      ? resolveScheduledExperimentRemoval(taskCodeOf(originalTask), nextTypes)
-      : { affectedCodes: new Set(), schedules: [] };
-    const normalizedUpdatedTask = experimentTypesChanged
-      ? {
-          ...updatedTask,
-          status: "待排程",
-          transfer_status: "未入库",
-          tray_codes: [],
-        }
-      : updatedTask;
-    const normalizedTasks = experimentTypesChanged
-      ? tasks.map((task) => (normalizeText(task?.id) === normalizeText(editForm.value.id) ? normalizedUpdatedTask : task))
-      : tasks;
-    const draft = {
-      previousCode,
-      tasks: normalizedTasks,
-      updatedTask: normalizedUpdatedTask,
-      affectedCodes: scheduledRemoval.affectedCodes,
-      experimentTypesChanged,
-    };
-    if (experimentTypesChanged) {
-      scheduledExperimentRemovalDraft.value = draft;
-      scheduledExperimentRemovalModal.openWith({
-        id: "task-scheduled-removal-confirm",
-        schedules: scheduledRemoval.schedules,
-      });
-      return;
-    }
-
-    await performTaskUpdate(draft);
-  };
-
-  const confirmScheduledExperimentRemoval = async () => {
-    if (!scheduledExperimentRemovalDraft.value) {
-      closeScheduledExperimentRemovalConfirm();
-      return;
-    }
-    await performTaskUpdate(scheduledExperimentRemovalDraft.value, { confirmRemoveScheduledExperiments: true });
-  };
-
-  const saveSampleCodes = async () => {
-    const taskCode = normalizeText(editForm.value.code);
-    const taskId = normalizeText(editForm.value.id);
-    const codes = splitSampleCodeText(sampleCodesDraft.value);
-    const warning = validateSampleCodeDraft({
-      codes,
-      samples: rawSamples.value,
-      taskCode,
-    });
-    if (warning) {
-      sampleCodesWarning.value = warning;
-      return;
-    }
-    const originalTask = rawTasks.value.find((task) => normalizeText(task?.id) === taskId);
-    if (!originalTask) {
-      sampleCodesWarning.value = "当前任务不存在，请刷新后重试";
-      return;
-    }
-    const originalCount = normalizeTaskSampleCount(originalTask?.sample_count, taskDetailSampleCodes.value.length);
-    if (codes.length !== originalCount && taskStorageConfirmed(originalTask, rawSamples.value) && taskHasSelectedExperiments(originalTask)) {
-      sampleCodesWarning.value = SAMPLE_COUNT_LOCKED_MESSAGE;
-      return;
-    }
-
-    const updatedTask = {
-      ...originalTask,
-      sample_count: codes.length,
-      updated_at: formatLocalDateTime(),
-    };
-    try {
-      await updateTaskByApi(taskId, updatedTask);
-      rawTasks.value = rawTasks.value.map((task) => (normalizeText(task?.id) === taskId ? updatedTask : task));
-    } catch (error) {
-      sampleCodesWarning.value = buildFailureMessage("样品编号保存失败，请稍后重试", error);
-      return;
-    }
-
-    const currentCodes = taskDetailSampleCodes.value;
-    const sampleCodeMap = new Map();
-    currentCodes.forEach((code, index) => {
-      const nextCode = normalizeText(codes[index]);
-      const currentCode = normalizeText(code);
-      if (currentCode && nextCode && currentCode !== nextCode) {
-        sampleCodeMap.set(currentCode, nextCode);
-      }
-    });
-    const currentCodeSet = new Set(currentCodes.map((code) => normalizeText(code)).filter(Boolean));
-    const nextCodeSet = new Set(codes.map((code) => normalizeText(code)).filter(Boolean));
-    const nextSamples = applyTaskSampleCodes(rawSamples.value, updatedTask, codes);
-    const nextExperimentSamples = rawExperimentSamples.value.map((entry) => {
-      if (normalizeText(entry?.task_code) !== taskCode) {
-        return entry;
-      }
-      const currentCode = normalizeText(entry?.sample_code);
-      const nextCode = sampleCodeMap.get(currentCode) || currentCode;
-      return nextCode ? { ...entry, sample_code: nextCode } : entry;
-    }).filter((entry) => {
-      if (normalizeText(entry?.task_code) !== taskCode) {
-        return true;
-      }
-      const sampleCode = normalizeText(entry?.sample_code);
-      return !currentCodeSet.has(sampleCode) || nextCodeSet.has(sampleCode);
-    });
-    try {
-      await persistRelated({
-        [STORAGE_KEYS.samples]: nextSamples,
-        [STORAGE_KEYS.experiment_samples]: nextExperimentSamples,
-      });
-    } catch (error) {
-      sampleCodesWarning.value = buildFailureMessage("样品编号已更新任务数量，但样品数据保存失败，请刷新后确认", error);
-      return;
-    }
-
-    editForm.value.sample_count = String(codes.length);
-    closeSampleCodesEditor();
-    try {
-      await loadTasksPage();
-      loadError.value = "";
-    } catch (error) {
-      loadError.value = buildFailureMessage("样品编号已保存，但任务列表刷新失败，请刷新后确认", error);
-    }
-  };
-
-  const deleteTask = async () => {
-    // 删除动作会连带清理该任务关联的排程、样品和数据流快照。
-    const nextSnapshot = deleteTaskSnapshot(
-      {
-        experimentRuns: rawExperimentRuns.value,
-        experimentRunTrays: rawExperimentRunTrays.value,
-        experiments: rawExperiments.value,
-        samples: rawSamples.value,
-        schedules: rawSchedules.value,
-        streams: rawStreams.value,
-        tasks: rawTasks.value,
-      },
-      editForm.value.id,
-    );
-    if (nextSnapshot.error) {
-      editWarning.value = nextSnapshot.error;
-      return;
-    }
-
-    try {
-      await deleteTaskByApi(editForm.value.id);
-      rawTasks.value = nextSnapshot.tasks;
-    } catch (error) {
-      editWarning.value = buildFailureMessage("任务删除失败，请稍后重试", error);
-      return;
-    }
-
-    try {
-      await persistRelated({
-        [STORAGE_KEYS.schedules]: nextSnapshot.schedules,
-        [STORAGE_KEYS.samples]: nextSnapshot.samples,
-        [STORAGE_KEYS.streams]: nextSnapshot.streams,
-      });
-    } catch (error) {
-      closeTaskDrawer();
-      loadError.value = buildFailureMessage("任务已删除，但关联数据保存失败，请刷新后确认", error);
-      return;
-    }
-
-    closeTaskDrawer();
-    try {
-      rawTasks.value = await readAllTasks();
-      loadError.value = "";
-    } catch (error) {
-      loadError.value = buildFailureMessage("任务已删除，但任务列表刷新失败，请刷新后确认", error);
-    }
   };
 
   const resetTasks = async () => {
@@ -1286,57 +793,19 @@ function useTasksPage() {
       || currentTypes.some((type, index) => type !== baselineTypes[index]);
   };
 
-  const isRealtimeRefreshPaused = () => Boolean(
-    intakeModal.open.value
-    || intakeExperimentModal.open.value
-    || intakeAxisModal.open.value
-    || editExperimentModal.open.value
-    || editAxisModal.open.value
-    || sampleCodesModal.open.value
-    || scheduledExperimentRemovalModal.open.value
-    || resetModal.open.value
-    || (taskDrawer.open.value && isTaskEditFormDirty())
-  );
-
-  const flushPendingRealtimeRefresh = () => {
-    const flushedStorage = flushPendingStorageRefresh();
-    if (!hasPendingSamplesRefresh || isRealtimeRefreshPaused()) {
-      return flushedStorage;
-    }
-    hasPendingSamplesRefresh = false;
-    if (!flushedStorage) {
-      void loadTasksPage();
-    }
-    return true;
-  };
-
-  const handleSamplesUpdated = () => {
-    if (isRealtimeRefreshPaused()) {
-      hasPendingSamplesRefresh = true;
-      return;
-    }
-    hasPendingSamplesRefresh = false;
-    void loadTasksPage();
-  };
-
-  const storageRefresh = useStorageSnapshotRefresh({
-    keys: [
-      STORAGE_KEYS.tasks,
-      STORAGE_KEYS.external_task_intakes,
-      STORAGE_KEYS.schedules,
-      STORAGE_KEYS.samples,
-      STORAGE_KEYS.streams,
-      STORAGE_KEYS.experiments,
-      STORAGE_KEYS.experiment_trays,
-      STORAGE_KEYS.experiment_samples,
-      STORAGE_KEYS.experiment_runs,
-      STORAGE_KEYS.experiment_run_trays,
-    ],
-    refresh: loadTasksPage,
-    paused: isRealtimeRefreshPaused,
+  const { flushPendingRealtimeRefresh } = useTasksRealtime({
+    editAxisModal,
+    editExperimentModal,
+    intakeAxisModal,
+    intakeExperimentModal,
+    intakeModal,
+    isTaskEditFormDirty,
+    loadTasksPage,
+    resetModal,
+    sampleCodesModal,
+    scheduledExperimentRemovalModal,
+    taskDrawer,
   });
-  flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
-
   watch(
     () => intakeForm.value.test_types.join(" / "),
     () => {
@@ -1385,7 +854,6 @@ function useTasksPage() {
     window.addEventListener("mes:open-task-intake", handleOpenTaskIntake);
     window.addEventListener(EXTERNAL_TASK_INTAKE_EVENT, handleOpenExternalTaskIntake);
     window.addEventListener(TASK_RESET_EVENT, handleOpenTaskReset);
-    window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
     document.addEventListener("pointerdown", handleDocumentPointerDown);
   });
 
@@ -1395,7 +863,6 @@ function useTasksPage() {
     window.removeEventListener("mes:open-task-intake", handleOpenTaskIntake);
     window.removeEventListener(EXTERNAL_TASK_INTAKE_EVENT, handleOpenExternalTaskIntake);
     window.removeEventListener(TASK_RESET_EVENT, handleOpenTaskReset);
-    window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
     document.removeEventListener("pointerdown", handleDocumentPointerDown);
   });
 
@@ -1487,7 +954,7 @@ function useTasksPage() {
     taskDetailSampleCodePreview,
     taskDetailSampleCodes,
     taskRows: visibleRows,
-    testTypeOptions: computed(() => filterOptions.value.testTypeOptions),
+    testTypeOptions,
     toggleIntakeAxisCode,
     toggleIntakeExperimentType,
     toggleEditAxisCode,

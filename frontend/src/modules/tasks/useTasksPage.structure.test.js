@@ -4,11 +4,16 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 const sourcePath = resolve(process.cwd(), "src/modules/tasks/useTasksPage.js");
+const realtimePath = resolve(process.cwd(), "src/modules/tasks/useTasksRealtime.js");
 
 describe("useTasksPage realtime refresh structure", () => {
   test("subscribes to storage updates without refreshing over open task dialogs", () => {
-    const source = readFileSync(sourcePath, "utf8");
+    const pageSource = readFileSync(sourcePath, "utf8");
+    const realtimeSource = readFileSync(realtimePath, "utf8");
+    const source = [pageSource, realtimeSource].join("\n");
 
+    expect(pageSource).toContain("useTasksRealtime({");
+    expect(realtimeSource).toContain("function useTasksRealtime");
     expect(source).toContain("useStorageSnapshotRefresh");
     expect(source).toContain("paused: isRealtimeRefreshPaused");
     expect(source).toContain("handleSamplesUpdated");

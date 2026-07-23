@@ -387,4 +387,32 @@ describe("useTasksPage", () => {
       wrapper.unmount();
     }
   });
+
+  test("rejects an intake due time earlier than the frozen business time", async () => {
+    vi.setSystemTime(new Date("2026-07-23T01:00:00.000Z"));
+    mocks.readTasks.mockResolvedValue([]);
+    mocks.loadSnapshot.mockResolvedValue({
+      ...buildSnapshot(),
+      [STORAGE_KEYS.samples]: [],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    try {
+      wrapper.vm.openIntakeModal();
+      wrapper.vm.intakeForm.name = "过去完成时间任务";
+      wrapper.vm.intakeForm.contact = "张三";
+      wrapper.vm.intakeForm.contact_info = "13800001234";
+      wrapper.vm.intakeForm.sample_count = "1";
+      wrapper.vm.intakeForm.test_types = ["冲击试验"];
+      wrapper.vm.intakeForm.due_at = "2026-07-23 08:59";
+
+      await wrapper.vm.submitTask();
+
+      expect(wrapper.vm.intakeWarning).toBe("期望完成时间不能早于当前时间");
+      expect(mocks.createTask).not.toHaveBeenCalled();
+    } finally {
+      wrapper.unmount();
+    }
+  });
 });
