@@ -11,6 +11,7 @@ import {
   buildZancunRowsFromSnapshot,
   buildZancunScanDetail,
 } from "./model";
+import * as stagingModelPublicApi from "./model";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { getLegacyFallbackHits, resetLegacyFallbackHits } from "@/lib/legacyFallback";
 
@@ -148,8 +149,19 @@ const createSnapshot = () => ({
 });
 
 describe("staging-management model", () => {
+  test("keeps the staging model public compatibility exports stable while splitting internals", () => {
+    expect(Object.keys(stagingModelPublicApi).sort()).toEqual([
+      "applyZancunInventoryAction",
+      "buildZancunInventorySections",
+      "buildZancunMetrics",
+      "buildZancunOverviewView",
+      "buildZancunRowsFromSnapshot",
+      "buildZancunScanDetail",
+    ]);
+  });
+
   test("indexes staging events once when building rows instead of scanning all events per tray", () => {
-    const source = readFileSync(resolve(process.cwd(), "src/modules/staging-management/model.js"), "utf8");
+    const source = readFileSync(resolve(process.cwd(), "src/modules/staging-management/stagingRowsModel.js"), "utf8");
     const buildRowsSource = source.slice(
       source.indexOf("function buildZancunRowsFromSnapshot"),
       source.indexOf("function buildZancunInventorySections"),
@@ -160,7 +172,7 @@ describe("staging-management model", () => {
   });
 
   test("looks up tray storage events once during inventory actions", () => {
-    const source = readFileSync(resolve(process.cwd(), "src/modules/staging-management/model.js"), "utf8");
+    const source = readFileSync(resolve(process.cwd(), "src/modules/staging-management/stagingActionModel.js"), "utf8");
     const actionSource = source.slice(
       source.indexOf("function applyZancunInventoryAction"),
       source.indexOf("export {"),
