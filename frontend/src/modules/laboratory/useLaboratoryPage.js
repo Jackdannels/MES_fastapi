@@ -4,30 +4,18 @@ import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import {
   HOST_INTERFACE_MODE_CHANGED_EVENT,
   HOST_INTERFACE_MODE_STORAGE_KEY,
-  HOST_INTERFACE_MODES,
-  readHostInterfaceMode,
 } from "@/lib/hostInterfaceMode";
-import { syncHostInterfaceMode } from "@/lib/hostInterfaceModeApi";
-import { getLabHostInterfaceCapabilities } from "@/lib/labHostInterfaceCapabilities";
 import {
   applyLaboratoryOperation,
   completeLaboratoryExperiment,
   startLaboratoryExperiment,
   withdrawCurrentLaboratoryExperiment,
 } from "@/lib/laboratoryApi";
-import {
-  loginLaboratoryAttendance,
-  loginLaboratoryAttendanceByQr,
-  logoutLaboratoryAttendance,
-  markLaboratoryAttendanceWorkStarted,
-  readLaboratoryAttendanceSession,
-} from "@/lib/attendanceApi";
-import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { serverNowDate } from "@/lib/serverClock";
 import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
-import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import { resolveDeviceUnavailableReason } from "@/modules/schedule/model";
@@ -56,9 +44,7 @@ import {
   COMPLETED_EXPERIMENT_RUN_STATUSES,
   SWITCH_REVERTIBLE_TRAY_STATUSES,
   TASK_SWITCH_LOCKED_TRAY_STATUSES,
-  formatAttendanceDuration,
   formatErrorMessage,
-  formatFlowTimeForAttendance,
   generateExperimentRunNo,
   generateFixtureInstallId,
   isResettableTrayStatus,
@@ -69,27 +55,13 @@ import {
   stepRunNo,
   stepStatus,
 } from "./pageHelpers";
+import { useLaboratoryAttendance } from "./useLaboratoryAttendance";
+import { useLaboratoryRunningModal } from "./useLaboratoryRunningModal";
+import { createLaboratoryDeviceInterface } from "./laboratoryDeviceInterface";
+import { useLaboratoryRealtimeRefresh } from "./useLaboratoryRealtimeRefresh";
+import { useLaboratoryFixtureConfirmation } from "./useLaboratoryFixtureConfirmation";
 
-const RUNNING_MODAL_RESTORE_MS = 10_000;
-const COMPLETED_RUNNING_MODAL_AUTO_CLOSE_MS = 60_000;
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
-const FIXTURE_CONFIRM_COUNTDOWN_SECONDS = 5;
-const FIXTURE_CONFIRM_SUCCESS_MS = 1000;
-const ATTENDANCE_LOGOUT_COUNTDOWN_SECONDS = 30;
-const LABORATORY_SNAPSHOT_KEYS = new Set([
-  STORAGE_KEYS.tasks,
-  STORAGE_KEYS.schedules,
-  STORAGE_KEYS.experiments,
-  STORAGE_KEYS.experiment_runs,
-  STORAGE_KEYS.experiment_run_trays,
-  STORAGE_KEYS.experiment_run_steps,
-  STORAGE_KEYS.experiment_trays,
-  STORAGE_KEYS.samples,
-  STORAGE_KEYS.devices,
-]);
-
-
-
 function useLaboratoryPage(options = {}) {
   const now = options.now;
   const storage =
@@ -146,60 +118,49 @@ function useLaboratoryPage(options = {}) {
   const completePromptVisible = ref(false);
   const runningModalVisible = ref(false);
   const completedRunningExperiment = ref(null);
-  const attendanceSession = ref({ active: false });
-  const attendanceLoginModalOpen = ref(false);
-  const attendanceLoginMode = ref("qr");
-  const attendanceLoginUsername = ref("");
-  const attendanceLoginPassword = ref("");
-  const attendanceQrInputRef = ref(null);
-  const attendanceQrPayload = ref("");
-  const attendanceLoginError = ref("");
-  const attendanceSubmitting = ref(false);
-  const attendanceLogoutPromptOpen = ref(false);
-  const attendanceLogoutCountdown = ref(ATTENDANCE_LOGOUT_COUNTDOWN_SECONDS);
   const tickNow = ref(now || serverNowDate());
   let tickTimer = null;
-  let runningModalRestoreTimer = null;
-  let completedRunningModalAutoCloseTimer = null;
-  let fixtureConfirmTimer = null;
-  let fixtureConfirmSuccessTimer = null;
-  let hostlessFixtureReadyTimer = null;
-  let hostlessStartTimer = null;
-  let attendanceLogoutTimer = null;
-  let attendanceSessionLoadPromise = null;
-  let attendanceWorkStartPendingKey = "";
-  let optimisticAttendanceWorkStartedAt = "";
-  let suppressNextAttendanceWorkStart = false;
-  let pendingAttendanceAction = null;
   let samplesPersistQueue = null;
-  let ignoreNextSamplesUpdatedLoad = false;
+  let latestSnapshotLoadRequest = 0;
   const completingRunningExperimentKeys = new Set();
-  let lastActiveRunningExperiment = null;
-  let flushPendingStorageRefresh = () => false;
-  let hasPendingSamplesRefresh = false;
-  let hostInterfaceModeSync = null;
+  let ignoreNextSamplesUpdatedRefresh = () => {};
+  let flushPendingRealtimeRefresh = () => false;
+  let clearFixtureConfirmTimer = () => {};
+  let clearFixtureConfirmSuccessTimer = () => {};
+  let clearHostlessFixtureReadyTimer = () => {};
 
   const getSelectedLabName = () => normalizeSelectedLabName(unref(options.selectedLabName));
-  const attendanceLoggedIn = computed(() => Boolean(attendanceSession.value?.active && normalizeText(attendanceSession.value?.username)));
-  const attendanceWorkStartedAt = computed(() => normalizeText(attendanceSession.value?.workStartedAt || attendanceSession.value?.work_started_at));
-  const attendanceStatus = computed(() => {
-    if (!attendanceLoggedIn.value) {
-      return {
-        detail: "请先登录后操作",
-        employeeName: "未登录",
-      };
-    }
-    const loggedInAt = normalizeText(attendanceSession.value?.loggedInAt || attendanceSession.value?.logged_in_at);
-    const workStartedAt = attendanceWorkStartedAt.value;
-    const workStartedTime = workStartedAt ? parseBusinessDateTimeToMs(workStartedAt) : null;
-    const elapsedSeconds = !Number.isFinite(workStartedTime)
-      ? 0
-      : Math.floor((tickNow.value.getTime() - workStartedTime) / 1000);
-    return {
-      detail: `${loggedInAt ? formatFlowTimeForAttendance(loggedInAt) : "--:--"} 登录 / 当前 ${formatAttendanceDuration(elapsedSeconds)}`,
-      employeeName: normalizeText(attendanceSession.value?.employeeName || attendanceSession.value?.employee_name || attendanceSession.value?.username),
-    };
-  });
+  const {
+    applyExperimentStartAttendance,
+    attendanceLoggedIn,
+    attendanceLoginError,
+    attendanceLoginMode,
+    attendanceLoginModalOpen,
+    attendanceLoginPassword,
+    attendanceLoginUsername,
+    attendanceLogoutCountdown,
+    attendanceLogoutPromptOpen,
+    attendanceQrInputRef,
+    attendanceQrPayload,
+    attendanceSession,
+    attendanceStatus,
+    attendanceSubmitting,
+    attendanceWorkStartedAt,
+    closeAttendanceLogin,
+    loadAttendanceSession,
+    logoutAttendance,
+    openAttendanceLogin,
+    openAttendanceLogoutPrompt,
+    resetAttendanceInteraction,
+    rollbackOptimisticAttendanceWork,
+    runWithAttendance,
+    setAttendanceLoginMode,
+    setSuppressNextAttendanceWorkStart,
+    startAttendanceWorkOptimistically,
+    startWorkForRunningExperiment,
+    submitAttendanceLogin,
+    submitAttendanceQrLogin,
+  } = useLaboratoryAttendance({ laboratoryConfig, tickNow });
 
   const view = computed(() =>
     buildLaboratoryWorkbenchView({
@@ -379,27 +340,7 @@ function useLaboratoryPage(options = {}) {
   });
   const runningInteractionLocked = computed(() => runningExperiment.value.active);
   const startAttendanceWorkForRunningExperiment = () => {
-    const startKey = runningAttendanceStartKey.value;
-    if (suppressNextAttendanceWorkStart) {
-      suppressNextAttendanceWorkStart = false;
-      return;
-    }
-    if (optimisticAttendanceWorkStartedAt && attendanceWorkStartedAt.value) {
-      return;
-    }
-    optimisticAttendanceWorkStartedAt = "";
-    if (!startKey || !attendanceLoggedIn.value || attendanceWorkStartedAt.value || attendanceWorkStartPendingKey === startKey) {
-      return;
-    }
-    attendanceWorkStartPendingKey = startKey;
-    void markLaboratoryAttendanceWorkStarted(laboratoryConfig.value.labName)
-      .then((session) => {
-        attendanceSession.value = session;
-      })
-      .catch((error) => {
-        attendanceLoginError.value = formatErrorMessage(error);
-        attendanceWorkStartPendingKey = "";
-      });
+    startWorkForRunningExperiment(runningAttendanceStartKey.value);
   };
   const operationLock = computed(() =>
     getLaboratoryOperationLock(view.value.allScheduleRows, currentTask.value, {
@@ -476,8 +417,24 @@ function useLaboratoryPage(options = {}) {
         }
   ));
   const { focusScanInput } = useScanInputFocus(compareScanInputRef);
-  const { focusScanInput: focusAttendanceQrInput } = useScanInputFocus(attendanceQrInputRef);
   const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value, laboratoryConfig.value.labName));
+  const {
+    clearCompletedRunningModalAutoCloseTimer,
+    clearRunningModalRestoreTimer,
+    handleRunningModalActivity,
+    hideRunningModal,
+    scheduleCompletedRunningModalAutoClose,
+    showRunningModal,
+  } = useLaboratoryRunningModal({
+    completePromptVisible,
+    completedRunningExperiment,
+    confirmedModalOpen,
+    experimentRuns,
+    openAttendanceLogoutPrompt,
+    readyModalOpen,
+    runningExperiment,
+    runningModalVisible,
+  });
   const runningModalExperiment = computed(() => {
     const base = completedRunningExperiment.value?.active ? completedRunningExperiment.value : runningExperiment.value;
     const continuation = axisContinuation.value;
@@ -501,223 +458,26 @@ function useLaboratoryPage(options = {}) {
     );
   });
 
-  const clearRunningModalRestoreTimer = () => {
-    if (runningModalRestoreTimer && typeof window !== "undefined") {
-      window.clearTimeout(runningModalRestoreTimer);
-      runningModalRestoreTimer = null;
-    }
-  };
-  const clearCompletedRunningModalAutoCloseTimer = () => {
-    if (completedRunningModalAutoCloseTimer && typeof window !== "undefined") {
-      window.clearTimeout(completedRunningModalAutoCloseTimer);
-      completedRunningModalAutoCloseTimer = null;
-    }
-  };
-  const clearFixtureConfirmTimer = () => {
-    if (fixtureConfirmTimer && typeof window !== "undefined") {
-      window.clearInterval(fixtureConfirmTimer);
-      fixtureConfirmTimer = null;
-    }
-  };
-  const clearFixtureConfirmSuccessTimer = () => {
-    if (fixtureConfirmSuccessTimer && typeof window !== "undefined") {
-      window.clearTimeout(fixtureConfirmSuccessTimer);
-      fixtureConfirmSuccessTimer = null;
-    }
-  };
-  const clearHostlessFixtureReadyTimer = () => {
-    if (hostlessFixtureReadyTimer && typeof window !== "undefined") {
-      window.clearTimeout(hostlessFixtureReadyTimer);
-      hostlessFixtureReadyTimer = null;
-    }
-  };
-  const clearHostlessStartTimer = () => {
-    if (hostlessStartTimer && typeof window !== "undefined") {
-      window.clearTimeout(hostlessStartTimer);
-      hostlessStartTimer = null;
-    }
-  };
+  const {
+    clearLaboratoryMqError,
+    clearHostlessStartTimer,
+    ensureHostInterfaceModeSynced,
+    getCurrentLabHostInterfaceCapabilities,
+    isHostlessMqttLab,
+    isMqttHostInterfaceMode,
+    publishLaboratoryMqSafely,
+    scheduleHostlessStart,
+  } = createLaboratoryDeviceInterface({
+    confirmedModalOpen,
+    fixtureConfirmModalOpen,
+    laboratoryConfig,
+    laboratoryMqError,
+    onFixturePublishFailure: () => clearFixtureConfirmTimer(),
+    readyPublishRetryAvailable,
+  });
   const clearHostlessTimers = () => {
     clearHostlessFixtureReadyTimer();
     clearHostlessStartTimer();
-  };
-  const clearAttendanceLogoutTimer = () => {
-    if (attendanceLogoutTimer && typeof window !== "undefined") {
-      window.clearInterval(attendanceLogoutTimer);
-      attendanceLogoutTimer = null;
-    }
-  };
-
-  const loadAttendanceSession = async (labName = laboratoryConfig.value.labName) => {
-    const normalizedLabName = normalizeText(labName);
-    if (!normalizedLabName) {
-      attendanceSession.value = { active: false };
-      return;
-    }
-    const loadPromise = (async () => {
-      try {
-        attendanceSession.value = await readLaboratoryAttendanceSession(normalizedLabName);
-      } catch {
-        attendanceSession.value = { active: false, labName: normalizedLabName };
-      }
-    })();
-    attendanceSessionLoadPromise = loadPromise;
-    try {
-      await loadPromise;
-    } finally {
-      if (attendanceSessionLoadPromise === loadPromise) {
-        attendanceSessionLoadPromise = null;
-      }
-    }
-  };
-
-  const openAttendanceLogin = () => {
-    attendanceLoginError.value = "";
-    attendanceLoginPassword.value = "";
-    attendanceQrPayload.value = "";
-    attendanceLoginMode.value = "qr";
-    attendanceLoginModalOpen.value = true;
-    void nextTick().then(() => focusAttendanceQrInput());
-  };
-
-  const closeAttendanceLogin = () => {
-    attendanceLoginModalOpen.value = false;
-    attendanceQrPayload.value = "";
-    pendingAttendanceAction = null;
-  };
-
-  const runWithAttendance = async (action) => {
-    if (attendanceLoggedIn.value) {
-      await action();
-      return;
-    }
-    if (attendanceSessionLoadPromise) {
-      await attendanceSessionLoadPromise;
-    }
-    if (attendanceLoggedIn.value) {
-      await action();
-      return;
-    }
-    pendingAttendanceAction = action;
-    openAttendanceLogin();
-  };
-
-  const setAttendanceLoginMode = async (mode) => {
-    attendanceLoginMode.value = mode === "qr" ? "qr" : "password";
-    attendanceLoginError.value = "";
-    if (attendanceLoginMode.value === "qr") {
-      await nextTick();
-      await focusAttendanceQrInput();
-    }
-  };
-
-  const finishAttendanceLogin = async (session) => {
-    attendanceSession.value = session;
-    attendanceLoginModalOpen.value = false;
-    attendanceLoginPassword.value = "";
-    attendanceQrPayload.value = "";
-    const action = pendingAttendanceAction;
-    pendingAttendanceAction = null;
-    if (typeof action === "function") {
-      await action();
-    }
-  };
-
-  const submitAttendanceLogin = async () => {
-    if (attendanceSubmitting.value) {
-      return;
-    }
-    attendanceLoginError.value = "";
-    attendanceSubmitting.value = true;
-    try {
-      attendanceSession.value = await loginLaboratoryAttendance({
-        labName: laboratoryConfig.value.labName,
-        password: attendanceLoginPassword.value,
-        username: attendanceLoginUsername.value,
-      });
-      await finishAttendanceLogin(attendanceSession.value);
-    } catch (error) {
-      attendanceLoginError.value = formatErrorMessage(error) || "试验间登录失败";
-    } finally {
-      attendanceSubmitting.value = false;
-    }
-  };
-
-  const submitAttendanceQrLogin = async () => {
-    if (attendanceSubmitting.value) {
-      return;
-    }
-    attendanceLoginError.value = "";
-    attendanceSubmitting.value = true;
-    try {
-      const session = await loginLaboratoryAttendanceByQr({
-        labName: laboratoryConfig.value.labName,
-        qrPayload: attendanceQrPayload.value,
-      });
-      await finishAttendanceLogin(session);
-    } catch (error) {
-      attendanceLoginError.value = formatErrorMessage(error) || "扫码登录失败";
-    } finally {
-      attendanceSubmitting.value = false;
-    }
-  };
-
-  const startAttendanceWorkOptimistically = (startedAt = "") => {
-    const normalizedStartedAt = normalizeText(startedAt);
-    if (!attendanceLoggedIn.value || attendanceWorkStartedAt.value || !normalizedStartedAt) {
-      return null;
-    }
-    const previousSession = { ...(attendanceSession.value || {}) };
-    attendanceSession.value = {
-      ...previousSession,
-      active: true,
-      labName: normalizeText(previousSession.labName || previousSession.lab_name) || laboratoryConfig.value.labName,
-      workStartedAt: normalizedStartedAt,
-    };
-    optimisticAttendanceWorkStartedAt = normalizedStartedAt;
-    suppressNextAttendanceWorkStart = true;
-    return previousSession;
-  };
-
-  const rollbackOptimisticAttendanceWork = (previousSession, startedAt = "") => {
-    if (!previousSession) {
-      return;
-    }
-    const normalizedStartedAt = normalizeText(startedAt);
-    if (normalizeText(attendanceSession.value?.workStartedAt || attendanceSession.value?.work_started_at) !== normalizedStartedAt) {
-      return;
-    }
-    attendanceSession.value = previousSession;
-    optimisticAttendanceWorkStartedAt = "";
-    suppressNextAttendanceWorkStart = false;
-  };
-
-  const logoutAttendance = async (reason = "manual") => {
-    clearAttendanceLogoutTimer();
-    attendanceLogoutPromptOpen.value = false;
-    attendanceLogoutCountdown.value = ATTENDANCE_LOGOUT_COUNTDOWN_SECONDS;
-    attendanceSession.value = await logoutLaboratoryAttendance({
-      labName: laboratoryConfig.value.labName,
-      reason,
-    });
-  };
-
-  const openAttendanceLogoutPrompt = () => {
-    if (!attendanceLoggedIn.value || typeof window === "undefined") {
-      return;
-    }
-    clearAttendanceLogoutTimer();
-    attendanceLogoutCountdown.value = ATTENDANCE_LOGOUT_COUNTDOWN_SECONDS;
-    attendanceLogoutPromptOpen.value = true;
-    attendanceLogoutTimer = window.setInterval(() => {
-      attendanceLogoutCountdown.value = Math.max(0, attendanceLogoutCountdown.value - 1);
-      if (attendanceLogoutCountdown.value > 0) {
-        return;
-      }
-      void logoutAttendance("completion-timeout").catch((error) => {
-        attendanceLoginError.value = formatErrorMessage(error);
-      });
-    }, 1000);
   };
 
   const closeFullInteractionState = () => {
@@ -745,120 +505,17 @@ function useLaboratoryPage(options = {}) {
     completePromptVisible.value = false;
     runningModalVisible.value = false;
     completedRunningExperiment.value = null;
-    attendanceLoginModalOpen.value = false;
-    attendanceQrPayload.value = "";
-    attendanceLogoutPromptOpen.value = false;
-    pendingAttendanceAction = null;
+    resetAttendanceInteraction();
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
     clearHostlessTimers();
-    clearAttendanceLogoutTimer();
     clearCompletedRunningModalAutoCloseTimer();
     flushPendingRealtimeRefresh();
   };
 
   const syncHeaderActionTarget = () => {
     canTeleportScheduleAction.value = typeof document !== "undefined" && Boolean(document.querySelector(HEADER_ACTION_TARGET_SELECTOR));
-  };
-
-  const showRunningModal = () => {
-    if (runningExperiment.value.active || completedRunningExperiment.value?.active) {
-      runningModalVisible.value = true;
-    }
-    clearRunningModalRestoreTimer();
-  };
-
-  const scheduleRunningModalRestore = () => {
-    clearRunningModalRestoreTimer();
-    if (!runningExperiment.value.active || runningModalVisible.value || typeof window === "undefined") {
-      return;
-    }
-    runningModalRestoreTimer = window.setTimeout(() => {
-      runningModalVisible.value = true;
-      runningModalRestoreTimer = null;
-    }, RUNNING_MODAL_RESTORE_MS);
-  };
-  const scheduleCompletedRunningModalAutoClose = () => {
-    clearCompletedRunningModalAutoCloseTimer();
-    if (!completedRunningExperiment.value?.active || typeof window === "undefined") {
-      return;
-    }
-    completedRunningModalAutoCloseTimer = window.setTimeout(() => {
-      completedRunningExperiment.value = null;
-      runningModalVisible.value = false;
-      completedRunningModalAutoCloseTimer = null;
-    }, COMPLETED_RUNNING_MODAL_AUTO_CLOSE_MS);
-  };
-
-  const hideRunningModal = () => {
-    if (completedRunningExperiment.value?.active) {
-      completedRunningExperiment.value = null;
-      runningModalVisible.value = false;
-      clearCompletedRunningModalAutoCloseTimer();
-      clearRunningModalRestoreTimer();
-      return;
-    }
-    if (!runningExperiment.value.active) {
-      return;
-    }
-    runningModalVisible.value = false;
-    scheduleRunningModalRestore();
-  };
-
-  const handleRunningModalActivity = () => {
-    if (!runningExperiment.value.active || runningModalVisible.value) {
-      return;
-    }
-    scheduleRunningModalRestore();
-  };
-
-  const runMatchesCompletedSnapshot = (run, runningSnapshot) => {
-    const runNo = normalizeText(run?.run_no) || normalizeText(run?.id);
-    if (normalizeText(runningSnapshot?.runNo) && runNo === normalizeText(runningSnapshot?.runNo)) {
-      return true;
-    }
-    if (
-      normalizeText(run?.task_code) !== normalizeText(runningSnapshot?.taskCode)
-      || normalizeText(run?.experiment_code) !== normalizeText(runningSnapshot?.experimentCode)
-    ) {
-      return false;
-    }
-    const snapshotTrayCodes = new Set((runningSnapshot?.trayCodes || []).map(normalizeText).filter(Boolean));
-    const runTrayCodes = new Set((Array.isArray(run?.tray_codes) ? run.tray_codes : []).map(normalizeText).filter(Boolean));
-    return snapshotTrayCodes.size > 0 && Array.from(snapshotTrayCodes).every((trayCode) => runTrayCodes.has(trayCode));
-  };
-
-  const preserveExternallyCompletedRunningExperiment = (runningSnapshot) => {
-    if (!runningSnapshot?.active) {
-      return false;
-    }
-    const matchedCompletedRun = experimentRuns.value.find(
-      (run) =>
-        COMPLETED_EXPERIMENT_RUN_STATUSES.has(normalizeText(run?.status))
-        && runMatchesCompletedSnapshot(run, runningSnapshot),
-    );
-    if (!matchedCompletedRun) {
-      return false;
-    }
-    const completedAt = normalizeText(matchedCompletedRun?.ended_at) || normalizeText(matchedCompletedRun?.updated_at);
-    completedRunningExperiment.value = {
-      ...runningSnapshot,
-      active: true,
-      completed: true,
-      countdownLabel: "实验已完成",
-      endDateTimeLabel: completedAt || runningSnapshot.endDateTimeLabel,
-      overdue: false,
-      overdueLabel: "",
-      remainingSeconds: 0,
-      statusLabel: "实验已完成",
-    };
-    runningModalVisible.value = true;
-    completePromptVisible.value = false;
-    openAttendanceLogoutPrompt();
-    scheduleCompletedRunningModalAutoClose();
-    clearRunningModalRestoreTimer();
-    return true;
   };
 
   watch(
@@ -875,35 +532,6 @@ function useLaboratoryPage(options = {}) {
       }
     },
     { deep: true, immediate: true },
-  );
-
-  watch(
-    () => runningExperiment.value.active,
-    (active) => {
-      if (active) {
-        completedRunningExperiment.value = null;
-        lastActiveRunningExperiment = { ...runningExperiment.value };
-        readyModalOpen.value = false;
-        confirmedModalOpen.value = false;
-        showRunningModal();
-        return;
-      }
-      if (preserveExternallyCompletedRunningExperiment(lastActiveRunningExperiment)) {
-        lastActiveRunningExperiment = null;
-        return;
-      }
-      lastActiveRunningExperiment = null;
-      if (completedRunningExperiment.value?.active) {
-        runningModalVisible.value = true;
-        completePromptVisible.value = false;
-        clearRunningModalRestoreTimer();
-        return;
-      }
-      runningModalVisible.value = false;
-      completePromptVisible.value = false;
-      clearRunningModalRestoreTimer();
-    },
-    { immediate: true },
   );
 
   const resetCompareState = () => {
@@ -967,6 +595,7 @@ function useLaboratoryPage(options = {}) {
   };
 
   const load = async ({ silent = false } = {}) => {
+    const loadRequest = ++latestSnapshotLoadRequest;
     const showBlockingLoading = !silent || !hasLoadedSnapshotData();
     if (showBlockingLoading) {
       loading.value = true;
@@ -976,6 +605,9 @@ function useLaboratoryPage(options = {}) {
         loadSnapshot(silent ? { fallbackSnapshot: buildCurrentSnapshotFallback() } : undefined),
         readMasterLabs().catch(() => []),
       ]);
+      if (loadRequest !== latestSnapshotLoadRequest) {
+        return;
+      }
       const explicitLabName = getSelectedLabName();
       const nextConfig = resolveLaboratoryConfig(masterLabs, explicitLabName || readStoredLabName());
       if (normalizeText(laboratoryConfig.value.labName) !== normalizeText(nextConfig.labName)) {
@@ -1010,54 +642,25 @@ function useLaboratoryPage(options = {}) {
     }
   };
 
-  const isLaboratoryRealtimeRefreshPaused = () => Boolean(
-    scheduleModalOpen.value
-    || taskListModalOpen.value
-    || compareModalOpen.value
-    || installModalOpen.value
-    || readyModalOpen.value
-    || resetConfirmModalOpen.value
-    || resetDangerModalOpen.value
-    || completePromptVisible.value
-  );
-
-  const flushPendingRealtimeRefresh = () => {
-    const flushedStorage = flushPendingStorageRefresh();
-    if (!hasPendingSamplesRefresh || isLaboratoryRealtimeRefreshPaused()) {
-      return flushedStorage;
-    }
-    hasPendingSamplesRefresh = false;
-    if (!flushedStorage) {
-      void load({ silent: true });
-    }
-    return true;
-  };
-
-  const handleSamplesUpdated = () => {
-    if (ignoreNextSamplesUpdatedLoad) {
-      ignoreNextSamplesUpdatedLoad = false;
-      return;
-    }
-    if (isLaboratoryRealtimeRefreshPaused()) {
-      hasPendingSamplesRefresh = true;
-      return;
-    }
-    hasPendingSamplesRefresh = false;
-    void load({ silent: true });
-  };
-
   watch(
     [runningAttendanceStartKey, attendanceLoggedIn, attendanceWorkStartedAt],
     startAttendanceWorkForRunningExperiment,
     { flush: "post" },
   );
 
-  const storageRefresh = useStorageSnapshotRefresh({
-    keys: Array.from(LABORATORY_SNAPSHOT_KEYS),
-    refresh: () => load({ silent: true }),
-    paused: isLaboratoryRealtimeRefreshPaused,
+  const realtimeRefresh = useLaboratoryRealtimeRefresh({
+    compareModalOpen,
+    completePromptVisible,
+    installModalOpen,
+    load,
+    readyModalOpen,
+    resetConfirmModalOpen,
+    resetDangerModalOpen,
+    scheduleModalOpen,
+    taskListModalOpen,
   });
-  flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
+  flushPendingRealtimeRefresh = realtimeRefresh.flushPendingRealtimeRefresh;
+  ignoreNextSamplesUpdatedRefresh = realtimeRefresh.ignoreNextSamplesUpdatedRefresh;
 
   const handleHostInterfaceModeChanged = (event = {}) => {
     if (event?.type === "storage" && event?.key !== HOST_INTERFACE_MODE_STORAGE_KEY) {
@@ -1072,7 +675,6 @@ function useLaboratoryPage(options = {}) {
       tickTimer = window.setInterval(() => {
         tickNow.value = now || serverNowDate();
       }, 1000);
-      window.addEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
       window.addEventListener("pointerdown", handleRunningModalActivity, true);
       window.addEventListener("mousemove", handleRunningModalActivity, true);
       window.addEventListener("wheel", handleRunningModalActivity, true);
@@ -1091,7 +693,6 @@ function useLaboratoryPage(options = {}) {
       tickTimer = null;
     }
     if (typeof window !== "undefined") {
-      window.removeEventListener(SAMPLES_UPDATED_EVENT, handleSamplesUpdated);
       window.removeEventListener("pointerdown", handleRunningModalActivity, true);
       window.removeEventListener("mousemove", handleRunningModalActivity, true);
       window.removeEventListener("wheel", handleRunningModalActivity, true);
@@ -1100,12 +701,7 @@ function useLaboratoryPage(options = {}) {
       window.removeEventListener("storage", handleHostInterfaceModeChanged);
       window.removeEventListener(HOST_INTERFACE_MODE_CHANGED_EVENT, handleHostInterfaceModeChanged);
     }
-    clearRunningModalRestoreTimer();
-    clearFixtureConfirmTimer();
-    clearFixtureConfirmSuccessTimer();
-    clearHostlessTimers();
-    clearAttendanceLogoutTimer();
-    clearCompletedRunningModalAutoCloseTimer();
+    clearHostlessStartTimer();
   });
 
   const openScheduleBoard = () => {
@@ -1183,55 +779,6 @@ function useLaboratoryPage(options = {}) {
   const getCurrentTaskTrayRowsByStatus = (status) =>
     (Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [])
       .filter((row) => String(row?.trayStatus || "").trim() === String(status || "").trim());
-  const isMqttHostInterfaceMode = () => readHostInterfaceMode() === HOST_INTERFACE_MODES.mqtt;
-  const getCurrentLabHostInterfaceCapabilities = () =>
-    getLabHostInterfaceCapabilities({
-      hostInterfaceMode: readHostInterfaceMode(),
-      labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
-      labName: laboratoryConfig.value.labName,
-    });
-  const isHostlessMqttLab = () => getCurrentLabHostInterfaceCapabilities().hostless;
-  const ensureHostInterfaceModeSynced = async () => {
-    if (!isMqttHostInterfaceMode()) {
-      return;
-    }
-    hostInterfaceModeSync = hostInterfaceModeSync || syncHostInterfaceMode(HOST_INTERFACE_MODES.mqtt).finally(() => {
-      hostInterfaceModeSync = null;
-    });
-    await hostInterfaceModeSync;
-  };
-  const clearLaboratoryMqError = () => {
-    laboratoryMqError.value = null;
-  };
-  const publishLaboratoryMqSafely = async (publisher, payload, actionLabel) => {
-    if (!isMqttHostInterfaceMode()) {
-      return false;
-    }
-    try {
-      clearLaboratoryMqError();
-      if (actionLabel === "准备就绪") {
-        readyPublishRetryAvailable.value = false;
-      }
-      await ensureHostInterfaceModeSynced();
-      await publisher(payload);
-      return true;
-    } catch (error) {
-      laboratoryMqError.value = {
-        detail: formatErrorMessage(error),
-        title: `${actionLabel}下发失败`,
-      };
-      if (actionLabel === "夹具安装") {
-        clearFixtureConfirmTimer();
-        fixtureConfirmModalOpen.value = false;
-      }
-      if (actionLabel === "准备就绪") {
-        confirmedModalOpen.value = false;
-        readyPublishRetryAvailable.value = true;
-      }
-      return false;
-    }
-  };
-
   watch(
     () => getSelectedLabName(),
     () => {
@@ -1300,10 +847,7 @@ function useLaboratoryPage(options = {}) {
   };
   const applyExperimentStartResponse = (payload = {}) => {
     if (payload?.attendanceSession && typeof payload.attendanceSession === "object") {
-      attendanceSession.value = payload.attendanceSession;
-      optimisticAttendanceWorkStartedAt = normalizeText(
-        payload.attendanceSession.workStartedAt || payload.attendanceSession.work_started_at,
-      ) || optimisticAttendanceWorkStartedAt;
+      applyExperimentStartAttendance(payload.attendanceSession);
     }
     if (Array.isArray(payload?.tasks)) {
       tasks.value = payload.tasks;
@@ -1421,91 +965,23 @@ function useLaboratoryPage(options = {}) {
       window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     }
   };
-  const openFixtureConfirmSuccess = () => {
-    clearFixtureConfirmTimer();
-    clearFixtureConfirmSuccessTimer();
-    fixtureConfirmModalOpen.value = false;
-    fixtureConfirmSuccessModalOpen.value = true;
-    if (typeof window === "undefined") {
-      return;
-    }
-    fixtureConfirmSuccessTimer = window.setTimeout(() => {
-      fixtureConfirmSuccessModalOpen.value = false;
-      fixtureConfirmSuccessTimer = null;
-      flushPendingRealtimeRefresh();
-    }, FIXTURE_CONFIRM_SUCCESS_MS);
-  };
-  const startFixtureConfirmCountdown = ({ taskCode, trayCodes }) => {
-    clearFixtureConfirmTimer();
-    clearFixtureConfirmSuccessTimer();
-    fixtureConfirmHostless.value = false;
-    fixtureConfirmSuccessModalOpen.value = false;
-    fixtureConfirmCountdown.value = FIXTURE_CONFIRM_COUNTDOWN_SECONDS;
-    fixtureConfirmModalOpen.value = true;
-    if (typeof window === "undefined") {
-      return;
-    }
-    fixtureConfirmTimer = window.setInterval(() => {
-      fixtureConfirmCountdown.value = Math.max(0, fixtureConfirmCountdown.value - 1);
-      if (fixtureConfirmCountdown.value > 0) {
-        return;
-      }
-      clearFixtureConfirmTimer();
-      if (isMqttHostInterfaceMode()) {
-        fixtureConfirmModalOpen.value = false;
-        flushPendingRealtimeRefresh();
-        return;
-      }
-      openFixtureConfirmSuccess();
-      void persistFixtureReadyForTask({ taskCode, trayCodes });
-    }, 1000);
-  };
-  const openFixtureConfirmPending = () => {
-    clearFixtureConfirmTimer();
-    clearFixtureConfirmSuccessTimer();
-    fixtureConfirmHostless.value = false;
-    fixtureConfirmSuccessModalOpen.value = false;
-    fixtureConfirmCountdown.value = FIXTURE_CONFIRM_COUNTDOWN_SECONDS;
-    fixtureConfirmModalOpen.value = true;
-  };
-  const scheduleHostlessFixtureReady = ({ taskCode, trayCodes }) => {
-    const capabilities = getCurrentLabHostInterfaceCapabilities();
-    clearHostlessFixtureReadyTimer();
-    clearFixtureConfirmTimer();
-    clearFixtureConfirmSuccessTimer();
-    if (!capabilities.hostless) {
-      return;
-    }
-    const confirmFixtureReady = () => {
-      hostlessFixtureReadyTimer = null;
-      clearFixtureConfirmTimer();
-      void persistFixtureReadyForTask({ taskCode, trayCodes })
-        .then(() => {
-          openFixtureConfirmSuccess();
-        })
-        .catch((error) => {
-          laboratoryMqError.value = {
-            detail: formatErrorMessage(error),
-            title: "夹具安装确认失败",
-          };
-        });
-    };
-    if (typeof window === "undefined" || capabilities.fixtureReadyDelayMs <= 0) {
-      confirmFixtureReady();
-      return;
-    }
-    fixtureConfirmHostless.value = true;
-    fixtureConfirmSuccessModalOpen.value = false;
-    fixtureConfirmCountdown.value = Math.ceil(capabilities.fixtureReadyDelayMs / 1000);
-    fixtureConfirmModalOpen.value = true;
-    fixtureConfirmTimer = window.setInterval(() => {
-      fixtureConfirmCountdown.value = Math.max(0, fixtureConfirmCountdown.value - 1);
-      if (fixtureConfirmCountdown.value <= 0) {
-        clearFixtureConfirmTimer();
-      }
-    }, 1000);
-    hostlessFixtureReadyTimer = window.setTimeout(confirmFixtureReady, capabilities.fixtureReadyDelayMs);
-  };
+  const fixtureConfirmation = useLaboratoryFixtureConfirmation({
+    fixtureConfirmCountdown,
+    fixtureConfirmHostless,
+    fixtureConfirmModalOpen,
+    fixtureConfirmSuccessModalOpen,
+    flushPendingRealtimeRefresh: () => flushPendingRealtimeRefresh(),
+    getCurrentLabHostInterfaceCapabilities,
+    isMqttHostInterfaceMode,
+    laboratoryMqError,
+    persistFixtureReadyForTask,
+    refreshAuthoritativeState: () => load({ silent: true }),
+    workflow,
+  });
+  clearFixtureConfirmTimer = fixtureConfirmation.clearFixtureConfirmTimer;
+  clearFixtureConfirmSuccessTimer = fixtureConfirmation.clearFixtureConfirmSuccessTimer;
+  clearHostlessFixtureReadyTimer = fixtureConfirmation.clearHostlessFixtureReadyTimer;
+  const { openFixtureConfirmPending, scheduleHostlessFixtureReady, startFixtureConfirmCountdown } = fixtureConfirmation;
   const scheduleHostlessExperimentStart = ({
     axisBatchNo = "",
     axisCodes = [],
@@ -1519,15 +995,9 @@ function useLaboratoryPage(options = {}) {
     taskCode,
     trayCodes = [],
   }) => {
-    const capabilities = getCurrentLabHostInterfaceCapabilities();
-    clearHostlessStartTimer();
-    if (!capabilities.hostless) {
-      return;
-    }
     const startExperiment = () => {
-      hostlessStartTimer = null;
       const startedAt = formatLocalDateTime();
-      suppressNextAttendanceWorkStart = true;
+      setSuppressNextAttendanceWorkStart(true);
       const previousAttendanceSession = startAttendanceWorkOptimistically(startedAt);
       void startLaboratoryExperiment({
         axisBatchNo,
@@ -1553,27 +1023,15 @@ function useLaboratoryPage(options = {}) {
         })
         .catch((error) => {
           rollbackOptimisticAttendanceWork(previousAttendanceSession, startedAt);
-          suppressNextAttendanceWorkStart = false;
+          setSuppressNextAttendanceWorkStart(false);
           laboratoryMqError.value = {
             detail: formatErrorMessage(error),
             title: "实验启动失败",
           };
         });
     };
-    if (typeof window === "undefined" || capabilities.startDelayMs <= 0) {
-      startExperiment();
-      return;
-    }
-    hostlessStartTimer = window.setTimeout(startExperiment, capabilities.startDelayMs);
+    scheduleHostlessStart(startExperiment);
   };
-  watch(
-    () => workflow.value.fixtureReadyDone,
-    (fixtureReadyDone) => {
-      if (fixtureReadyDone && fixtureConfirmModalOpen.value && isMqttHostInterfaceMode()) {
-        openFixtureConfirmSuccess();
-      }
-    },
-  );
   const confirmCompare = async () => {
     if (!currentTask.value || !canCompleteCompare.value) {
       return;
@@ -1787,7 +1245,7 @@ function useLaboratoryPage(options = {}) {
       }
       applyWithdrawResponse(withdrawResult);
       if (typeof window !== "undefined") {
-        ignoreNextSamplesUpdatedLoad = true;
+        ignoreNextSamplesUpdatedRefresh();
         window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
       }
       flushPendingRealtimeRefresh();

@@ -106,6 +106,57 @@ describe("SystemPage runtime", () => {
     expect(wrapper.get('[data-testid="operation-log-lab"]').text()).toContain("冲击一室");
   });
 
+  test("displays employee operation log timestamps as Beijing local time without timezone markers", async () => {
+    const employees = stubAttendanceFetch();
+    fetch.mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/attendance/work-times")) {
+        return { ok: true, json: async () => employees };
+      }
+      if (url.includes("/api/attendance/operation-logs/query")) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              action: "试验间退出",
+              employeeName: "张三",
+              id: 1,
+              labName: "振动一室",
+              operatedAt: "2026-07-23T09:14:44+08:00",
+              source: "manual",
+              username: "zhangsan",
+            },
+            {
+              action: "完成试验",
+              employeeName: "张三",
+              id: 2,
+              labName: "振动一室",
+              operatedAt: "2026-07-23T01:14:41Z",
+              source: "mqtt",
+              username: "zhangsan",
+            },
+          ],
+        };
+      }
+      if (url.includes("/api/attendance/users")) {
+        return { ok: true, json: async () => [] };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    });
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="open-employee-operation-logs"]').trigger("click");
+    await wrapper.get('[data-testid="query-employee-operation-logs"]').trigger("click");
+    await flushPromises();
+
+    const tableText = wrapper.get('[data-testid="employee-operation-logs-table"]').text();
+    expect(tableText).toContain("2026-07-23 09:14:44");
+    expect(tableText).toContain("2026-07-23 09:14:41");
+    expect(tableText).not.toContain("+08:00");
+    expect(tableText).not.toContain("T09:14");
+  });
+
   test("updates active employee work time every second without refreshing the page", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-02T08:15:00Z"));

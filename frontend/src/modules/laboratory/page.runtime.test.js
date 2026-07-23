@@ -3993,7 +3993,7 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
     await flushPageUpdates();
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
-    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("5");
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("10");
     vi.advanceTimersByTime(3000);
     await flushPageUpdates();
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
@@ -4093,8 +4093,8 @@ describe("LaboratoryPage runtime", () => {
       trays: expect.arrayContaining([expect.objectContaining({ status: "工装夹具安装", tray_code: "TP-001" })]),
     }));
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
-    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("5");
-    vi.advanceTimersByTime(5000);
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("10");
+    vi.advanceTimersByTime(10_000);
     await flushPageUpdates();
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(false);
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
@@ -4130,7 +4130,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
   });
 
-  test("mqtt fixture install wait times out after five seconds and allows resend without refresh", async () => {
+  test("mqtt fixture install wait times out after ten seconds and allows resend without refresh", async () => {
     useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [
@@ -4158,14 +4158,94 @@ describe("LaboratoryPage runtime", () => {
     await flushPageUpdates();
 
     expect(mounted.get('[data-testid="laboratory-fixture-confirm-modal"]').classes()).toContain("is-open");
-    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("5");
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("10");
 
-    vi.advanceTimersByTime(5000);
+    vi.advanceTimersByTime(10_000);
     await flushPageUpdates();
 
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(false);
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
     expect(mounted.get('[data-testid="laboratory-install"]').text()).toContain("重新下发");
+  });
+
+  test("keeps the latest fixture-ready snapshot when an older refresh resolves last", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "工装夹具安装",
+        flow_status: "工装夹具安装",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "工装夹具安装", tray_code: "TP-001" }],
+      },
+    ];
+    const mounted = await mountPage();
+    const staleSnapshot = structuredClone(snapshotState);
+    const readySnapshot = structuredClone(snapshotState);
+    readySnapshot[STORAGE_KEYS.samples][0].trays[0] = {
+      ...readySnapshot[STORAGE_KEYS.samples][0].trays[0],
+      fixtureReady: true,
+      fixture_ready: true,
+    };
+    const pendingSnapshots = [];
+    storageGetSnapshotOverride = () => new Promise((resolve) => pendingSnapshots.push(resolve));
+
+    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
+    await waitForQueueLength(pendingSnapshots, 1);
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
+      detail: { keys: [STORAGE_KEYS.samples], updatedAt: "2026-04-02 18:00:00" },
+    }));
+    vi.advanceTimersByTime(100);
+    await waitForQueueLength(pendingSnapshots, 2);
+
+    pendingSnapshots[1](readySnapshot);
+    await flushPageUpdates(12);
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
+
+    pendingSnapshots[0](staleSnapshot);
+    await flushPageUpdates(12);
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
+  });
+
+  test("reloads the authoritative fixture-ready state when the realtime event is missed", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "工装夹具安装",
+        flow_status: "工装夹具安装",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "工装夹具安装", tray_code: "TP-001" }],
+      },
+    ];
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
+    await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
+    await flushPageUpdates();
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-modal"]').classes()).toContain("is-open");
+
+    snapshotState = {
+      ...snapshotState,
+      [STORAGE_KEYS.samples]: snapshotState[STORAGE_KEYS.samples].map((sample) => ({
+        ...sample,
+        trays: sample.trays.map((tray) => ({ ...tray, fixtureReady: true, fixture_ready: true })),
+      })),
+    };
+    const expectedStorageGetCalls = storageGetCalls().length + 1;
+    vi.advanceTimersByTime(10_000);
+    await waitForStorageGetCount(expectedStorageGetCalls);
+    await flushPageUpdates(20);
+
+    expect(mounted.find('[data-testid="laboratory-fixture-success-modal"].is-open').exists()).toBe(true);
+    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
   });
 
   test("shows a retryable error when mqtt fixture install publish fails", async () => {
@@ -4431,11 +4511,11 @@ describe("LaboratoryPage runtime", () => {
 
     expect(mounted.find('[data-testid="laboratory-install-modal"].is-open').exists()).toBe(false);
     expect(mounted.find('[data-testid="laboratory-fixture-confirm-modal"].is-open').exists()).toBe(true);
-    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("5");
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("10");
     expect(laboratoryMqCalls()).toHaveLength(0);
     vi.advanceTimersByTime(1000);
     await flushPageUpdates();
-    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("5");
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("10");
 
     releaseLaboratoryOperation();
     await waitForLaboratoryMqCall("/api/mq/laboratory/fixture-install");
@@ -4443,7 +4523,7 @@ describe("LaboratoryPage runtime", () => {
     expect(laboratoryMqCalls()).toHaveLength(1);
     vi.advanceTimersByTime(1000);
     await flushPageUpdates();
-    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("4");
+    expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("9");
   });
 
   test("uses local hostless MQTT fixture ready and start for hot humid laboratory two", async () => {

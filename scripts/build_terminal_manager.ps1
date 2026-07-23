@@ -1,6 +1,6 @@
 param(
     [string]$ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path,
-    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES终端管理_v1.0.exe")
+    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES终端管理_v1.1.exe")
 )
 
 $ErrorActionPreference = "Stop"

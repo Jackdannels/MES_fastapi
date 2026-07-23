@@ -100,18 +100,27 @@
 - `frontend/src/modules/laboratory/laboratoryHistory.js`：实验室撤回使用的历史记录、接驳/暂存与外观存放快照解析。
 - `frontend/src/modules/laboratory/laboratoryPresentation.js`：实验室展示层纯函数，负责计划时长、业务时间格式化、运行中实验倒计时和展示数据派生。
 - `frontend/src/modules/laboratory/laboratoryRunIndex.js`：实验运行与托盘关系的纯索引函数，负责运行中记录选择、已完成托盘集合和实验-托盘反向索引。
+- `frontend/src/modules/laboratory/laboratoryScheduleRow.js`：实验室排程行纯构建函数，负责排程、运行、轴向进度与托盘状态汇总为工作台行数据。
+- `frontend/src/modules/laboratory/laboratoryWorkbenchSelection.js`：实验室工作台选择纯函数，负责当前任务候选、续轴排程过滤、托盘流程上下文和当日摘要。
 - `frontend/src/modules/laboratory/laboratoryTaskFlow.js`：实验室任务流程纯派生函数，负责部分轴向展示、任务流程节点、当前实验上下文和最新完成节点激活。
+- `frontend/src/modules/laboratory/laboratoryAxisEvidence.js`：实验室轴向证据纯函数，负责托盘级部分轴向历史、运行步骤证据和可继续托盘集合派生。
 - `frontend/src/modules/laboratory/laboratoryTrayEligibility.js`：托盘派发资格、共享托盘操作锁、终态和部分轴向作用域判断。
 - `frontend/src/modules/laboratory/laboratoryTrayState.js`：实验室托盘状态纯函数，负责状态聚合、生命周期候选选择、样品/任务索引和当前实验状态恢复。
+- `frontend/src/modules/laboratory/laboratoryTrayRows.js`：实验室托盘行聚合函数，负责样品/托盘合并、实验历史恢复、共享托盘完成状态和生命周期展示字段构建。
 - `frontend/src/modules/laboratory/workflowState.js`：实验室比对、安装、确认等纯工作流状态转换。
 - `frontend/src/modules/laboratory/useLaboratoryPage.js`：实验室页面组合式状态。
+- `frontend/src/modules/laboratory/useLaboratoryAttendance.js`：实验室考勤会话、登录/登出、开工计时和登出倒计时组合式状态。
+- `frontend/src/modules/laboratory/useLaboratoryRunningModal.js`：实验运行弹窗恢复、外部完成保留和自动关闭计时控制。
+- `frontend/src/modules/laboratory/useLaboratoryFixtureConfirmation.js`：夹具安装确认弹窗、MQTT 等待倒计时和 hostless 自动确认计时控制。
+- `frontend/src/modules/laboratory/useLaboratoryRealtimeRefresh.js`：实验室快照更新暂停、待刷新合并和样品广播监听。
+- `frontend/src/modules/laboratory/laboratoryDeviceInterface.js`：实验室 MQTT/hostless 能力判断、接口模式同步和设备命令发布边界。
 - `frontend/src/modules/login/`：登录模块。
 - `frontend/src/modules/process/`：过程控制模块。
 - `frontend/src/modules/process/model.js`：过程控制基础模型。
 - `frontend/src/modules/process/useProcessLabs.js`：过程控制实验室卡片、开始实验、详情抽屉和实时刷新逻辑。
 - `frontend/src/modules/sample-pre-allocation/`：样品预分配页面，复用转运工作台。
 - `frontend/src/modules/samples/`：样品流转和托盘管理模块。
-- `frontend/src/modules/samples/samplesFlowModel.js`：样品流转兼容入口，聚合并导出流转视图、托盘视图、暂存和命令函数，并委托 tray scope、experiment helper、status 和 constants 子模块承载基础逻辑。
+- `frontend/src/modules/samples/samplesFlowModel.js`：样品流转兼容入口，仅重导出既有公共 API，保持所有消费方导入路径稳定。
 - `frontend/src/modules/samples/sampleFlow.constants.js`：样品流转常量，包含流程步骤、实验室集合、外观检测状态和状态选项。
 - `frontend/src/modules/samples/sampleFlow.trayScope.js`：样品流转托盘作用域 helper，负责数组/时间/文本基础归一化、task/tray/experiment entry 字段解析、托盘号匹配、托盘条目合并排序和 `getSampleTrayList`。
 - `frontend/src/modules/samples/sampleFlow.experimentHelpers.js`：样品流转实验 helper，负责实验身份/展示名/实验室目的地解析、实验历史解析、撤回恢复目标解析、实验运行时间和多实验路线判断。
@@ -125,6 +134,10 @@
 - `frontend/src/modules/samples/sampleFlow.trayOverviewView.js`：样品流转托盘总览视图 builder，负责按托盘聚合样品、关联任务信息、过滤已收回托盘和托盘管理搜索。
 - `frontend/src/modules/samples/sampleFlow.stagingView.js`：样品流转暂存视图 builder，负责前置/实验后暂存样品过滤、搜索分页、勾选状态、托盘摘要和实验室选项输出。
 - `frontend/src/modules/samples/sampleFlow.flowTimeHelpers.js`：样品流转时间线 helper，负责历史状态标签归一化、时间历史去重、步骤最新时间选择和未到达步骤时间隐藏。
+- `frontend/src/modules/samples/sampleFlow.runtimeEvidence.js`：托盘实验运行、部分轴向、撤回恢复、当前状态时间和派发目标等证据解析。
+- `frontend/src/modules/samples/sampleFlow.trayExperimentFlow.js`：按托盘构建多实验流程、实验状态和部分轴向延续信息。
+- `frontend/src/modules/samples/sampleFlow.flowTimeMap.js`：按托盘历史、实验运行和撤回截点构建流程步骤时间映射。
+- `frontend/src/modules/samples/sampleFlow.trayFlowView.js`：组合托盘生命周期、实验流程和时间映射，生成最终跨页面托盘流程视图。
 - `frontend/src/modules/samples/sampleFlow.trayLifecycle.js`：样品流转托盘生命周期 helper，负责厂家收回/已处置状态识别、托盘/历史记录收回判定，以及按任务和托盘解析有效生命周期状态。
 - `frontend/src/modules/samples/sampleFlow.shared.js`：样品流转共享底层 helper。
 - `frontend/src/modules/samples/sampleFlow.status.js`：样品生命周期状态归一化、样品记录归一化和状态反推。

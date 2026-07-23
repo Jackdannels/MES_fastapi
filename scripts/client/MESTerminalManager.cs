@@ -14,8 +14,8 @@ using System.Web.Script.Serialization;
 [assembly: AssemblyDescription("MES 固定工作台终端状态与远程控制面板")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Terminal Manager")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 
 namespace MESTerminalManager
 {
@@ -263,7 +263,7 @@ namespace MESTerminalManager
 
         internal ManagerForm()
         {
-            Text = "MES 终端管理 v1.0";
+            Text = "MES 终端管理 v1.1";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(1180, 680);
             ClientSize = new Size(1420, 780);
@@ -271,8 +271,8 @@ namespace MESTerminalManager
             ForeColor = text;
             Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular, GraphicsUnit.Point);
 
-            BuildHeader();
             BuildGrid();
+            BuildHeader();
             BuildActions();
             BuildStatus();
 
@@ -590,6 +590,12 @@ namespace MESTerminalManager
             statusLabel.Text = title + "：" + message;
             MessageBox.Show(message, title, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+
+        internal bool ValidateDockLayout()
+        {
+            PerformLayout();
+            return grid.Top >= 130 && grid.Bottom <= ClientSize.Height - 90;
+        }
     }
 
     internal static class Program
@@ -602,7 +608,10 @@ namespace MESTerminalManager
                 try
                 {
                     TerminalManagerClient.NormalizeServerUrl("http://192.168.110.15:5173");
-                    return 0;
+                    using (ManagerForm form = new ManagerForm())
+                    {
+                        return form.ValidateDockLayout() ? 0 : 3;
+                    }
                 }
                 catch
                 {

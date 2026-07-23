@@ -294,7 +294,7 @@
           <tr v-if="!operationLogRows.length"><td colspan="7" class="muted">请输入管理员凭据后查询</td></tr>
           <tr v-for="log in operationLogRows" :key="log.id">
             <td>{{ log.employeeName || "/" }}</td><td>{{ log.username || "/" }}</td><td>{{ log.labName || "/" }}</td><td>{{ log.action || "/" }}</td>
-            <td>{{ [log.taskCode, log.experimentCode, log.trayNo].filter(Boolean).join(" / ") || "/" }}</td><td>{{ log.operatedAt || "/" }}</td><td>{{ log.source || "/" }}</td>
+            <td>{{ [log.taskCode, log.experimentCode, log.trayNo].filter(Boolean).join(" / ") || "/" }}</td><td>{{ formatLocalDateTime(log.operatedAt) || "/" }}</td><td>{{ log.source || "/" }}</td>
           </tr>
         </tbody>
       </table>
@@ -344,6 +344,7 @@ defineOptions({
 import AppModal from "@/components/shared/AppModal.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
+import { formatLocalDateTime } from "@/lib/dateTime";
 import { useSystemPage } from "./useSystemPage";
 
 const {
