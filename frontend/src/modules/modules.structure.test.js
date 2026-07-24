@@ -8,6 +8,7 @@ const moduleEntryPaths = [
   resolve(process.cwd(), "src/modules/dashboard/index.js"),
   resolve(process.cwd(), "src/modules/task-overview/index.js"),
   resolve(process.cwd(), "src/modules/tasks/index.js"),
+  resolve(process.cwd(), "src/modules/sample-pre-allocation/index.js"),
   resolve(process.cwd(), "src/modules/schedule/index.js"),
   resolve(process.cwd(), "src/modules/samples/index.js"),
   resolve(process.cwd(), "src/modules/handover-system/index.js"),
@@ -15,11 +16,13 @@ const moduleEntryPaths = [
   resolve(process.cwd(), "src/modules/devices/index.js"),
   resolve(process.cwd(), "src/modules/data/index.js"),
   resolve(process.cwd(), "src/modules/system/index.js"),
+  resolve(process.cwd(), "src/modules/task-history/index.js"),
   resolve(process.cwd(), "src/modules/visualization/index.js"),
   resolve(process.cwd(), "src/modules/staging-management/index.js"),
   resolve(process.cwd(), "src/modules/appearance-inspection/index.js"),
   resolve(process.cwd(), "src/modules/laboratory/index.js"),
 ];
+const routeEntryPaths = [resolve(process.cwd(), "src/modules/login/index.js"), ...moduleEntryPaths];
 
 describe("frontend module registry structure", () => {
   test("defines a module registry file for page routes", () => {
@@ -61,5 +64,14 @@ describe("frontend module registry structure", () => {
 
     expect(source).toContain("高低温湿热");
     expect(source).not.toContain("盐雾、霉菌实验后");
+  });
+
+  test("page routes are lazy loaded at the module boundary", () => {
+    for (const moduleEntryPath of routeEntryPaths) {
+      const source = readFileSync(moduleEntryPath, "utf8");
+
+      expect(source).toContain("component: () => import(");
+      expect(source).not.toMatch(/^import\s+\w+\s+from\s+["'].*page\.vue["'];/m);
+    }
   });
 });

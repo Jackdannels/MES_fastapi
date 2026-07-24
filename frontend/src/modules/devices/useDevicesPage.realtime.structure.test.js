@@ -4,10 +4,11 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 const sourcePath = resolve(process.cwd(), "src/modules/devices/useDevicesPage.js");
+const enginePath = resolve(process.cwd(), "src/modules/devices/useDevicesPageEngine.js");
 
 describe("useDevicesPage realtime refresh structure", () => {
   test("subscribes to device-related storage updates without overwriting open device dialogs", () => {
-    const source = readFileSync(sourcePath, "utf8");
+    const source = [sourcePath, enginePath].map((path) => readFileSync(path, "utf8")).join("\n");
 
     expect(source).toContain("useStorageSnapshotRefresh");
     expect(source).toContain("paused: isRealtimeRefreshPaused");

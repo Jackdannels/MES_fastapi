@@ -57,8 +57,8 @@ const laboratoryMqCalls = () =>
   fetch.mock.calls.filter(([input]) => String(input).includes("/api/mq/laboratory"));
 const interfaceModeCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/mq/interface-mode") && (options.method || "GET") === "POST");
-const laboratoryCompleteCalls = () =>
-  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/") && String(input).includes("/complete") && (options.method || "GET") === "POST");
+const laboratoryEndRequestCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/mq/laboratory/end-request") && (options.method || "GET") === "POST");
 const laboratoryStartCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/") && String(input).includes("/start") && (options.method || "GET") === "POST");
 const laboratoryOperationCalls = () =>
@@ -211,14 +211,26 @@ const waitForLaboratoryMqCall = async (endpoint) => {
   }
   return fetch.mock.calls.find(([input]) => String(input).includes(endpoint));
 };
-const waitForLaboratoryCompleteCount = async (count) => {
+const waitForLaboratoryEndRequestCount = async (count) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await flushPageUpdates();
-    if (laboratoryCompleteCalls().length >= count) {
+    if (laboratoryEndRequestCalls().length >= count) {
+      const requestCallIndex = fetch.mock.calls.findLastIndex(([input]) => String(input).includes("/api/mq/laboratory/end-request"));
+      for (let refreshAttempt = 0; refreshAttempt < 10; refreshAttempt += 1) {
+        vi.advanceTimersByTime(100);
+        await flushPageUpdates();
+        const refreshedAfterRequest = fetch.mock.calls
+          .slice(requestCallIndex + 1)
+          .some(([input, options = {}]) => String(input).includes("/api/storage") && (options.method || "GET") === "GET");
+        if (refreshedAfterRequest) {
+          await flushPageUpdates(10);
+          return;
+        }
+      }
       return;
     }
   }
-  expect(laboratoryCompleteCalls()).toHaveLength(count);
+  expect(laboratoryEndRequestCalls()).toHaveLength(count);
 };
 const waitForLaboratoryStartCount = async (count) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -488,7 +500,7 @@ describe("LaboratoryPage runtime", () => {
     masterLabsState = [];
     storageGetSnapshotOverride = null;
     reactiveRoute.query = {};
-    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+    const handleFetch = async (input, options = {}) => {
       const url = String(input);
       if (url.includes("/api/master/labs")) {
         return { ok: true, status: 200, json: async () => masterLabsState };
@@ -496,6 +508,30 @@ describe("LaboratoryPage runtime", () => {
       const attendanceResponse = handleAttendanceFetch(url, options);
       if (attendanceResponse) {
         return attendanceResponse;
+      }
+      if (url.includes("/api/mq/laboratory/end-request")) {
+        const body = JSON.parse(String(options.body || "{}"));
+        const run = (snapshotState[STORAGE_KEYS.experiment_runs] || []).find(
+          (entry) => [entry.run_no, entry.id].map((value) => String(value || "").trim()).includes(String(body.run_no || "").trim()),
+        );
+        await handleFetch(
+          `/api/laboratory/tasks/${encodeURIComponent(body.task_code || "")}/experiments/${encodeURIComponent(body.experiment_code || "")}/complete`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              axisCode: body.axis_code || "",
+              completedAt: new Date().toISOString(),
+              nextAxisCode: body.next_axis_code || "",
+              runNo: body.run_no || "",
+              subExperimentCode: body.sub_experiment_code || "",
+              trayCodes: Array.isArray(run?.tray_codes) ? run.tray_codes : [],
+            }),
+          },
+        );
+        window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
+          detail: { keys: [STORAGE_KEYS.samples, STORAGE_KEYS.experiment_runs, STORAGE_KEYS.experiment_run_steps] },
+        }));
+        return { ok: true, status: 200, json: async () => ({ ok: true, published: true }) };
       }
       if (url.includes("/api/laboratory/") && url.includes("/complete")) {
         const match = url.match(/\/api\/laboratory\/tasks\/([^/]+)\/experiments\/([^/]+)\/complete/);
@@ -791,7 +827,8 @@ describe("LaboratoryPage runtime", () => {
         return operationResponse;
       }
       throw new Error(`Unhandled fetch: ${url}`);
-    }));
+    };
+    vi.stubGlobal("fetch", vi.fn(handleFetch));
   });
 
   afterEach(async () => {
@@ -4778,7 +4815,7 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
 
     expect(document.body.querySelector('[data-testid="laboratory-complete-confirm-modal"]')).toBeNull();
-    expect(findRunningModal()?.textContent || "").toContain("确认后将把当前盐雾试验-A更新为实验已完成");
+    expect(findRunningModal()?.textContent || "").toContain("确认后将通知上位机立即结束当前盐雾试验-A");
     expect(findRunningModal()?.textContent || "").toContain("SYLU-2026-04-101");
     expect(findRunningModal()?.textContent || "").toContain("TP-001");
   });
@@ -4890,7 +4927,7 @@ describe("LaboratoryPage runtime", () => {
     expect(document.body.querySelector('[data-testid="laboratory-complete-confirm-modal"]')).toBeNull();
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).not.toBeNull();
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已超时");
-    expect(laboratoryCompleteCalls()).toHaveLength(0);
+    expect(laboratoryEndRequestCalls()).toHaveLength(0);
     document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
@@ -4964,12 +5001,12 @@ describe("LaboratoryPage runtime", () => {
 
     vi.advanceTimersByTime(2000);
     await flushPageUpdates();
-    expect(laboratoryCompleteCalls()).toHaveLength(0);
+    expect(laboratoryEndRequestCalls()).toHaveLength(0);
 
     document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
     document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await waitForLaboratoryCompleteCount(1);
+    await waitForLaboratoryEndRequestCount(1);
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已完成");
 
     vi.advanceTimersByTime(59_000);
@@ -5112,12 +5149,12 @@ describe("LaboratoryPage runtime", () => {
 
     vi.advanceTimersByTime(2000);
     await flushPageUpdates();
-    expect(laboratoryCompleteCalls()).toHaveLength(0);
+    expect(laboratoryEndRequestCalls()).toHaveLength(0);
 
     document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
     document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await waitForLaboratoryCompleteCount(1);
+    await waitForLaboratoryEndRequestCount(1);
 
     expect(snapshotState[STORAGE_KEYS.samples]).toEqual(
       expect.arrayContaining([
@@ -5498,7 +5535,7 @@ describe("LaboratoryPage runtime", () => {
     document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
     await nextTick();
-    await waitForLaboratoryCompleteCount(1);
+    await waitForLaboratoryEndRequestCount(1);
 
     expect(snapshotState[STORAGE_KEYS.samples]).toEqual(
       expect.arrayContaining([
@@ -5518,7 +5555,7 @@ describe("LaboratoryPage runtime", () => {
     expect(findRunningModal()?.textContent || "").toContain("实验已完成");
     expect(findRunningModal()?.textContent || "").toContain("TP-301-B");
     expect(findRunningModal()?.textContent || "").not.toContain("TP-301-A");
-    expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(1);
+    expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SNAPSHOT_UPDATED_EVENT)).toHaveLength(1);
   });
 
   test("keeps axis continuation disabled across adjacent single-axis schedules", async () => {
@@ -5627,7 +5664,7 @@ describe("LaboratoryPage runtime", () => {
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("未完成：y+、x-");
     expect(axisButton?.textContent || "").toContain("当前轴向完成，继续进行下一实验 x-");
     expect(axisButton?.hasAttribute("disabled")).toBe(true);
-    expect(laboratoryCompleteCalls()).toHaveLength(0);
+    expect(laboratoryEndRequestCalls()).toHaveLength(0);
   });
 
   test("allows continuing the next axis within the same multi-axis schedule without an adjacent schedule", async () => {
@@ -5801,16 +5838,15 @@ describe("LaboratoryPage runtime", () => {
 
     await mountPage();
     document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await waitForLaboratoryCompleteCount(1);
+    await waitForLaboratoryEndRequestCount(1);
     await flushPageUpdates();
 
-    const completeBody = JSON.parse(String(laboratoryCompleteCalls().at(-1)?.[1]?.body || "{}"));
+    const completeBody = JSON.parse(String(laboratoryEndRequestCalls().at(-1)?.[1]?.body || "{}"));
     expect(completeBody).toEqual(expect.objectContaining({
-      axisCode: "x+",
-      nextAxisCode: "y-",
-      runNo: "RUN-VIB-PARTIAL-AXIS",
-      subExperimentCode: "vib-partial-axis-segment",
-      trayCodes: ["TP-VIB-206"],
+      axis_code: "x+",
+      next_axis_code: "y-",
+      run_no: "RUN-VIB-PARTIAL-AXIS",
+      sub_experiment_code: "vib-partial-axis-segment",
     }));
     expect(document.body.querySelector('[data-testid="laboratory-complete-experiment"]')).toBeNull();
     expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeFalsy();
@@ -6080,16 +6116,15 @@ describe("LaboratoryPage runtime", () => {
     expect(document.body.querySelector('[data-testid="laboratory-complete-experiment"]')).toBeNull();
     expect(completeButton?.textContent || "").toContain("当前轴向完成，完成本试验");
     completeButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await waitForLaboratoryCompleteCount(1);
+    await waitForLaboratoryEndRequestCount(1);
 
-    const completeBody = JSON.parse(String(laboratoryCompleteCalls().at(-1)?.[1]?.body || "{}"));
+    const completeBody = JSON.parse(String(laboratoryEndRequestCalls().at(-1)?.[1]?.body || "{}"));
     expect(completeBody).toEqual(expect.objectContaining({
-      axisCode: "x+",
-      runNo: "RUN-VIB-CURRENT-AXIS",
-      subExperimentCode: "vib-current-axis-segment",
-      trayCodes: ["TP-VIB-204"],
+      axis_code: "x+",
+      run_no: "RUN-VIB-CURRENT-AXIS",
+      sub_experiment_code: "vib-current-axis-segment",
     }));
-    expect(completeBody.nextAxisCode).toBe("");
+    expect(completeBody.next_axis_code).toBe("");
     expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeTruthy();
   });
 

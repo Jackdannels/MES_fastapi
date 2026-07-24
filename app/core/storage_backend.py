@@ -2,18 +2,22 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any, Dict, Iterable
+from typing import Any, Dict
 
 from app.core.axis_codes import DEFAULT_AXIS_CODES, sort_axis_codes
 from app.core.config import settings
+from app.core.storage_contract import (
+    CURRENT_SCHEMA_VERSION,
+    MYSQL_HEALTHCHECK_TIMEOUT_SECONDS,
+    RUNTIME_STORAGE_BACKEND,
+    STORAGE_KEYS,
+    STORAGE_META_KEY,
+    UNSUPPORTED_RUNTIME_BACKEND_DETAIL,
+    StorageBackend,
+)
 from app.core.time_utils import format_business_datetime, parse_business_datetime
 from app.db.mysql_snapshot import MySQLConnectionSettings, MySQLSnapshotRepository
 
-STORAGE_META_KEY = "mes.meta"
-CURRENT_SCHEMA_VERSION = 2
-MYSQL_HEALTHCHECK_TIMEOUT_SECONDS = 3
-RUNTIME_STORAGE_BACKEND = "mysql"
-UNSUPPORTED_RUNTIME_BACKEND_DETAIL = "Only mysql runtime storage is supported"
 RETURNED_STATUS = "厂家收回"
 CANONICAL_HANDOVER_STORED_STATUS = "到货"
 EXPERIMENT_TERMINAL_STATUSES = {
@@ -26,25 +30,6 @@ EXPERIMENT_TERMINAL_STATUSES = {
     "实验后外观检测间存放",
 }
 
-STORAGE_KEYS: Iterable[str] = (
-    "mes.tasks",
-    "mes.external_task_intakes",
-    "mes.lims_inbox",
-    "mes.lims_outbox",
-    "mes.schedules",
-    "mes.experiments",
-    "mes.experiment_runs",
-    "mes.experiment_run_trays",
-    "mes.experiment_run_steps",
-    "mes.experiment_trays",
-    "mes.experiment_samples",
-    "mes.samples",
-    "mes.staging_events",
-    "mes.devices",
-    "mes.maintenance_records",
-    "mes.streams",
-    "mes.conflicts",
-)
 EXPERIMENT_TYPE_OPTIONS: tuple[str, ...] = (
     "冲击试验",
     "振动试验",
@@ -854,22 +839,6 @@ def _normalize_payload(payload: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
 def normalize_storage_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     normalized, _changed = _normalize_payload(payload)
     return normalized
-
-
-class StorageBackend:
-    """Storage backend interface for future database migration."""
-
-    def read_all(self) -> Dict[str, Any]:
-        raise NotImplementedError
-
-    def read(self, key: str) -> Any:
-        raise NotImplementedError
-
-    def write(self, key: str, value: Any) -> None:
-        raise NotImplementedError
-
-    def write_many(self, updates: Dict[str, Any]) -> None:
-        raise NotImplementedError
 
 
 _storage_backend: StorageBackend | None = None

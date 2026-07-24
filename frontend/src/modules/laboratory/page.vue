@@ -682,9 +682,7 @@
             <p><strong>托盘</strong> {{ runningModalExperiment.trayCodes.length }} 个</p>
             <p><strong>样品</strong> {{ runningModalExperiment.sampleCodes.length }} 个</p>
             <button class="laboratory-inline-link" type="button" @click="openRunningFullContent">查看全部</button>
-            <p>
-              确认后将把当前{{ runningModalExperiment.experimentName || labName }}更新为实验已完成。
-            </p>
+            <p>{{ completionConfirmMessage }}</p>
             <div class="laboratory-running-complete-prompt__actions">
               <button class="action-btn secondary" type="button" @click="closeCompleteConfirm">取消</button>
               <button class="action-btn" data-testid="laboratory-complete-experiment-confirm" type="button" @click="confirmCompleteExperiment">
@@ -773,6 +771,7 @@ const {
   closeTaskList,
   compareModalOpen,
   completePromptVisible,
+  completionConfirmMessage,
   confirmCurrentTask,
   confirmCompare,
   confirmResetPrompt,

@@ -10,7 +10,7 @@ import {
 } from "@/lib/laboratoryApi";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { serverNowDate } from "@/lib/serverClock";
-import { publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
+import { publishLaboratoryEndRequest, publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -380,6 +380,12 @@ function useLaboratoryPage(options = {}) {
     clearHostlessFixtureReadyTimer();
     clearHostlessStartTimer();
   };
+  const usesMqttCompletion = () => isMqttHostInterfaceMode() && !isHostlessMqttLab();
+  const completionConfirmMessage = computed(() => (
+    usesMqttCompletion()
+      ? `确认后将通知上位机立即结束当前${runningModalExperiment.value.experimentName || laboratoryConfig.value.labName}，收到结束事件后更新为实验已完成。`
+      : `确认后将把当前${runningModalExperiment.value.experimentName || laboratoryConfig.value.labName}更新为实验已完成。`
+  ));
 
   const closeFullInteractionState = () => {
     selectedTaskCode.value = "";
@@ -711,15 +717,22 @@ function useLaboratoryPage(options = {}) {
     experimentRuns,
     experiments,
     flushPendingRealtimeRefresh: () => flushPendingRealtimeRefresh(),
+    laboratoryConfig,
     load,
     openAttendanceLogoutPrompt,
     persistRunningExperimentCompletion,
+    requestMqttExperimentEnd: (payload) => publishLaboratoryMqSafely(
+      publishLaboratoryEndRequest,
+      payload,
+      "立即结束实验",
+    ),
     runWithAttendance,
     runningExperiment,
     runningModalVisible,
     samples,
     scheduleCompletedRunningModalAutoClose,
     schedules,
+    usesMqttCompletion,
   });
   const fixtureConfirmation = useLaboratoryFixtureConfirmation({
     fixtureConfirmCountdown,
@@ -989,7 +1002,8 @@ function useLaboratoryPage(options = {}) {
       canResetCurrentTask,
       compareScanCode,
       compareModalOpen,
-      completePromptVisible,
+    completePromptVisible,
+    completionConfirmMessage,
       confirmCurrentTask,
       confirmCompare,
     confirmResetPrompt,

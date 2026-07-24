@@ -4,8 +4,16 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 const pagePath = resolve(process.cwd(), "src/modules/process/page.vue");
+const componentPaths = [
+  "src/modules/process/ProcessTaskDetailModal.vue",
+  "src/modules/process/ProcessTaskTrayPanel.vue",
+  "src/modules/process/ProcessTaskFullListModal.vue",
+  "src/modules/process/ProcessTaskSelectionModal.vue",
+].map((path) => resolve(process.cwd(), path));
 
-const readProcessPage = () => readFileSync(pagePath, "utf8");
+const readProcessPage = () => [pagePath, ...componentPaths]
+  .map((path) => readFileSync(path, "utf8"))
+  .join("\n");
 
 const cssBlock = (source, selector) => {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

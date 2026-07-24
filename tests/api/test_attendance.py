@@ -46,6 +46,38 @@ def test_attendance_login_opens_active_lab_session(client):
     assert session_response.json()["username"] == "zhangsan"
 
 
+def test_attendance_numeric_account_321_login_regression(client):
+    """Keep the real numeric-account login contract executable during refactors."""
+    created = client.post(
+        "/api/attendance/users",
+        json={
+            "username": "321",
+            "password": "123",
+            "employeeName": "账号321",
+            "roleName": "试验员",
+            "active": True,
+        },
+    )
+    assert created.status_code == 201
+
+    response = client.post(
+        "/api/attendance/labs/%E5%86%B2%E5%87%BB%E4%B8%80%E5%AE%A4/login",
+        json={"username": "321", "password": "123"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["active"] is True
+    assert payload["labName"] == "冲击一室"
+    assert payload["username"] == "321"
+    assert payload["employeeName"] == "账号321"
+    assert payload["workStartedAt"] is None
+
+    session_response = client.get("/api/attendance/labs/%E5%86%B2%E5%87%BB%E4%B8%80%E5%AE%A4/session")
+    assert session_response.status_code == 200
+    assert session_response.json() == payload
+
+
 def test_attendance_operation_logs_are_recorded_from_the_active_lab_session_and_admin_only(client):
     login_response = client.post(
         "/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/login",
@@ -570,7 +602,7 @@ def test_hostless_api_experiment_start_and_complete_updates_attendance_work_inte
     snapshot = {
         "tasks": [{"code": "TASK-API"}],
         "samples": [],
-        "schedules": [],
+        "schedules": [{"task_code": "TASK-API", "experiment_code": "EXP-API", "device": "高低温湿热二室"}],
         "experiments": [{"task_code": "TASK-API", "experiment_code": "EXP-API", "experiment_name": "高低温湿热试验"}],
         "experiment_runs": [],
         "experiment_run_trays": [],
@@ -729,6 +761,7 @@ def test_api_axis_continuation_does_not_finish_attendance_work_interval(monkeypa
     set_attendance_service_for_tests(service)
     finish_calls = []
     monkeypatch.setattr(service, "finish_work_interval", lambda **kwargs: finish_calls.append(kwargs))
+    monkeypatch.setattr(laboratory_route, "require_hostless_completion_laboratory", lambda **_kwargs: None)
     snapshot = {
         "tasks": [{"code": "TASK-AXIS"}],
         "samples": [],

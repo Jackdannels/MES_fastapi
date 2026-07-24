@@ -1,11 +1,9 @@
-import page from "@/modules/staging-management/page.vue";
-
 export default {
   nav: true,
   route: {
     path: "/appearance-inspection",
     name: "appearance-inspection",
-    component: page,
+    component: () => import("@/modules/staging-management/page.vue"),
     meta: {
       module: "appearance",
       storageRoom: "appearance",

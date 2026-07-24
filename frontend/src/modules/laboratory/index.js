@@ -1,10 +1,9 @@
 import "./styles.css";
-import Page from "./page.vue";
 
 export const route = {
   path: "/laboratory",
   name: "laboratory",
-  component: Page,
+  component: () => import("./page.vue"),
   meta: {
     title: "试验室操作台",
     subtitle: "查看当前试验室任务与实验准备流程。",

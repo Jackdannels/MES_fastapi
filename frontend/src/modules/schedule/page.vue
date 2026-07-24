@@ -490,6 +490,7 @@
 
   <AppModal
     :open="scheduleConflictOpen"
+    content-class="schedule-conflict-modal-content"
     :title="scheduleConflictDetail?.level === 'full' ? uiText.fullConflictTitle : uiText.partialConflictTitle"
     @close="cancelScheduleConflict"
   >
@@ -497,7 +498,10 @@
       v-if="scheduleConflictDetail"
       class="schedule-conflict-panel"
       :class="scheduleConflictDetail.level === 'full' ? 'is-full' : 'is-partial'"
+      aria-label="冲突排程详情，可上下滚动"
       data-testid="schedule-conflict-modal"
+      role="region"
+      tabindex="0"
     >
       <div class="schedule-conflict-panel__summary">
         <strong>{{ scheduleConflictDetail.level === "full" ? uiText.fullConflictTitle : uiText.partialConflictTitle }}</strong>

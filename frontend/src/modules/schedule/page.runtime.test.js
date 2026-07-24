@@ -818,7 +818,14 @@ describe("SchedulePage runtime", () => {
 
     expect(wrapper.text()).toContain("部分冲突提示");
     expect(wrapper.text()).toContain("SYLU-2026-03-006-TP-002");
+    expect(wrapper.get(".modal-content").classes()).toContain("schedule-conflict-modal-content");
+    expect(wrapper.get('[data-testid="schedule-conflict-modal"]').attributes()).toEqual(expect.objectContaining({
+      "aria-label": "冲突排程详情，可上下滚动",
+      role: "region",
+      tabindex: "0",
+    }));
     expect(wrapper.get('[data-testid="schedule-conflict-cancel"]').exists()).toBe(true);
+    expect(wrapper.get('[data-testid="schedule-conflict-confirm"]').exists()).toBe(true);
 
     await wrapper.get('[data-testid="schedule-conflict-cancel"]').trigger("click");
     await settle(wrapper);

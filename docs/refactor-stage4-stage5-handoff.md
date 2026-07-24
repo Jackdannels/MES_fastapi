@@ -261,3 +261,41 @@ rtk git diff --check
 - 未提交、未推送声明。
 
 只有任务15～20全部完成、最终验证通过且独立审核返回 `APPROVE`，阶段四和阶段五才算完成。
+
+## 项目最终收口（阶段三后补）
+
+实际执行顺序为阶段四/五先完成，阶段三任务13、14后补。原阶段四/五的前端130个文件1661项、后端670项结果保留为中间基线；下列阶段三之后的结果才是项目最终集成结果。
+
+### 阶段三结果
+
+- 任务13：过程页面从1308行降至152行，详情、托盘、完整清单和任务选择拆为独立展示组件；`useProcessLabs.js`从1156行降至335行，拆出主数据、排程选择、托盘/样品/启动条件投影和任务/卡片组合模块。兼容导出及全部ref/computed返回字段保持。
+- 任务14A：`sampleFlow.trayFlowView.js`从1080行降至8行兼容门面；拆出657行多实验引擎、94行步骤/时间helper、139行单实验流程和223行部分/最终完成流程。
+- 任务14B：`useDevicesPage.js`从1056行降至8行兼容门面；拆出592行页面引擎、94行维保规则、115行排程冲突投影、199行运行中维修投影和27行设备时钟。
+- 结构测试只把源码读取范围扩展到新组件或引擎；原DOM、CSS、实时暂停/补刷断言均未删除、跳过或放宽。
+
+阶段三开始前冻结四个目标文件SHA-256和19个文件416项确定性基线。任务13指定7个文件96项通过；任务14样品侧7个文件181项、设备侧4个文件61项通过。固定场景覆盖共享托盘、部分轴向、最终轴向折叠、比对/夹具时间恢复、外观周期、暂存/实验室/厂家收回、运行中维修两分支、MQTT实验室和高低温湿热二室hostless例外。
+
+### 阶段三后最终验证
+
+- 前端全量：`rtk npm --prefix frontend run test:run` → 130个测试文件、1661项测试通过。首轮仅 `industrialTheme.structure.test.js` 仍只读取旧 `page.vue` 而失败1项；保留原主题断言并扩展到新详情/托盘组件后，聚焦4项及全量全部通过。
+- 后端全量：`rtk proxy .\.venv\Scripts\python.exe -m pytest -q` → 670项通过，保留1条Paho MQTT Callback API v1弃用警告。
+- 前端静态检查：`rtk npm --prefix frontend run lint` → 通过。
+- 前端生产构建：`rtk npm --prefix frontend run build` → 通过，357个模块完成转换，无超500 kB或循环依赖警告。
+- 空白错误检查：`rtk git diff --check` → 通过。
+- 构建仍为17个页面动态导入，未设置 `chunkSizeWarningLimit`，未配置业务目录 `manualChunks`。
+
+最终入口 `index-B8EUPFbc.js` 为175.33 kB、gzip 63.72 kB；阶段五中间基线为175.33 kB、gzip 63.69 kB，原始体积无回升，gzip仅增加0.03 kB（约0.05%）。最大动态页面chunk仍为88.58 kB；二维码chunk仍为24.52 kB；全局入口CSS仍为250.34 kB。新增职责模块使转换模块数由335增至357，但没有造成入口或最大动态chunk异常增长。
+
+### 独立行为一致性审核
+
+审核代理在修改前冻结四目标哈希、19个文件416项基线及固定业务时间/标识，覆盖过程刷新门禁、托盘跨页状态/目标/时间、设备维修、MQTT与高低温湿热二室hostless例外。首次终审运行环境禁止了所有只读 `rtk` 命令，因此仅因无法取得独立执行证据返回技术性 `REJECT`；该次审核未发现代码问题，也未修改任何文件。
+
+在启用命令访问并继续保持只读约束后重新执行终审。审核代理独立运行：
+
+```powershell
+rtk npm --prefix frontend run test:run -- src/modules/process/useProcessLabs.test.js src/modules/samples/trayFlowConsistency.test.js src/modules/devices/useDevicesPage.test.js src/modules/process/useProcessLabs.realtime.structure.test.js src/modules/devices/useDevicesPage.realtime.structure.test.js
+```
+
+结果为5个测试文件、95项测试全部通过；独立执行 `rtk git diff --check` 通过。最终差异检查确认兼容入口、参数、返回字段及ref/computed语义保持，新增模块依赖单向且无循环，结构测试仅聚合拆分后的源码、未删除或放宽原断言，17个页面动态导入和Vite配置未回退。除高低温湿热二室继续使用hostless本地模拟外，其余实验室保持MQTT模式。最终独立行为一致性结论：`APPROVE`。
+
+本轮未创建commit、未push、未切换分支、未创建worktree；阶段四/五及此前任务的未提交改动均保留。

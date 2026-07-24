@@ -69,6 +69,30 @@ class ReadyRequest(BaseModel):
         return sort_axis_codes(axis_codes)
 
 
+class ExperimentEndRequest(BaseModel):
+    task_code: str = Field(min_length=1)
+    lab_code: str = Field(min_length=1)
+    experiment_code: str = Field(min_length=1)
+    sub_experiment_code: str = Field(default="", validation_alias=AliasChoices("sub_experiment_code", "subExperimentCode"))
+    run_no: str = Field(min_length=1, validation_alias=AliasChoices("run_no", "runNo"))
+    axis_code: str = Field(default="", validation_alias=AliasChoices("axis_code", "axisCode"))
+    next_axis_code: str = Field(default="", validation_alias=AliasChoices("next_axis_code", "nextAxisCode"))
+
+    @field_validator(
+        "task_code",
+        "lab_code",
+        "experiment_code",
+        "sub_experiment_code",
+        "run_no",
+        "axis_code",
+        "next_axis_code",
+        mode="before",
+    )
+    @classmethod
+    def trim_text(cls, value: Any) -> str:
+        return str(value or "").strip()
+
+
 class InterfaceModeRequest(BaseModel):
     mode: str = Field(min_length=1)
 
@@ -171,6 +195,29 @@ def publish_ready(request: ReadyRequest) -> dict[str, Any]:
         payload["current_axis_code"] = request.current_axis_code
     try:
         result = publish_laboratory_command("READY", payload)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"ok": True, "payload": payload, **result}
+
+
+@router.post("/laboratory/end-request")
+def publish_experiment_end_request(request: ExperimentEndRequest) -> dict[str, Any]:
+    require_mqtt_laboratory(request.lab_code)
+    payload = {
+        "task_code": request.task_code,
+        "lab_code": request.lab_code,
+        "experiment_code": request.experiment_code,
+        "run_no": request.run_no,
+    }
+    for key, value in (
+        ("sub_experiment_code", request.sub_experiment_code),
+        ("axis_code", request.axis_code),
+        ("next_axis_code", request.next_axis_code),
+    ):
+        if value:
+            payload[key] = value
+    try:
+        result = publish_laboratory_command("END_REQUEST", payload)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"ok": True, "payload": payload, **result}

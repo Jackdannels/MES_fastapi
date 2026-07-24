@@ -38,6 +38,11 @@ from app.services.laboratory_withdrawal import (
     parse_experiment_history_detail,
     withdrawable_sample_matches,
 )
+from app.services.laboratory_snapshot_adapter import (
+    completion_updates,
+    snapshot_from_storage_payload,
+    start_updates,
+)
 
 router = APIRouter(prefix="/api/laboratory", tags=["laboratory"])
 LABORATORY_WITHDRAW_LOCK = Lock()
@@ -127,6 +132,11 @@ def require_hostless_laboratory(*, lab_code: str = "", lab_name: str = "") -> No
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def require_hostless_completion_laboratory(*, lab_name: str = "") -> None:
+    """Physical-interface guard kept separate from shared completion rules."""
+    require_hostless_laboratory(lab_name=lab_name)
+
+
 def normalize_axis_codes(value: Any) -> list[str]:
     if isinstance(value, list):
         raw_values = value
@@ -156,18 +166,7 @@ def parse_datetime_value(value: Any) -> datetime | None:
 def read_snapshot() -> dict[str, list[dict[str, Any]]]:
     storage = get_storage_backend()
     payload = normalize_storage_payload(storage.read_all())
-    return {
-        "tasks": [dict(item) for item in as_list(payload.get("mes.tasks")) if isinstance(item, dict)],
-        "samples": [dict(item) for item in as_list(payload.get("mes.samples")) if isinstance(item, dict)],
-        "schedules": [dict(item) for item in as_list(payload.get("mes.schedules")) if isinstance(item, dict)],
-        "experiments": [dict(item) for item in as_list(payload.get("mes.experiments")) if isinstance(item, dict)],
-        "experiment_runs": [dict(item) for item in as_list(payload.get("mes.experiment_runs")) if isinstance(item, dict)],
-        "experiment_run_trays": [dict(item) for item in as_list(payload.get("mes.experiment_run_trays")) if isinstance(item, dict)],
-        "experiment_run_steps": [dict(item) for item in as_list(payload.get("mes.experiment_run_steps")) if isinstance(item, dict)],
-        "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
-        "experiment_samples": [dict(item) for item in as_list(payload.get("mes.experiment_samples")) if isinstance(item, dict)],
-        "staging_events": [dict(item) for item in as_list(payload.get("mes.staging_events")) if isinstance(item, dict)],
-    }
+    return snapshot_from_storage_payload(payload)
 
 
 def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
@@ -181,30 +180,17 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
 
 
 def write_completion_snapshot(result: dict[str, Any]) -> None:
-    payload = {
-        "mes.samples": result["samples"],
-        "mes.experiments": result["experiments"],
-        "mes.schedules": result["schedules"],
-        "mes.experiment_runs": result["experimentRuns"],
-        "mes.experiment_run_trays": result["experimentRunTrays"],
-    }
-    if "experimentRunSteps" in result:
-        payload["mes.experiment_run_steps"] = result["experimentRunSteps"]
+    payload = completion_updates(result)
     get_storage_backend().write_many(payload)
     publish_storage_update(list(LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS))
 
 
 def write_start_snapshot(original_snapshot: dict[str, list[dict[str, Any]]], result: dict[str, Any]) -> None:
-    payload = {
-        "mes.tasks": result["tasks"],
-        "mes.samples": merge_scoped_samples(original_snapshot["samples"], result["samples"]),
-        "mes.experiments": result["experiments"],
-        "mes.schedules": result["schedules"],
-        "mes.experiment_runs": result["experimentRuns"],
-        "mes.experiment_run_trays": result["experimentRunTrays"],
-    }
-    if "experimentRunSteps" in result:
-        payload["mes.experiment_run_steps"] = result["experimentRunSteps"]
+    payload = start_updates(
+        original_snapshot,
+        result,
+        merged_samples=merge_scoped_samples(original_snapshot["samples"], result["samples"]),
+    )
     write_laboratory_updates(
         get_storage_backend(),
         payload,
@@ -743,8 +729,10 @@ def complete_current_experiment(
     completed_at = now_business_text()
     initial_snapshot = read_snapshot()
     initial_tray_codes = request.tray_codes
+    initial_lab_name = resolve_lab_name(initial_snapshot, normalized_task_code, normalized_experiment_code)
+    require_hostless_completion_laboratory(lab_name=initial_lab_name)
     resource_keys = operation_resource_keys(
-        lab_name=resolve_lab_name(initial_snapshot, normalized_task_code, normalized_experiment_code),
+        lab_name=initial_lab_name,
         tray_codes=initial_tray_codes,
     )
     resource_keys.append(f"experiment:{normalized_task_code}:{normalized_experiment_code}")

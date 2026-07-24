@@ -17,15 +17,18 @@ function useLaboratoryCompletionFlow({
   experimentRuns,
   experiments,
   flushPendingRealtimeRefresh,
+  laboratoryConfig,
   load,
   openAttendanceLogoutPrompt,
   persistRunningExperimentCompletion,
+  requestMqttExperimentEnd = async () => false,
   runWithAttendance,
   runningExperiment,
   runningModalVisible,
   samples,
   scheduleCompletedRunningModalAutoClose,
   schedules,
+  usesMqttCompletion = () => false,
 }) {
   const completingRunningExperimentKeys = new Set();
 
@@ -59,14 +62,31 @@ function useLaboratoryCompletionFlow({
     const completedAt = formatLocalDateTime();
     const runningRunNo = normalizeText(runningExperiment.value?.runNo);
     const runningTrayCodes = (runningExperiment.value?.trayCodes || []).map(normalizeText).filter(Boolean);
+    const subExperimentCode = resolveSubExperimentCode(runningExperiment.value) || resolveSubExperimentCode(currentTask.value);
     try {
+      if (usesMqttCompletion()) {
+        const published = await requestMqttExperimentEnd({
+          axis_code: effectiveAxisCode,
+          experiment_code: experimentCode,
+          lab_code: normalizeText(laboratoryConfig?.value?.labCode || laboratoryConfig?.value?.labId),
+          next_axis_code: normalizeText(nextAxisCode),
+          run_no: runningRunNo,
+          sub_experiment_code: subExperimentCode,
+          task_code: taskCode,
+        });
+        if (published) {
+          completePromptVisible.value = false;
+          flushPendingRealtimeRefresh();
+        }
+        return;
+      }
       const completionResult = await persistRunningExperimentCompletion({
         axisCode: effectiveAxisCode,
         completedAt,
         experimentCode,
         nextAxisCode,
         runNo: runningRunNo,
-        subExperimentCode: resolveSubExperimentCode(runningExperiment.value) || resolveSubExperimentCode(currentTask.value),
+        subExperimentCode,
         taskCode,
         trayCodes: runningTrayCodes,
       });

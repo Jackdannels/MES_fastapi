@@ -30,4 +30,7 @@ const publishLaboratoryFixtureInstall = (payload) =>
 const publishLaboratoryReady = (payload) =>
   postLaboratoryMqCommand("/api/mq/laboratory/ready", payload);
 
-export { publishLaboratoryFixtureInstall, publishLaboratoryReady };
+const publishLaboratoryEndRequest = (payload) =>
+  postLaboratoryMqCommand("/api/mq/laboratory/end-request", payload);
+
+export { publishLaboratoryEndRequest, publishLaboratoryFixtureInstall, publishLaboratoryReady };

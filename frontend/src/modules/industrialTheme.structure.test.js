@@ -53,7 +53,11 @@ describe("industrial blackbox module theme coverage", () => {
   });
 
   test("darkens process task drawers, history flow cards, and staging metrics", () => {
-    const processPage = readModuleStyle("src/modules/process/page.vue");
+    const processPage = [
+      "src/modules/process/page.vue",
+      "src/modules/process/ProcessTaskDetailModal.vue",
+      "src/modules/process/ProcessTaskTrayPanel.vue",
+    ].map(readModuleStyle).join("\n");
     const historyPage = readModuleStyle("src/modules/task-history/page.vue");
     const staging = readModuleStyle("src/modules/staging-management/styles.css");
 

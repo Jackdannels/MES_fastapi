@@ -12,6 +12,7 @@ from app.services.mq_event_processor import MySQLMqEventRepository, normalize_te
 COMMAND_TOPICS = {
     "INSTALL_FIXTURE": "fixture-install",
     "READY": "experiment-ready",
+    "END_REQUEST": "experiment-end-request",
 }
 BEIJING_TZ = timezone(timedelta(hours=8))
 

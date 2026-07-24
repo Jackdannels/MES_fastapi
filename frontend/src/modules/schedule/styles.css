@@ -349,6 +349,33 @@
   padding: 4px 0 8px;
 }
 
+.modal-content.schedule-conflict-modal-content {
+  display: flex;
+  flex-direction: column;
+  max-height: min(760px, calc(100dvh - 32px));
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.schedule-conflict-modal-content .modal-header,
+.schedule-conflict-modal-content > .form-actions {
+  flex: 0 0 auto;
+}
+
+.schedule-conflict-modal-content .schedule-conflict-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding-right: 8px;
+}
+
+.schedule-conflict-modal-content .schedule-conflict-panel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .schedule-conflict-panel__summary {
   align-items: flex-start;
   flex-direction: column;

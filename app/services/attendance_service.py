@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
-import secrets
 from copy import deepcopy
 from datetime import date, datetime, time, timedelta, timezone
 from threading import Lock
@@ -10,133 +7,33 @@ from typing import Any, Callable
 
 from app.core.master_data import DEFAULT_LABS
 from app.db.session import get_connection
+from app.services.attendance_schema import ATTENDANCE_SCHEMA_SQL
+from app.services.attendance_security import (
+    ATTENDANCE_QR_PREFIX,
+    build_qr_payload,
+    generate_qr_token,
+    hash_password,
+    hash_qr_token,
+    normalize_qr_token,
+    verify_password,
+)
+from app.services.attendance_time import (
+    BEIJING_TZ,
+    format_beijing,
+    format_utc,
+    mysql_datetime,
+    normalize_text,
+    now_utc,
+    parse_business_datetime,
+    parse_datetime,
+    should_finish_work_interval_for_completion,
+)
 
 
 DEFAULT_USERS = (
     {"username": "zhangsan", "password": "123", "employee_name": "张三", "role_name": "试验员"},
     {"username": "lisi", "password": "123", "employee_name": "李四", "role_name": "试验组长"},
 )
-
-BEIJING_TZ = timezone(timedelta(hours=8))
-ATTENDANCE_QR_PREFIX = "MES-ATTENDANCE:QR:"
-
-
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def normalize_text(value: Any) -> str:
-    return str(value or "").strip()
-
-
-def should_finish_work_interval_for_completion(*, axis_code: str = "", next_axis_code: str = "") -> bool:
-    return not (normalize_text(axis_code) and normalize_text(next_axis_code))
-
-
-def format_utc(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def format_beijing(value: datetime | None) -> str | None:
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(BEIJING_TZ).isoformat(timespec="seconds")
-
-
-def parse_datetime(value: Any) -> datetime | None:
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
-    normalized = normalize_text(value)
-    if not normalized:
-        return None
-    for candidate in (normalized, normalized.replace("Z", "+00:00")):
-        try:
-            parsed = datetime.fromisoformat(candidate)
-        except ValueError:
-            continue
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    try:
-        return datetime.strptime(normalized, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-    except ValueError:
-        return None
-
-
-def parse_business_datetime(value: Any) -> datetime | None:
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            return value.replace(tzinfo=BEIJING_TZ).astimezone(timezone.utc)
-        return value.astimezone(timezone.utc)
-    normalized = normalize_text(value)
-    if not normalized:
-        return None
-    for candidate in (normalized, normalized.replace("Z", "+00:00")):
-        try:
-            parsed = datetime.fromisoformat(candidate)
-        except ValueError:
-            continue
-        if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=BEIJING_TZ).astimezone(timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    try:
-        return datetime.strptime(normalized, "%Y-%m-%d %H:%M:%S").replace(tzinfo=BEIJING_TZ).astimezone(timezone.utc)
-    except ValueError:
-        return None
-
-
-def mysql_datetime(value: datetime | str | None) -> str | None:
-    parsed = parse_datetime(value)
-    if parsed is None:
-        return None
-    return parsed.astimezone(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def hash_password(password: str, *, salt: str | None = None) -> str:
-    effective_salt = salt or secrets.token_hex(16)
-    digest = hashlib.pbkdf2_hmac("sha256", str(password).encode("utf-8"), effective_salt.encode("utf-8"), 120_000)
-    return f"pbkdf2_sha256${effective_salt}${digest.hex()}"
-
-
-def verify_password(password: str, password_hash: str) -> bool:
-    try:
-        scheme, salt, _digest = password_hash.split("$", 2)
-    except ValueError:
-        return False
-    if scheme != "pbkdf2_sha256":
-        return False
-    return hmac.compare_digest(hash_password(password, salt=salt), password_hash)
-
-
-def generate_qr_token() -> str:
-    return secrets.token_urlsafe(32)
-
-
-def normalize_qr_token(value: Any) -> str:
-    normalized = normalize_text(value)
-    if normalized.startswith(ATTENDANCE_QR_PREFIX):
-        return normalize_text(normalized[len(ATTENDANCE_QR_PREFIX) :])
-    return normalized
-
-
-def hash_qr_token(token: str) -> str:
-    normalized = normalize_qr_token(token)
-    if not normalized:
-        return ""
-    return hashlib.sha256(f"attendance-qr:{normalized}".encode("utf-8")).hexdigest()
-
-
-def build_qr_payload(token: str) -> str:
-    return f"{ATTENDANCE_QR_PREFIX}{normalize_qr_token(token)}"
-
 
 class AttendanceError(Exception):
     def __init__(self, status_code: int, detail: str) -> None:
@@ -1253,87 +1150,6 @@ class AttendanceService:
                 }
             )
         return rows
-
-
-ATTENDANCE_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS sys_attendance_user (
-  user_id BIGINT NOT NULL AUTO_INCREMENT,
-  username VARCHAR(80) NOT NULL,
-  employee_name VARCHAR(100) NOT NULL,
-  role_name VARCHAR(80) NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  qr_token_hash VARCHAR(64) NULL,
-  qr_token_payload VARCHAR(255) NULL,
-  qr_token_created_at DATETIME NULL,
-  active TINYINT NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (user_id),
-  UNIQUE KEY uk_sys_attendance_user_username (username),
-  KEY idx_sys_attendance_user_qr_token_hash (qr_token_hash)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS biz_lab_attendance_session (
-  session_id BIGINT NOT NULL AUTO_INCREMENT,
-  username VARCHAR(80) NOT NULL,
-  employee_name VARCHAR(100) NOT NULL,
-  lab_name VARCHAR(100) NOT NULL,
-  lab_code VARCHAR(50) NULL,
-  active TINYINT NOT NULL DEFAULT 1,
-  logged_in_at DATETIME NOT NULL,
-  last_seen_at DATETIME NULL,
-  logged_out_at DATETIME NULL,
-  reason VARCHAR(80) NULL,
-  work_started_at DATETIME NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (session_id),
-  KEY idx_biz_lab_attendance_active_lab (active, lab_name),
-  KEY idx_biz_lab_attendance_username (username)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS biz_lab_work_interval (
-  interval_id BIGINT NOT NULL AUTO_INCREMENT,
-  session_id BIGINT NULL,
-  username VARCHAR(80) NOT NULL,
-  employee_name VARCHAR(100) NOT NULL,
-  lab_name VARCHAR(100) NOT NULL,
-  lab_code VARCHAR(50) NULL,
-  run_no VARCHAR(80) NULL,
-  task_no VARCHAR(50) NULL,
-  experiment_no VARCHAR(50) NULL,
-  source VARCHAR(20) NULL,
-  started_at DATETIME NOT NULL,
-  ended_at DATETIME NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (interval_id),
-  KEY idx_biz_lab_work_username_time (username, started_at),
-  KEY idx_biz_lab_work_run_no (run_no),
-  KEY idx_biz_lab_work_lab_open (lab_name, ended_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE IF NOT EXISTS biz_lab_operation_log (
-  operation_log_id BIGINT NOT NULL AUTO_INCREMENT,
-  session_id BIGINT NULL,
-  username VARCHAR(80) NOT NULL,
-  employee_name VARCHAR(100) NOT NULL,
-  lab_name VARCHAR(100) NOT NULL,
-  lab_code VARCHAR(50) NULL,
-  action_name VARCHAR(100) NOT NULL,
-  task_no VARCHAR(80) NULL,
-  experiment_no VARCHAR(80) NULL,
-  tray_no VARCHAR(100) NULL,
-  run_no VARCHAR(80) NULL,
-  source VARCHAR(20) NULL,
-  operated_at DATETIME NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (operation_log_id),
-  KEY idx_biz_lab_operation_time (operated_at),
-  KEY idx_biz_lab_operation_employee_time (username, operated_at),
-  KEY idx_biz_lab_operation_lab_time (lab_name, operated_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-"""
 
 
 _attendance_service: AttendanceService | None = None

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { publishLaboratoryFixtureInstall } from "./laboratoryMqApi.js";
+import { publishLaboratoryEndRequest, publishLaboratoryFixtureInstall } from "./laboratoryMqApi.js";
 
 describe("laboratoryMqApi", () => {
   afterEach(() => {
@@ -22,5 +22,32 @@ describe("laboratoryMqApi", () => {
       sample_type: "",
       task_code: "TASK-1",
     })).rejects.toThrow("disabled");
+  });
+
+  test("publishes an immediate experiment end request through the MES backend", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ ok: true, published: true }),
+    });
+    vi.stubGlobal("fetch", fetch);
+
+    await publishLaboratoryEndRequest({
+      experiment_code: "EXP-1",
+      lab_code: "LAB_SALT",
+      run_no: "RUN-1",
+      task_code: "TASK-1",
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/mq/laboratory/end-request", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({
+        experiment_code: "EXP-1",
+        lab_code: "LAB_SALT",
+        run_no: "RUN-1",
+        task_code: "TASK-1",
+      }),
+    }));
   });
 });

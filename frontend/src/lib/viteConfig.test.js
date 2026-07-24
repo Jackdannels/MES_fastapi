@@ -23,4 +23,10 @@ describe("vite.config", () => {
     expect(configSource).not.toContain('allow: [".."]');
     expect(configSource).not.toContain("allow: ['..']");
   });
+
+  test("build warnings are not hidden instead of fixing bundle size", () => {
+    const configSource = readFileSync(resolve(process.cwd(), "vite.config.js"), "utf8");
+
+    expect(configSource).not.toContain("chunkSizeWarningLimit");
+  });
 });

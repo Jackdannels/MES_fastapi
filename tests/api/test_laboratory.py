@@ -43,11 +43,13 @@ class FakeLaboratoryStorage:
             self.payloads[key] = list(value)
 
 
-def build_client(monkeypatch, payloads):
+def build_client(monkeypatch, payloads, *, bypass_completion_interface_guard=True):
     from app.api.routes import laboratory as laboratory_route
 
     storage = FakeLaboratoryStorage(payloads)
     monkeypatch.setattr(laboratory_route, "get_storage_backend", lambda: storage)
+    if bypass_completion_interface_guard:
+        monkeypatch.setattr(laboratory_route, "require_hostless_completion_laboratory", lambda **_kwargs: None)
 
     app = FastAPI()
     app.include_router(laboratory_route.router)
@@ -275,6 +277,8 @@ def test_laboratory_start_experiment_updates_ready_hot_humid_second_lab_through_
         "status": "实验进行中",
         "time": "2026-06-06 15:00:00",
     }
+
+
     assert storage.read("mes.tasks")[0]["status"] == "任务进行中"
     assert storage.read("mes.experiments")[-1]["status"] == "实验进行中"
     assert storage.read("mes.schedules")[-2]["status"] == "实验准备就绪"
@@ -315,6 +319,25 @@ def test_laboratory_start_experiment_updates_ready_hot_humid_second_lab_through_
             "updated_at": "2026-06-06 15:00:00",
         }
     ]
+
+
+def test_laboratory_complete_rejects_mqtt_laboratory_hostless_endpoint(monkeypatch):
+    sample = sample_with_history("实验进行中", "盐雾试验室", [], tray_code="TP-501")
+    payloads = base_payloads(
+        [sample],
+        experiment_trays=[{"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-501"}],
+    )
+    client, storage = build_client(monkeypatch, payloads, bypass_completion_interface_guard=False)
+    before = deepcopy(storage.read_all())
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-A/complete",
+        json={"runNo": "RUN-501", "trayCodes": ["TP-501"], "completedAt": "2026-05-19T10:00:00"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "盐雾试验室 仅支持 mqtt 接口，不允许使用 hostless 接口"}
+    assert storage.read_all() == before
 
 
 def test_fixture_ready_operation_rejects_non_hostless_laboratory(monkeypatch):
