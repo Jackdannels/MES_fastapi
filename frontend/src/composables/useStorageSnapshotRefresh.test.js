@@ -76,6 +76,47 @@ describe("useStorageSnapshotRefresh", () => {
     expect(refresh).toHaveBeenCalledTimes(2);
   });
 
+  test("deduplicates the same sourced request across local, remote, and sample refresh bridges", async () => {
+    const refresh = vi.fn();
+    const storageRefresh = useStorageSnapshotRefresh({ keys: ["mes.samples"], refresh, debounceMs: 0 });
+    const update = {
+      keys: ["mes.samples"],
+      source: "transfer-workbench",
+      requestId: "allocate-1",
+    };
+
+    storageSubscribers[0](update);
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, { detail: update }));
+    storageRefresh.requestRefresh(update);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test("runs an explicitly immediate bridge refresh without waiting for debounce", () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn();
+    const storageRefresh = useStorageSnapshotRefresh({ keys: ["mes.samples"], refresh });
+
+    storageRefresh.requestRefresh({ keys: ["mes.samples"], immediate: true });
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not let an unrelated key claim a sourced request deduplication slot", async () => {
+    const refresh = vi.fn();
+    const storageRefresh = useStorageSnapshotRefresh({ keys: ["mes.samples"], refresh, debounceMs: 0 });
+    const request = { source: "transfer-workbench", requestId: "allocate-2" };
+
+    storageRefresh.requestRefresh({ ...request, keys: ["mes.devices"] });
+    storageRefresh.requestRefresh({ ...request, keys: ["mes.samples"] });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   test("coalesces rapid update events by default", () => {
     vi.useFakeTimers();
     const refresh = vi.fn();

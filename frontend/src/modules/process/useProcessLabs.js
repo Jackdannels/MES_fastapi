@@ -87,6 +87,7 @@ function useProcessLabs(options = {}) {
   const taskDrawerOpen = ref(false);
   let labStatusLoadVersion = 0;
   let flushPendingStorageRefresh = () => false;
+  let requestStorageRefresh = () => {};
   let hasPendingSamplesRefresh = false;
 
   const state = {
@@ -282,13 +283,17 @@ function useProcessLabs(options = {}) {
     return true;
   };
 
-  const handleSamplesUpdated = () => {
+  const handleSamplesUpdated = (event) => {
     if (isProcessRealtimeRefreshPaused()) {
       hasPendingSamplesRefresh = true;
       return;
     }
     hasPendingSamplesRefresh = false;
-    void loadLabStatus({ silent: true });
+    requestStorageRefresh({
+      ...(event?.detail || {}),
+      keys: [STORAGE_KEYS.samples],
+      immediate: true,
+    });
   };
 
   if (autoLoad) {
@@ -298,6 +303,7 @@ function useProcessLabs(options = {}) {
       paused: isProcessRealtimeRefreshPaused,
     });
     flushPendingStorageRefresh = storageRefresh.flushPendingRefresh;
+    requestStorageRefresh = storageRefresh.requestRefresh;
     onMounted(() => {
       void loadLabStatus();
       if (typeof window !== "undefined") {

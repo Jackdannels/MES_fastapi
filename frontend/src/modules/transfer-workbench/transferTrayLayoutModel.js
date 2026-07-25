@@ -87,19 +87,40 @@ const buildRebalancedTrayLayout = ({
   };
 };
 
-const buildAllocationPayload = ({ assignedTrays, experiments, experimentTraySelections, trayLimit }) => ({
-  trayLimit,
-  trays: assignedTrays.map((tray) => ({
+const buildAllocationPayload = ({ assignedTrays, experiments, experimentTraySelections, trayLimit }) => {
+  const trayByNo = new Map(assignedTrays.map((tray, index) => [tray.trayNo, {
+    index,
     trayId: tray.trayId,
-    sampleIds: tray.samples.map((sample) => sample.sampleId),
-  })),
-  experimentTrays: experiments.map((experiment) => ({
-    experimentCode: experiment.experimentCode,
-    trayIds: assignedTrays
-      .filter((tray) => (experimentTraySelections[experiment.experimentCode] || []).includes(tray.trayNo))
-      .map((tray) => tray.trayId),
-  })),
-});
+  }]));
+
+  return {
+    trayLimit,
+    trays: assignedTrays.map((tray) => ({
+      trayId: tray.trayId,
+      sampleIds: tray.samples.map((sample) => sample.sampleId),
+    })),
+    experimentTrays: experiments.map((experiment) => {
+      const selectedTrayNos = Array.isArray(experimentTraySelections[experiment.experimentCode])
+        ? experimentTraySelections[experiment.experimentCode]
+        : [];
+      const seenTrayNos = new Set();
+      const selectedTrays = [];
+      selectedTrayNos.forEach((trayNo) => {
+        const tray = trayByNo.get(trayNo);
+        if (!tray || seenTrayNos.has(trayNo)) {
+          return;
+        }
+        seenTrayNos.add(trayNo);
+        selectedTrays.push(tray);
+      });
+      selectedTrays.sort((left, right) => left.index - right.index);
+      return {
+        experimentCode: experiment.experimentCode,
+        trayIds: selectedTrays.map((tray) => tray.trayId),
+      };
+    }),
+  };
+};
 
 export {
   buildAllocationPayload,

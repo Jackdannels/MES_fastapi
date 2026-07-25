@@ -85,8 +85,8 @@
         <label>设备名称</label>
         <input v-model="deviceForm.name" type="text" placeholder="设备名称" />
       </div>
-      <div class="form-field">
-        <label>设备当前状态</label>
+      <div class="form-field device-status-form-field">
+        <label class="device-status-label">设备当前状态</label>
         <div class="device-status-field" data-testid="device-status-field">
           <div :class="['device-status-display', editDeviceStatusClass]" data-testid="device-edit-status" role="status">
             {{ deviceForm.status }}

@@ -39,6 +39,7 @@ from app.services.external_task_intake_service import (
     validate_task_text_fields,
 )
 from app.services.lims_rabbitmq import EXTERNAL_INTAKE_LOCK
+from app.services.laboratory_operations import with_laboratory_storage_commit_lock
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 TASK_STORAGE_UPDATE_KEYS = (
@@ -620,6 +621,7 @@ def list_tasks(include_archived: bool = Query(False, alias="includeArchived")) -
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
+@with_laboratory_storage_commit_lock
 def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     storage = get_storage_backend()
     snapshot = load_snapshot(storage)
@@ -639,6 +641,7 @@ def list_external_task_intakes(
     )
 
 
+@with_laboratory_storage_commit_lock
 def store_external_task_intake(payload: dict[str, Any], *, message_id: str = "") -> dict[str, Any]:
     """Persist one RabbitMQ intake idempotently. This is intentionally not an HTTP route."""
     with EXTERNAL_INTAKE_LOCK:
@@ -651,6 +654,7 @@ def store_external_task_intake(payload: dict[str, Any], *, message_id: str = "")
 
 
 @router.post("/external-intakes/{intake_id}/accept")
+@with_laboratory_storage_commit_lock
 def accept_external_task_intake(intake_id: str) -> dict[str, Any]:
     with EXTERNAL_INTAKE_LOCK:
         return _accept_external_task_intake(intake_id)
@@ -667,6 +671,7 @@ def _accept_external_task_intake(intake_id: str) -> dict[str, Any]:
 
 
 @router.post("/reset")
+@with_laboratory_storage_commit_lock
 def reset_tasks() -> dict[str, int]:
     storage = get_storage_backend()
     result = run_demo_reset(storage)
@@ -676,6 +681,7 @@ def reset_tasks() -> dict[str, int]:
 
 
 @router.put("/{task_id}")
+@with_laboratory_storage_commit_lock
 def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     storage = get_storage_backend()
     snapshot = load_snapshot(storage)
@@ -839,6 +845,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+@with_laboratory_storage_commit_lock
 def delete_task(task_id: str) -> None:
     storage = get_storage_backend()
     snapshot = load_snapshot(storage)

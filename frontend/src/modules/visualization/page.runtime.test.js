@@ -195,7 +195,7 @@ describe("VisualizationPage runtime", () => {
     snapshotState.snapshot = {};
     vi.stubGlobal(
       "fetch",
-      vi.fn((url) => {
+      vi.fn(async (url) => {
         if (String(url).includes("/api/attendance/lab-sessions")) {
           return {
             ok: true,
@@ -252,6 +252,26 @@ describe("VisualizationPage runtime", () => {
     await snapshotState.refreshRegistrations[0].refresh();
     await Promise.resolve();
     await wrapper.vm.$nextTick();
+
+    const storageReadUrl = fetch.mock.calls
+      .map(([input]) => String(input))
+      .find((url) => url.includes("/api/storage?keys="));
+    const requestedKeys = new URL(storageReadUrl, "http://localhost")
+      .searchParams.get("keys")
+      .split(",")
+      .sort();
+    expect(requestedKeys).toEqual([
+      "mes.devices",
+      "mes.experiment_run_steps",
+      "mes.experiment_run_trays",
+      "mes.experiment_runs",
+      "mes.experiment_trays",
+      "mes.experiments",
+      "mes.samples",
+      "mes.schedules",
+      "mes.staging_events",
+      "mes.tasks",
+    ]);
 
     expect(wrapper.find('[data-testid="visual-single-preview"]').text()).toContain("TRAY-VIS-001");
     expect(wrapper.get('[data-testid="visual-operations-summary"]').text()).toContain("运行任务1");
@@ -871,6 +891,7 @@ describe("VisualizationPage runtime", () => {
       "mes.schedules": [
         {
           id: "schedule-sch-001",
+          axis_codes: ["x+", "y-", "z+"],
           task_code: "TASK-SCH-001",
           experiment_code: "EXP-SCH-VIB",
           device: "振动一室",
@@ -912,11 +933,13 @@ describe("VisualizationPage runtime", () => {
       expect(secondCard.text()).not.toContain("今天");
       expect(secondCard.text()).not.toContain("明天");
       expect(secondCard.text()).not.toContain("后天");
-      secondCard.findAll(".visual-schedule-day").forEach((day) => {
-        expect(day.find("span").exists()).toBe(false);
-        expect(day.find("strong").exists()).toBe(true);
-        expect(day.find("small").exists()).toBe(true);
-      });
+      expect(secondCard.find(".visual-schedule-days").exists()).toBe(false);
+      const periodHeaders = secondCard.findAll(".visual-schedule-grid-head:not(.visual-schedule-lab-head)");
+      expect(periodHeaders).toHaveLength(6);
+      expect(periodHeaders[0].get("strong").text()).toBe("5/23 上午");
+      expect(periodHeaders[0].get("small").text()).toBe("1 项");
+      expect(periodHeaders[1].get("strong").text()).toBe("5/23 下午");
+      expect(periodHeaders[1].get("small").text()).toBe("0 项");
       expect(secondCard.text()).toContain("TASK-SCH-001");
       expect(secondCard.text()).not.toContain("12 台设备");
       expect(secondCard.text()).not.toContain("TASK-SCH-OUTSIDE");
@@ -925,13 +948,18 @@ describe("VisualizationPage runtime", () => {
 
       const previewText = wrapper.find('[data-testid="visual-single-preview"]').text();
       expect(wrapper.get(".visual-schedule-grid").attributes("style")).toContain("--visual-schedule-row-count");
-      expect(previewText).toContain("振动试验");
+      expect(wrapper.find('[data-testid="visual-single-preview"] .visual-schedule-days').exists()).toBe(false);
+      expect(previewText).not.toContain("振动试验");
+      expect(previewText).not.toContain("X+ / Y- / Z+");
       expect(previewText).toContain("08:00-12:00");
       expect(previewText).toContain("进行中");
       expect(previewText).not.toContain("已排程");
       const runningSlot = wrapper.find('[data-testid="visual-single-preview"] .visual-schedule-slot.state-running');
       expect(runningSlot.exists()).toBe(true);
       expect(runningSlot.find(".visual-schedule-slot-state").exists()).toBe(false);
+      expect(runningSlot.find(".visual-schedule-task strong").text()).toBe("TASK-SCH-001");
+      expect(runningSlot.find(".visual-schedule-task small").text()).toBe("08:00-12:00");
+      expect(runningSlot.find(".visual-schedule-task span").exists()).toBe(false);
     } finally {
       vi.useRealTimers();
     }

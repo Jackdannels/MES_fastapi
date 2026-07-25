@@ -724,7 +724,15 @@ input[type="datetime-local"] {
 
 .tray-error-sample-panel {
   display: grid;
-  gap: 16px;
+  gap: 20px;
+}
+
+.modal-content.tray-error-sample-modal-content {
+  width: min(960px, 94vw);
+  min-height: min(520px, calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 28px 30px;
 }
 
 .tray-error-sample-panel__head h3,
@@ -741,6 +749,16 @@ input[type="datetime-local"] {
 
 .tray-error-sample-input {
   min-width: 0;
+  min-height: 56px;
+  padding: 14px 16px;
+  font-size: 16px;
+}
+
+.tray-error-sample-query {
+  min-width: 180px;
+  min-height: 56px;
+  padding-inline: 24px;
+  font-size: 16px;
 }
 
 .tray-error-sample-result {
@@ -824,8 +842,19 @@ input[type="datetime-local"] {
 }
 
 @media (max-width: 720px) {
+  .modal-content.tray-error-sample-modal-content {
+    width: calc(100vw - 16px);
+    min-height: 0;
+    max-height: calc(100dvh - 16px);
+    padding: 20px;
+  }
+
   .tray-error-sample-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .tray-error-sample-query {
+    width: 100%;
   }
 }
 

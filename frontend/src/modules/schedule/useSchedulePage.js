@@ -1,5 +1,6 @@
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
+import { buildTemporalBoundaryState, temporalBoundaryHasElapsed } from "@/composables/temporalBoundaryClock";
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
@@ -37,7 +38,10 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { useScheduleFormState } from "./useScheduleFormState";
 import { useScheduleRealtime } from "./useScheduleRealtime";
 
-function useSchedulePage() {
+function useSchedulePage(options = {}) {
+  const buildRows = options.buildScheduleRows || buildScheduleRows;
+  const buildGantt = options.buildGanttRows || buildGanttRows;
+  const buildSummary = options.buildSummaryCards || buildSummaryCards;
   const { loadSnapshot } = useStorageSnapshot([
     STORAGE_KEYS.conflicts,
     STORAGE_KEYS.devices,
@@ -67,6 +71,7 @@ function useSchedulePage() {
   const scheduleSearch = ref("");
   const conflictSearch = ref("");
   const now = ref(serverNowDate());
+  const structuralNow = ref(now.value);
   const ganttWindowOffsetDays = ref(0);
 
   const scheduleDrawer = useDialogState();
@@ -78,6 +83,31 @@ function useSchedulePage() {
   const ignoredStorageRequestIds = ref(new Set());
   let schedulePatchRequestSeq = 0;
   let clockTimer = null;
+  let temporalBoundaryState = null;
+  const resetTemporalBoundaryState = () => {
+    temporalBoundaryState = buildTemporalBoundaryState({
+      devices: rawDevices.value,
+      now: now.value,
+      schedules: rawSchedules.value,
+    });
+  };
+  const refreshStructuralClock = () => {
+    structuralNow.value = now.value;
+    resetTemporalBoundaryState();
+  };
+  resetTemporalBoundaryState();
+  watch([
+    masterLabs,
+    rawDevices,
+    rawExperiments,
+    rawExperimentRuns,
+    rawExperimentRunSteps,
+    rawExperimentRunTrays,
+    rawExperimentTrays,
+    rawSamples,
+    rawSchedules,
+    rawTasks,
+  ], refreshStructuralClock);
 
   const buildFailureMessage = (prefix, error) => {
     const detail = normalizeText(error instanceof Error ? error.message : "");
@@ -185,13 +215,13 @@ function useSchedulePage() {
       rawExperiments.value.find((entry) => normalizeText(entry?.experiment_code) === normalizeText(experimentCode))?.experiment_name,
     );
 
-  const scheduleRows = computed(() => buildScheduleRows({
+  const scheduleRows = computed(() => buildRows({
     experimentTrays: rawExperimentTrays.value,
     experiments: rawExperiments.value,
     samples: rawSamples.value,
     schedules: activeSchedules.value,
     tasks: rawTasks.value,
-    now: now.value,
+    now: structuralNow.value,
   }));
   const conflictRows = computed(() =>
     buildConflictRows({
@@ -209,7 +239,7 @@ function useSchedulePage() {
   );
   const pendingExceptionCount = computed(() => pendingExceptionRows.value.length);
   const ganttStartDate = computed(() => {
-    const date = new Date(now.value.getFullYear(), now.value.getMonth(), now.value.getDate());
+    const date = new Date(structuralNow.value.getFullYear(), structuralNow.value.getMonth(), structuralNow.value.getDate());
     date.setDate(date.getDate() + ganttWindowOffsetDays.value);
     return date;
   });
@@ -253,12 +283,12 @@ function useSchedulePage() {
     };
   };
   const ganttView = computed(() =>
-    buildGanttRows({
+    buildGantt({
       devices: rawDevices.value,
       experiments: rawExperiments.value,
       experimentTrays: rawExperimentTrays.value,
       masterLabs: masterLabs.value,
-      now: now.value,
+      now: structuralNow.value,
       samples: rawSamples.value,
       schedules: activeSchedules.value,
       selectedTaskCode: normalizeText(scheduleForm.value.task_code),
@@ -277,16 +307,20 @@ function useSchedulePage() {
       taskCode: scheduleForm.value.task_code,
     }),
   );
-  const summaryCards = computed(() =>
-    buildSummaryCards({
+  const structuralSummaryCards = computed(() =>
+    buildSummary({
       experimentTrays: rawExperimentTrays.value,
       experiments: rawExperiments.value,
-      now: now.value,
+      now: structuralNow.value,
       samples: rawSamples.value,
       schedules: activeSchedules.value,
       tasks: rawTasks.value,
     }),
   );
+  const summaryCards = computed(() => ({
+    ...structuralSummaryCards.value,
+    nextAuto: formatDateTime(new Date(now.value.getTime() + 30 * 60 * 1000)),
+  }));
   const selectedTaskDetail = computed(() => {
     const payload = taskDetailModal.payload.value || {};
     const scheduleId = normalizeText(payload?.id);
@@ -485,6 +519,10 @@ function useSchedulePage() {
   const syncRetentionClock = () => {
     // 页面上的当前时间、留样默认时间和合法性检查都跟随秒级时钟更新。
     now.value = serverNowDate();
+    if (temporalBoundaryHasElapsed(temporalBoundaryState, now.value)) {
+      structuralNow.value = now.value;
+      resetTemporalBoundaryState();
+    }
     syncManualScheduleLegality();
   };
 

@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import threading
 from contextlib import ExitStack, contextmanager
+from functools import wraps
 from typing import Any, Callable, Iterable
 
 from app.core.storage_backend import normalize_storage_payload
 from app.core.time_utils import format_business_datetime, now_business_text
+from app.services.appearance_inspection import (
+    APPEARANCE_INSPECTION_DISPATCH_STATUS,
+    APPEARANCE_INSPECTION_STOCKED_STATUS,
+    PRE_EXPERIMENT_APPEARANCE_STATUS,
+)
 from app.services.experiment_segments import normalize_text
 
 
@@ -28,6 +34,11 @@ OPERATION_HISTORY_ACTION = {
 }
 LABORATORY_OPERATION_UPDATE_KEYS = ("mes.samples",)
 FIXTURE_READY_KEYS = ("fixtureReady", "fixture_ready")
+APPEARANCE_PRE_DISPATCH_STATUSES = {
+    APPEARANCE_INSPECTION_DISPATCH_STATUS,
+    APPEARANCE_INSPECTION_STOCKED_STATUS,
+    PRE_EXPERIMENT_APPEARANCE_STATUS,
+}
 
 _LOCKS_GUARD = threading.Lock()
 _RESOURCE_LOCKS: dict[str, threading.RLock] = {}
@@ -65,6 +76,15 @@ def acquire_laboratory_operation_locks(resource_keys: Iterable[str]):
 def acquire_laboratory_storage_commit_lock():
     with _STORAGE_COMMIT_LOCK:
         yield
+
+
+def with_laboratory_storage_commit_lock(operation):
+    @wraps(operation)
+    def locked_operation(*args, **kwargs):
+        with acquire_laboratory_storage_commit_lock():
+            return operation(*args, **kwargs)
+
+    return locked_operation
 
 
 def storage_snapshot(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -333,6 +353,20 @@ def apply_laboratory_task_operation(
     target_lab_name = normalize_text(lab_name) or resolve_lab_name(snapshot, normalized_task_code, normalized_experiment_code)
     history_action = OPERATION_HISTORY_ACTION.get(normalized_operation_type, "")
     affected_tray_set = set(affected_tray_codes)
+    if normalized_operation_type == "compare":
+        appearance_blocked_tray_codes = {
+            normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo"))
+            for sample in scoped_snapshot.get("samples", [])
+            for tray in as_list(sample.get("trays"))
+            if isinstance(tray, dict)
+            and normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no") or tray.get("trayNo"))
+            in affected_tray_set
+            and normalize_text(tray.get("status") or sample.get("status") or sample.get("flow_status"))
+            in APPEARANCE_PRE_DISPATCH_STATUSES
+        }
+        if appearance_blocked_tray_codes:
+            joined_tray_codes = "、".join(sorted(appearance_blocked_tray_codes))
+            raise ValueError(f"托盘 {joined_tray_codes} 仍位于外观检测间，请先完成出库并送至实验室")
     next_samples: list[dict[str, Any]] = []
     affected_sample_count = 0
     touched_tray_codes: set[str] = set()

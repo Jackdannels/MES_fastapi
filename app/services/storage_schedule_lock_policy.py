@@ -51,7 +51,29 @@ def _experiment_tray_codes(experiment_trays: Any, task_code: str, experiment_cod
     return codes
 
 
-def _sample_has_fixture_locked_tray(sample: Any, tray_codes: set[str], schedule: Any) -> bool:
+def _shared_experiment_tray_codes(experiment_trays: Any, task_code: str) -> set[str]:
+    experiment_codes_by_tray: dict[str, set[str]] = {}
+    for entry in _as_list(experiment_trays):
+        if not isinstance(entry, dict) or _task_code(entry) != task_code:
+            continue
+        tray_code = _tray_code(entry)
+        experiment_code = _experiment_code(entry)
+        if not tray_code or not experiment_code:
+            continue
+        experiment_codes_by_tray.setdefault(tray_code, set()).add(experiment_code)
+    return {
+        tray_code
+        for tray_code, experiment_codes in experiment_codes_by_tray.items()
+        if len(experiment_codes) > 1
+    }
+
+
+def _sample_has_fixture_locked_tray(
+    sample: Any,
+    tray_codes: set[str],
+    schedule: Any,
+    shared_tray_codes: set[str],
+) -> bool:
     if not isinstance(sample, dict):
         return False
     sample_statuses = {
@@ -59,13 +81,24 @@ def _sample_has_fixture_locked_tray(sample: Any, tray_codes: set[str], schedule:
         _normalize_text(sample.get("flow_status")),
     }
     for tray in _as_list(sample.get("trays")):
-        if not isinstance(tray, dict) or _tray_code(tray) not in tray_codes:
+        if not isinstance(tray, dict):
+            continue
+        tray_code = _tray_code(tray)
+        if tray_code not in tray_codes:
             continue
         tray_statuses = {_normalize_text(tray.get("status")), _normalize_text(tray.get("flow_status"))}
         if not (sample_statuses | tray_statuses) & SCHEDULE_LOCKED_AFTER_COMPARE_STATUSES:
             continue
-        schedule_sub_code = _record_sub_code(schedule, experiment_code=_experiment_code(schedule))
+        schedule_experiment_code = _experiment_code(schedule)
+        tray_target_experiment_code = _normalize_text(
+            tray.get("target_experiment_code") or tray.get("targetExperimentCode")
+        )
+        if tray_target_experiment_code and tray_target_experiment_code != schedule_experiment_code:
+            continue
+        schedule_sub_code = _record_sub_code(schedule, experiment_code=schedule_experiment_code)
         if not schedule_sub_code:
+            if not tray_target_experiment_code and tray_code in shared_tray_codes:
+                continue
             return True
         tray_target_sub_code = _normalize_text(
             tray.get("target_sub_experiment_code") or tray.get("targetSubExperimentCode")
@@ -177,8 +210,10 @@ def _schedule_is_fixture_locked(
     tray_codes = _experiment_tray_codes(experiment_trays, task_code, experiment_code)
     if not tray_codes:
         return False
+    shared_tray_codes = _shared_experiment_tray_codes(experiment_trays, task_code)
     return any(
-        _task_code(sample) == task_code and _sample_has_fixture_locked_tray(sample, tray_codes, schedule)
+        _task_code(sample) == task_code
+        and _sample_has_fixture_locked_tray(sample, tray_codes, schedule, shared_tray_codes)
         for sample in _as_list(samples)
     )
 

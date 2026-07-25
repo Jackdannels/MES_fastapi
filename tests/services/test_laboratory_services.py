@@ -138,6 +138,48 @@ def test_laboratory_operation_records_tray_code_in_comparison_history():
     assert "振动试验" in history["detail"]
 
 
+def test_laboratory_compare_rejects_tray_still_stocked_in_appearance_room():
+    snapshot = {
+        "tasks": [{"code": "TASK-1", "status": "任务进行中"}],
+        "experiments": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-IMPACT", "experiment_name": "冲击试验"},
+            {"task_code": "TASK-1", "experiment_code": "EXP-SALT", "experiment_name": "盐雾试验"},
+        ],
+        "schedules": [{"id": "SCH-SALT", "task_code": "TASK-1", "experiment_code": "EXP-SALT", "device": "盐雾试验室"}],
+        "experiment_runs": [],
+        "experiment_run_trays": [
+            {
+                "run_no": "RUN-IMPACT",
+                "task_code": "TASK-1",
+                "experiment_code": "EXP-IMPACT",
+                "tray_code": "TP-1",
+                "run_tray_status": "实验已完成",
+            }
+        ],
+        "experiment_trays": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-IMPACT", "tray_code": "TP-1"},
+            {"task_code": "TASK-1", "experiment_code": "EXP-SALT", "tray_code": "TP-1"},
+        ],
+        "experiment_samples": [{"task_code": "TASK-1", "experiment_code": "EXP-SALT", "sample_code": "SP-1"}],
+        "staging_events": [],
+        "samples": [_sample("SP-1", "TASK-1", "TP-1", "实验前外观检测间存放", "外观检测间")],
+    }
+
+    with pytest.raises(ValueError, match="托盘 TP-1 仍位于外观检测间"):
+        apply_laboratory_task_operation(
+            snapshot,
+            operation_type="compare",
+            task_code="TASK-1",
+            experiment_code="EXP-SALT",
+            lab_name="盐雾试验室",
+            tray_codes=["TP-1"],
+            occurred_at="2026-07-24 15:04:17",
+        )
+
+    assert snapshot["samples"][0]["status"] == "实验前外观检测间存放"
+    assert snapshot["samples"][0]["location"] == "外观检测间"
+
+
 def test_laboratory_compare_rejects_partial_axis_tray_targeted_to_another_experiment():
     task_code = "SYLU-2026-07-027"
     tray_code = f"{task_code}-TP-001"
@@ -1857,6 +1899,92 @@ def test_start_rejects_ambiguous_legacy_sample_without_experiment_sample_relatio
             tray_codes=["TP-1"],
             started_at="2026-06-06 09:00:00",
         )
+
+
+def test_complete_removes_schedule_when_other_assigned_tray_was_returned_earlier():
+    snapshot = {
+        "experiments": [
+            {
+                "task_code": "TASK-MIXED-TERMINAL",
+                "experiment_code": "EXP-A",
+                "experiment_name": "四综合试验",
+                "status": "实验进行中",
+            }
+        ],
+        "schedules": [
+            {
+                "id": "SCH-A",
+                "task_code": "TASK-MIXED-TERMINAL",
+                "experiment_code": "EXP-A",
+                "device": "四综合实验室",
+                "status": "实验进行中",
+            }
+        ],
+        "experiment_runs": [
+            {
+                "run_no": "RUN-A",
+                "task_code": "TASK-MIXED-TERMINAL",
+                "experiment_code": "EXP-A",
+                "tray_codes": ["TP-COMPLETING"],
+                "status": "实验进行中",
+            }
+        ],
+        "experiment_run_trays": [
+            {
+                "run_no": "RUN-A",
+                "task_code": "TASK-MIXED-TERMINAL",
+                "experiment_code": "EXP-A",
+                "tray_code": "TP-COMPLETING",
+                "run_tray_status": "实验进行中",
+            },
+            {
+                "run_no": "RETURNED-EXP-A",
+                "task_code": "TASK-MIXED-TERMINAL",
+                "experiment_code": "EXP-A",
+                "tray_code": "TP-RETURNED",
+                "run_tray_status": "厂家收回",
+            },
+        ],
+        "experiment_trays": [
+            {"task_code": "TASK-MIXED-TERMINAL", "experiment_code": "EXP-A", "tray_code": "TP-COMPLETING"},
+            {"task_code": "TASK-MIXED-TERMINAL", "experiment_code": "EXP-A", "tray_code": "TP-RETURNED"},
+        ],
+        "experiment_samples": [
+            {"task_code": "TASK-MIXED-TERMINAL", "experiment_code": "EXP-A", "sample_code": "SP-COMPLETING"},
+            {"task_code": "TASK-MIXED-TERMINAL", "experiment_code": "EXP-A", "sample_code": "SP-RETURNED"},
+        ],
+        "staging_events": [
+            {
+                "action": "manufacturer_return",
+                "task_code": "TASK-MIXED-TERMINAL",
+                "tray_code": "TP-RETURNED",
+                "time": "2026-07-25 09:00:00",
+            }
+        ],
+        "samples": [
+            _sample("SP-COMPLETING", "TASK-MIXED-TERMINAL", "TP-COMPLETING", "实验进行中", "四综合实验室"),
+            _sample("SP-RETURNED", "TASK-MIXED-TERMINAL", "TP-RETURNED", "厂家收回", "厂家收回"),
+        ],
+    }
+
+    result = complete_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-MIXED-TERMINAL",
+        experiment_code="EXP-A",
+        run_no="RUN-A",
+        tray_codes=["TP-COMPLETING"],
+        completed_at="2026-07-25 10:00:00",
+    )
+
+    assert result["schedules"] == []
+    assert result["experiments"][0]["status"] == "实验已完成"
+    assert {
+        relation["tray_code"]: relation["run_tray_status"]
+        for relation in result["experimentRunTrays"]
+    } == {
+        "TP-COMPLETING": "实验已完成",
+        "TP-RETURNED": "厂家收回",
+    }
 
 
 def test_complete_scopes_requested_trays_to_current_experiment_assignment():

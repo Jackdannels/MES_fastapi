@@ -4,9 +4,12 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Header, HTTPException
 from app.api.routes.storage import publish_storage_update, tray_has_scoped_partial_axis_batch_completion
-from app.core.storage_backend import get_storage_backend, normalize_storage_payload
+from app.core.storage_backend import get_storage_backend
 from app.core.time_utils import now_business_text
-from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
+from app.services.laboratory_operations import (
+    acquire_laboratory_storage_commit_lock,
+    with_laboratory_storage_commit_lock,
+)
 from app.services.storage_atomic import merge_concurrent_storage_updates
 from app.api.routes.transfer_area_commands import (
     TASK_STATUS_PENDING,
@@ -84,6 +87,12 @@ from app.api.routes.transfer_area_read_views import (
     transfer_status_for_task,
     tray_serial_from_code,
 )
+from app.api.routes.transfer_area_snapshot import (
+    TRANSFER_BOOTSTRAP_READ_FIELDS,
+    TRANSFER_WORKSPACE_READ_FIELDS,
+    hydrate_transfer_snapshot_for_write,
+    read_transfer_snapshot,
+)
 
 router = APIRouter(prefix="/api/transfer-area", tags=["transfer-area"])
 
@@ -101,6 +110,7 @@ TRANSFER_STORAGE_UPDATE_KEYS = (
     "mes.staging_events",
 )
 
+
 def now_text() -> str:
     return now_business_text(include_seconds=False)
 
@@ -109,22 +119,12 @@ def now_text() -> str:
 
 
 
-def read_snapshot() -> dict[str, list[dict[str, Any]]]:
-    storage = get_storage_backend()
-    payload = normalize_storage_payload(storage.read_all())
-    return {
-        "tasks": [dict(item) for item in as_list(payload.get("mes.tasks")) if isinstance(item, dict)],
-        "samples": [dict(item) for item in as_list(payload.get("mes.samples")) if isinstance(item, dict)],
-        "schedules": [dict(item) for item in as_list(payload.get("mes.schedules")) if isinstance(item, dict)],
-        "experiments": [dict(item) for item in as_list(payload.get("mes.experiments")) if isinstance(item, dict)],
-        "experiment_runs": [dict(item) for item in as_list(payload.get("mes.experiment_runs")) if isinstance(item, dict)],
-        "experiment_run_trays": [dict(item) for item in as_list(payload.get("mes.experiment_run_trays")) if isinstance(item, dict)],
-        "experiment_run_steps": [dict(item) for item in as_list(payload.get("mes.experiment_run_steps")) if isinstance(item, dict)],
-        "experiment_trays": [dict(item) for item in as_list(payload.get("mes.experiment_trays")) if isinstance(item, dict)],
-        "experiment_samples": [dict(item) for item in as_list(payload.get("mes.experiment_samples")) if isinstance(item, dict)],
-        "staging_events": [dict(item) for item in as_list(payload.get("mes.staging_events")) if isinstance(item, dict)],
-        "devices": [dict(item) for item in as_list(payload.get("mes.devices")) if isinstance(item, dict)],
-    }
+def read_snapshot(
+    fields: tuple[str, ...] | None = None,
+    *,
+    storage: Any | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    return read_transfer_snapshot(storage or get_storage_backend(), fields)
 
 
 def write_snapshot(
@@ -378,9 +378,7 @@ def repair_pending_tray_codes(task: dict[str, Any], task_samples: list[dict[str,
 
 
 
-@router.get("/bootstrap")
-def read_bootstrap() -> dict[str, Any]:
-    snapshot = read_snapshot()
+def build_bootstrap_response(snapshot: dict[str, list[dict[str, Any]]]) -> tuple[dict[str, Any], bool]:
     samples_by_task = build_task_sample_map(snapshot["samples"])
     visible_tasks = [task for task in snapshot["tasks"] if is_visible_task(task, samples_by_task.get(task_code(task), []))]
     visible_tasks.sort(key=lambda item: task_code(item))
@@ -393,36 +391,75 @@ def read_bootstrap() -> dict[str, Any]:
         samples_by_task[task_code(task)] = task_samples
         overview.append(build_transfer_overview_row(task, task_samples, snapshot["experiments"], index))
 
-    if snapshot_changed:
-        write_snapshot(snapshot)
+    return (
+        {
+            "taskOverview": overview,
+            "pendingTaskCount": sum(1 for item in overview if item["taskStatus"] == TASK_STATUS_PENDING),
+            "storedTaskCount": sum(1 for item in overview if item["taskStatus"] == TASK_STATUS_STORED),
+        },
+        snapshot_changed,
+    )
 
-    return {
-        "taskOverview": overview,
-        "pendingTaskCount": sum(1 for item in overview if item["taskStatus"] == TASK_STATUS_PENDING),
-        "storedTaskCount": sum(1 for item in overview if item["taskStatus"] == TASK_STATUS_STORED),
-    }
+
+@router.get("/bootstrap")
+def read_bootstrap() -> dict[str, Any]:
+    storage = get_storage_backend()
+    response, snapshot_changed = build_bootstrap_response(
+        read_snapshot(TRANSFER_BOOTSTRAP_READ_FIELDS, storage=storage),
+    )
+    if not snapshot_changed:
+        return response
+    with acquire_laboratory_storage_commit_lock():
+        storage = get_storage_backend()
+        snapshot = read_snapshot(TRANSFER_BOOTSTRAP_READ_FIELDS, storage=storage)
+        response, snapshot_changed = build_bootstrap_response(snapshot)
+        if snapshot_changed:
+            snapshot = hydrate_transfer_snapshot_for_write(storage, snapshot)
+            write_snapshot(snapshot)
+        return response
 
 
-@router.get("/tasks/{task_id}/workspace")
-def read_task_workspace(task_id: str) -> dict[str, Any]:
-    snapshot = read_snapshot()
+def build_task_workspace_response(
+    snapshot: dict[str, list[dict[str, Any]]],
+    task_id: str,
+) -> tuple[dict[str, Any], bool]:
     task = find_task(snapshot, task_id)
     if normalize_text(task.get("transfer_status")) == TASK_STATUS_RETURNED:
         raise HTTPException(status_code=404, detail="任务已归档")
     task_samples, changed = ensure_task_samples(snapshot, task)
     if repair_pending_tray_codes(task, task_samples):
         changed = True
-    if changed:
-        write_snapshot(snapshot)
-    return serialize_workspace(
-        task,
-        task_samples,
-        snapshot["samples"],
-        snapshot["experiments"],
-        snapshot["experiment_trays"],
-        snapshot["experiment_samples"],
-        snapshot["schedules"],
+    return (
+        serialize_workspace(
+            task,
+            task_samples,
+            snapshot["samples"],
+            snapshot["experiments"],
+            snapshot["experiment_trays"],
+            snapshot["experiment_samples"],
+            snapshot["schedules"],
+        ),
+        changed,
     )
+
+
+@router.get("/tasks/{task_id}/workspace")
+def read_task_workspace(task_id: str) -> dict[str, Any]:
+    storage = get_storage_backend()
+    response, snapshot_changed = build_task_workspace_response(
+        read_snapshot(TRANSFER_WORKSPACE_READ_FIELDS, storage=storage),
+        task_id,
+    )
+    if not snapshot_changed:
+        return response
+    with acquire_laboratory_storage_commit_lock():
+        storage = get_storage_backend()
+        snapshot = read_snapshot(TRANSFER_WORKSPACE_READ_FIELDS, storage=storage)
+        response, snapshot_changed = build_task_workspace_response(snapshot, task_id)
+        if snapshot_changed:
+            snapshot = hydrate_transfer_snapshot_for_write(storage, snapshot)
+            write_snapshot(snapshot)
+        return response
 
 
 @router.get("/trays/{tray_code}/dispatch")
@@ -439,6 +476,7 @@ def read_tray_dispatch(tray_code: str) -> dict[str, Any]:
     return serialize_tray_dispatch_payload(snapshot, task, tray_code)
 
 @router.post("/trays/{tray_code}/dispatch")
+@with_laboratory_storage_commit_lock
 def dispatch_tray(
     tray_code: str,
     request: TrayDispatchRequest = Body(...),
@@ -496,6 +534,7 @@ def read_tray_withdraw_dispatch(tray_code: str) -> dict[str, Any]:
     return serialize_tray_dispatch_payload(snapshot, task, tray_code)
 
 @router.post("/trays/{tray_code}/withdraw-dispatch")
+@with_laboratory_storage_commit_lock
 def withdraw_dispatch_tray(tray_code: str, request: TrayWithdrawDispatchRequest = Body(...)) -> dict[str, Any]:
     tray_code = normalize_tray_scan_code(tray_code)
     snapshot = read_snapshot()
@@ -511,6 +550,7 @@ def withdraw_dispatch_tray(tray_code: str, request: TrayWithdrawDispatchRequest 
     }
 
 @router.post("/tasks/{task_id}/allocate")
+@with_laboratory_storage_commit_lock
 def save_task_allocation(
     task_id: str,
     request: TaskAllocationRequest = Body(...),
@@ -557,6 +597,7 @@ def save_task_allocation(
 
 
 @router.post("/tasks/{task_id}/print-barcodes")
+@with_laboratory_storage_commit_lock
 def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(...)) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)
@@ -618,6 +659,7 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
     return {"ok": True, "message": "二维码已生成", "barcodes": printed, "workspace": workspace}
 
 @router.post("/tasks/{task_id}/confirm-storage")
+@with_laboratory_storage_commit_lock
 def confirm_task_storage(
     task_id: str,
     update_source: str = Header(default="", alias="X-MES-Update-Source"),
@@ -651,6 +693,7 @@ def confirm_task_storage(
     }
 
 @router.post("/tasks/{task_id}/reload")
+@with_laboratory_storage_commit_lock
 def reload_task_storage(task_id: str) -> dict[str, Any]:
     snapshot = read_snapshot()
     task = find_task(snapshot, task_id)

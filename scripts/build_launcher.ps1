@@ -135,9 +135,22 @@ if ($outputDirectory) {
 }
 
 $temporarySource = Join-Path ([System.IO.Path]::GetTempPath()) ("MesLauncher-" + [Guid]::NewGuid().ToString("N") + ".cs")
+$temporaryManifest = Join-Path ([System.IO.Path]::GetTempPath()) ("MesLauncher-" + [Guid]::NewGuid().ToString("N") + ".manifest")
 $escapedProjectRoot = $projectRootPath.Replace('"', '""')
 (Get-Content -LiteralPath $launcherSource -Raw).Replace("__PROJECT_ROOT__", $escapedProjectRoot) |
     Set-Content -LiteralPath $temporarySource -Encoding UTF8
+@'
+<?xml version="1.0" encoding="utf-8"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+</assembly>
+'@ | Set-Content -LiteralPath $temporaryManifest -Encoding UTF8
 
 try {
     $csc = Resolve-CscPath
@@ -148,6 +161,7 @@ try {
         /optimize+ `
         /reference:System.Windows.Forms.dll `
         /win32icon:"$IconPath" `
+        /win32manifest:"$temporaryManifest" `
         /out:"$OutputPath" `
         "$temporarySource"
 
@@ -157,6 +171,9 @@ try {
 } finally {
     if (Test-Path -LiteralPath $temporarySource) {
         Remove-Item -LiteralPath $temporarySource -Force
+    }
+    if (Test-Path -LiteralPath $temporaryManifest) {
+        Remove-Item -LiteralPath $temporaryManifest -Force
     }
 }
 

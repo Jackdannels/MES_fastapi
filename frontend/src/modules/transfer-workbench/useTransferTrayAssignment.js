@@ -39,6 +39,8 @@ function useTransferTrayAssignment({
   const allocationSaved = ref(false);
   const barcodePrintConfirmed = ref(false);
   const lockedOperationHint = ref("");
+  const trayExperimentIndexRevision = ref(0);
+  const experimentCodesByTrayNo = new Map();
   const SAVED_ALLOCATION_HINT = "托盘已保存，若想更改请重新入库";
 
   const rawAvailableInventoryCount = computed(() => availableInventory.value.length);
@@ -91,11 +93,12 @@ function useTransferTrayAssignment({
   const everyExperimentHasTray = computed(() => experiments.value.every((experiment) => (
     (draftExperimentTraySelections.value[experiment.experimentCode] || []).length > 0
   )));
-  const everyLoadedTrayHasExperiment = computed(() => loadedTrayNos.value.every((trayNo) => (
-    experiments.value.some((experiment) => (
-      draftExperimentTraySelections.value[experiment.experimentCode] || []
-    ).includes(trayNo))
-  )));
+  const everyLoadedTrayHasExperiment = computed(() => {
+    // The revision makes the plain Map part of Vue's dependency graph without
+    // wrapping every Set entry in a deep reactive proxy.
+    void trayExperimentIndexRevision.value;
+    return loadedTrayNos.value.every((trayNo) => (experimentCodesByTrayNo.get(trayNo)?.size || 0) > 0);
+  });
   const hasCompleteExperimentTrayAllocation = computed(() => (
     loadedTrayNos.value.length > 0
     && (!requiresExperimentTrayAllocation.value || (everyExperimentHasTray.value && everyLoadedTrayHasExperiment.value))
@@ -192,16 +195,44 @@ function useTransferTrayAssignment({
       experiment.experimentCode,
       resolveExperimentDisplayName(experiment),
     ]));
+    experimentCodesByTrayNo.clear();
+    assignedTrays.value.forEach((tray) => {
+      experimentCodesByTrayNo.set(tray.trayNo, new Set());
+    });
+    experiments.value.forEach((experiment) => {
+      const selectedTrayNos = Array.isArray(draftExperimentTraySelections.value[experiment.experimentCode])
+        ? draftExperimentTraySelections.value[experiment.experimentCode]
+        : [];
+      selectedTrayNos.forEach((trayNo) => {
+        experimentCodesByTrayNo.get(trayNo)?.add(experiment.experimentCode);
+      });
+    });
     assignedTrays.value = assignedTrays.value.map((tray) => {
-      const experimentCodes = Object.entries(draftExperimentTraySelections.value)
-        .filter(([, trayNos]) => Array.isArray(trayNos) && trayNos.includes(tray.trayNo))
-        .map(([experimentCode]) => experimentCode);
+      const experimentCodes = experiments.value
+        .map((experiment) => experiment.experimentCode)
+        .filter((experimentCode) => experimentCodesByTrayNo.get(tray.trayNo)?.has(experimentCode));
       return {
         ...tray,
         experimentCodes,
         experimentLabels: experimentCodes.map((experimentCode) => experimentNameMap[experimentCode] || experimentCode),
       };
     });
+    trayExperimentIndexRevision.value += 1;
+  };
+
+  const assignAllExperimentsToAllTrays = () => {
+    if (allocationReadOnly.value) {
+      showSavedAllocationHint();
+      return;
+    }
+    const trayNos = assignedTrays.value.map((tray) => tray.trayNo);
+    draftExperimentTraySelections.value = Object.fromEntries(experiments.value.map((experiment) => [
+      experiment.experimentCode,
+      [...trayNos],
+    ]));
+    rebuildTrayExperimentLabels();
+    allocationSaved.value = false;
+    activeTrayIndex.value = -1;
   };
 
   const resetExperimentAssignmentsForTrayLayout = () => {
@@ -273,11 +304,11 @@ function useTransferTrayAssignment({
     return true;
   };
   const isSampleSelected = (sampleId) => selectedSampleId.value === sampleId;
-  const isTraySelectedForCurrentExperiment = (trayNo) => (
-    isExperimentMode.value
-      && Array.isArray(draftExperimentTraySelections.value[currentExperimentCode.value])
-      && draftExperimentTraySelections.value[currentExperimentCode.value].includes(trayNo)
-  );
+  const isTraySelectedForCurrentExperiment = (trayNo) => {
+    void trayExperimentIndexRevision.value;
+    return isExperimentMode.value
+      && Boolean(experimentCodesByTrayNo.get(trayNo)?.has(currentExperimentCode.value));
+  };
   const setAssignmentMode = (nextMode) => {
     if (nextMode && nextMode !== "task" && showSavedAllocationHint()) {
       return;
@@ -322,11 +353,28 @@ function useTransferTrayAssignment({
     } else {
       current.add(tray.trayNo);
     }
-    draftExperimentTraySelections.value = {
-      ...draftExperimentTraySelections.value,
-      [currentExperimentCode.value]: Array.from(current).sort((left, right) => left.localeCompare(right, "zh-Hans-CN")),
+    draftExperimentTraySelections.value[currentExperimentCode.value] = Array.from(current)
+      .sort((left, right) => left.localeCompare(right, "zh-Hans-CN"));
+    const trayExperimentCodes = new Set(experimentCodesByTrayNo.get(tray.trayNo) || tray.experimentCodes || []);
+    if (trayExperimentCodes.has(currentExperimentCode.value)) {
+      trayExperimentCodes.delete(currentExperimentCode.value);
+    } else {
+      trayExperimentCodes.add(currentExperimentCode.value);
+    }
+    experimentCodesByTrayNo.set(tray.trayNo, trayExperimentCodes);
+    const experimentCodes = experiments.value
+      .map((experiment) => experiment.experimentCode)
+      .filter((experimentCode) => trayExperimentCodes.has(experimentCode));
+    const experimentNameMap = new Map(experiments.value.map((experiment) => [
+      experiment.experimentCode,
+      resolveExperimentDisplayName(experiment),
+    ]));
+    assignedTrays.value[trayIndex] = {
+      ...tray,
+      experimentCodes,
+      experimentLabels: experimentCodes.map((experimentCode) => experimentNameMap.get(experimentCode) || experimentCode),
     };
-    rebuildTrayExperimentLabels();
+    trayExperimentIndexRevision.value += 1;
     allocationSaved.value = false;
     activeTrayIndex.value = trayIndex;
   };
@@ -499,6 +547,7 @@ function useTransferTrayAssignment({
     activeAssignmentMode,
     activeTrayIndex,
     addInventoryTray,
+    assignAllExperimentsToAllTrays,
     allocationReadOnly,
     allocationSaved,
     allocationValidationMessage,

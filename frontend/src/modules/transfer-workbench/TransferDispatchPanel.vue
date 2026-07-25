@@ -284,7 +284,23 @@ const resolveDestinationHint = (destination) => {
 .transfer-dispatch-toolbar {
   position: static;
   flex: 0 0 auto;
-  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 280px);
+  gap: 16px;
+}
+
+.transfer-dispatch-toolbar > .search-input {
+  width: 100%;
+  min-height: 56px;
+  padding: 14px 18px;
+  font-size: 16px;
+}
+
+.transfer-dispatch-toolbar > .action-btn {
+  width: 100%;
+  min-width: 240px;
+  min-height: 56px;
+  padding-inline: 28px;
+  font-size: 16px;
 }
 
 .transfer-dispatch-toolbar > .transfer-dispatch-feedback {
@@ -642,6 +658,10 @@ const resolveDestinationHint = (destination) => {
 @media (max-width: 720px) {
   .transfer-dispatch-toolbar {
     grid-template-columns: 1fr;
+  }
+
+  .transfer-dispatch-toolbar > .action-btn {
+    min-width: 0;
   }
 
   .transfer-dispatch-destination-card__top,

@@ -1083,7 +1083,7 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.find(".transfer-overview-pagination .task-list-pagination").exists()).toBe(true);
     expect(wrapper.findAll(".transfer-overview-pagination [data-page]").map((node) => node.attributes("data-page"))).toEqual(["prev", "next"]);
     expect(wrapper.get('.transfer-overview-pagination [data-testid="pagination-status"]').text()).toBe("第 1 / 10 页");
-    expect(wrapper.find(".transfer-overview-pagination [data-testid='pagination-jump-input']").exists()).toBe(true);
+    expect(wrapper.find(".transfer-overview-pagination [data-testid='pagination-jump-input']").exists()).toBe(false);
   });
 
   test("pre-allocation overview returns to the first page when searching from the last page", async () => {
@@ -1326,6 +1326,78 @@ describe("TransferWorkbench runtime", () => {
 
     expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
     expect(wrapper.text()).toContain("有样品的托盘必须至少分配一个实验");
+  });
+
+  test("assigns all experiments to 10 trays in one batch and saves the complete matrix", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+    const trayNos = Array.from({ length: 10 }, (_, index) => `SYLU-2026-03-101-TP-${String(index + 1).padStart(3, "0")}`);
+    workspacePayload.task = { ...workspacePayload.task, trayLimit: 1 };
+    workspacePayload.experiments = Array.from({ length: 8 }, (_, index) => ({
+      experimentCode: `SYLU-2026-03-101-${String.fromCharCode(65 + index)}`,
+      experimentName: `试验 ${index + 1}`,
+      assignedTrayNos: [],
+    }));
+    workspacePayload.assignedTrays = trayNos.map((trayNo, index) => ({
+      trayId: 1000 + index,
+      trayNo,
+      trayType: "标准托盘",
+      trayStatus: "已预分配",
+      capacity: 1,
+      experimentLabels: [],
+      experimentCodes: [],
+      samples: [{ sampleId: 2000 + index, sampleNo: `SAMPLE-${index + 1}`, sampleStatus: "未入库" }],
+      barcode: null,
+      barcodeData: null,
+    }));
+    workspacePayload.trayInventory = [];
+    const savedWorkspace = {
+      ...workspacePayload,
+      allocationSaved: true,
+      experiments: workspacePayload.experiments.map((experiment) => ({ ...experiment, assignedTrayNos: trayNos })),
+    };
+    let allocationPayload = null;
+
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/allocate")) {
+        allocationPayload = JSON.parse(options.body);
+        return { ok: true, status: 200, json: async () => ({ ok: true, message: "托盘分配已保存", workspace: savedWorkspace }) };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-assign-all-experiments"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.findAll('[data-testid^="transfer-tray-card-"]')).toHaveLength(10);
+    expect(wrapper.findAll(".transfer-tray-experiment-tag")).toHaveLength(80);
+    expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeUndefined();
+
+    await wrapper.get('[data-testid="transfer-save-trays"]').trigger("click");
+    await settle(wrapper);
+
+    expect(allocationPayload.experimentTrays).toEqual(workspacePayload.experiments.map((experiment) => ({
+      experimentCode: experiment.experimentCode,
+      trayIds: workspacePayload.assignedTrays.map((tray) => tray.trayId),
+    })));
   });
 
   test.each([

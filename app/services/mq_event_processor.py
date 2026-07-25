@@ -98,6 +98,24 @@ def build_ack(correlation_id: str, status: str, error_code: str = "", error_mess
     }
 
 
+def run_axis_codes(run: dict[str, Any] | None) -> list[str]:
+    value = (run or {}).get("axis_codes") or (run or {}).get("axisCodes") or (run or {}).get("axis_codes_json")
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            decoded = value.replace("，", ",").split(",")
+        value = decoded
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        axis_code = normalize_text(item)
+        if axis_code and axis_code not in result:
+            result.append(axis_code)
+    return result
+
+
 def cursor_rows_as_dicts(cursor: Any) -> list[dict[str, Any]]:
     rows = cursor.fetchall()
     if not rows:
@@ -281,6 +299,7 @@ class MySQLMqEventRepository:
                       er.task_no,
                       er.experiment_no,
                       er.sub_experiment_code,
+                      er.axis_codes_json,
                       er.device_name,
                       er.run_status
                     FROM biz_experiment_run er
@@ -317,6 +336,7 @@ class MySQLMqEventRepository:
                       er.task_no,
                       er.experiment_no,
                       er.sub_experiment_code,
+                      er.axis_codes_json,
                       er.device_name,
                       er.run_status
                     FROM biz_experiment_run er
@@ -772,9 +792,9 @@ def process_laboratory_event(
     payload_next_axis_code = first_text(payload, "next_axis_code", "nextAxisCode")
     if message_type == "EXPERIMENT_RESULT" and not payload_run_no:
         raise ValueError("run_no is required for experiment result")
-    run = repo.find_active_run_by_lab(lab_code) if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"} else None
-    if message_type == "EXPERIMENT_RESULT" and payload_run_no:
-        run = repo.find_run_by_no(payload_run_no)
+    run = None
+    if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"}:
+        run = repo.find_run_by_no(payload_run_no) if payload_run_no else repo.find_active_run_by_lab(lab_code)
     created_run_from_context = False
     if message_type == "EXPERIMENT_STARTED":
         context = repo.find_current_context_by_lab(lab_code, ["实验准备就绪"], payload)
@@ -792,6 +812,8 @@ def process_laboratory_event(
         raise ValueError(f"active experiment run is required for lab_code: {lab_code}")
     if message_type == "EXPERIMENT_RESULT" and not run:
         raise ValueError(f"experiment run is required for lab_code: {lab_code}")
+    if message_type == "EXPERIMENT_ENDED" and run_axis_codes(run) and not payload_axis_code:
+        raise ValueError("axis_code is required for axis-aware experiment end")
     context_task_no = normalize_text((run or {}).get("task_no")) or normalize_text((context or {}).get("task_no"))
     authoritative_context = created_run_from_context or message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"}
     if fixture_installation:

@@ -661,17 +661,14 @@ def build_scheduled_dispatch_target_map(
     schedules: Iterable[Dict[str, Any]] | None,
     experiment_trays: Iterable[Dict[str, Any]] | None,
 ) -> Dict[tuple[str, str, str], str]:
-    assigned_pairs = {
-        (
-            normalize_text(entry.get("task_code") or entry.get("taskCode") or entry.get("task_no")),
-            normalize_text(entry.get("experiment_code") or entry.get("experimentCode") or entry.get("experiment_no")),
-            normalize_text(entry.get("tray_code") or entry.get("trayCode") or entry.get("tray_no")),
-        )
-        for entry in experiment_trays or []
-        if normalize_text(entry.get("task_code") or entry.get("taskCode") or entry.get("task_no"))
-        and normalize_text(entry.get("experiment_code") or entry.get("experimentCode") or entry.get("experiment_no"))
-        and normalize_text(entry.get("tray_code") or entry.get("trayCode") or entry.get("tray_no"))
-    }
+    assigned_trays_by_experiment: Dict[tuple[str, str], set[str]] = {}
+    for entry in experiment_trays or []:
+        task_code = normalize_text(entry.get("task_code") or entry.get("taskCode") or entry.get("task_no"))
+        experiment_code = normalize_text(entry.get("experiment_code") or entry.get("experimentCode") or entry.get("experiment_no"))
+        tray_code = normalize_text(entry.get("tray_code") or entry.get("trayCode") or entry.get("tray_no"))
+        if task_code and experiment_code and tray_code:
+            assigned_trays_by_experiment.setdefault((task_code, experiment_code), set()).add(tray_code)
+
     candidates: Dict[tuple[str, str, str], set[str]] = {}
     for schedule in schedules or []:
         task_code = normalize_text(schedule.get("task_code") or schedule.get("taskCode") or schedule.get("task_no"))
@@ -679,9 +676,8 @@ def build_scheduled_dispatch_target_map(
         device = normalize_text(schedule.get("device") or schedule.get("device_name") or schedule.get("target_lab"))
         if not task_code or not experiment_code or not device:
             continue
-        for assigned_task, assigned_experiment, tray_code in assigned_pairs:
-            if assigned_task == task_code and assigned_experiment == experiment_code:
-                candidates.setdefault((task_code, tray_code, device), set()).add(experiment_code)
+        for tray_code in assigned_trays_by_experiment.get((task_code, experiment_code), set()):
+            candidates.setdefault((task_code, tray_code, device), set()).add(experiment_code)
     return {
         key: next(iter(experiment_codes))
         for key, experiment_codes in candidates.items()
@@ -698,6 +694,20 @@ def event_is_appearance_stock_in(event: Dict[str, Any], task_code: str, tray_cod
         return False
     room = normalize_text(event.get("room") or event.get("storage_room") or event.get("storageRoom"))
     return normalize_text(event.get("action")) == "stock_in" and room == "appearance"
+
+
+def build_appearance_stock_in_index(
+    event_rows: Iterable[Dict[str, Any]] | None,
+) -> set[tuple[str, str]]:
+    appearance_stock_in_keys: set[tuple[str, str]] = set()
+    for event in event_rows or []:
+        tray_code = normalize_text(event.get("tray_code") or event.get("trayCode"))
+        room = normalize_text(event.get("room") or event.get("storage_room") or event.get("storageRoom"))
+        if not tray_code or normalize_text(event.get("action")) != "stock_in" or room != "appearance":
+            continue
+        task_code = normalize_text(event.get("task_code") or event.get("taskCode") or event.get("task_no"))
+        appearance_stock_in_keys.add((task_code, tray_code))
+    return appearance_stock_in_keys
 
 
 def history_has_appearance_stock_in(history: Iterable[Dict[str, Any]], tray_code: str) -> bool:
@@ -738,14 +748,21 @@ def build_storage_sample_item(
     staging_event_rows: Iterable[Dict[str, Any]] | None = None,
     schedules: Iterable[Dict[str, Any]] | None = None,
     experiment_trays: Iterable[Dict[str, Any]] | None = None,
+    staging_target_by_tray_code: Dict[str, dict[str, str]] | None = None,
+    scheduled_target_by_key: Dict[tuple[str, str, str], str] | None = None,
+    appearance_stock_in_keys: set[tuple[str, str]] | None = None,
 ) -> Dict[str, Any]:
     meta = decode_sample_meta(row.get("remark"))
     resolved_task_code = normalize_text(row.get("task_no")) or derive_task_code_from_sample_code(row.get("sample_no"))
     event_row_list = list(event_rows or [])
     staging_event_row_list = list(staging_event_rows or [])
     target_lab_by_tray_code = build_tray_dispatch_target_map(event_row_list)
-    staging_target_by_tray_code = build_staging_dispatch_target_map(staging_event_row_list)
-    scheduled_target_by_key = build_scheduled_dispatch_target_map(schedules, experiment_trays)
+    if staging_target_by_tray_code is None:
+        staging_target_by_tray_code = build_staging_dispatch_target_map(staging_event_row_list)
+    if scheduled_target_by_key is None:
+        scheduled_target_by_key = build_scheduled_dispatch_target_map(schedules, experiment_trays)
+    if appearance_stock_in_keys is None:
+        appearance_stock_in_keys = build_appearance_stock_in_index(staging_event_row_list)
     trays = []
     for tray in tray_rows or []:
         tray_code = normalize_text(tray.get("tray_code"))
@@ -820,11 +837,11 @@ def build_storage_sample_item(
         if tray.get("status") != PRE_EXPERIMENT_APPEARANCE_STATUS:
             continue
         tray_code = normalize_text(tray.get("tray_code"))
-        has_appearance_stock_in = any(
-            event_is_appearance_stock_in(event, resolved_task_code, tray_code)
-            for event in staging_event_row_list
-            if isinstance(event, dict)
-        ) or history_has_appearance_stock_in(history, tray_code)
+        has_appearance_stock_in = (
+            (resolved_task_code, tray_code) in appearance_stock_in_keys
+            or ("", tray_code) in appearance_stock_in_keys
+            or history_has_appearance_stock_in(history, tray_code)
+        )
         if has_appearance_stock_in:
             continue
         tray["status"] = restored_state["status"]

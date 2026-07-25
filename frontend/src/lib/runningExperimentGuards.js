@@ -89,6 +89,24 @@ function buildExperimentTrayCodeSet({ experimentCode, experimentTrays = [], task
   return trays;
 }
 
+function buildTaskTrayExperimentCodeMap({ experimentTrays = [], taskCode }) {
+  const experimentCodesByTray = new Map();
+  for (const row of asList(experimentTrays)) {
+    if (!rowMatchesTask(row, taskCode)) {
+      continue;
+    }
+    const trayCode = rowTrayCode(row);
+    const experimentCode = rowExperimentCode(row);
+    if (!trayCode || !experimentCode) {
+      continue;
+    }
+    const experimentCodes = experimentCodesByTray.get(trayCode) || new Set();
+    experimentCodes.add(experimentCode);
+    experimentCodesByTray.set(trayCode, experimentCodes);
+  }
+  return experimentCodesByTray;
+}
+
 function samplesHaveRunningTrayForTask(samples, taskCode) {
   const normalizedTaskCode = normalizeText(taskCode);
   if (!normalizedTaskCode) {
@@ -104,6 +122,7 @@ function samplesHaveRunningTrayForTask(samples, taskCode) {
 
 function samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experimentTrays = [], samples = [], schedule, taskCode }) {
   const trayCodes = buildExperimentTrayCodeSet({ experimentCode, experimentTrays, taskCode });
+  const experimentCodesByTray = buildTaskTrayExperimentCodeMap({ experimentTrays, taskCode });
   const scheduleSubExperimentCode = rowSubExperimentCode(schedule);
   if (trayCodes.size === 0) {
     return false;
@@ -113,10 +132,18 @@ function samplesHaveScheduleLockedTrayForExperiment({ experimentCode, experiment
       return false;
     }
     return asList(sample?.trays).some((tray) => {
-      if (!trayCodes.has(rowTrayCode(tray)) || !rowHasScheduleLockedStatus(tray)) {
+      const trayCode = rowTrayCode(tray);
+      if (!trayCodes.has(trayCode) || !rowHasScheduleLockedStatus(tray)) {
+        return false;
+      }
+      const targetExperimentCode = normalizeText(tray?.target_experiment_code ?? tray?.targetExperimentCode);
+      if (targetExperimentCode && targetExperimentCode !== experimentCode) {
         return false;
       }
       if (!scheduleSubExperimentCode) {
+        if (!targetExperimentCode && (experimentCodesByTray.get(trayCode)?.size || 0) > 1) {
+          return false;
+        }
         return true;
       }
       return normalizeText(tray?.target_sub_experiment_code ?? tray?.targetSubExperimentCode) === scheduleSubExperimentCode;

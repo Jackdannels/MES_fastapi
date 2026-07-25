@@ -1,6 +1,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, unref, watch } from "vue";
 
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
+import { buildTemporalBoundaryState, temporalBoundaryHasElapsed } from "@/composables/temporalBoundaryClock";
 import {
   HOST_INTERFACE_MODE_CHANGED_EVENT,
   HOST_INTERFACE_MODE_STORAGE_KEY,
@@ -55,10 +56,14 @@ import { buildLaboratoryAxisContinuation } from "./laboratoryAxisContinuation";
 import { useLaboratoryOperationPersistence } from "./useLaboratoryOperationPersistence";
 import { useLaboratoryResetFlow } from "./useLaboratoryResetFlow";
 import { useLaboratoryCompletionFlow } from "./useLaboratoryCompletionFlow";
+import { updateRunningExperimentClock } from "./laboratoryPresentation";
 
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 function useLaboratoryPage(options = {}) {
   const now = options.now;
+  const readNow = typeof now === "function" ? now : () => now || serverNowDate();
+  const buildWorkbenchView = options.buildWorkbenchView || buildLaboratoryWorkbenchView;
+  const updateRunningClock = options.updateRunningExperimentClock || updateRunningExperimentClock;
   const storage =
     options.storage ||
     useStorageSnapshot([
@@ -113,7 +118,9 @@ function useLaboratoryPage(options = {}) {
   const completePromptVisible = ref(false);
   const runningModalVisible = ref(false);
   const completedRunningExperiment = ref(null);
-  const tickNow = ref(now || serverNowDate());
+  const tickNow = ref(readNow());
+  const structuralNow = ref(tickNow.value);
+  let temporalBoundaryState = null;
   let tickTimer = null;
   let latestSnapshotLoadRequest = 0;
   let ignoreNextSamplesUpdatedRefresh = () => {};
@@ -155,14 +162,44 @@ function useLaboratoryPage(options = {}) {
     submitAttendanceQrLogin,
   } = useLaboratoryAttendance({ laboratoryConfig, tickNow });
 
+  const resetTemporalBoundaryState = () => {
+    temporalBoundaryState = buildTemporalBoundaryState({
+      devices: devices.value,
+      now: tickNow.value,
+      schedules: schedules.value,
+    });
+  };
+  const refreshStructuralClock = () => {
+    structuralNow.value = tickNow.value;
+    resetTemporalBoundaryState();
+  };
+  resetTemporalBoundaryState();
+  watch(tickNow, (currentNow) => {
+    if (temporalBoundaryHasElapsed(temporalBoundaryState, currentNow)) {
+      structuralNow.value = currentNow;
+      resetTemporalBoundaryState();
+    }
+  });
+  watch([
+    tasks,
+    schedules,
+    experiments,
+    experimentRuns,
+    experimentRunTrays,
+    experimentRunSteps,
+    experimentTrays,
+    samples,
+    devices,
+  ], refreshStructuralClock);
+
   const view = computed(() =>
-    buildLaboratoryWorkbenchView({
+    buildWorkbenchView({
       experiments: experiments.value,
       experimentRuns: experimentRuns.value,
       experimentRunSteps: experimentRunSteps.value,
       experimentRunTrays: experimentRunTrays.value,
       experimentTrays: experimentTrays.value,
-      now: tickNow.value,
+      now: structuralNow.value,
       samples: samples.value,
       selectedTaskCode: selectedTaskCode.value,
       selectedTrayCode: selectedTrayCode.value,
@@ -173,10 +210,14 @@ function useLaboratoryPage(options = {}) {
     }),
   );
 
-  const summary = computed(() => buildLaboratorySummary(view.value.scheduleRows, now || serverNowDate()));
+  const summary = computed(() => buildLaboratorySummary(view.value.scheduleRows, structuralNow.value));
   const currentTask = computed(() => view.value.currentTask);
   const selectedTask = computed(() => view.value.selectedTask);
-  const checklist = computed(() => buildLaboratoryChecklist(currentTask.value));
+  const checklist = computed(() => buildLaboratoryChecklist(currentTask.value).map((item) =>
+    item.label === "执行人员"
+      ? { ...item, value: normalizeText(attendanceStatus.value?.employeeName) || "-" }
+      : item,
+  ));
   const workflow = computed(() => buildLaboratoryWorkflowFromTask(currentTask.value));
   const hasLaboratoryTasks = computed(() => view.value.scheduleRows.length > 0);
   const selectedLabDevice = computed(() =>
@@ -213,7 +254,7 @@ function useLaboratoryPage(options = {}) {
     }
     return "";
   });
-  const runningExperiment = computed(() => view.value.runningExperiment);
+  const runningExperiment = computed(() => updateRunningClock(view.value.runningExperiment, tickNow.value));
   const runningAttendanceStartKey = computed(() => {
     if (!runningExperiment.value?.active) {
       return "";
@@ -580,7 +621,7 @@ function useLaboratoryPage(options = {}) {
     void nextTick().then(syncHeaderActionTarget);
     if (typeof window !== "undefined") {
       tickTimer = window.setInterval(() => {
-        tickNow.value = now || serverNowDate();
+        tickNow.value = readNow();
       }, 1000);
       window.addEventListener("pointerdown", handleRunningModalActivity, true);
       window.addEventListener("mousemove", handleRunningModalActivity, true);

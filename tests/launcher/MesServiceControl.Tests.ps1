@@ -107,6 +107,15 @@ Describe "MES service controller" {
         $controllerSource | Should Match '(?s)function Stop-ProcessTree.*?\$ErrorActionPreference = "SilentlyContinue".*?taskkill\.exe.*?2>&1 \| Out-Null.*?Stop-Process -Id \$ProcessId -Force -ErrorAction SilentlyContinue'
     }
 
+    It "stops command roots before repeatedly clearing listeners during restart" {
+        $controllerSource = Get-Content -LiteralPath $controller -Raw
+
+        $controllerSource | Should Match 'function Get-MesListenerPids'
+        $controllerSource | Should Match '(?s)function Wait-MesPortsReleased.*?do \{.*?\$listenerPids = @\(Get-MesListenerPids\).*?\$listenerPids \| ForEach-Object \{ Stop-ProcessTree \$_ \}.*?while \(\(Get-Date\) -lt \$deadline\)'
+        $controllerSource | Should Match '(?s)function Stop-MesSystem.*?\$commandPids \| ForEach-Object \{ Stop-TrackedMesProcess \$_ \}.*?Wait-MesPortsReleased'
+        $controllerSource | Should Match 'MES服务端口未能在\$\{TimeoutSeconds\}秒内释放: \$detail'
+    }
+
     It "keeps launcher actions asynchronous while a command is running" {
         $launcherSource = Get-Content -LiteralPath (Join-Path $projectRoot "tools\launcher\MesLauncher.cs") -Raw
 
@@ -114,13 +123,20 @@ Describe "MES service controller" {
         $launcherSource | Should Match 'Task\.Run\(\(\) => RunControl\(action\)\)'
     }
 
-    It "exposes launcher version 1.1 in metadata and the visible title area" {
+    It "exposes launcher version 1.2 in metadata and the visible title area" {
         $launcherSource = Get-Content -LiteralPath (Join-Path $projectRoot "tools\launcher\MesLauncher.cs") -Raw
 
-        $launcherSource | Should Match 'AssemblyVersion\("1\.1\.0\.0"\)'
-        $launcherSource | Should Match 'LauncherVersion = "1\.1"'
+        $launcherSource | Should Match 'AssemblyVersion\("1\.2\.0\.0"\)'
+        $launcherSource | Should Match 'LauncherVersion = "1\.2"'
         $launcherSource | Should Match 'var versionBadge = new Label'
         $launcherSource | Should Match 'Text = "v" \+ Program\.LauncherVersion'
+    }
+
+    It "builds the desktop launcher with administrator privileges" {
+        $buildSource = Get-Content -LiteralPath (Join-Path $projectRoot "scripts\build_launcher.ps1") -Raw
+
+        $buildSource | Should Match '<requestedExecutionLevel level="requireAdministrator" uiAccess="false" />'
+        $buildSource | Should Match '/win32manifest:"\$temporaryManifest"'
     }
 
     It "always returns structured errors through a dedicated launcher result file" {

@@ -1786,7 +1786,15 @@ describe("visualization model", () => {
     expect(view.summary.total).toBe(3);
     expect(view.summary.running).toBe(1);
     expect(view.summary.conflicts).toBe(0);
-    expect(view.dayCounts.map((day) => day.count)).toEqual([1, 2, 1]);
+    expect(view.periodCounts.map((period) => [period.key, period.count])).toEqual([
+      ["2026-05-23-am", 1],
+      ["2026-05-23-pm", 0],
+      ["2026-05-24-am", 0],
+      ["2026-05-24-pm", 2],
+      ["2026-05-25-am", 1],
+      ["2026-05-25-pm", 0],
+    ]);
+    expect(view).not.toHaveProperty("dayCounts");
     expect(view.rows.map((row) => row.device)).toEqual(["振动一室", "盐雾试验室"]);
     expect(view.rows[0].slots[0]).toEqual(expect.objectContaining({
       displayMode: "single",

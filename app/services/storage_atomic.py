@@ -77,9 +77,11 @@ def merge_trays(current_trays: list[Any], incoming_trays: list[Any], *, preserve
     current_by_key = {tray_key(tray): dict(tray) for tray in as_list(current_trays) if isinstance(tray, dict) and tray_key(tray)}
     incoming_by_key = {tray_key(tray): dict(tray) for tray in as_list(incoming_trays) if isinstance(tray, dict) and tray_key(tray)}
     ordered_keys = []
+    seen_keys: set[str] = set()
     for tray in [*as_list(current_trays), *as_list(incoming_trays)]:
         key = tray_key(tray)
-        if key and key not in ordered_keys:
+        if key and key not in seen_keys:
+            seen_keys.add(key)
             ordered_keys.append(key)
 
     merged: list[dict[str, Any]] = []
@@ -99,9 +101,11 @@ def merge_samples(current_samples: list[Any], incoming_samples: list[Any]) -> li
     current_by_key = {sample_key(sample): dict(sample) for sample in as_list(current_samples) if isinstance(sample, dict) and sample_key(sample)}
     incoming_by_key = {sample_key(sample): dict(sample) for sample in as_list(incoming_samples) if isinstance(sample, dict) and sample_key(sample)}
     ordered_keys = []
+    seen_keys: set[str] = set()
     for sample in [*as_list(current_samples), *as_list(incoming_samples)]:
         key = sample_key(sample)
-        if key and key not in ordered_keys:
+        if key and key not in seen_keys:
+            seen_keys.add(key)
             ordered_keys.append(key)
 
     merged: list[dict[str, Any]] = []
@@ -214,9 +218,11 @@ def merge_keyed_rows(
     current_by_key = {generic_item_key(key, item): dict(item) for item in as_list(current_rows) if isinstance(item, dict) and generic_item_key(key, item)}
     incoming_by_key = {generic_item_key(key, item): dict(item) for item in as_list(incoming_rows) if isinstance(item, dict) and generic_item_key(key, item)}
     ordered_keys = []
+    seen_keys: set[str] = set()
     for item in [*as_list(current_rows), *as_list(incoming_rows)]:
         item_key = generic_item_key(key, item)
-        if item_key and item_key not in ordered_keys:
+        if item_key and item_key not in seen_keys:
+            seen_keys.add(item_key)
             ordered_keys.append(item_key)
 
     merged: list[dict[str, Any]] = []

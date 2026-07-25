@@ -16,6 +16,14 @@ describe("TransferDispatchPanel structure", () => {
     expect(source).toMatch(/\.transfer-dispatch-toolbar\s*>\s*\.transfer-dispatch-feedback\s*\{[^}]*margin-top:\s*0;/i);
   });
 
+  test("enlarges the tray search field and lookup action", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/modules/transfer-workbench/TransferDispatchPanel.vue"), "utf8");
+
+    expect(source).toMatch(/\.transfer-dispatch-toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(240px,\s*280px\)/i);
+    expect(source).toMatch(/\.transfer-dispatch-toolbar\s*>\s*\.search-input\s*\{[^}]*width:\s*100%[^}]*min-height:\s*56px/i);
+    expect(source).toMatch(/\.transfer-dispatch-toolbar\s*>\s*\.action-btn\s*\{[^}]*min-width:\s*240px[^}]*min-height:\s*56px/i);
+  });
+
   test("scrolls long destination lists without moving or overlapping the scan toolbar", () => {
     const source = readFileSync(resolve(process.cwd(), "src/modules/transfer-workbench/TransferDispatchPanel.vue"), "utf8");
     const parentStyles = readFileSync(resolve(process.cwd(), "src/modules/handover-system/styles.css"), "utf8");

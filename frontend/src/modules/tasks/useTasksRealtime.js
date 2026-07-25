@@ -58,13 +58,17 @@ function useTasksRealtime({
     }
     return true;
   };
-  const handleSamplesUpdated = () => {
+  const handleSamplesUpdated = (event) => {
     if (isRealtimeRefreshPaused()) {
       hasPendingSamplesRefresh = true;
       return;
     }
     hasPendingSamplesRefresh = false;
-    void loadTasksPage();
+    storageRefresh.requestRefresh({
+      ...(event?.detail || {}),
+      keys: [STORAGE_KEYS.samples],
+      immediate: true,
+    });
   };
 
   onMounted(() => {

@@ -262,7 +262,7 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.get("[data-testid='process-tray-chip-TRAY-001']").classes()).toContain("process-task-tray-chip-emphasis");
     expect(wrapper.find("[data-testid='process-selected-tray-summary']").exists()).toBe(false);
     expect(wrapper.text()).toContain("当前实验托盘");
-    expect(wrapper.text()).toContain("待下一轮托盘");
+    expect(wrapper.text()).not.toContain("待下一轮托盘");
     expect(wrapper.text()).toContain("统一托盘流程图");
     expect(wrapper.text()).toContain("样品编号");
     expect(wrapper.text()).not.toContain("补充信息");
@@ -276,6 +276,11 @@ describe("ProcessPage runtime", () => {
     expect(trayFlowCard).not.toContain("样品：");
     expect(wrapper.get("[data-testid='process-selected-tray-sample-list']").text()).toContain("SP-001");
     expect(wrapper.findAll("[data-testid^='process-selected-tray-sample-item-']")).toHaveLength(1);
+    const sampleCodeCard = wrapper.get("[data-testid='process-sample-code-card']");
+    expect(sampleCodeCard.text()).toContain("样品编号");
+    expect(sampleCodeCard.text()).not.toContain("待下一轮托盘");
+    expect(sampleCodeCard.element.parentElement.classList.contains("process-task-detail-grid")).toBe(true);
+    expect(wrapper.get(".process-task-overview-panel").find("[data-testid='process-selected-tray-sample-list']").exists()).toBe(false);
     expect(wrapper.get("[data-testid='process-tray-chip-TRAY-001']").classes()).toContain("is-selected");
 
     await wrapper.get("[data-testid='process-tray-chip-TRAY-002']").trigger("click");
@@ -283,35 +288,14 @@ describe("ProcessPage runtime", () => {
     expect(mocks.selectTaskTray).toHaveBeenCalledWith("TRAY-002");
   });
 
-  test("keeps one waiting tray in a single-column next tray grid with a count hint", () => {
-    mocks.reset();
-    const detail = mocks.createSelectedTaskDetail();
-    detail.remainingTrayCount = 1;
-    detail.remainingTrayRows = detail.remainingTrayRows.slice(0, 1);
-    mocks.selectedTaskDetail.value = detail;
-
-    const wrapper = mount(ProcessPage);
-
-    const grid = wrapper.get("[data-testid='process-remaining-tray-grid']");
-    expect(grid.classes()).toContain("is-single");
-    expect(grid.classes()).not.toContain("is-adaptive");
-    expect(wrapper.get("[data-testid='process-remaining-tray-count']").text()).toBe("共 1 个");
-    expect(grid.findAll(".process-task-tray-row")).toHaveLength(1);
-  });
-
-  test("keeps more than two waiting trays in one condensed column", () => {
+  test("removes waiting tray content while keeping the sample number card independent of waiting tray data", () => {
     mocks.reset();
     const detail = mocks.createSelectedTaskDetail();
     detail.remainingTrayCount = 3;
     detail.remainingTrayRows = [
       ...detail.remainingTrayRows,
       {
-        flowStatus: "已到达实验室",
-        locationSummary: "冲击一室",
-        ownerSummary: "钱七",
         sampleCodes: ["SP-006"],
-        sampleCount: 1,
-        sampleSummary: "SP-006",
         status: "已到达实验室",
         trayCode: "TRAY-005",
       },
@@ -320,11 +304,10 @@ describe("ProcessPage runtime", () => {
 
     const wrapper = mount(ProcessPage);
 
-    const grid = wrapper.get("[data-testid='process-remaining-tray-grid']");
-    expect(grid.classes()).toContain("is-condensed");
-    expect(grid.classes()).not.toContain("is-adaptive");
-    expect(wrapper.get("[data-testid='process-remaining-tray-count']").text()).toBe("共 3 个");
-    expect(grid.findAll(".process-task-tray-row")).toHaveLength(3);
+    expect(wrapper.get("[data-testid='process-sample-code-card']").text()).toContain("SP-001");
+    expect(wrapper.text()).not.toContain("待下一轮托盘");
+    expect(wrapper.find("[data-testid='process-remaining-tray-grid']").exists()).toBe(false);
+    expect(wrapper.find("[data-testid='process-remaining-tray-count']").exists()).toBe(false);
   });
 
   test("switches visible labs by summary filter, disables idle task actions, and supports tray selection", async () => {
@@ -333,7 +316,7 @@ describe("ProcessPage runtime", () => {
 
     expect(wrapper.find("[data-testid='process-start-button-冲击一室']").exists()).toBe(false);
 
-    await wrapper.get("[data-testid='process-tray-button-TRAY-003']").trigger("click");
+    await wrapper.get("[data-testid='process-tray-chip-TRAY-003']").trigger("click");
 
     expect(mocks.selectTaskTray).toHaveBeenCalledWith("TRAY-003");
 
@@ -385,8 +368,8 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.findAll(".process-task-tray-chip")).toHaveLength(5);
     expect(wrapper.find("[data-testid='process-tray-chip-TRAY-006']").exists()).toBe(false);
     expect(wrapper.findAll("[data-testid^='process-selected-tray-sample-item-']")).toHaveLength(5);
-    expect(wrapper.findAll(".process-task-tray-row")).toHaveLength(8);
-    expect(wrapper.get("[data-testid='process-tray-button-TRAY-008']").exists()).toBe(true);
+    expect(wrapper.findAll(".process-task-tray-row")).toHaveLength(4);
+    expect(wrapper.find("[data-testid='process-tray-button-TRAY-008']").exists()).toBe(false);
     expect(wrapper.get("[data-testid='process-tray-button-TRAY-001']").text()).not.toContain("SP-001-B");
     expect(wrapper.text()).toContain("+4");
 

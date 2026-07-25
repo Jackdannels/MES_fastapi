@@ -53,6 +53,10 @@
       "topic": "mes/v1/labs/{lab_code}/events/experiment-ended",
       "payload": {
         "lab_code": "试验间编码",
+        "run_no": "MES下发的实验运行批次号",
+        "sub_experiment_code": "轴向任务的分段实验编号，非轴向省略",
+        "axis_code": "本次完成轴向，非轴向省略",
+        "next_axis_code": "下一轴向，最终轴向省略",
         "ended_at": "2026-05-16 17:30:00"
       }
     },

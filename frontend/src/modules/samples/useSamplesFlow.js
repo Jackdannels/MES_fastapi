@@ -570,13 +570,17 @@ function useSamplesFlow() {
     return true;
   };
 
-  const handleSamplesUpdated = () => {
+  const handleSamplesUpdated = (event) => {
     if (isRealtimeRefreshPaused()) {
       hasPendingSamplesRefresh = true;
       return;
     }
     hasPendingSamplesRefresh = false;
-    void refreshRealtime();
+    storageRefresh.requestRefresh({
+      ...(event?.detail || {}),
+      keys: [STORAGE_KEYS.samples],
+      immediate: true,
+    });
   };
 
   const storageRefresh = useStorageSnapshotRefresh({

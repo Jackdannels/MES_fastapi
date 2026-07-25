@@ -30,22 +30,40 @@ describe("visualization styles", () => {
 
   test("schedule screen grid compresses laboratory rows inside the 1080p screen frame", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
+    const pageSource = readVisualizationSource();
 
-    expect(source).toContain("grid-template-rows: 28px repeat(var(--visual-schedule-row-count), minmax(0, 1fr))");
+    expect(source).toContain("grid-template-rows: 64px repeat(var(--visual-schedule-row-count), minmax(0, 1fr))");
+    expect(source).toMatch(/\.visual-schedule-main\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s);
     expect(source).toMatch(/\.visual-schedule-lab-name,\s*\.visual-schedule-cell\s*{[^}]*min-height:\s*0;/s);
     expect(source).toMatch(/\.visual-schedule-slot\s*{[^}]*align-content:\s*stretch;[^}]*justify-items:\s*stretch;[^}]*grid-auto-rows:\s*minmax\(0,\s*1fr\);[^}]*padding:\s*0;[^}]*border-left:\s*0;/s);
     expect(source).toMatch(/\.visual-schedule-task\s*{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*align-content:\s*center;[^}]*justify-items:\s*center;[^}]*text-align:\s*center;[^}]*border-left:\s*0;/s);
-    expect(source).toMatch(/\.visual-schedule-task strong\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*14px;/s);
-    expect(source).toMatch(/\.visual-schedule-task span\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*13px;[^}]*font-weight:\s*900;/s);
-    expect(source).toMatch(/\.visual-schedule-task small\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*12px;[^}]*font-weight:\s*900;/s);
+    expect(source).toMatch(/\.visual-schedule-task strong\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*var\(--schedule-task-font-size\);[^}]*font-weight:\s*900;/s);
+    expect(source).toMatch(/\.visual-schedule-task small\s*{[^}]*max-width:\s*100%;[^}]*font-size:\s*var\(--schedule-time-font-size\);[^}]*font-weight:\s*900;/s);
     const runningSlotRule = source.slice(
       source.indexOf(".visual-schedule-slot.state-running {"),
       source.indexOf(".visual-schedule-slot.state-maintenance"),
     );
     expect(runningSlotRule).toContain("var(--schedule-task-color)");
-    expect(source).toMatch(/\.visual-schedule-slot\.is-idle \.visual-schedule-idle\s*{[^}]*place-items:\s*center;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*font-size:\s*13px;/s);
-    expect(source).toMatch(/\.visual-schedule-day\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\);[^}]*justify-items:\s*center;/s);
-    expect(source).toMatch(/\.visual-schedule-day small\s*{[^}]*position:\s*absolute;[^}]*right:\s*10px;/s);
+    expect(source).toMatch(/\.visual-schedule-slot\.is-idle \.visual-schedule-idle\s*{[^}]*place-items:\s*center;[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*font-size:\s*var\(--schedule-lab-copy-font-size\);/s);
+    expect(source).not.toContain(".visual-schedule-days");
+    expect(pageSource).not.toContain("visual-schedule-days");
+  });
+
+  test("schedule screen uses scheme B merged period headers and the selected bold type scale", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+    const pageSource = readVisualizationSource();
+
+    expect(source).toMatch(/\.visual-schedule-board:not\(\.is-compact\) \.visual-board-top\s*{[^}]*justify-content:\s*center;/s);
+    expect(source).toMatch(/\.visual-schedule-board:not\(\.is-compact\) \.visual-board-title-group\s*{[^}]*justify-items:\s*center;[^}]*text-align:\s*center;/s);
+    expect(source).toMatch(/\.visual-schedule-metrics > div\s*{[^}]*place-items:\s*center;[^}]*text-align:\s*center;/s);
+    expect(source).toMatch(/\.visual-schedule-board\s*{[^}]*--schedule-lab-copy-font-size:\s*28px;[^}]*--schedule-task-font-size:\s*28px;[^}]*--schedule-time-font-size:\s*26px;/s);
+    expect(source).toMatch(/\.visual-schedule-grid-head strong\s*{[^}]*font:\s*900 24px\/1\.05/s);
+    expect(source).toMatch(/\.visual-schedule-grid-head small\s*{[^}]*font:\s*900 16px\/1/s);
+    expect(source).toMatch(/\.visual-schedule-lab-name\s*{[^}]*place-items:\s*center;[^}]*font-size:\s*var\(--schedule-lab-copy-font-size\);[^}]*font-weight:\s*900;[^}]*text-align:\s*center;/s);
+    expect(source).toMatch(/\.visual-schedule-task\s*{[^}]*align-content:\s*center;[^}]*justify-items:\s*center;[^}]*text-align:\s*center;/s);
+    expect(pageSource).toContain("view.periodCounts");
+    expect(pageSource).toContain('h("strong", period.label)');
+    expect(pageSource).toContain('h("small", `${period.count} 项`)');
   });
 
   test("schedule screen uses task color on every occupied cell", () => {
@@ -82,7 +100,7 @@ describe("visualization styles", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
     expect(source).toMatch(/\.visual-lab-switch-option strong,\s*\.visual-lab-switch-option small\s*{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
-    expect(source).toMatch(/\.visual-schedule-grid-head\s*{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
+    expect(source).toMatch(/\.visual-schedule-grid-head strong,\s*\.visual-schedule-grid-head small\s*{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
     expect(source).toMatch(/\.visual-schedule-task strong\s*{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
   });
 

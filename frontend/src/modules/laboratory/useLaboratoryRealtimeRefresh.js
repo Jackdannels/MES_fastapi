@@ -41,7 +41,7 @@ function useLaboratoryRealtimeRefresh({
     || completePromptVisible.value
   );
 
-  const handleSamplesUpdated = () => {
+  const handleSamplesUpdated = (event) => {
     if (ignoreNextSamplesUpdatedLoad) {
       ignoreNextSamplesUpdatedLoad = false;
       return;
@@ -51,7 +51,11 @@ function useLaboratoryRealtimeRefresh({
       return;
     }
     hasPendingSamplesRefresh = false;
-    void load({ silent: true });
+    storageRefresh.requestRefresh({
+      ...(event?.detail || {}),
+      keys: [STORAGE_KEYS.samples],
+      immediate: true,
+    });
   };
 
   const storageRefresh = useStorageSnapshotRefresh({

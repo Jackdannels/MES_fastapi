@@ -6283,6 +6283,70 @@ describe("laboratory model", () => {
     expect(result.guidance).not.toContain("接驳间");
   });
 
+  test("validateLaboratoryTrayScan rejects appearance-stocked tray after another experiment completed", () => {
+    const taskCode = "SYLU-2026-07-031";
+    const trayCode = `${taskCode}-TP-002`;
+    const view = buildSaltSprayLaboratoryView({
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: trayCode },
+        { task_code: taskCode, experiment_code: `${taskCode}-G`, tray_code: trayCode },
+      ],
+      experiments: [
+        { task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", status: "实验已完成" },
+        { task_code: taskCode, experiment_code: `${taskCode}-G`, experiment_name: "盐雾试验", status: "已排程" },
+      ],
+      now: NOW,
+      samples: [
+        {
+          code: `${taskCode}-SP-001`,
+          flow_status: "实验前外观检测间存放",
+          history: [
+            {
+              action: "实验任务撤回",
+              detail: `${taskCode} / 盐雾试验 / 撤回至实验前外观检测间存放`,
+              location: "外观检测间",
+              status: "实验前外观检测间存放",
+              time: "2026-07-24 15:03:52",
+            },
+            {
+              action: "实验完成",
+              detail: `${taskCode} / 冲击试验 / 实验已完成`,
+              location: "冲击一室",
+              status: "实验已完成",
+              time: "2026-07-24 15:03:07",
+            },
+          ],
+          location: "外观检测间",
+          status: "实验前外观检测间存放",
+          task_code: taskCode,
+          trays: [{ tray_code: trayCode, quantity: 5, status: "实验前外观检测间存放" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-salt",
+          task_code: taskCode,
+          experiment_code: `${taskCode}-G`,
+          device: "盐雾试验室",
+          start_at: "2026-07-25 12:00:00",
+          end_at: "2026-07-25 15:30:00",
+        },
+      ],
+      tasks: [{ code: taskCode, name: "复合试验任务", test_type: "冲击试验 / 盐雾试验" }],
+    });
+
+    expect(validateLaboratoryTrayScan({
+      currentTask: view.currentTask,
+      scanCode: trayCode,
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      guidance: "请先在外观检测间完成出库并送至实验室。",
+      message: "托盘尚未出库",
+      ok: false,
+      trayCode,
+    }));
+  });
+
   test("validateLaboratoryTrayScan rejects current trays without structured dispatch target", () => {
     const currentTask = {
       taskCode: "SYLU-2026-05-706",

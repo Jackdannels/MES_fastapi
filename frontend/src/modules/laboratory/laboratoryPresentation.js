@@ -110,6 +110,25 @@ const buildRunningExperimentView = ({ currentTask, now }) => {
   };
 };
 
+const updateRunningExperimentClock = (runningExperiment, now) => {
+  if (!runningExperiment?.active) {
+    return runningExperiment;
+  }
+  const nowTime = now instanceof Date ? now.getTime() : toTime(now);
+  const endTime = runningExperiment?.endTime;
+  const remainingSeconds = Number.isFinite(endTime) && Number.isFinite(nowTime)
+    ? Math.floor((endTime - nowTime) / 1000)
+    : 0;
+  const overdueSeconds = remainingSeconds < 0 ? Math.abs(remainingSeconds) : 0;
+  return {
+    ...runningExperiment,
+    countdownLabel: remainingSeconds >= 0 ? formatDuration(remainingSeconds) : `已超时 ${formatDuration(overdueSeconds)}`,
+    overdue: remainingSeconds < 0,
+    overdueLabel: overdueSeconds ? formatDuration(overdueSeconds) : "",
+    remainingSeconds,
+  };
+};
+
 export {
   addDurationToDateTime,
   buildRunningExperimentView,
@@ -118,5 +137,6 @@ export {
   formatTime,
   resolvePlannedDurationMs,
   toTime,
+  updateRunningExperimentClock,
   uniqueValues,
 };

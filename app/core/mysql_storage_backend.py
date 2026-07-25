@@ -396,11 +396,27 @@ class MySQLMesStorageBackend(StorageBackend):
 
         self._ensure_schema_extensions()
         requested_set = set(requested_keys)
-        snapshot_needed = bool(
-            requested_set.intersection(SNAPSHOT_STORAGE_KEYS)
-            or "mes.samples" in requested_set
-        )
-        snapshot_values = self._deserialize_snapshot_payloads(self._snapshot_repository.read_all()) if snapshot_needed else {}
+        snapshot_keys = [
+            key
+            for key in requested_keys
+            if key in SNAPSHOT_STORAGE_KEYS or key == STORAGE_META_KEY
+        ]
+        if "mes.samples" in requested_set and "mes.staging_events" not in snapshot_keys:
+            snapshot_keys.append("mes.staging_events")
+        if snapshot_keys:
+            read_snapshot_many = getattr(self._snapshot_repository, "read_many", None)
+            if callable(read_snapshot_many):
+                raw_snapshot_values = read_snapshot_many(snapshot_keys)
+            else:
+                all_snapshot_values = self._snapshot_repository.read_all()
+                raw_snapshot_values = {
+                    key: all_snapshot_values[key]
+                    for key in snapshot_keys
+                    if key in all_snapshot_values
+                }
+            snapshot_values = self._deserialize_snapshot_payloads(raw_snapshot_values)
+        else:
+            snapshot_values = {}
         data: Dict[str, Any] = {
             key: snapshot_values.get(
                 key,

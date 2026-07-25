@@ -64,7 +64,7 @@ describe("handover system styles", () => {
     expect(source).toMatch(/\.transfer-area-screen\.is-terminal\s+\.transfer-table__codes\s*\{[^}]*grid-template-rows:\s*repeat\(4,\s*34px\)/i);
     expect(source).toMatch(/\.transfer-area-screen\.is-terminal\s+\.transfer-table__codes\s*\{[^}]*max-height:\s*154px/i);
     expect(source).toMatch(/\.transfer-area-screen\.is-terminal\s+\.transfer-sample-code-chip\s*\{[^}]*min-height:\s*34px/i);
-    expect(componentSource).toContain(':show-jump-controls="mode !== \'handover\'"');
+    expect(componentSource).toContain(':show-jump-controls="false"');
     expect(source).toMatch(/\.transfer-area-screen\.is-terminal\s+\.task-list-pagination\s*>\s*\.task-list-pagination__step\s*\{[^}]*min-width:\s*64px/i);
     expect(source).toMatch(/\.transfer-area-screen\.is-terminal\s+\.task-list-pagination\s*>\s*\.task-list-pagination__step\s*\{[^}]*min-height:\s*48px/i);
   });

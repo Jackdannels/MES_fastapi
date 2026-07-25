@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
+from copy import deepcopy
 import re
+import threading
 import pytest
 
 from fastapi import FastAPI
@@ -164,6 +166,99 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
     assert [item["code"] for item in remaining.json()] == ["SYLU-2026-03-003"]
     assert remaining.json()[0]["experiment_count"] == 2
     assert len(remaining.json()[0]["experiment_codes"]) == 2
+
+
+def test_task_update_commit_lock_preserves_later_laboratory_progress(monkeypatch):
+    from app.api.routes import tasks as tasks_route
+    from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
+
+    task = {
+        "id": "TASK-CONCURRENT",
+        "code": "TASK-CONCURRENT",
+        "name": "并发任务",
+        "contact": "张三",
+        "contact_info": "13800001234",
+        "sample_count": "1",
+        "sample_type": "金属件",
+        "test_type": "盐雾试验",
+        "test_types": ["盐雾试验"],
+        "status": "待排程",
+    }
+    client = build_client(
+        monkeypatch,
+        tasks=[task],
+        samples=[
+            {
+                "id": "TASK-CONCURRENT-SP-001",
+                "code": "TASK-CONCURRENT-SP-001",
+                "task_code": "TASK-CONCURRENT",
+                "status": "运输中",
+                "flow_status": "运输中",
+                "location": "",
+                "trays": [],
+            }
+        ],
+        experiments=[
+            {
+                "id": "TASK-CONCURRENT-A",
+                "task_code": "TASK-CONCURRENT",
+                "experiment_code": "TASK-CONCURRENT-A",
+                "experiment_name": "盐雾试验",
+                "required_device": "盐雾试验",
+                "status": "待排程",
+            }
+        ],
+    )
+    storage = client.app.state.storage
+    original_persist_task_experiments = tasks_route.persist_task_experiments
+    task_mutation_entered = threading.Event()
+    release_task_mutation = threading.Event()
+    laboratory_commit_entered = threading.Event()
+
+    def gated_persist_task_experiments(*args, **kwargs):
+        task_mutation_entered.set()
+        if not release_task_mutation.wait(timeout=5):
+            raise RuntimeError("timed out waiting to release task mutation")
+        return original_persist_task_experiments(*args, **kwargs)
+
+    monkeypatch.setattr(tasks_route, "persist_task_experiments", gated_persist_task_experiments)
+    responses = []
+
+    def update_task_name():
+        responses.append(
+            client.put(
+                "/api/tasks/TASK-CONCURRENT",
+                json={**task, "name": "并发任务-已修改"},
+            )
+        )
+
+    def commit_laboratory_progress():
+        with acquire_laboratory_storage_commit_lock():
+            laboratory_commit_entered.set()
+            samples = deepcopy(storage.read("mes.samples"))
+            samples[0]["status"] = "实验进行中"
+            samples[0]["flow_status"] = "实验进行中"
+            samples[0]["location"] = "盐雾一室"
+            storage.write("mes.samples", samples)
+
+    update_thread = threading.Thread(target=update_task_name)
+    update_thread.start()
+    assert task_mutation_entered.wait(timeout=5)
+    laboratory_thread = threading.Thread(target=commit_laboratory_progress)
+    laboratory_thread.start()
+    laboratory_committed_while_task_update_was_open = laboratory_commit_entered.wait(timeout=0.5)
+    release_task_mutation.set()
+    update_thread.join(timeout=5)
+    laboratory_thread.join(timeout=5)
+
+    assert not update_thread.is_alive()
+    assert not laboratory_thread.is_alive()
+    assert laboratory_committed_while_task_update_was_open is False
+    assert [response.status_code for response in responses] == [200]
+    assert storage.read("mes.tasks")[0]["name"] == "并发任务-已修改"
+    assert storage.read("mes.samples")[0]["status"] == "实验进行中"
+    assert storage.read("mes.samples")[0]["flow_status"] == "实验进行中"
+    assert storage.read("mes.samples")[0]["location"] == "盐雾一室"
 
 
 def test_manual_task_creation_forces_internal_source(monkeypatch):

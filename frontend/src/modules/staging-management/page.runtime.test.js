@@ -115,6 +115,67 @@ const createSnapshot = () => ({
   ],
 });
 
+const createAppearanceOriginalPlanSnapshot = () => {
+  const snapshot = createSnapshot();
+  snapshot[STORAGE_KEYS.experiments] = [
+    {
+      id: "exp-102-a",
+      task_code: "SYLU-2026-04-102",
+      experiment_code: "SYLU-2026-04-102-A",
+      experiment_name: "霉菌试验",
+      required_device: "霉菌试验室",
+    },
+    {
+      id: "exp-102-b",
+      task_code: "SYLU-2026-04-102",
+      experiment_code: "SYLU-2026-04-102-B",
+      experiment_name: "盐雾试验",
+      required_device: "盐雾试验室",
+    },
+  ];
+  snapshot[STORAGE_KEYS.experiment_trays] = [
+    { id: "rel-102-a", task_code: "SYLU-2026-04-102", experiment_code: "SYLU-2026-04-102-A", tray_code: "SYLU-2026-04-102-TP-001" },
+    { id: "rel-102-b", task_code: "SYLU-2026-04-102", experiment_code: "SYLU-2026-04-102-B", tray_code: "SYLU-2026-04-102-TP-001" },
+  ];
+  snapshot[STORAGE_KEYS.schedules] = [
+    {
+      id: "schedule-102-a",
+      task_code: "SYLU-2026-04-102",
+      experiment_code: "SYLU-2026-04-102-A",
+      experiment_name: "霉菌试验",
+      device: "霉菌试验室",
+      start_at: "2026-04-01T13:00:00",
+      end_at: "2026-04-01T16:00:00",
+    },
+    {
+      id: "schedule-102-b",
+      task_code: "SYLU-2026-04-102",
+      experiment_code: "SYLU-2026-04-102-B",
+      experiment_name: "盐雾试验",
+      device: "盐雾试验室",
+      start_at: "2026-04-02T09:00:00",
+      end_at: "2026-04-02T12:00:00",
+    },
+  ];
+  snapshot[STORAGE_KEYS.samples] = snapshot[STORAGE_KEYS.samples].map((sample) => (
+    sample.code === "SYLU-2026-04-102-SP-001"
+      ? {
+          ...sample,
+          flow_status: "实验前外观检测间存放",
+          location: "外观检测间",
+          status: "实验前外观检测间存放",
+          trays: sample.trays.map((tray) => ({
+            ...tray,
+            status: "实验前外观检测间存放",
+            target_experiment_code: "SYLU-2026-04-102-B",
+            target_lab: "盐雾试验室",
+          })),
+        }
+      : sample
+  ));
+  return snapshot;
+};
+
 const createTrayFixture = (sequence, { status = "送至暂存间", quantity = 1 } = {}) => {
   const paddedSequence = String(sequence).padStart(3, "0");
   const taskCode = `SYLU-2026-04-${paddedSequence}`;
@@ -1102,6 +1163,61 @@ describe("StagingManagementPage runtime", () => {
       status: "送至实验室",
       target_experiment_code: experimentCode,
       target_lab: "盐雾试验室",
+    });
+  });
+
+  test("appearance stock-out highlights the original lab and confirms a non-original lab in orange", async () => {
+    remoteSnapshot = createAppearanceOriginalPlanSnapshot();
+    const mounted = await mountPage({ room: "appearance" });
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+
+    const destinationCards = mounted.findAll('[data-testid^="zancun-destination-card-"]');
+    expect(destinationCards).toHaveLength(3);
+    expect(destinationCards[0].text()).toContain("盐雾试验室");
+    expect(destinationCards[0].text()).toContain("原计划试验间");
+    expect(destinationCards[0].classes()).toContain("is-original-planned");
+    expect(destinationCards[1].text()).toContain("霉菌试验室");
+
+    const eventCount = remoteSnapshot[STORAGE_KEYS.staging_events].length;
+    await mounted.get('[data-testid="zancun-destination-submit-1"]').trigger("click");
+
+    const deviationModal = mounted.get('[data-testid="zancun-destination-deviation-modal"]');
+    expect(deviationModal.classes()).toContain("is-open");
+    expect(deviationModal.text()).toContain("原计划试验间为 盐雾试验室");
+    expect(deviationModal.text()).toContain("当前选择为 霉菌试验室");
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events]).toHaveLength(eventCount);
+
+    await mounted.get('[data-testid="zancun-destination-deviation-confirm"]').trigger("click");
+    await settlePage(mounted);
+
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "stock_out",
+      room: "appearance",
+      target_experiment_code: "SYLU-2026-04-102-A",
+      target_lab: "霉菌试验室",
+      target_type: "lab",
+    });
+  });
+
+  test("appearance stock-out to staging bypasses the non-original-lab confirmation", async () => {
+    remoteSnapshot = createAppearanceOriginalPlanSnapshot();
+    const mounted = await mountPage({ room: "appearance" });
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+    await mounted.get('[data-testid="zancun-destination-submit-2"]').trigger("click");
+    await settlePage(mounted);
+
+    expect(mounted.find('[data-testid="zancun-destination-deviation-modal"].is-open').exists()).toBe(false);
+    expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "stock_out",
+      room: "appearance",
+      target_lab: "恒温恒湿间（暂存间）",
+      target_type: "staging",
     });
   });
 

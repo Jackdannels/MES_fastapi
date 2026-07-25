@@ -23,13 +23,17 @@ function useScheduleRealtime({
     || scheduleConflictModal.open.value
     || exceptionModal.open.value
   );
-  const handleSamplesUpdated = () => {
+  const handleSamplesUpdated = (event) => {
     if (isRealtimeRefreshPaused()) {
       hasPendingSamplesRefresh = true;
       return;
     }
     hasPendingSamplesRefresh = false;
-    refreshSchedulePageWithoutReset();
+    storageRefresh.requestRefresh({
+      ...(event?.detail || {}),
+      keys: [STORAGE_KEYS.samples],
+      immediate: true,
+    });
   };
   const storageRefresh = useStorageSnapshotRefresh({
     keys: [

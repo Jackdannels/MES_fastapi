@@ -560,6 +560,28 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
   const experimentMap = buildExperimentMap(experiments);
   const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
   const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
+  const restrictToAppearanceDestinations =
+    config.key === "appearance"
+    && asArray(row?.statuses).some((status) => normalizeText(status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS);
+  const originalTargetExperimentCode = normalizeText(row?.originalTargetExperimentCode || row?.targetExperimentCode);
+  const originalTargetLab = normalizeText(row?.originalTargetLab || row?.targetLab);
+  const destinationMatchesOriginalPlan = (destination) => {
+    if (!restrictToAppearanceDestinations || (!originalTargetExperimentCode && !originalTargetLab)) {
+      return false;
+    }
+    const experimentMatches = !originalTargetExperimentCode
+      || normalizeText(destination?.targetExperimentCode) === originalTargetExperimentCode;
+    const labMatches = !originalTargetLab || normalizeText(destination?.targetLab) === originalTargetLab;
+    return experimentMatches && labMatches;
+  };
+  const markOriginalPlan = (destination) => {
+    const originalPlanned = destinationMatchesOriginalPlan(destination);
+    return {
+      ...destination,
+      originalPlanned,
+      preferred: originalPlanned,
+    };
+  };
   const deviceMatchesDestination = (device, destination) => {
     const target = {
       labCode: destination?.targetLabCode,
@@ -590,12 +612,15 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
       const endLabel = maintenance.endAt ? `，预计结束：${formatLocalDateTime(maintenance.endAt)}` : "";
       return {
         ...destination,
-        preferred: false,
+        preferred: Boolean(destination.originalPlanned),
         targetAvailable: false,
         targetUnavailableReason: `${destination.targetLab}正在${maintenance.status}，暂不可送入${endLabel}`,
       };
     });
-    if (!annotated.some((destination) => destination.preferred && destination.targetAvailable !== false)) {
+    if (
+      !restrictToAppearanceDestinations
+      && !annotated.some((destination) => destination.preferred && destination.targetAvailable !== false)
+    ) {
       const nextPreferred = annotated.find((destination) => destination.scheduled && destination.targetAvailable !== false);
       if (nextPreferred) {
         nextPreferred.preferred = true;
@@ -604,9 +629,6 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
     return annotated;
   };
   const acceptsExperimentCode = (experimentCode) => trayExperimentCodes.size === 0 || trayExperimentCodes.has(normalizeText(experimentCode));
-  const restrictToAppearanceDestinations =
-    config.key === "appearance"
-    && asArray(row?.statuses).some((status) => normalizeText(status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS);
   const appearanceAcceptsExperiment = (experiment, fallbackName = "") =>
     !restrictToAppearanceDestinations
     || requiresPreExperimentAppearanceStorage(
@@ -669,7 +691,7 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
 
     const scheduled = scheduledDestinations[0];
     if (scheduled) {
-      scheduledCandidates.push({
+      scheduledCandidates.push(markOriginalPlan({
         preferred: false,
         scheduled: true,
         targetExperimentCode: nextExperimentCode,
@@ -681,7 +703,7 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
         targetScheduleStartAt: normalizeText(scheduled?.start_at),
         targetScheduleEndAt: normalizeText(scheduled?.end_at),
         targetUnavailableReason: "",
-      });
+      }));
       return;
     }
 
@@ -689,10 +711,11 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
 
   scheduledCandidates.sort(
     (left, right) =>
-      parseTimeValue(left?.targetScheduleStartAt) - parseTimeValue(right?.targetScheduleStartAt)
+      Number(Boolean(right?.originalPlanned)) - Number(Boolean(left?.originalPlanned))
+      || parseTimeValue(left?.targetScheduleStartAt) - parseTimeValue(right?.targetScheduleStartAt)
       || normalizeText(left?.targetLab).localeCompare(normalizeText(right?.targetLab), "zh-Hans-CN"),
   );
-  if (scheduledCandidates.length) {
+  if (!restrictToAppearanceDestinations && scheduledCandidates.length) {
     const earliest = parseTimeValue(scheduledCandidates[0]?.targetScheduleStartAt);
     const earliestCount = scheduledCandidates.filter((item) => parseTimeValue(item?.targetScheduleStartAt) === earliest).length;
     if (earliestCount === 1) {
@@ -726,7 +749,7 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
       .map((schedule) => {
         const experimentCode = normalizeText(schedule?.experiment_code);
         const experiment = experimentMap.get(experimentCode);
-        return {
+        return markOriginalPlan({
           preferred: false,
           scheduled: true,
           targetExperimentCode: experimentCode,
@@ -738,13 +761,17 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
           targetScheduleStartAt: normalizeText(schedule?.start_at),
           targetScheduleEndAt: normalizeText(schedule?.end_at),
           targetUnavailableReason: "",
-        };
+        });
       })
-    .sort((left, right) => parseTimeValue(left?.targetScheduleStartAt) - parseTimeValue(right?.targetScheduleStartAt));
+    .sort((left, right) => (
+      Number(Boolean(right?.originalPlanned)) - Number(Boolean(left?.originalPlanned))
+      || parseTimeValue(left?.targetScheduleStartAt) - parseTimeValue(right?.targetScheduleStartAt)
+    ));
 
   const appearanceStagingDestination = config.key === "appearance"
     ? [{
-        preferred: directScheduledCandidates.length === 0 && scheduledCandidates.length === 0,
+        originalPlanned: false,
+        preferred: !restrictToAppearanceDestinations && directScheduledCandidates.length === 0 && scheduledCandidates.length === 0,
         scheduled: true,
         targetExperimentCode: "",
         targetExperimentName: "暂存间存放",
@@ -758,10 +785,12 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
     : [];
 
   if (directScheduledCandidates.length) {
-    const earliest = parseTimeValue(directScheduledCandidates[0]?.targetScheduleStartAt);
-    const earliestCount = directScheduledCandidates.filter((item) => parseTimeValue(item?.targetScheduleStartAt) === earliest).length;
-    if (earliestCount === 1) {
-      directScheduledCandidates[0].preferred = true;
+    if (!restrictToAppearanceDestinations) {
+      const earliest = parseTimeValue(directScheduledCandidates[0]?.targetScheduleStartAt);
+      const earliestCount = directScheduledCandidates.filter((item) => parseTimeValue(item?.targetScheduleStartAt) === earliest).length;
+      if (earliestCount === 1) {
+        directScheduledCandidates[0].preferred = true;
+      }
     }
     return finalizeDestinations([...directScheduledCandidates, ...appearanceStagingDestination]);
   }

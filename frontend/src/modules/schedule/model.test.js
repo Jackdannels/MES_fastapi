@@ -3568,6 +3568,81 @@ describe("schedulePageModel", () => {
     expect(result.schedules).toEqual([expect.objectContaining({ id: "schedule-salt-compared" })]);
   });
 
+  test("deleteScheduleRecord allows deleting untouched shared-tray experiments while salt spray is running", () => {
+    const taskCode = "SYLU-2026-07-031";
+    const saltExperimentCode = `${taskCode}-F`;
+    const trayCode = `${taskCode}-TP-002`;
+    const untouchedExperiments = [
+      { code: `${taskCode}-G`, device: "温度冲击一室", name: "温度冲击试验", scheduleId: "schedule-temperature-shock-07-031" },
+      { code: `${taskCode}-H`, device: "高低温湿热一室", name: "高低温湿热试验", scheduleId: "schedule-hot-humid-07-031" },
+      { code: `${taskCode}-I`, device: "霉菌试验室", name: "霉菌试验", scheduleId: "schedule-mold-07-031" },
+    ];
+    const input = {
+      experiments: [
+        { task_code: taskCode, experiment_code: saltExperimentCode, experiment_name: "盐雾试验" },
+        ...untouchedExperiments.map((experiment) => ({
+          task_code: taskCode,
+          experiment_code: experiment.code,
+          experiment_name: experiment.name,
+        })),
+      ],
+      experimentRuns: [{
+        run_no: "run-salt-07-031",
+        schedule_id: "schedule-salt-07-031",
+        task_code: taskCode,
+        experiment_code: saltExperimentCode,
+        status: "实验进行中",
+      }],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: saltExperimentCode, tray_code: trayCode },
+        ...untouchedExperiments.map((experiment) => ({
+          task_code: taskCode,
+          experiment_code: experiment.code,
+          tray_code: trayCode,
+        })),
+      ],
+      samples: [{
+        task_code: taskCode,
+        status: "实验进行中",
+        trays: [{ tray_code: trayCode, status: "实验进行中" }],
+      }],
+      schedules: [
+        {
+          id: "schedule-salt-07-031",
+          task_code: taskCode,
+          experiment_code: saltExperimentCode,
+          device: "盐雾试验室",
+          status: STATUS_SCHEDULED,
+        },
+        ...untouchedExperiments.map((experiment) => ({
+          id: experiment.scheduleId,
+          task_code: taskCode,
+          experiment_code: experiment.code,
+          device: experiment.device,
+          status: STATUS_SCHEDULED,
+        })),
+      ],
+      streams: [],
+      tasks: [{ code: taskCode, status: "任务进行中", test_type: "盐雾试验 / 温度冲击试验 / 高低温湿热试验 / 霉菌试验" }],
+    };
+
+    untouchedExperiments.forEach((experiment) => {
+      const untouchedResult = deleteScheduleRecord({
+        ...input,
+        scheduleId: experiment.scheduleId,
+      });
+      expect(untouchedResult.error).toBeUndefined();
+      expect(untouchedResult.schedules).toContainEqual(expect.objectContaining({ id: "schedule-salt-07-031" }));
+      expect(untouchedResult.schedules).not.toContainEqual(expect.objectContaining({ id: experiment.scheduleId }));
+    });
+
+    const runningResult = deleteScheduleRecord({
+      ...input,
+      scheduleId: "schedule-salt-07-031",
+    });
+    expect(runningResult.error).toBe("排程已完成任务比对，不能删除");
+  });
+
   test("deleteScheduleRecord locks the compared axis schedule but allows deleting an independent unstarted sibling", () => {
     const activeSubExperimentCode = "EXP-IMPACT-COMPARED-AXIS-001";
     const futureSubExperimentCode = "EXP-IMPACT-COMPARED-AXIS-002";

@@ -115,11 +115,15 @@ function useDashboardPage() {
     }
   };
 
-  const handleSamplesUpdated = () => {
-    void loadDashboard();
+  const handleSamplesUpdated = (event) => {
+    storageRefresh.requestRefresh({
+      ...(event?.detail || {}),
+      keys: [STORAGE_KEYS.samples],
+      immediate: true,
+    });
   };
 
-  useStorageSnapshotRefresh({
+  const storageRefresh = useStorageSnapshotRefresh({
     keys: [
       STORAGE_KEYS.tasks,
       STORAGE_KEYS.schedules,

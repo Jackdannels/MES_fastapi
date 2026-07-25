@@ -451,7 +451,30 @@ body:has(.staging-management-page) .page-header .header-actions .action-btn {
 
 .zancun-destination-panel {
   display: grid;
-  gap: 14px;
+  gap: 18px;
+}
+
+.modal-content.zancun-destination-modal-content {
+  width: min(1080px, 94vw);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 28px 30px;
+}
+
+.zancun-destination-modal-content .modal-header {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.zancun-destination-modal-content .modal-header > strong {
+  font-size: 24px;
+}
+
+.zancun-destination-modal-content .modal-close {
+  min-width: 104px;
+  min-height: 56px;
+  font-size: 16px;
 }
 
 .zancun-destination-summary,
@@ -460,7 +483,8 @@ body:has(.staging-management-page) .page-header .header-actions .action-btn {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px;
+  min-height: 88px;
+  padding: 20px;
   border-radius: var(--radius-panel);
   border: 1px solid var(--border);
   background: var(--bg-panel-strong);
@@ -473,14 +497,33 @@ body:has(.staging-management-page) .page-header .header-actions .action-btn {
 }
 
 .zancun-destination-card {
+  min-height: 120px;
   background: var(--bg-card-raised);
   box-shadow: var(--shadow);
+}
+
+.zancun-destination-card.is-original-planned {
+  border-color: rgba(var(--industrial-accent-rgb), 0.68);
+  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.2), var(--bg-card-raised));
+  box-shadow: inset 4px 0 0 var(--accent), var(--shadow);
+}
+
+.zancun-original-plan-badge {
+  border-color: rgba(var(--industrial-accent-rgb), 0.58);
+  background: rgba(var(--industrial-accent-rgb), 0.2);
+  color: var(--accent);
 }
 
 .zancun-destination-card.is-disabled {
   border-color: var(--border);
   background: var(--bg-panel-strong);
   color: var(--muted);
+}
+
+.zancun-destination-card.is-original-planned.is-disabled {
+  border-color: rgba(var(--industrial-accent-rgb), 0.58);
+  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.14), var(--bg-panel-strong));
+  box-shadow: inset 4px 0 0 var(--accent), var(--shadow);
 }
 
 .zancun-destination-card.is-disabled .zancun-destination-card__action {
@@ -587,12 +630,88 @@ body:has(.staging-management-page) .page-header .header-actions .action-btn {
 
 .zancun-destination-card h4 {
   margin: 0;
-  font-size: 18px;
+  font-size: 22px;
 }
 
 .zancun-destination-card__action {
-  min-width: 180px;
+  min-width: 240px;
+  min-height: 64px;
+  padding-inline: 24px;
+  font-size: 17px;
   justify-content: center;
+}
+
+.zancun-destination-card.is-original-planned .zancun-destination-card__action {
+  border-color: rgba(var(--industrial-accent-rgb), 0.58);
+  background: rgba(var(--industrial-accent-rgb), 0.18);
+  color: var(--accent);
+}
+
+.modal.zancun-destination-deviation-modal {
+  z-index: 70;
+}
+
+.modal-content.zancun-destination-deviation-modal-content {
+  width: min(680px, 92vw);
+  padding: 28px 30px;
+  border-color: rgba(245, 158, 11, 0.62);
+  box-shadow: 0 26px 76px rgba(0, 0, 0, 0.64), 0 0 0 1px rgba(245, 158, 11, 0.12);
+}
+
+.zancun-destination-deviation-modal-content .modal-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.zancun-destination-deviation-modal-content .modal-header > strong {
+  color: #ffd28a;
+  font-size: 24px;
+}
+
+.zancun-destination-deviation-warning {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid rgba(245, 158, 11, 0.58);
+  border-radius: var(--radius-panel);
+  background: rgba(245, 158, 11, 0.14);
+  color: #ffe5bb;
+}
+
+.zancun-destination-deviation-warning strong {
+  color: #ffc267;
+  font-size: 22px;
+}
+
+.zancun-destination-deviation-warning p,
+.zancun-destination-deviation-warning span {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.zancun-destination-deviation-warning b {
+  color: #ffd28a;
+}
+
+.zancun-destination-deviation-modal-content .form-actions {
+  gap: 12px;
+  margin-top: 22px;
+}
+
+.zancun-destination-deviation-cancel,
+.zancun-destination-deviation-confirm {
+  min-width: 176px;
+  min-height: 56px;
+  padding-inline: 22px;
+  font-size: 16px;
+  justify-content: center;
+}
+
+.action-btn.zancun-destination-deviation-confirm {
+  border-color: rgba(245, 158, 11, 0.68);
+  background: rgba(245, 158, 11, 0.18);
+  color: #ffd28a;
 }
 
 @media (max-width: 720px) {
@@ -647,6 +766,13 @@ body:has(.staging-management-page) .page-header .header-actions .action-btn {
     padding: 22px;
   }
 
+  .modal-content.zancun-destination-modal-content,
+  .modal-content.zancun-destination-deviation-modal-content {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    padding: 20px;
+  }
+
   .action-btn.zancun-scan-submit-btn,
   .action-btn.zancun-scan-complete-btn {
     width: 100%;
@@ -669,6 +795,13 @@ body:has(.staging-management-page) .page-header .header-actions .action-btn {
 
   .zancun-destination-card__action {
     width: 100%;
+    min-width: 0;
+  }
+
+  .zancun-destination-deviation-cancel,
+  .zancun-destination-deviation-confirm {
+    width: 100%;
+    min-width: 0;
   }
 }
 

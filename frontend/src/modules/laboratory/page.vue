@@ -468,7 +468,7 @@
         </AppFeedback>
       </div>
       <template #footer>
-        <button class="action-btn laboratory-operation-modal-button" :disabled="!canCompleteCompare" data-testid="laboratory-compare-complete" type="button" @click="confirmCompare">比对完成</button>
+        <button class="action-btn laboratory-operation-modal-button laboratory-compare-complete-button" :disabled="!canCompleteCompare" data-testid="laboratory-compare-complete" type="button" @click="confirmCompare">比对完成</button>
       </template>
     </AppModal>
 

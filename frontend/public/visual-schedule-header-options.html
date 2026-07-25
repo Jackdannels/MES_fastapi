@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>三日实验室排期屏｜合并表头三方案</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --lab-size: 24px;
+      --task-size: 28px;
+      --time-size: 23px;
+      --bg: #040b0d;
+      --panel: #071417;
+      --cell: #08131f;
+      --line: rgba(45, 212, 191, 0.17);
+      --line-strong: rgba(45, 212, 191, 0.32);
+      --text: #effffc;
+      --muted: #9ccbc4;
+      --teal: #2dd4bf;
+      --cyan: #cffafe;
+      --task: #9bdc65;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 1180px;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+      background:
+        linear-gradient(rgba(45, 212, 191, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(45, 212, 191, 0.04) 1px, transparent 1px),
+        radial-gradient(circle at 78% 0%, rgba(14, 116, 144, 0.15), transparent 31%),
+        var(--bg);
+      background-size: 42px 42px, 42px 42px, auto, auto;
+    }
+
+    button { font: inherit; }
+
+    .page {
+      width: min(1960px, calc(100vw - 36px));
+      margin: 0 auto;
+      padding: 22px 0 34px;
+    }
+
+    .intro {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 0 4px 18px;
+      border-bottom: 1px solid var(--line-strong);
+    }
+
+    .eyebrow {
+      color: var(--teal);
+      font: 900 12px/1.2 Consolas, monospace;
+      letter-spacing: 0.08em;
+    }
+
+    h1 {
+      margin: 6px 0 0;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+
+    .intro p {
+      max-width: 880px;
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .recommended-note {
+      min-width: 260px;
+      padding: 11px 14px;
+      color: #dffcf6;
+      border: 1px solid rgba(45, 212, 191, 0.42);
+      background: rgba(13, 88, 83, 0.24);
+      text-align: center;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .options {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .option {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      min-height: 72px;
+      padding: 10px 13px;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: rgba(5, 20, 23, 0.86);
+      cursor: pointer;
+      text-align: left;
+      transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+    }
+
+    .option:hover,
+    .option:focus-visible,
+    .option.is-active {
+      border-color: rgba(45, 212, 191, 0.74);
+      outline: none;
+      background: rgba(13, 78, 76, 0.32);
+    }
+
+    .option:active { transform: translateY(1px); }
+
+    .option-code {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      color: #022c22;
+      border-radius: 5px;
+      background: var(--teal);
+      font: 900 20px/1 Consolas, monospace;
+    }
+
+    .option strong,
+    .option small { display: block; }
+
+    .option strong { font-size: 16px; }
+    .option small { margin-top: 4px; color: var(--muted); font-size: 12px; }
+
+    .tag {
+      padding: 4px 7px;
+      color: #fde68a;
+      border: 1px solid rgba(245, 158, 11, 0.42);
+      background: rgba(120, 53, 15, 0.36);
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .tuner {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+      gap: 10px;
+      margin: 0 0 16px;
+      padding: 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: rgba(5, 20, 23, 0.9);
+    }
+
+    .size-field {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 92px;
+      align-items: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      background: rgba(8, 31, 34, 0.72);
+    }
+
+    .size-field span {
+      color: var(--cyan);
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .size-field input {
+      width: 100%;
+      height: 36px;
+      padding: 0 8px;
+      color: var(--text);
+      border: 1px solid rgba(45, 212, 191, 0.36);
+      border-radius: 5px;
+      outline: none;
+      background: #061517;
+      font: 900 18px/1 Consolas, monospace;
+      text-align: center;
+    }
+
+    .size-field input:focus {
+      border-color: var(--teal);
+      box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.2);
+    }
+
+    .copy-values {
+      min-width: 156px;
+      min-height: 48px;
+      padding: 0 14px;
+      color: #022c22;
+      border: 1px solid rgba(94, 234, 212, 0.78);
+      border-radius: 6px;
+      background: var(--teal);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .copy-values:hover,
+    .copy-values:focus-visible {
+      outline: 3px solid rgba(45, 212, 191, 0.25);
+      outline-offset: 2px;
+      filter: brightness(1.08);
+    }
+
+    .value-summary {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font: 900 13px/1.4 Consolas, "Microsoft YaHei", monospace;
+      text-align: center;
+    }
+
+    .screen {
+      position: relative;
+      min-height: 880px;
+      padding: 16px;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      background:
+        linear-gradient(rgba(45, 212, 191, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(45, 212, 191, 0.03) 1px, transparent 1px),
+        #050e10;
+      background-size: 42px 42px;
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+    }
+
+    .screen-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      min-height: 54px;
+      padding: 0 4px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .screen-head h2 {
+      margin: 0;
+      font-size: 25px;
+      font-weight: 900;
+    }
+
+    .screen-head span {
+      color: var(--muted);
+      font: 900 14px/1 Consolas, monospace;
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: minmax(210px, 0.82fr) repeat(6, minmax(0, 1fr));
+      grid-template-rows: 72px repeat(10, minmax(72px, 1fr));
+      gap: 6px;
+      height: 790px;
+      min-width: 0;
+      padding-top: 12px;
+    }
+
+    .head-cell,
+    .lab,
+    .cell {
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid rgba(238, 253, 249, 0.09);
+      border-radius: 6px;
+    }
+
+    .head-cell {
+      display: grid;
+      place-items: center;
+      padding: 7px 8px;
+      color: var(--cyan);
+      background: rgba(8, 47, 73, 0.5);
+      text-align: center;
+    }
+
+    .lab-head {
+      color: var(--teal);
+      font-size: var(--lab-size);
+      font-weight: 900;
+      background: rgba(15, 23, 42, 0.68);
+    }
+
+    .head-main {
+      color: var(--cyan);
+      font: 900 24px/1.08 Consolas, "Microsoft YaHei", monospace;
+      white-space: nowrap;
+    }
+
+    .head-count {
+      color: var(--muted);
+      font: 900 16px/1 Consolas, monospace;
+      white-space: nowrap;
+    }
+
+    .lab,
+    .cell {
+      display: grid;
+      place-items: center;
+      text-align: center;
+    }
+
+    .lab {
+      padding: 0 8px;
+      color: var(--text);
+      background: rgba(5, 16, 19, 0.8);
+      font-size: var(--lab-size);
+      font-weight: 900;
+      line-height: 1.12;
+    }
+
+    .cell {
+      padding: 5px 8px;
+      color: var(--muted);
+      background: rgba(8, 19, 31, 0.9);
+      font-size: var(--lab-size);
+      font-weight: 900;
+    }
+
+    .task {
+      gap: 8px;
+      color: var(--text);
+      border-color: rgba(132, 204, 22, 0.4);
+      background:
+        linear-gradient(135deg, rgba(101, 163, 13, 0.34), rgba(20, 83, 45, 0.2)),
+        #0a2418;
+      box-shadow: inset 0 0 22px rgba(132, 204, 22, 0.12);
+    }
+
+    .task strong {
+      max-width: 100%;
+      overflow: hidden;
+      color: #f0fff4;
+      font: 900 var(--task-size)/1.05 Consolas, "Microsoft YaHei", monospace;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .task small {
+      color: #b8c9c2;
+      font: 900 var(--time-size)/1 Consolas, monospace;
+    }
+
+    /* A：所有信息保持单行，读取得最快。 */
+    .screen[data-variant="a"] .head-cell:not(.lab-head) {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    .screen[data-variant="a"] .head-main { font-size: 22px; }
+
+    .screen[data-variant="a"] .head-count {
+      padding: 5px 7px;
+      color: #dffcf6;
+      border: 1px solid rgba(45, 212, 191, 0.28);
+      border-radius: 999px;
+      background: rgba(13, 88, 83, 0.32);
+      font-size: 14px;
+    }
+
+    /* B：上下两行，字号最大且层级最稳定。 */
+    .screen[data-variant="b"] .head-cell:not(.lab-head) {
+      align-content: center;
+      gap: 7px;
+    }
+
+    /* C：时段优先，日期与数量成为辅助信息。 */
+    .screen[data-variant="c"] .head-cell:not(.lab-head) {
+      position: relative;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-rows: auto auto;
+      column-gap: 8px;
+      padding: 7px 10px;
+    }
+
+    .screen[data-variant="c"] .head-date {
+      grid-column: 1 / -1;
+      color: var(--muted);
+      font: 900 15px/1 Consolas, monospace;
+    }
+
+    .screen[data-variant="c"] .head-period {
+      font: 900 28px/1 "Microsoft YaHei", sans-serif;
+    }
+
+    .screen[data-variant="c"] .head-count {
+      padding-left: 8px;
+      border-left: 1px solid var(--line-strong);
+      font-size: 16px;
+    }
+
+    .footnote {
+      margin: 12px 2px 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 1450px) {
+      .page { width: 1420px; }
+      .head-main { font-size: 21px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="intro">
+      <div>
+        <div class="eyebrow">MES VISUALIZATION / SCHEDULE HEADER OPTIONS</div>
+        <h1>三日实验室排期屏｜日期、时段与计数合并方案</h1>
+        <p>每日独立计数已取消，计数直接落到上午/下午。三个方案都只占一行表头，为下方矩阵释放空间并放大文字。</p>
+      </div>
+      <div class="recommended-note">建议采用 B 版｜上下层级</div>
+    </header>
+
+    <nav class="options" aria-label="切换合并表头方案">
+      <button class="option" data-variant="a" type="button">
+        <span class="option-code">A</span>
+        <span><strong>单行并列</strong><small>日期时段与数量左右排列，最紧凑</small></span>
+      </button>
+      <button class="option is-active" data-variant="b" type="button">
+        <span class="option-code">B</span>
+        <span><strong>上下层级</strong><small>主标题最大，数量第二行，远距离最佳</small></span>
+        <span class="tag">推荐</span>
+      </button>
+      <button class="option" data-variant="c" type="button">
+        <span class="option-code">C</span>
+        <span><strong>时段优先</strong><small>突出上午/下午，日期与数量弱化</small></span>
+      </button>
+    </nav>
+
+    <section class="tuner" aria-label="字号调整器">
+      <label class="size-field">
+        <span>实验室名 / 空闲</span>
+        <input id="lab-size" type="number" min="16" max="40" step="1" value="24" inputmode="numeric" />
+      </label>
+      <label class="size-field">
+        <span>任务编号</span>
+        <input id="task-size" type="number" min="18" max="44" step="1" value="28" inputmode="numeric" />
+      </label>
+      <label class="size-field">
+        <span>时间</span>
+        <input id="time-size" type="number" min="16" max="36" step="1" value="23" inputmode="numeric" />
+      </label>
+      <button class="copy-values" id="copy-values" type="button">复制三个 px 数值</button>
+      <output class="value-summary" id="value-summary">实验室名/空闲：24px；任务编号：28px；时间：23px</output>
+    </section>
+
+    <section class="screen" data-variant="b" aria-label="排期屏方案预览">
+      <header class="screen-head">
+        <h2 id="screen-title">B 版｜上下层级合并表头</h2>
+        <span>TABLE TEXT / 900 WEIGHT</span>
+      </header>
+      <div class="matrix" id="matrix"></div>
+    </section>
+
+    <p class="footnote">字号建议：合并表头主文案 24px、数量 16px；实验室名称与空闲态、任务编号、时间可在上方输入精确 px。输入值会写入当前 URL，刷新后仍可恢复。</p>
+  </main>
+
+  <script>
+    const dates = ["7/25", "7/26", "7/27"];
+    const periods = ["上午", "下午"];
+    const counts = [1, 1, 0, 0, 0, 0];
+    const labs = [
+      "冲击一室",
+      "冲击二室",
+      "振动一室",
+      "振动二室",
+      "四综合实验室",
+      "温度冲击一室",
+      "温度冲击二室",
+      "高低温湿热一室",
+      "高低温湿热二室",
+      "盐雾试验室",
+    ];
+    const titles = {
+      a: "A 版｜单行并列合并表头",
+      b: "B 版｜上下层级合并表头",
+      c: "C 版｜时段优先合并表头",
+    };
+
+    const matrix = document.querySelector("#matrix");
+    const screen = document.querySelector(".screen");
+    const screenTitle = document.querySelector("#screen-title");
+    const sizeInputs = {
+      lab: document.querySelector("#lab-size"),
+      task: document.querySelector("#task-size"),
+      time: document.querySelector("#time-size"),
+    };
+    const valueSummary = document.querySelector("#value-summary");
+    const copyValues = document.querySelector("#copy-values");
+
+    function headerMarkup(date, period, count, variant) {
+      if (variant === "c") {
+        return `<span class="head-date">${date}</span><strong class="head-period">${period}</strong><small class="head-count">${count} 项</small>`;
+      }
+      return `<strong class="head-main">${date} ${period}</strong><small class="head-count">${count} 项</small>`;
+    }
+
+    function render(variant) {
+      const headers = dates.flatMap((date) => periods.map((period) => ({ date, period })));
+      const cells = ['<div class="head-cell lab-head">实验室</div>'];
+      headers.forEach((header, index) => {
+        cells.push(`<div class="head-cell">${headerMarkup(header.date, header.period, counts[index], variant)}</div>`);
+      });
+      labs.forEach((lab, labIndex) => {
+        cells.push(`<div class="lab">${lab}</div>`);
+        headers.forEach((_, columnIndex) => {
+          const hasTask = labIndex === 1 && columnIndex < 2;
+          cells.push(hasTask
+            ? '<div class="cell task"><strong>SYLU-2026-07-029</strong><small>10:13-13:43</small></div>'
+            : '<div class="cell">空闲</div>');
+        });
+      });
+      matrix.innerHTML = cells.join("");
+      screen.dataset.variant = variant;
+      screenTitle.textContent = titles[variant];
+      document.querySelectorAll(".option").forEach((button) => {
+        const active = button.dataset.variant === variant;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      const url = new URL(location.href);
+      url.searchParams.set("variant", variant);
+      history.replaceState(null, "", url);
+    }
+
+    document.querySelectorAll(".option").forEach((button) => {
+      button.addEventListener("click", () => render(button.dataset.variant));
+    });
+
+    function normalizedSize(input) {
+      const min = Number(input.min);
+      const max = Number(input.max);
+      const value = Math.round(Number(input.value));
+      return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+    }
+
+    function applySizes() {
+      const values = Object.fromEntries(Object.entries(sizeInputs).map(([key, input]) => {
+        const value = normalizedSize(input);
+        input.value = String(value);
+        document.documentElement.style.setProperty(`--${key}-size`, `${value}px`);
+        return [key, value];
+      }));
+      const summary = `实验室名/空闲：${values.lab}px；任务编号：${values.task}px；时间：${values.time}px`;
+      valueSummary.textContent = summary;
+      const url = new URL(location.href);
+      Object.entries(values).forEach(([key, value]) => url.searchParams.set(key, String(value)));
+      history.replaceState(null, "", url);
+      localStorage.setItem("mes-schedule-typography-values", JSON.stringify(values));
+      return summary;
+    }
+
+    Object.values(sizeInputs).forEach((input) => input.addEventListener("input", applySizes));
+    copyValues.addEventListener("click", async () => {
+      const summary = applySizes();
+      try {
+        await navigator.clipboard.writeText(summary);
+        copyValues.textContent = "已复制，可直接发给我";
+      } catch {
+        copyValues.textContent = "请复制下方数值";
+      }
+      window.setTimeout(() => { copyValues.textContent = "复制三个 px 数值"; }, 1800);
+    });
+
+    const requestedVariant = new URLSearchParams(location.search).get("variant");
+    const savedSizes = (() => {
+      try { return JSON.parse(localStorage.getItem("mes-schedule-typography-values") || "{}"); }
+      catch { return {}; }
+    })();
+    const params = new URLSearchParams(location.search);
+    Object.entries(sizeInputs).forEach(([key, input]) => {
+      input.value = params.get(key) || savedSizes[key] || input.value;
+    });
+    render(["a", "b", "c"].includes(requestedVariant) ? requestedVariant : "b");
+    applySizes();
+  </script>
+</body>
+</html>

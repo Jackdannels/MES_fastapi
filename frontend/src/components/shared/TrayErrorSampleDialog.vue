@@ -1,5 +1,12 @@
 <template>
-  <AppModal :open="model.state.open" class="tray-error-sample-dialog" data-testid="tray-error-sample-dialog" title="出错样品处理" @close="handleClose">
+  <AppModal
+    :open="model.state.open"
+    class="tray-error-sample-dialog"
+    content-class="tray-error-sample-modal-content"
+    data-testid="tray-error-sample-dialog"
+    title="出错样品处理"
+    @close="handleClose"
+  >
     <div class="tray-error-sample-panel">
       <div class="tray-error-sample-panel__head">
         <h3>托盘查询与撤回</h3>

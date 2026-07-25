@@ -863,6 +863,26 @@ describe("LaboratoryPage runtime", () => {
     expect(wrapper.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(true);
   });
 
+  test("shows the current laboratory login employee as the comparison operator", async () => {
+    attendanceSessionState = {
+      active: true,
+      employeeName: "张三",
+      labName: "盐雾试验室",
+      loggedInAt: "2026-04-02T09:00:00Z",
+      username: "zhangsan",
+    };
+    await mountPage();
+
+    await wrapper.get('[data-testid="laboratory-compare"]').trigger("click");
+    await flushPageUpdates();
+
+    const operatorRow = wrapper
+      .findAll(".laboratory-checklist-item")
+      .find((row) => row.text().includes("执行人员"));
+    expect(operatorRow?.text()).toContain("张三");
+    expect(operatorRow?.text()).not.toContain("王工");
+  });
+
   test("keeps attendance work timer at zero after login before any experiment step starts", async () => {
     attendanceSessionState = {
       active: true,

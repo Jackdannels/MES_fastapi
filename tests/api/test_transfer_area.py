@@ -1,4 +1,5 @@
 from copy import deepcopy
+import threading
 
 import pytest
 from fastapi import FastAPI
@@ -37,6 +38,22 @@ class FakeTransferStorage:
     def write_many(self, updates):
         for key, value in dict(updates).items():
             self.payloads[key] = list(value)
+
+
+class TrackingReadManyTransferStorage(FakeTransferStorage):
+    def __init__(self, payloads=None):
+        super().__init__(payloads)
+        self.read_all_calls = 0
+        self.read_many_calls = []
+
+    def read_all(self):
+        self.read_all_calls += 1
+        return super().read_all()
+
+    def read_many(self, keys):
+        requested_keys = list(keys)
+        self.read_many_calls.append(requested_keys)
+        return {key: list(self.payloads.get(key, [])) for key in requested_keys}
 
 
 def create_payloads():
@@ -218,6 +235,130 @@ def test_transfer_area_write_snapshot_merges_without_reverting_concurrent_lab_pr
     assert [event["id"] for event in storage.read("mes.staging_events")] == ["event-existing", "event-new"]
 
 
+def test_transfer_area_serializes_conflicting_dispatches_before_business_validation(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(storage, [])
+    original_apply_dispatch = transfer_area_route.apply_dispatch
+    first_apply_entered = threading.Event()
+    second_apply_entered = threading.Event()
+    release_first_apply = threading.Event()
+    apply_call_guard = threading.Lock()
+    apply_call_count = 0
+
+    def gated_apply_dispatch(*args, **kwargs):
+        nonlocal apply_call_count
+        with apply_call_guard:
+            apply_call_count += 1
+            call_number = apply_call_count
+        if call_number == 1:
+            first_apply_entered.set()
+            if not release_first_apply.wait(timeout=5):
+                raise RuntimeError("timed out waiting to release first dispatch")
+        else:
+            second_apply_entered.set()
+        return original_apply_dispatch(*args, **kwargs)
+
+    monkeypatch.setattr(transfer_area_route, "apply_dispatch", gated_apply_dispatch)
+    responses = []
+
+    def dispatch_to_staging():
+        responses.append(
+            client.post(
+                "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+                json={"targetType": "staging", "targetName": "恒温恒湿间（暂存间）"},
+            )
+        )
+
+    first_thread = threading.Thread(target=dispatch_to_staging)
+    second_thread = threading.Thread(target=dispatch_to_staging)
+    first_thread.start()
+    assert first_apply_entered.wait(timeout=5)
+    second_thread.start()
+    second_reached_business_mutation_while_first_was_open = second_apply_entered.wait(timeout=0.5)
+    release_first_apply.set()
+    first_thread.join(timeout=5)
+    second_thread.join(timeout=5)
+
+    assert not first_thread.is_alive()
+    assert not second_thread.is_alive()
+    assert second_reached_business_mutation_while_first_was_open is False
+    assert sorted(response.status_code for response in responses) == [200, 400]
+    assert sum(response.status_code == 200 for response in responses) == 1
+    rejected = next(response for response in responses if response.status_code == 400)
+    assert rejected.json()["detail"] == "该托盘当前不在接驳区，不能从接驳区出库"
+
+
+def test_transfer_area_commit_lock_keeps_later_staging_progress_from_being_rolled_back(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+    from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
+
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(storage, [])
+    original_apply_dispatch = transfer_area_route.apply_dispatch
+    dispatch_mutation_entered = threading.Event()
+    release_dispatch_mutation = threading.Event()
+    staging_commit_entered = threading.Event()
+
+    def gated_apply_dispatch(*args, **kwargs):
+        dispatch_mutation_entered.set()
+        if not release_dispatch_mutation.wait(timeout=5):
+            raise RuntimeError("timed out waiting to release dispatch mutation")
+        return original_apply_dispatch(*args, **kwargs)
+
+    monkeypatch.setattr(transfer_area_route, "apply_dispatch", gated_apply_dispatch)
+    responses = []
+
+    def dispatch_to_staging():
+        responses.append(
+            client.post(
+                "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+                json={"targetType": "staging", "targetName": "恒温恒湿间（暂存间）"},
+            )
+        )
+
+    def commit_staging_arrival():
+        with acquire_laboratory_storage_commit_lock():
+            staging_commit_entered.set()
+            samples = deepcopy(storage.read("mes.samples"))
+            for sample in samples:
+                if sample.get("task_code") != "SYLU-2026-03-102":
+                    continue
+                sample["status"] = "已到达暂存间"
+                sample["flow_status"] = "已到达暂存间"
+                sample["location"] = "恒温恒湿间（暂存间）"
+                sample["updated_at"] = "2099-01-01 00:00:00"
+                sample["trays"] = [
+                    {
+                        **tray,
+                        "status": "已到达暂存间",
+                        "updated_at": "2099-01-01 00:00:00",
+                    }
+                    for tray in sample.get("trays", [])
+                ]
+            storage.write("mes.samples", samples)
+
+    dispatch_thread = threading.Thread(target=dispatch_to_staging)
+    dispatch_thread.start()
+    assert dispatch_mutation_entered.wait(timeout=5)
+    staging_thread = threading.Thread(target=commit_staging_arrival)
+    staging_thread.start()
+    staging_committed_while_dispatch_was_open = staging_commit_entered.wait(timeout=0.5)
+    release_dispatch_mutation.set()
+    dispatch_thread.join(timeout=5)
+    staging_thread.join(timeout=5)
+
+    assert not dispatch_thread.is_alive()
+    assert not staging_thread.is_alive()
+    assert staging_committed_while_dispatch_was_open is False
+    assert [response.status_code for response in responses] == [200]
+    task_samples = [sample for sample in storage.read("mes.samples") if sample.get("task_code") == "SYLU-2026-03-102"]
+    assert {sample["status"] for sample in task_samples} == {"已到达暂存间"}
+    assert {sample["flow_status"] for sample in task_samples} == {"已到达暂存间"}
+    assert {sample["trays"][0]["status"] for sample in task_samples} == {"已到达暂存间"}
+
+
 def valid_task_101_experiment_trays(first_tray_id=1001, second_tray_id=1002):
     return [
         {"experimentCode": "SYLU-2026-03-101-A", "trayIds": [first_tray_id]},
@@ -274,6 +415,29 @@ def test_transfer_area_bootstrap_filters_out_running_tasks_and_counts_statuses(m
     assert payload["storedTaskCount"] == 1
 
 
+def test_transfer_area_bootstrap_reads_only_contract_required_storage_keys(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    storage = TrackingReadManyTransferStorage(create_payloads())
+    monkeypatch.setattr(transfer_area_route, "get_storage_backend", lambda: storage)
+    app = FastAPI()
+    app.include_router(transfer_area_route.router)
+
+    response = TestClient(app).get("/api/transfer-area/bootstrap")
+
+    assert response.status_code == 200
+    assert storage.read_many_calls == [[
+        "mes.tasks",
+        "mes.samples",
+        "mes.schedules",
+        "mes.experiments",
+        "mes.experiment_run_trays",
+        "mes.experiment_trays",
+        "mes.staging_events",
+    ]]
+    assert storage.read_all_calls == 0
+
+
 def test_transfer_area_bootstrap_uses_required_device_as_task_experiment_type(monkeypatch):
     client, storage = build_client(monkeypatch)
     experiments = storage.read("mes.experiments")
@@ -307,6 +471,30 @@ def test_transfer_area_workspace_builds_editable_trays_for_pending_task(monkeypa
     assert len(payload["assignedTrays"]) > 0
     assert payload["assignedTrays"][0]["samples"][0]["sampleNo"] == "SYLU-2026-03-101-SP-001"
     assert len(payload["trayInventory"]) == 8
+
+
+def test_transfer_area_workspace_reads_only_contract_required_storage_keys(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    storage = TrackingReadManyTransferStorage(create_payloads())
+    monkeypatch.setattr(transfer_area_route, "get_storage_backend", lambda: storage)
+    app = FastAPI()
+    app.include_router(transfer_area_route.router)
+
+    response = TestClient(app).get("/api/transfer-area/tasks/task-101/workspace")
+
+    assert response.status_code == 200
+    assert storage.read_many_calls == [[
+        "mes.tasks",
+        "mes.samples",
+        "mes.schedules",
+        "mes.experiments",
+        "mes.experiment_run_trays",
+        "mes.experiment_trays",
+        "mes.experiment_samples",
+        "mes.staging_events",
+    ]]
+    assert storage.read_all_calls == 0
 
 
 def test_transfer_area_legacy_stored_status_generates_in_transit_samples(monkeypatch):
@@ -2757,6 +2945,8 @@ def test_transfer_area_reload_clears_timestamped_mysql_style_preallocation(monke
     assert reloaded.status_code == 200
     payload = reloaded.json()["workspace"]
     assert payload["allocationSaved"] is False
+
+
     assert all(tray["samples"] for tray in payload["assignedTrays"])
     assert all(tray["experimentLabels"] == [] for tray in payload["assignedTrays"])
     assert all(item["assignedTrayCount"] == 0 for item in payload["experiments"])

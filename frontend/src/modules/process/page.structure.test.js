@@ -38,12 +38,13 @@ describe("ProcessPage structure", () => {
     expect(source).not.toContain("onMounted(loadLabStatus)");
   });
 
-  test("lays out task detail as overview, tray queue, and flow timeline columns", () => {
+  test("lays out task detail as overview, active trays, and flow timeline columns", () => {
     const source = readProcessPage();
     const detailModal = cssBlock(source, ".process-task-detail-modal-content");
     const detailGrid = cssBlock(source, ".process-task-detail-grid");
     const overviewPanel = cssBlock(source, ".process-task-overview-panel");
-    const trayPanel = cssBlock(source, ".process-task-tray-panel");
+    const trayPanel = cssBlocksContaining(source, ".process-task-tray-panel");
+    const sampleCodeCard = cssBlock(source, ".process-task-selected-samples");
     const flowCard = cssBlock(source, ".process-task-flow-card");
     const flowList = cssBlock(source, ".process-task-flow-list");
 
@@ -58,13 +59,19 @@ describe("ProcessPage structure", () => {
     expect(detailModal).not.toContain("overflow: scroll");
 
     expect(detailGrid).toContain("grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1.05fr) minmax(320px, 0.88fr)");
-    expect(detailGrid).toContain("grid-template-rows: minmax(0, 1fr)");
+    expect(detailGrid).toContain("grid-template-rows: minmax(320px, 1.15fr) minmax(180px, 0.85fr)");
     expect(detailGrid).toContain("overflow: hidden");
     expect(overviewPanel).toContain("display: grid");
-    expect(overviewPanel).toContain("grid-template-rows: auto auto auto minmax(0, 1fr)");
+    expect(overviewPanel).toContain("grid-column: 1");
+    expect(overviewPanel).toContain("grid-row: 1");
+    expect(overviewPanel).toContain("grid-template-rows: auto auto auto");
     expect(trayPanel).toContain("display: grid");
-    expect(trayPanel).toContain("grid-template-rows: auto minmax(112px, 0.62fr) minmax(200px, 1.38fr)");
+    expect(trayPanel).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(sampleCodeCard).toContain("grid-column: 1 / span 2");
+    expect(sampleCodeCard).toContain("grid-row: 2");
     expect(flowCard).toContain("display: flex");
+    expect(flowCard).toContain("grid-column: 3");
+    expect(flowCard).toContain("grid-row: 1 / span 2");
     expect(flowCard).toContain("overflow: hidden");
     expect(flowList).toContain("flex: 1 1 auto");
     expect(flowList).toContain("overflow: auto");
@@ -73,7 +80,7 @@ describe("ProcessPage structure", () => {
 
   test("keeps tray batch lists locally scrollable inside the fitted task detail modal", () => {
     const source = readProcessPage();
-    const trayPanel = cssBlock(source, ".process-task-tray-panel");
+    const trayPanel = cssBlocksContaining(source, ".process-task-tray-panel");
     const trayCard = cssBlock(source, ".process-task-tray-panel > .process-task-summary-card");
     const trayList = cssBlock(source, ".process-task-tray-list--scrollable");
 
@@ -90,20 +97,20 @@ describe("ProcessPage structure", () => {
     expect(trayList).toContain("scrollbar-gutter: stable");
   });
 
-  test("keeps the next tray queue single-column and condenses it when more than two trays are waiting", () => {
+  test("spans the sample number card across the removed waiting-tray space", () => {
     const source = readProcessPage();
-    const remainingGrid = cssBlock(source, ".process-task-remaining-tray-grid");
-    const condensedRows = cssBlock(source, ".process-task-remaining-tray-grid.is-condensed .process-task-tray-row");
-    const titleRow = cssBlock(source, ".process-task-summary-title-row");
+    const sampleCodeCard = cssBlock(source, ".process-task-selected-samples");
+    const sampleCodeList = cssBlock(source, ".process-task-sample-code-list");
 
-    expect(source).toContain("data-testid=\"process-remaining-tray-grid\"");
-    expect(source).toContain("data-testid=\"process-remaining-tray-count\"");
-    expect(remainingGrid).toContain("grid-template-columns: minmax(0, 1fr)");
-    expect(remainingGrid).toContain("align-content: start");
-    expect(remainingGrid).toContain("overflow: auto");
-    expect(source).not.toContain(".process-task-remaining-tray-grid.is-adaptive");
-    expect(condensedRows).toContain("padding: 8px 10px");
-    expect(titleRow).toContain("justify-content: space-between");
+    expect(source).toContain("data-testid=\"process-sample-code-card\"");
+    expect(source).not.toContain("待下一轮托盘");
+    expect(source).not.toContain("process-remaining-tray-grid");
+    expect(source).not.toContain("process-remaining-tray-count");
+    expect(sampleCodeCard).toContain("grid-column: 1 / span 2");
+    expect(sampleCodeCard).toContain("grid-row: 2");
+    expect(sampleCodeCard).toContain("overflow: hidden");
+    expect(sampleCodeList).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+    expect(sampleCodeList).toContain("overflow: auto");
   });
 
   test("keeps process task selector controls on industrial dark tokens", () => {

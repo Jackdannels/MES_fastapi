@@ -223,7 +223,7 @@
             <AppPagination
               :current-page="currentTaskPage"
               :page-count="taskPageCount"
-              :show-jump-controls="mode !== 'handover'"
+              :show-jump-controls="false"
               @change="setTaskPage"
             />
           </div>
@@ -304,6 +304,16 @@
                 @click="reloadWorkspace"
               >
                 {{ modeConfig.resetActionLabel }}
+              </button>
+              <button
+                v-if="experiments.length"
+                class="action-btn secondary"
+                data-testid="transfer-assign-all-experiments"
+                type="button"
+                :disabled="allocationReadOnly || assignedTrays.length === 0"
+                @click.stop="assignAllExperimentsToAllTrays"
+              >
+                全部托盘应用全部试验
               </button>
             </div>
 
@@ -619,6 +629,7 @@ const {
   activeAssignmentMode,
   activeTrayIndex,
   addInventoryTray,
+  assignAllExperimentsToAllTrays,
   allocationReadOnly,
   allocationSaved,
   allocationValidationMessage,

@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from app.core.config import Settings
 from app.core.storage_backend import get_storage_backend
 from app.core.time_utils import now_business_text
+from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
 
 
 INTAKE_MESSAGE_TYPE = "lims.external-intake.created.v1"
@@ -208,11 +209,12 @@ class LimsRabbitRuntime:
 
     @staticmethod
     def _remove_outbox_event(event_id: str) -> None:
-        with EXTERNAL_INTAKE_LOCK:
-            storage = get_storage_backend()
-            stored = storage.read(LIMS_OUTBOX_KEY)
-            outbox = [dict(item) for item in stored] if isinstance(stored, list) else []
-            storage.write(LIMS_OUTBOX_KEY, [item for item in outbox if str(item.get("event_id") or "") != event_id])
+        with acquire_laboratory_storage_commit_lock():
+            with EXTERNAL_INTAKE_LOCK:
+                storage = get_storage_backend()
+                stored = storage.read(LIMS_OUTBOX_KEY)
+                outbox = [dict(item) for item in stored] if isinstance(stored, list) else []
+                storage.write(LIMS_OUTBOX_KEY, [item for item in outbox if str(item.get("event_id") or "") != event_id])
 
     async def _publish_outbox_loop(self) -> None:
         while True:

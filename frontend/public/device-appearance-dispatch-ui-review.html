@@ -1,0 +1,974 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>设备状态与外观检测间出库方案评审</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #061014;
+      --surface: #0d1920;
+      --surface-2: #111f27;
+      --surface-3: #14262e;
+      --border: #25444a;
+      --border-strong: #356a6b;
+      --text: #f3fbf9;
+      --muted: #91aaa8;
+      --accent: #68e0c1;
+      --accent-strong: #27c99f;
+      --accent-bg: rgba(50, 210, 168, 0.13);
+      --orange: #ffba62;
+      --orange-strong: #f59e0b;
+      --orange-bg: rgba(245, 158, 11, 0.13);
+      --orange-border: rgba(245, 158, 11, 0.58);
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+      --radius: 14px;
+      --radius-sm: 9px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        linear-gradient(rgba(83, 208, 176, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(83, 208, 176, 0.025) 1px, transparent 1px),
+        radial-gradient(circle at 12% 0%, rgba(50, 210, 168, 0.08), transparent 32%),
+        var(--bg);
+      background-size: 24px 24px, 24px 24px, auto, auto;
+      color: var(--text);
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      line-height: 1.5;
+    }
+
+    button { font: inherit; }
+
+    button:focus-visible,
+    a:focus-visible {
+      outline: 3px solid rgba(104, 224, 193, 0.5);
+      outline-offset: 3px;
+    }
+
+    .page-shell {
+      width: min(1560px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 32px 0 64px;
+    }
+
+    .review-header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 26px 28px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(10, 22, 27, 0.92);
+      box-shadow: var(--shadow);
+    }
+
+    .eyebrow {
+      margin: 0 0 7px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3, h4, p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: 8px;
+      font-size: clamp(28px, 3vw, 44px);
+      line-height: 1.15;
+    }
+
+    .review-header p,
+    .section-heading p,
+    .option-note,
+    .muted { color: var(--muted); }
+
+    .review-header p { margin-bottom: 0; }
+
+    .review-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .review-nav a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 48px;
+      padding: 0 18px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface-2);
+      color: var(--text);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .review-nav a:hover { border-color: var(--accent); }
+
+    .review-section {
+      margin-top: 28px;
+      padding: 28px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(8, 19, 24, 0.94);
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 22px;
+    }
+
+    .section-heading h2 {
+      margin-bottom: 8px;
+      font-size: clamp(23px, 2vw, 32px);
+    }
+
+    .section-heading p { max-width: 860px; margin-bottom: 0; }
+
+    .requirement-tag,
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 4px 10px;
+      border: 1px solid var(--border-strong);
+      border-radius: 999px;
+      background: var(--accent-bg);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .badge--orange {
+      border-color: var(--orange-border);
+      background: var(--orange-bg);
+      color: var(--orange);
+    }
+
+    .option-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .option-card {
+      display: grid;
+      align-content: start;
+      gap: 16px;
+      min-width: 0;
+      padding: 20px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      transition: border-color 180ms ease, box-shadow 180ms ease;
+    }
+
+    .option-card.is-recommended {
+      border-color: rgba(104, 224, 193, 0.58);
+      box-shadow: inset 0 0 0 1px rgba(104, 224, 193, 0.1);
+    }
+
+    .option-title-row {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .option-title-row h3 { margin-bottom: 4px; font-size: 19px; }
+    .option-note { margin: 0; font-size: 13px; }
+
+    .device-modal-mock {
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #101c24;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.2);
+    }
+
+    .mock-modal-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 15px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .mock-modal-head strong { font-size: 17px; }
+    .field-label { display: block; margin-bottom: 8px; color: #b7ccca; font-size: 13px; font-weight: 700; }
+
+    .status-action-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 150px;
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .status-display {
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      min-height: 72px;
+      padding: 10px 16px;
+      border: 1px solid rgba(104, 224, 193, 0.42);
+      border-radius: var(--radius-sm);
+      background: rgba(104, 224, 193, 0.12);
+      color: var(--accent);
+      font-size: 28px;
+      font-weight: 900;
+      text-align: center;
+    }
+
+    .status-display--rich {
+      align-content: center;
+      gap: 2px;
+    }
+
+    .status-display--rich small {
+      color: #a4beb9;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .large-action {
+      min-width: 0;
+      min-height: 72px;
+      padding: 0 18px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-sm);
+      background: var(--surface-3);
+      color: #d9ece8;
+      cursor: pointer;
+      font-weight: 800;
+      transition: border-color 180ms ease, background 180ms ease;
+    }
+
+    .large-action:hover {
+      border-color: var(--accent);
+      background: rgba(104, 224, 193, 0.13);
+    }
+
+    .status-action-row--wide { grid-template-columns: minmax(0, 1fr) 180px; }
+
+    .status-combined {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 160px;
+      min-height: 76px;
+      overflow: hidden;
+      border: 1px solid rgba(104, 224, 193, 0.44);
+      border-radius: var(--radius-sm);
+      background: rgba(104, 224, 193, 0.1);
+    }
+
+    .status-combined__value {
+      display: grid;
+      place-items: center;
+      color: var(--accent);
+      font-size: 30px;
+      font-weight: 900;
+      text-align: center;
+    }
+
+    .status-combined button {
+      min-height: 76px;
+      border: 0;
+      border-left: 1px solid rgba(104, 224, 193, 0.36);
+      background: rgba(104, 224, 193, 0.08);
+      color: #e2f5f0;
+      cursor: pointer;
+      font-weight: 800;
+    }
+
+    .status-combined button:hover { background: rgba(104, 224, 193, 0.18); }
+
+    .decision-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: auto;
+      padding-top: 4px;
+    }
+
+    .choose-option {
+      min-height: 48px;
+      padding: 0 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .option-card.is-picked .choose-option,
+    .choose-option:hover {
+      border-color: var(--accent);
+      background: var(--accent-bg);
+      color: var(--accent);
+    }
+
+    .rule-callout {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      margin-bottom: 20px;
+      padding: 16px 18px;
+      border: 1px solid rgba(104, 224, 193, 0.38);
+      border-radius: var(--radius-sm);
+      background: var(--accent-bg);
+    }
+
+    .rule-callout strong { color: var(--accent); }
+    .rule-callout p { margin-bottom: 0; color: #c8dfdb; }
+
+    .destination-dialog {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      padding: 24px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      background: #0e1a22;
+      box-shadow: var(--shadow);
+    }
+
+    .destination-dialog__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .destination-dialog__head h3 { margin-bottom: 0; font-size: 24px; }
+
+    .close-button {
+      min-width: 104px;
+      min-height: 52px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text);
+    }
+
+    .tray-summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 16px;
+      padding: 18px 20px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface-2);
+    }
+
+    .tray-summary strong { display: block; font-size: 20px; }
+    .tray-summary p { margin: 4px 0 0; color: var(--muted); }
+
+    .sample-count {
+      display: grid;
+      place-items: center;
+      min-width: 92px;
+      min-height: 62px;
+      border: 1px solid rgba(104, 224, 193, 0.35);
+      border-radius: 10px;
+      background: var(--accent-bg);
+      color: var(--accent);
+      font-weight: 800;
+      text-align: center;
+    }
+
+    .route-trace {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .route-step {
+      position: relative;
+      display: grid;
+      align-content: center;
+      min-height: 72px;
+      padding: 12px 15px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    .route-step:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      right: -11px;
+      z-index: 2;
+      width: 11px;
+      border-top: 2px solid var(--border-strong);
+    }
+
+    .route-step span { color: var(--muted); font-size: 11px; font-weight: 800; }
+    .route-step strong { margin-top: 3px; font-size: 15px; }
+    .route-step.is-plan { border-color: rgba(104, 224, 193, 0.52); background: var(--accent-bg); }
+    .route-step.is-plan strong { color: var(--accent); }
+
+    .warning-style-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding: 12px;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+    }
+
+    .warning-style-toolbar > span {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .warning-style-button {
+      min-height: 44px;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .warning-style-button.is-active {
+      border-color: var(--orange-border);
+      background: var(--orange-bg);
+      color: var(--orange);
+    }
+
+    .inline-warning {
+      display: none;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+      padding: 14px 16px;
+      border: 1px solid var(--orange-border);
+      border-radius: 10px;
+      background: var(--orange-bg);
+      color: #ffe2b5;
+    }
+
+    .inline-warning.is-visible { display: grid; }
+    .inline-warning__mark { color: var(--orange); font-size: 24px; font-weight: 900; }
+    .inline-warning strong { display: block; color: var(--orange); }
+    .inline-warning small { color: #e7c99d; }
+
+    .destinations-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .destination-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 210px;
+      gap: 18px;
+      align-items: center;
+      min-height: 138px;
+      padding: 20px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface-2);
+      transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+    }
+
+    .destination-card.is-original {
+      border-color: rgba(104, 224, 193, 0.62);
+      background: linear-gradient(135deg, rgba(104, 224, 193, 0.15), rgba(17, 31, 39, 0.94));
+      box-shadow: inset 4px 0 0 var(--accent-strong);
+    }
+
+    .destination-card.is-selected-alternate {
+      border-color: var(--orange-border);
+      background: linear-gradient(135deg, var(--orange-bg), var(--surface-2));
+      box-shadow: inset 4px 0 0 var(--orange-strong);
+    }
+
+    .destination-card h4 { margin-bottom: 5px; font-size: 21px; }
+    .destination-card p { margin-bottom: 9px; color: var(--muted); font-size: 13px; }
+
+    .card-warning {
+      display: none;
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-left: 3px solid var(--orange-strong);
+      background: var(--orange-bg);
+      color: var(--orange);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .destination-card.is-card-warning .card-warning { display: block; }
+
+    .destination-action {
+      min-height: 60px;
+      padding: 0 18px;
+      border: 1px solid var(--border-strong);
+      border-radius: 9px;
+      background: rgba(104, 224, 193, 0.06);
+      color: #dbefeb;
+      cursor: pointer;
+      font-weight: 800;
+      transition: border-color 180ms ease, background 180ms ease;
+    }
+
+    .destination-action:hover { border-color: var(--accent); background: var(--accent-bg); }
+    .destination-card.is-original .destination-action { border-color: rgba(104, 224, 193, 0.58); background: rgba(104, 224, 193, 0.16); color: var(--accent); }
+    .destination-card.is-selected-alternate .destination-action { border-color: var(--orange-border); color: var(--orange); }
+
+    .comparison-title {
+      margin: 28px 0 14px;
+      font-size: 21px;
+    }
+
+    .warning-comparison {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .warning-option {
+      display: grid;
+      gap: 12px;
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+    }
+
+    .warning-option h4 { margin-bottom: 0; }
+    .warning-option p { margin-bottom: 0; color: var(--muted); font-size: 13px; }
+
+    .warning-demo {
+      padding: 12px;
+      border: 1px solid var(--orange-border);
+      border-radius: 9px;
+      background: var(--orange-bg);
+      color: #ffe0ae;
+      font-size: 13px;
+    }
+
+    .warning-demo strong { display: block; color: var(--orange); }
+
+    .confirm-demo {
+      padding: 14px;
+      border: 1px solid var(--orange-border);
+      border-radius: 10px;
+      background: #172019;
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
+    }
+
+    .confirm-demo__actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .confirm-demo__actions span {
+      display: grid;
+      place-items: center;
+      min-height: 38px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .confirm-demo__actions span:last-child { border-color: var(--orange-border); color: var(--orange); }
+
+    .confirm-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      place-items: center;
+      padding: 20px;
+      background: rgba(0, 0, 0, 0.72);
+    }
+
+    .confirm-overlay.is-visible { display: grid; }
+
+    .confirm-dialog {
+      width: min(560px, 100%);
+      padding: 24px;
+      border: 1px solid var(--orange-border);
+      border-radius: 14px;
+      background: #111c22;
+      box-shadow: var(--shadow);
+    }
+
+    .confirm-dialog h3 { color: var(--orange); }
+    .confirm-dialog p { color: #d8c3a1; }
+
+    .confirm-dialog__actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .confirm-dialog__actions button {
+      min-width: 132px;
+      min-height: 52px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .confirm-dialog__actions .confirm-orange {
+      border-color: var(--orange-border);
+      background: var(--orange-bg);
+      color: var(--orange);
+    }
+
+    .review-footer {
+      margin-top: 20px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    @media (max-width: 1120px) {
+      .option-grid,
+      .warning-comparison { grid-template-columns: 1fr; }
+      .destinations-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      .page-shell { width: min(100% - 16px, 1560px); padding-top: 8px; }
+      .review-header,
+      .section-heading { align-items: stretch; flex-direction: column; }
+      .review-section { padding: 18px; }
+      .review-nav a { flex: 1 1 180px; justify-content: center; }
+      .status-action-row,
+      .status-action-row--wide,
+      .status-combined,
+      .tray-summary,
+      .destination-card { grid-template-columns: 1fr; }
+      .status-combined button { border-left: 0; border-top: 1px solid rgba(104, 224, 193, 0.36); }
+      .route-trace { grid-template-columns: 1fr; }
+      .route-step:not(:last-child)::after { display: none; }
+      .inline-warning { grid-template-columns: auto minmax(0, 1fr); }
+      .inline-warning .badge { grid-column: 1 / -1; justify-self: start; }
+      .destination-dialog { padding: 16px; }
+      .destination-dialog__head { align-items: stretch; flex-direction: column; }
+      .close-button { width: 100%; }
+      .confirm-dialog__actions { flex-direction: column; }
+      .confirm-dialog__actions button { width: 100%; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <header class="review-header">
+      <div>
+        <p class="eyebrow">MES UI Review · Independent Preview</p>
+        <h1>设备状态与外观检测间出库方案评审</h1>
+        <p>本页仅用于方案选择，不接入正式接口，也不会写入业务数据。</p>
+      </div>
+      <nav class="review-nav" aria-label="方案导航">
+        <a href="#device-status">问题 1 · 设备状态</a>
+        <a href="#appearance-dispatch">问题 2 · 外观出库</a>
+      </nav>
+    </header>
+
+    <section id="device-status" class="review-section">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Problem 01</p>
+          <h2>“空闲”放大居中，“设为可用”保持同一行右侧</h2>
+          <p>三种方案均保持状态为视觉主体、动作位于右侧，触控高度不低于 72px；点击“选择此方案”可标记偏好。</p>
+        </div>
+        <span class="requirement-tag">3 个方案</span>
+      </div>
+
+      <div class="option-grid">
+        <article class="option-card is-recommended is-picked" data-device-option="A">
+          <div class="option-title-row">
+            <div>
+              <h3>方案 A · 均衡双区</h3>
+              <p class="option-note">状态占主宽度，按钮固定宽度，最接近现有界面。</p>
+            </div>
+            <span class="badge">推荐</span>
+          </div>
+          <div class="device-modal-mock">
+            <div class="mock-modal-head"><strong>编辑设备</strong><span class="muted">冲击一室</span></div>
+            <span class="field-label">设备当前状态</span>
+            <div class="status-action-row">
+              <div class="status-display" role="status">空闲</div>
+              <button class="large-action" type="button">设为可用</button>
+            </div>
+          </div>
+          <div class="decision-row"><span class="muted">清晰、改动小</span><button class="choose-option" type="button">选择此方案</button></div>
+        </article>
+
+        <article class="option-card" data-device-option="B">
+          <div class="option-title-row">
+            <div>
+              <h3>方案 B · 状态信息增强</h3>
+              <p class="option-note">大字状态带辅助解释，适合现场快速确认。</p>
+            </div>
+            <span class="badge">信息更全</span>
+          </div>
+          <div class="device-modal-mock">
+            <div class="mock-modal-head"><strong>编辑设备</strong><span class="muted">冲击一室</span></div>
+            <span class="field-label">设备当前状态</span>
+            <div class="status-action-row status-action-row--wide">
+              <div class="status-display status-display--rich" role="status"><span>空闲</span><small>设备可参与排程</small></div>
+              <button class="large-action" type="button">设为可用</button>
+            </div>
+          </div>
+          <div class="decision-row"><span class="muted">语义最明确</span><button class="choose-option" type="button">选择此方案</button></div>
+        </article>
+
+        <article class="option-card" data-device-option="C">
+          <div class="option-title-row">
+            <div>
+              <h3>方案 C · 一体式状态条</h3>
+              <p class="option-note">状态和动作形成单一组件，视觉最紧凑。</p>
+            </div>
+            <span class="badge">更紧凑</span>
+          </div>
+          <div class="device-modal-mock">
+            <div class="mock-modal-head"><strong>编辑设备</strong><span class="muted">冲击一室</span></div>
+            <span class="field-label">设备当前状态</span>
+            <div class="status-combined">
+              <div class="status-combined__value" role="status">空闲</div>
+              <button type="button">设为可用</button>
+            </div>
+          </div>
+          <div class="decision-row"><span class="muted">整体感最强</span><button class="choose-option" type="button">选择此方案</button></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="appearance-dispatch" class="review-section">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Problem 02</p>
+          <h2>外观检测间出库：按原计划去向高亮，不按时间推荐</h2>
+          <p>卡片与按钮整体放大。示例中托盘原先从接驳区指定到盐雾试验室，外观检测完成后仍应以盐雾试验室作为原计划目标。</p>
+        </div>
+        <span class="requirement-tag">完整方案 + 3 种橙色提醒</span>
+      </div>
+
+      <div class="rule-callout">
+        <strong>推荐判定规则</strong>
+        <p>读取托盘从接驳区或暂存间进入外观检测间前最近一次指定的目标试验间，并将该试验间标记为“原计划试验间”。排程时间只作为信息展示，不再参与推荐排序。暂存间始终作为中性备选，不触发“非原计划试验间”提醒。</p>
+      </div>
+
+      <div class="destination-dialog">
+        <div class="destination-dialog__head">
+          <div><p class="eyebrow">Appearance Inspection · Stock Out</p><h3>选择目标去向</h3></div>
+          <button class="close-button" type="button">关闭</button>
+        </div>
+
+        <article class="tray-summary">
+          <div><strong>SYLU-2026-07-029-TP-001</strong><p>SYLU-2026-07-029 / 盐雾试验 / 试验前外观检测已完成</p></div>
+          <span class="sample-count">样品数<br />12</span>
+        </article>
+
+        <div class="route-trace" aria-label="托盘计划去向追溯">
+          <div class="route-step"><span>来源</span><strong>接驳区</strong></div>
+          <div class="route-step is-plan"><span>原计划目标</span><strong>盐雾试验室</strong></div>
+          <div class="route-step"><span>当前环节</span><strong>外观检测间</strong></div>
+          <div class="route-step is-plan"><span>建议出库目标</span><strong>盐雾试验室</strong></div>
+        </div>
+
+        <div class="warning-style-toolbar" aria-label="橙色提示样式切换">
+          <span>交互演示：</span>
+          <button class="warning-style-button is-active" data-warning-style="banner" type="button">提示 A · 页内横幅</button>
+          <button class="warning-style-button" data-warning-style="card" type="button">提示 B · 卡片内提示</button>
+          <button class="warning-style-button" data-warning-style="confirm" type="button">提示 C · 二次确认</button>
+        </div>
+
+        <div id="inlineWarning" class="inline-warning" role="alert" aria-live="polite">
+          <span class="inline-warning__mark">!</span>
+          <div><strong>非原计划试验间</strong><small id="inlineWarningText">原计划为盐雾试验室，当前选择为霉菌试验室。</small></div>
+          <span class="badge badge--orange">请确认</span>
+        </div>
+
+        <div class="destinations-grid">
+          <article class="destination-card is-original" data-destination="salt" data-type="lab" data-label="盐雾试验室">
+            <div><h4>盐雾试验室</h4><p>盐雾试验 · 原接驳指定去向</p><span class="badge">原计划试验间</span><div class="card-warning">非原计划试验间：原计划为盐雾试验室</div></div>
+            <button class="destination-action" type="button">送至盐雾试验室</button>
+          </article>
+
+          <article class="destination-card" data-destination="mold" data-type="lab" data-label="霉菌试验室">
+            <div><h4>霉菌试验室</h4><p>霉菌试验 · 当前可用</p><span class="badge">其他可选试验间</span><div class="card-warning">非原计划试验间：原计划为盐雾试验室</div></div>
+            <button class="destination-action" type="button">送至霉菌试验室</button>
+          </article>
+
+          <article class="destination-card" data-destination="thermal" data-type="lab" data-label="高低温湿热一室">
+            <div><h4>高低温湿热一室</h4><p>高低温湿热试验 · 当前可用</p><span class="badge">其他可选试验间</span><div class="card-warning">非原计划试验间：原计划为盐雾试验室</div></div>
+            <button class="destination-action" type="button">送至高低温湿热一室</button>
+          </article>
+
+          <article class="destination-card" data-destination="staging" data-type="staging" data-label="恒温恒湿间（暂存间）">
+            <div><h4>恒温恒湿间（暂存间）</h4><p>临时存放 · 不判定为非原计划试验间</p><span class="badge">中性备选</span><div class="card-warning">暂存间不触发非原计划提醒</div></div>
+            <button class="destination-action" type="button">送至暂存间</button>
+          </article>
+        </div>
+
+        <h3 class="comparison-title">三种橙色提示方案对比</h3>
+        <div class="warning-comparison">
+          <article class="warning-option">
+            <div><span class="badge badge--orange">方案 A · 推荐</span><h4>目标列表上方横幅</h4></div>
+            <div class="warning-demo"><strong>非原计划试验间</strong>原计划：盐雾试验室；当前：霉菌试验室。</div>
+            <p>不阻断操作，最适合现场连续扫码；提示位置稳定且不会让卡片高度跳动。</p>
+          </article>
+          <article class="warning-option">
+            <div><span class="badge badge--orange">方案 B</span><h4>所选卡片内部提示</h4></div>
+            <div class="warning-demo"><strong>当前卡片不是原计划目标</strong>继续操作会改变托盘去向。</div>
+            <p>提醒与选择对象距离最近，但卡片内容会增高，目标较多时页面节奏略有变化。</p>
+          </article>
+          <article class="warning-option">
+            <div><span class="badge badge--orange">方案 C</span><h4>提交前二次确认</h4></div>
+            <div class="confirm-demo"><strong>确认更改目标试验间？</strong><div class="muted">盐雾试验室 → 霉菌试验室</div><div class="confirm-demo__actions"><span>返回原计划</span><span>确认更改</span></div></div>
+            <p>防误操作最强，但会增加一步确认，适合把“偏离原计划”视为高风险操作的场景。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <p class="review-footer">独立评审页 · 不连接 MES API · 可直接用于方案确认</p>
+  </main>
+
+  <div id="confirmOverlay" class="confirm-overlay" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="confirm-dialog">
+      <span class="badge badge--orange">非原计划试验间</span>
+      <h3 id="confirmTitle">确认更改目标试验间？</h3>
+      <p id="confirmCopy">原计划为盐雾试验室，当前选择为霉菌试验室。确认后托盘将送往新的试验间。</p>
+      <div class="confirm-dialog__actions">
+        <button id="confirmCancel" type="button">返回原计划</button>
+        <button id="confirmProceed" class="confirm-orange" type="button">确认更改</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const deviceOptions = Array.from(document.querySelectorAll("[data-device-option]"));
+    deviceOptions.forEach((option) => {
+      option.querySelector(".choose-option").addEventListener("click", () => {
+        deviceOptions.forEach((item) => item.classList.remove("is-picked"));
+        option.classList.add("is-picked");
+      });
+    });
+
+    const styleButtons = Array.from(document.querySelectorAll("[data-warning-style]"));
+    const destinationCards = Array.from(document.querySelectorAll("[data-destination]"));
+    const inlineWarning = document.getElementById("inlineWarning");
+    const inlineWarningText = document.getElementById("inlineWarningText");
+    const confirmOverlay = document.getElementById("confirmOverlay");
+    const confirmCopy = document.getElementById("confirmCopy");
+    let warningStyle = "banner";
+    let pendingCard = null;
+
+    const clearAlternateState = () => {
+      destinationCards.forEach((card) => card.classList.remove("is-selected-alternate", "is-card-warning"));
+      inlineWarning.classList.remove("is-visible");
+    };
+
+    const applyAlternateSelection = (card) => {
+      clearAlternateState();
+      if (!card || card.dataset.type !== "lab" || card.dataset.destination === "salt") return;
+      card.classList.add("is-selected-alternate");
+      if (warningStyle === "banner") {
+        inlineWarningText.textContent = `原计划为盐雾试验室，当前选择为${card.dataset.label}。`;
+        inlineWarning.classList.add("is-visible");
+      }
+      if (warningStyle === "card") card.classList.add("is-card-warning");
+    };
+
+    styleButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        warningStyle = button.dataset.warningStyle;
+        styleButtons.forEach((item) => item.classList.toggle("is-active", item === button));
+        const currentAlternate = destinationCards.find((card) => card.classList.contains("is-selected-alternate"));
+        if (currentAlternate) applyAlternateSelection(currentAlternate);
+      });
+    });
+
+    destinationCards.forEach((card) => {
+      card.querySelector(".destination-action").addEventListener("click", () => {
+        if (card.dataset.type === "staging" || card.dataset.destination === "salt") {
+          pendingCard = null;
+          clearAlternateState();
+          return;
+        }
+        if (warningStyle === "confirm") {
+          pendingCard = card;
+          confirmCopy.textContent = `原计划为盐雾试验室，当前选择为${card.dataset.label}。确认后托盘将送往新的试验间。`;
+          confirmOverlay.classList.add("is-visible");
+          document.getElementById("confirmCancel").focus();
+          return;
+        }
+        applyAlternateSelection(card);
+      });
+    });
+
+    document.getElementById("confirmCancel").addEventListener("click", () => {
+      confirmOverlay.classList.remove("is-visible");
+      pendingCard = null;
+    });
+
+    document.getElementById("confirmProceed").addEventListener("click", () => {
+      confirmOverlay.classList.remove("is-visible");
+      if (pendingCard) {
+        clearAlternateState();
+        pendingCard.classList.add("is-selected-alternate");
+      }
+      pendingCard = null;
+    });
+
+    confirmOverlay.addEventListener("click", (event) => {
+      if (event.target === confirmOverlay) document.getElementById("confirmCancel").click();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && confirmOverlay.classList.contains("is-visible")) {
+        document.getElementById("confirmCancel").click();
+      }
+    });
+  </script>
+</body>
+</html>

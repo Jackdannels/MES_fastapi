@@ -435,7 +435,8 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         now: options.now || serverNowDate(),
       });
       const targetDestination =
-        targetDestinations.find((destination) => destination.preferred)
+        targetDestinations.find((destination) => destination.originalPlanned)
+        || targetDestinations.find((destination) => destination.preferred)
         || targetDestinations.find((destination) => destination.scheduled)
         || targetDestinations[0]
         || null;

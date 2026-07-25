@@ -235,9 +235,9 @@ defineOptions({
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
-import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 import { listLaboratoryAttendanceSessions } from "@/lib/attendanceApi";
 import { serverNowDate } from "@/lib/serverClock";
+import { readStorageSnapshot } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { SYSTEM_TRAY_TOTAL } from "@/lib/trayCapacity";
 import { buildLabCurrentTaskMatrixView, buildLabProcessPanels, buildLabScheduleThreeDayView, buildStagingSamplesView, buildTodayTaskPlanView, getVisualizationLabNames } from "./model";
@@ -348,7 +348,6 @@ const screenCards = [
   },
 ];
 
-const STORAGE_API_URL = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
 const VISUALIZATION_SNAPSHOT_KEYS = [
   STORAGE_KEYS.devices,
   STORAGE_KEYS.tasks,
@@ -366,17 +365,8 @@ const rawSnapshot = ref({});
 const attendanceSessions = ref([]);
 const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
 
-const readRawStorageSnapshot = async () => {
-  const response = await fetch(STORAGE_API_URL, {
-    headers: { Accept: "application/json" },
-    credentials: "include",
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to read storage snapshot: ${response.status} ${response.statusText}`);
-  }
-  const payload = await response.json();
-  return payload && typeof payload === "object" ? payload : {};
-};
+const readRawStorageSnapshot = () =>
+  readStorageSnapshot(VISUALIZATION_SNAPSHOT_KEYS, { normalizeMissing: false });
 
 const mergeArraySnapshot = (previousSnapshot, nextSnapshot, keys) => {
   const source = nextSnapshot && typeof nextSnapshot === "object" ? nextSnapshot : {};

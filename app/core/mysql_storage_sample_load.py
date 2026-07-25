@@ -4,7 +4,12 @@ from typing import Any, Dict, Iterable
 
 from app.core.storage_backend import normalize_experiment_status_text
 from app.core.mysql_storage_codecs import SAMPLE_META_PREFIX, normalize_text
-from app.core.mysql_storage_mappers import build_storage_sample_item
+from app.core.mysql_storage_mappers import (
+    build_appearance_stock_in_index,
+    build_scheduled_dispatch_target_map,
+    build_staging_dispatch_target_map,
+    build_storage_sample_item,
+)
 
 
 def load_samples(
@@ -28,6 +33,13 @@ def load_samples(
     sample_rows = cursor.fetchall()
     if not sample_rows:
         return []
+
+    staging_event_row_list = list(staging_event_rows or [])
+    schedule_list = list(schedules or [])
+    experiment_tray_list = list(experiment_trays or [])
+    staging_target_by_tray_code = build_staging_dispatch_target_map(staging_event_row_list)
+    scheduled_target_by_key = build_scheduled_dispatch_target_map(schedule_list, experiment_tray_list)
+    appearance_stock_in_keys = build_appearance_stock_in_index(staging_event_row_list)
 
     sample_ids = [row["sample_id"] for row in sample_rows]
     placeholders = ", ".join(["%s"] * len(sample_ids))
@@ -73,9 +85,12 @@ def load_samples(
             row,
             tray_rows=tray_map.get(row["sample_id"], []),
             event_rows=event_map.get(row["sample_id"], []),
-            staging_event_rows=staging_event_rows,
-            schedules=schedules,
-            experiment_trays=experiment_trays,
+            staging_event_rows=staging_event_row_list,
+            schedules=schedule_list,
+            experiment_trays=experiment_tray_list,
+            staging_target_by_tray_code=staging_target_by_tray_code,
+            scheduled_target_by_key=scheduled_target_by_key,
+            appearance_stock_in_keys=appearance_stock_in_keys,
         )
         for row in sample_rows
     ]

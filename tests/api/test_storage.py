@@ -2764,6 +2764,72 @@ def test_storage_locks_compared_axis_schedule_but_allows_deleting_unstarted_sibl
     assert storage.read("mes.schedules") == [schedules[0]]
 
 
+def test_storage_allows_deleting_untouched_shared_tray_experiment_while_salt_spray_is_running(monkeypatch):
+    task_code = "SYLU-2026-07-031"
+    salt_experiment_code = f"{task_code}-F"
+    tray_code = f"{task_code}-TP-002"
+    untouched_experiments = [
+        (f"{task_code}-G", "schedule-temperature-shock-07-031", "温度冲击一室"),
+        (f"{task_code}-H", "schedule-hot-humid-07-031", "高低温湿热一室"),
+        (f"{task_code}-I", "schedule-mold-07-031", "霉菌试验室"),
+    ]
+    schedules = [
+        {
+            "id": "schedule-salt-07-031",
+            "task_code": task_code,
+            "experiment_code": salt_experiment_code,
+            "device": "盐雾试验室",
+            "status": "已排程",
+        },
+        *[
+        {
+            "id": schedule_id,
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "device": device,
+            "status": "已排程",
+        }
+        for experiment_code, schedule_id, device in untouched_experiments
+        ],
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.experiment_runs": [{
+                "run_no": "run-salt-07-031",
+                "schedule_id": "schedule-salt-07-031",
+                "task_code": task_code,
+                "experiment_code": salt_experiment_code,
+                "status": "实验进行中",
+            }],
+            "mes.experiment_trays": [
+                {"task_code": task_code, "experiment_code": salt_experiment_code, "tray_code": tray_code},
+                *[
+                    {"task_code": task_code, "experiment_code": experiment_code, "tray_code": tray_code}
+                    for experiment_code, _schedule_id, _device in untouched_experiments
+                ],
+            ],
+            "mes.samples": [{
+                "code": f"{task_code}-SP-001",
+                "task_code": task_code,
+                "status": "实验进行中",
+                "flow_status": "实验进行中",
+                "trays": [{"tray_code": tray_code, "status": "实验进行中", "quantity": 5}],
+            }],
+            "mes.schedules": schedules,
+        },
+    )
+
+    untouched_response = client.put("/api/storage/mes.schedules", json=[schedules[0]])
+    assert untouched_response.status_code == 200
+    assert storage.read("mes.schedules") == [schedules[0]]
+
+    running_response = client.put("/api/storage/mes.schedules", json=[])
+    assert running_response.status_code == 400
+    assert running_response.json()["detail"] == "完成任务比对后排程不可删除或重新排程。"
+    assert storage.read("mes.schedules") == [schedules[0]]
+
+
 def test_storage_allows_deleting_untouched_future_axis_schedule_after_sibling_starts(monkeypatch):
     schedules = [
         {

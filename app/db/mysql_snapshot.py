@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
+from typing import Dict, Iterable
 
 from app.db.mysql_pool import get_mysql_connection_pool
 
@@ -52,6 +52,21 @@ class MySQLSnapshotRepository:
         with self._connect() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("SELECT storage_key, payload_json FROM app_storage_snapshot")
+                rows = cursor.fetchall()
+        return {storage_key: payload_json for storage_key, payload_json in rows}
+
+    def read_many(self, keys: Iterable[str]) -> Dict[str, str]:
+        requested_keys = list(dict.fromkeys(keys))
+        if not requested_keys:
+            return {}
+        self._ensure_table()
+        placeholders = ", ".join(["%s"] * len(requested_keys))
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"SELECT storage_key, payload_json FROM app_storage_snapshot WHERE storage_key IN ({placeholders})",
+                    requested_keys,
+                )
                 rows = cursor.fetchall()
         return {storage_key: payload_json for storage_key, payload_json in rows}
 

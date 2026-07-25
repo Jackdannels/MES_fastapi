@@ -229,6 +229,9 @@ Payload：
 {
   "lab_code": "LAB_IMPACT_1",
   "run_no": "run-20260607193000123456",
+  "sub_experiment_code": "EXP-001-AXIS-001",
+  "axis_code": "x+",
+  "next_axis_code": "y-",
   "ended_at": "2026-06-01 11:30:00"
 }
 ```
@@ -239,7 +242,12 @@ Payload：
 | --- | --- | --- | --- |
 | lab_code | string | 是 | 试验间编号 |
 | run_no | string | 是 | 来自 `experiment-ready` 的实验批次号 |
+| sub_experiment_code | string | 轴向任务是 | MES 下发的分段实验编号，原样带回 |
+| axis_code | string | 轴向任务是 | 本次完成的轴向；非轴向任务不传 |
+| next_axis_code | string | 否 | MES 结束请求中存在下一轴向时原样带回；最终轴向不传 |
 | ended_at | string | 是 | 实验结束时间，北京时间 |
+
+同一 `run_no` 可以包含多个轴向结束事件。上位机应按 `run_no + sub_experiment_code + axis_code` 保证轴向结束事件幂等，不能在首个轴向结束后屏蔽该运行批次的后续轴向。
 
 ### 5.4 实验结果接收
 
@@ -289,7 +297,7 @@ experiment-started:
 优先使用 payload.run_no 创建并启动对应实验批次；同时根据 lab_code 找到当前试验间待开始 / 已准备就绪的唯一任务/实验上下文，写入 started_at。
 
 experiment-ended:
-根据 payload.run_no 精确找到实验批次，写入 ended_at，并将该批次置为实验已完成；如未携带 run_no，则仅兼容旧协议按 lab_code 找正在运行批次。
+根据 payload.run_no 精确找到实验批次。轴向任务按 payload.axis_code 完成当前轴向，最后一个轴向完成后再将实验置为实验已完成；非轴向任务直接完成实验。如未携带 run_no，则仅兼容旧协议按 lab_code 找正在运行批次。
 
 experiment-result:
 根据 payload.run_no 精确找到实验批次并绑定 result_package。未携带 run_no 的旧结果包只作为历史兼容处理，可能触发旧兜底风险日志。

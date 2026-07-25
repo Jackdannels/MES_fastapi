@@ -259,9 +259,13 @@ describe("DevicesPage runtime", () => {
     await wrapper.vm.$nextTick();
 
     const statusDisplay = wrapper.get('[data-testid="device-edit-status"]');
+    const statusField = wrapper.get('[data-testid="device-status-field"]');
     expect(statusDisplay.element.tagName).toBe("DIV");
     expect(wrapper.find('input[name="edit_status"]').exists()).toBe(false);
     expect(statusDisplay.classes()).toContain("status");
+    expect(statusField.find("label").exists()).toBe(false);
+    expect(statusField.element.parentElement?.classList.contains("device-status-form-field")).toBe(true);
+    expect(statusField.element.previousElementSibling?.textContent).toBe("设备当前状态");
     expect(statusDisplay.element.closest(".form-field")?.querySelector('[data-testid="device-set-available"]')).toBeTruthy();
     expect(wrapper.get('[data-testid="device-set-available"]').attributes("disabled")).toBeDefined();
     const footerButtons = wrapper.findAll(".modal.is-open .form-actions button").map((button) => button.text());

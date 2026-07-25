@@ -25,6 +25,12 @@ const scheduleOverlapsWindow = (schedule, windowStart, windowEnd) => {
   return Boolean(startAt && endAt && overlaps(startAt, endAt, windowStart, windowEnd));
 };
 
+const atLocalHour = (date, hour) => {
+  const next = new Date(date);
+  next.setHours(hour, 0, 0, 0);
+  return next;
+};
+
 const normalizeScheduleSlot = (slot) => ({
   allItems: asArray(slot?.allItems),
   className: normalizeText(slot?.className),
@@ -97,18 +103,28 @@ function buildLabScheduleThreeDayView(input = {}) {
     schedules: visibleSchedules,
     tasks,
   }).filter((row) => !row?.id || visibleScheduleIds.has(normalizeText(row?.id))).length;
-  const dayCounts = days.map((day) => {
-    const dayStart = day.date;
-    const dayEnd = addDays(day.date, 1);
-    return {
-      ...day,
-      count: visibleSchedules.filter((schedule) => scheduleOverlapsWindow(schedule, dayStart, dayEnd)).length,
-    };
-  });
+  const periodCounts = days.flatMap((day) => [
+    {
+      count: visibleSchedules.filter((schedule) => scheduleOverlapsWindow(schedule, day.date, atLocalHour(day.date, 12))).length,
+      dateLabel: day.dateLabel,
+      key: `${day.key}-am`,
+      label: `${day.dateLabel} 上午`,
+      period: "am",
+      periodLabel: "上午",
+    },
+    {
+      count: visibleSchedules.filter((schedule) => scheduleOverlapsWindow(schedule, atLocalHour(day.date, 12), addDays(day.date, 1))).length,
+      dateLabel: day.dateLabel,
+      key: `${day.key}-pm`,
+      label: `${day.dateLabel} 下午`,
+      period: "pm",
+      periodLabel: "下午",
+    },
+  ]);
 
   return {
-    dayCounts,
     days,
+    periodCounts,
     rows,
     summary: {
       conflicts,

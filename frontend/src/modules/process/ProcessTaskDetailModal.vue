@@ -56,31 +56,6 @@
               <strong>{{ detail?.trayCount ?? 0 }}</strong>
             </div>
           </div>
-          <div class="process-task-selected-samples">
-            <div class="process-task-summary-title">样品编号</div>
-            <div
-              v-if="detail?.selectedTraySummary?.sampleCodes?.length"
-              class="process-task-sample-code-list"
-              data-testid="process-selected-tray-sample-list"
-            >
-              <div
-                v-for="sampleCode in previewSelectedSampleCodes"
-                :key="sampleCode"
-                class="process-task-sample-code-row"
-                :data-testid="`process-selected-tray-sample-item-${sampleCode}`"
-              >
-                {{ sampleCode }}
-              </div>
-              <div v-if="hiddenSelectedSampleCount > 0" class="process-task-more-line">
-                <span class="process-task-more-count">+{{ hiddenSelectedSampleCount }}</span>
-                <button class="process-task-more-button" type="button" @click="$emit('open-full-list')">查看全部</button>
-              </div>
-            </div>
-            <div v-else class="muted">当前托盘暂无样品编号。</div>
-            <div class="process-task-sample-hint" v-if="detail?.selectedTraySummary?.trayCode">
-              当前托盘：{{ detail.selectedTraySummary.trayCode }}
-            </div>
-          </div>
         </section>
 
         <ProcessTaskTrayPanel
@@ -88,6 +63,32 @@
           @open-full-list="$emit('open-full-list')"
           @select-tray="$emit('select-tray', $event)"
         />
+
+        <section
+          class="process-task-summary-card process-task-selected-samples"
+          data-testid="process-sample-code-card"
+        >
+          <div class="process-task-summary-title">样品编号</div>
+          <div
+            v-if="detail?.selectedTraySummary?.sampleCodes?.length"
+            class="process-task-sample-code-list"
+            data-testid="process-selected-tray-sample-list"
+          >
+            <div
+              v-for="sampleCode in previewSelectedSampleCodes"
+              :key="sampleCode"
+              class="process-task-sample-code-row"
+              :data-testid="`process-selected-tray-sample-item-${sampleCode}`"
+            >
+              {{ sampleCode }}
+            </div>
+            <div v-if="hiddenSelectedSampleCount > 0" class="process-task-more-line">
+              <span class="process-task-more-count">+{{ hiddenSelectedSampleCount }}</span>
+              <button class="process-task-more-button" type="button" @click="$emit('open-full-list')">查看全部</button>
+            </div>
+          </div>
+          <div v-else class="muted">当前托盘暂无样品编号。</div>
+        </section>
 
         <section class="process-task-summary-card process-task-flow-card" data-testid="process-tray-flow-card">
           <div class="process-task-flow-head">
@@ -151,10 +152,11 @@ const formatFlowTime = (value) => {
 .process-task-code-headline { margin: 0; font-size: clamp(30px, 4vw, 42px); line-height: 1; font-weight: 800; letter-spacing: 0.04em; color: var(--text); }
 .process-task-name-subtitle { margin: 10px 0 0; font-size: 15px; line-height: 1.4; color: var(--muted); }
 .process-task-status { flex-shrink: 0; }
-.process-task-detail-grid { display: grid; grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1.05fr) minmax(320px, 0.88fr); grid-template-rows: minmax(0, 1fr); gap: 16px; flex: 1 1 auto; min-height: 0; margin-top: 16px; overflow: hidden; }
+.process-task-detail-grid { display: grid; grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1.05fr) minmax(320px, 0.88fr); grid-template-rows: minmax(320px, 1.15fr) minmax(180px, 0.85fr); gap: 16px; flex: 1 1 auto; min-height: 0; margin-top: 16px; overflow: hidden; }
 .process-task-summary-card,
 .process-task-keyfact { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel-strong); color: var(--text); min-width: 0; overflow: hidden; padding: 14px 16px; }
-.process-task-overview-panel { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); gap: 12px; min-height: 0; overflow: hidden; }
+.process-task-overview-panel { grid-column: 1; grid-row: 1; display: grid; grid-template-rows: auto auto auto; align-content: start; gap: 12px; min-height: 0; overflow: auto; }
+.process-task-tray-panel { grid-column: 2; grid-row: 1; }
 .process-task-overview-panel .process-task-summary-title { margin-bottom: 0; }
 .process-task-summary-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
 .process-task-keyfacts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
@@ -165,17 +167,16 @@ const formatFlowTime = (value) => {
 .process-task-keyfact-wide { grid-column: span 1; }
 .process-task-stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
 .process-task-stat { border-radius: 8px; background: var(--bg-panel-strong); padding: 12px; border: 1px solid var(--border); color: var(--text); }
-.process-task-selected-samples { min-height: 0; overflow: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-gutter: stable; }
-.process-task-sample-code-list { display: grid; gap: 8px; }
+.process-task-selected-samples { grid-column: 1 / span 2; grid-row: 2; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.process-task-sample-code-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 8px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-gutter: stable; }
 .process-task-sample-code-row { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-panel-strong); font-size: 14px; font-weight: 600; color: var(--text); word-break: break-all; }
 .process-task-more-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 2px; }
 .process-task-more-count { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(var(--industrial-accent-rgb), 0.38); background: rgba(var(--industrial-accent-rgb), 0.12); color: var(--text); font-size: 13px; font-weight: 700; }
 .process-task-more-button { appearance: none; cursor: pointer; min-height: 32px; padding: 5px 12px; border: 1px solid rgba(var(--industrial-accent-rgb), 0.38); border-radius: 999px; background: rgba(var(--industrial-accent-rgb), 0.12); color: var(--text); font-size: 13px; font-weight: 700; }
-.process-task-sample-hint { margin-top: 12px; font-size: 12px; color: var(--muted); }
 .process-task-select-entry { margin-bottom: 12px; }
 .process-task-select-button { appearance: none; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg-panel-strong); color: var(--text); font: inherit; font-size: 14px; font-weight: 800; text-align: left; cursor: pointer; overflow-wrap: anywhere; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .process-task-select-button strong { color: var(--accent); font-size: 13px; }
-.process-task-flow-card { height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.process-task-flow-card { grid-column: 3; grid-row: 1 / span 2; height: 100%; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .process-task-flow-head { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .process-task-flow-list { list-style: none; margin: 0; padding: 0 4px 12px 0; display: grid; align-content: start; gap: 10px; flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .process-task-flow-list li { position: relative; padding: 12px 14px 12px 38px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.24); background: rgba(15, 23, 42, 0.34); color: var(--muted); font-size: 14px; }
@@ -192,8 +193,13 @@ const formatFlowTime = (value) => {
   .process-task-flow-head { flex-direction: column; align-items: flex-start; }
   .process-task-detail-grid,
   .process-task-keyfacts,
-  .process-task-stat-grid { grid-template-columns: 1fr; }
-  .process-task-detail-grid { grid-template-rows: auto auto minmax(0, 1fr); overflow: auto; }
+  .process-task-stat-grid,
+  .process-task-sample-code-list { grid-template-columns: 1fr; }
+  .process-task-detail-grid { grid-template-rows: auto; overflow: auto; }
+  .process-task-overview-panel,
+  .process-task-tray-panel,
+  .process-task-selected-samples,
+  .process-task-flow-card { grid-column: 1; grid-row: auto; }
 }
 @media (max-height: 900px) {
   .process-task-modal-content { padding: 18px; }

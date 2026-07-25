@@ -3975,6 +3975,61 @@ def test_process_experiment_ended_passes_axis_fields_to_run_completion():
     assert repository.ended == [("RUN-SALT-001", "2026-05-16 11:00:00", "y+", "x-", "")]
 
 
+def test_process_experiment_ended_uses_payload_run_no_instead_of_another_active_lab_run():
+    repository = FakeMqEventRepository()
+    repository.runs_by_lab["LAB_SALT"] = {
+        "run_no": "RUN-ACTIVE-OTHER",
+        "task_no": "TASK-ACTIVE-OTHER",
+        "experiment_no": "EXP-ACTIVE-OTHER",
+        "lab_code": "LAB_SALT",
+    }
+    repository.completed_runs_by_lab["LAB_EXACT"] = {
+        "run_no": "RUN-EXACT-AXIS",
+        "task_no": "TASK-EXACT",
+        "experiment_no": "EXP-EXACT",
+        "sub_experiment_code": "EXP-EXACT-AXIS-001",
+        "lab_code": "LAB_SALT",
+    }
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-ended",
+        {
+            "lab_code": "LAB_SALT",
+            "run_no": "RUN-EXACT-AXIS",
+            "axis_code": "y+",
+            "ended_at": "2026-05-16 11:00:00",
+        },
+        received_at="2026-05-16 11:00:00",
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.ended == [("RUN-EXACT-AXIS", "2026-05-16 11:00:00", "y+", "", "EXP-EXACT-AXIS-001")]
+    assert repository.messages[0]["task_no"] == "TASK-EXACT"
+    assert repository.messages[0]["experiment_no"] == "EXP-EXACT"
+
+
+def test_process_experiment_ended_rejects_axis_run_without_axis_code():
+    repository = FakeMqEventRepository()
+    repository.runs_by_lab["LAB_SALT"]["axis_codes"] = ["x-", "y+"]
+
+    with pytest.raises(ValueError, match="axis_code is required for axis-aware experiment end"):
+        process_laboratory_event(
+            "mes/v1/labs/LAB_SALT/events/experiment-ended",
+            {
+                "lab_code": "LAB_SALT",
+                "run_no": "RUN-SALT-001",
+                "ended_at": "2026-05-16 11:00:00",
+            },
+            received_at="2026-05-16 11:00:00",
+            repository=repository,
+        )
+
+    assert repository.ended == []
+    assert repository.messages == []
+    assert repository.events == []
+
+
 def test_process_axis_continuation_does_not_finish_attendance_work_interval(monkeypatch):
     service = AttendanceService(repository=InMemoryAttendanceRepository())
     set_attendance_service_for_tests(service)

@@ -125,4 +125,15 @@ describe("module style structure", () => {
     expect(systemPageSource).toContain('class="card section system-roles-card"');
     expect(systemPageSource).toContain('class="card section system-settings-card"');
   });
+
+  test("keeps the enlarged current status and lifecycle action on one row", () => {
+    const devicesStylesSource = readFileSync(devicesStylesPath, "utf8");
+
+    expect(devicesStylesSource).toMatch(/\.device-status-form-field\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/i);
+    expect(devicesStylesSource).toMatch(/\.device-status-field\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+160px[^}]*width:\s*100%/i);
+    expect(devicesStylesSource).toMatch(/\.device-status-form-field \.device-status-label\s*\{[^}]*display:\s*block[^}]*margin-bottom:\s*8px/i);
+    expect(devicesStylesSource).toMatch(/\.device-status-display\s*\{[^}]*justify-content:\s*center[^}]*width:\s*100%[^}]*min-height:\s*72px[^}]*font-size:\s*28px/i);
+    expect(devicesStylesSource).toMatch(/\.device-status-field \.device-status-display\.status\s*\{[^}]*align-items:\s*center[^}]*display:\s*flex[^}]*justify-content:\s*center[^}]*padding:\s*0\s+16px[^}]*font-size:\s*28px[^}]*line-height:\s*1/i);
+    expect(devicesStylesSource).toMatch(/\.device-status-field \.action-btn\s*\{[^}]*width:\s*100%[^}]*min-height:\s*72px/i);
+  });
 });

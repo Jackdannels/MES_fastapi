@@ -67,49 +67,6 @@
       <div v-else class="muted">当前无实验进行中托盘。</div>
     </section>
 
-    <section class="process-task-summary-card">
-      <div class="process-task-summary-title-row">
-        <div class="process-task-summary-title">待下一轮托盘</div>
-        <span
-          v-if="detail?.remainingTrayRows?.length"
-          class="process-task-summary-count"
-          data-testid="process-remaining-tray-count"
-        >
-          共 {{ detail.remainingTrayRows.length }} 个
-        </span>
-      </div>
-      <div
-        v-if="detail?.remainingTrayRows?.length"
-        class="process-task-tray-list process-task-remaining-tray-grid"
-        :class="{
-          'is-single': detail.remainingTrayRows.length === 1,
-          'is-condensed': detail.remainingTrayRows.length > 2,
-        }"
-        data-testid="process-remaining-tray-grid"
-      >
-        <div
-          v-for="tray in previewRemainingTrayRows"
-          :key="tray.trayCode"
-          class="process-task-tray-row"
-          :class="{ 'is-selected': detail?.selectedTrayCode === tray.trayCode }"
-        >
-          <button class="process-task-tray-row__select" type="button" :data-testid="`process-tray-button-${tray.trayCode}`" @click="$emit('select-tray', tray.trayCode)">
-            <strong>{{ tray.trayCode }}</strong>
-            <span>{{ tray.status }}</span>
-            <span>{{ traySamplePreviewText(tray) }}</span>
-          </button>
-          <span v-if="hiddenTraySampleCount(tray) > 0" class="process-task-more-inline">
-            +{{ hiddenTraySampleCount(tray) }}
-            <button class="process-task-more-button" type="button" @click="$emit('open-full-list')">查看全部</button>
-          </span>
-        </div>
-        <div v-if="hiddenRemainingTrayCount > 0" class="process-task-more-line">
-          <span class="process-task-more-count">+{{ hiddenRemainingTrayCount }}</span>
-          <button class="process-task-more-button" type="button" @click="$emit('open-full-list')">查看全部</button>
-        </div>
-      </div>
-      <div v-else class="muted">当前无待下一轮托盘。</div>
-    </section>
   </section>
 </template>
 
@@ -141,15 +98,13 @@ const previewTrayCodes = computed(() => takePreview(props.detail?.trayCodes, TAS
 const hiddenTrayCodeCount = computed(() => hiddenCount(props.detail?.trayCodes, TASK_TRAY_PREVIEW_LIMIT));
 const previewRunningTrayRows = computed(() => takePreview(props.detail?.runningTrayRows, TASK_ROW_PREVIEW_LIMIT));
 const hiddenRunningTrayCount = computed(() => hiddenCount(props.detail?.runningTrayRows, TASK_ROW_PREVIEW_LIMIT));
-const previewRemainingTrayRows = computed(() => takePreview(props.detail?.remainingTrayRows, TASK_ROW_PREVIEW_LIMIT));
-const hiddenRemainingTrayCount = computed(() => hiddenCount(props.detail?.remainingTrayRows, TASK_ROW_PREVIEW_LIMIT));
 
 </script>
 
 <style scoped>
 .process-task-tray-panel {
   display: grid;
-  grid-template-rows: auto minmax(112px, 0.62fr) minmax(200px, 1.38fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
   min-height: 0;
   overflow: hidden;
@@ -165,19 +120,6 @@ const hiddenRemainingTrayCount = computed(() => hiddenCount(props.detail?.remain
   padding: 14px 16px;
 }
 .process-task-summary-title { font-size: 14px; font-weight: 700; margin-bottom: 12px; }
-.process-task-summary-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.process-task-summary-title-row .process-task-summary-title { margin-bottom: 0; }
-.process-task-summary-count {
-  flex-shrink: 0;
-  min-height: 24px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid rgba(var(--industrial-accent-rgb), 0.34);
-  background: rgba(var(--industrial-accent-rgb), 0.1);
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
 .process-task-tray-chip-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 4px; width: 100%; }
 .process-task-tray-chip-list.is-single-column { grid-template-columns: minmax(0, 1fr); }
 .process-task-tray-chip-list.is-dense { gap: 8px; }
@@ -205,10 +147,6 @@ const hiddenRemainingTrayCount = computed(() => hiddenCount(props.detail?.remain
 .process-task-tray-chip.is-selected { border-color: rgba(var(--industrial-accent-rgb), 0.55); background: rgba(var(--industrial-accent-rgb), 0.16); box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.16); color: var(--accent); transform: translateY(-1px); }
 .process-task-tray-list { display: grid; gap: 10px; }
 .process-task-tray-list--scrollable { flex: 1 1 auto; min-height: 0; max-height: none; overflow: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-gutter: stable; }
-.process-task-remaining-tray-grid { grid-template-columns: minmax(0, 1fr); align-content: start; min-height: 0; overflow: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-gutter: stable; }
-.process-task-remaining-tray-grid.is-condensed { gap: 7px; }
-.process-task-remaining-tray-grid.is-condensed .process-task-tray-row { padding: 8px 10px; }
-.process-task-remaining-tray-grid.is-condensed .process-task-tray-row__select { gap: 2px; }
 .process-task-tray-row { width: 100%; text-align: left; display: grid; gap: 4px; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-panel-strong); color: var(--text); }
 .process-task-tray-row__select { appearance: none; border: 0; background: transparent; color: inherit; cursor: pointer; display: grid; gap: 4px; min-width: 0; padding: 0; text-align: left; width: 100%; }
 .process-task-tray-row__select strong,

@@ -369,6 +369,9 @@ const taskHasCurrentLaboratoryDispatch = (task) =>
   asArray(task?.trayRows).some((row) => trayBelongsToCurrentLaboratoryWorkflow(row, task));
 
 const trayLifecycleIsBeforeLaboratoryDispatch = (row) => {
+  if (rowHasPreDispatchLifecycleStatus(row)) {
+    return true;
+  }
   const lifecycleStatus = normalizeText(row?.lifecycleStatus);
   if (!lifecycleStatus) {
     return false;

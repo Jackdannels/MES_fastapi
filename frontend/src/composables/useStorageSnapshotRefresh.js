@@ -7,6 +7,7 @@ import {
 } from "@/lib/storageApi";
 
 const DEFAULT_REFRESH_DEBOUNCE_MS = 100;
+const RECENT_REQUEST_TTL_MS = 5000;
 
 function normalizeKeys(value) {
   return Array.isArray(value) ? value.filter((key) => typeof key === "string" && key) : [];
@@ -50,6 +51,12 @@ function normalizeRequestIds(value) {
   return requestId ? new Set([requestId]) : new Set();
 }
 
+function updateRequestKey(payload) {
+  const source = normalizeSource(payload?.source);
+  const requestId = String(payload?.requestId || "").trim();
+  return source && requestId ? `${source}::${requestId}` : "";
+}
+
 function shouldIgnoreUpdate(payload, options) {
   const ignoredSource = normalizeSource(options.ignoreSource);
   const source = normalizeSource(payload?.source);
@@ -72,6 +79,7 @@ function useStorageSnapshotRefresh(options = {}) {
   let debounceTimer = null;
   let refreshInFlight = false;
   let refreshQueued = false;
+  const recentRequestTimes = new Map();
 
   const clearDebounceTimer = () => {
     if (debounceTimer !== null) {
@@ -132,12 +140,37 @@ function useStorageSnapshotRefresh(options = {}) {
     if (!shouldRefreshForKeys(watchedKeys, incomingKeys)) {
       return;
     }
+    const now = Date.now();
+    const requestKey = updateRequestKey(payload);
+    if (requestKey) {
+      const previousTime = recentRequestTimes.get(requestKey);
+      if (previousTime !== undefined && now - previousTime < RECENT_REQUEST_TTL_MS) {
+        return;
+      }
+      recentRequestTimes.set(requestKey, now);
+      recentRequestTimes.forEach((handledAt, key) => {
+        if (now - handledAt >= RECENT_REQUEST_TTL_MS) {
+          recentRequestTimes.delete(key);
+        }
+      });
+    }
     if (resolvePaused(paused)) {
       hasPendingRefresh.value = true;
       return;
     }
     hasPendingRefresh.value = false;
-    runRefresh();
+    // Legacy sample bridge events have no request identity. Keep their former
+    // immediate/concurrent semantics; identified writes still use the shared
+    // scheduler so duplicate local/SSE/storage notifications collapse safely.
+    if (payload?.immediate && !requestKey) {
+      try {
+        Promise.resolve(refresh()).catch(() => {});
+      } catch {
+        // Refresh failures are surfaced by each page's own load state.
+      }
+      return;
+    }
+    runRefresh({ immediate: Boolean(payload?.immediate) });
   };
 
   const handleSnapshotUpdated = (event) => {
@@ -181,6 +214,7 @@ function useStorageSnapshotRefresh(options = {}) {
   return {
     flushPendingRefresh,
     hasPendingRefresh,
+    requestRefresh,
     stop,
   };
 }

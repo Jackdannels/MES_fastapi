@@ -32,6 +32,14 @@ function Get-ListenerPids([int]$Port) {
     @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)
 }
 
+function Get-MesListenerPids {
+    @(
+        @(Get-ListenerPids $backendPort)
+        @(Get-ListenerPids $frontendPort)
+        @(Get-ListenerPids $limsSimulatorPort)
+    ) | Where-Object { $_ } | Select-Object -Unique
+}
+
 function Test-ProcessAlive($ProcessId) {
     return [bool]($ProcessId -and (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue))
 }
@@ -153,13 +161,28 @@ function Wait-ProcessesExited($ProcessIds, [int]$TimeoutSeconds = 5) {
     return $false
 }
 
-function Wait-MesPortsReleased {
-    $deadline = (Get-Date).AddSeconds(10)
+function Wait-MesPortsReleased([int]$TimeoutSeconds = 10) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     do {
-        if (@(Get-ListenerPids $backendPort).Count -eq 0 -and @(Get-ListenerPids $frontendPort).Count -eq 0 -and @(Get-ListenerPids $limsSimulatorPort).Count -eq 0) { return }
+        $listenerPids = @(Get-MesListenerPids)
+        if ($listenerPids.Count -eq 0) { return }
+
+        # A service wrapper or stale development reloader can replace the
+        # original listener while shutdown is in progress. Re-read and reap
+        # listeners until every MES port is actually free.
+        $listenerPids | ForEach-Object { Stop-ProcessTree $_ }
         Start-Sleep -Milliseconds 200
     } while ((Get-Date) -lt $deadline)
-    throw "MES服务端口未能在10秒内释放"
+
+    $remainingListeners = @(
+        foreach ($port in @($backendPort, $frontendPort, $limsSimulatorPort)) {
+            foreach ($processId in @(Get-ListenerPids $port)) {
+                "${port}/PID ${processId}"
+            }
+        }
+    )
+    $detail = if ($remainingListeners.Count -gt 0) { $remainingListeners -join ", " } else { "未知监听进程" }
+    throw "MES服务端口未能在${TimeoutSeconds}秒内释放: $detail"
 }
 
 function Stop-MesSystem {
@@ -168,15 +191,17 @@ function Stop-MesSystem {
 
     $state = Read-State
     $processMap = Get-ProcessMap
-    $listenerPids = if ($IgnorePortListeners) { @() } else { @(Get-ListenerPids $backendPort) + @(Get-ListenerPids $frontendPort) + @(Get-ListenerPids $limsSimulatorPort) | Select-Object -Unique }
+    $listenerPids = if ($IgnorePortListeners) { @() } else { @(Get-MesListenerPids) }
     $commandPids = @(
         @($state.backendCommandPid, $state.frontendCommandPid, $state.limsSimulatorCommandPid)
         @(Get-MesCommandPids $processMap $state.launcherSessionId)
         @(Get-ParentCommandPids $processMap $listenerPids)
     ) | Where-Object { $_ } | Select-Object -Unique
     Stop-TrackedMesProcess $state.browserPid
+    # Stop the command roots first. Waiting for ports while their parents are
+    # still alive lets wrappers/reloaders retain or recreate the listeners.
+    $commandPids | ForEach-Object { Stop-TrackedMesProcess $_ }
     if (-not $IgnorePortListeners) {
-        $listenerPids | ForEach-Object { Stop-ProcessTree $_ }
         Wait-MesPortsReleased
     }
     if (-not (Wait-ProcessesExited $commandPids)) {

@@ -7,6 +7,42 @@ from app.core.mysql_storage_codecs import parse_varchar_length
 from app.services.attendance_service import ATTENDANCE_SCHEMA_SQL
 
 
+PERFORMANCE_INDEXES = (
+    (
+        "biz_task",
+        "idx_biz_task_storage_read",
+        "ALTER TABLE biz_task ADD INDEX idx_biz_task_storage_read (source_system, created_at, task_no)",
+    ),
+    (
+        "biz_sample",
+        "idx_biz_sample_storage_read",
+        "ALTER TABLE biz_sample ADD INDEX idx_biz_sample_storage_read (remark(32))",
+    ),
+    (
+        "biz_tray",
+        "idx_biz_tray_storage_read",
+        "ALTER TABLE biz_tray ADD INDEX idx_biz_tray_storage_read (remark(32), tray_no, task_id)",
+    ),
+    (
+        "biz_schedule",
+        "idx_biz_schedule_storage_read",
+        "ALTER TABLE biz_schedule ADD INDEX idx_biz_schedule_storage_read (schedule_type, schedule_start_time, schedule_no)",
+    ),
+    (
+        "biz_data_stream",
+        "idx_biz_data_stream_storage_read",
+        "ALTER TABLE biz_data_stream ADD INDEX idx_biz_data_stream_storage_read (remark(32), last_packet_time, stream_no)",
+    ),
+)
+
+
+def ensure_performance_indexes(cursor) -> None:
+    for table_name, index_name, ddl in PERFORMANCE_INDEXES:
+        cursor.execute(f"SHOW INDEX FROM {table_name} WHERE Key_name = '{index_name}'")
+        if cursor.fetchone() is None:
+            cursor.execute(ddl)
+
+
 def ensure_schema_extensions(backend: Any) -> None:
     if backend._schema_initialized:
         return
@@ -30,6 +66,7 @@ def ensure_schema_extensions(backend: Any) -> None:
                 cursor.execute("ALTER TABLE biz_task ADD COLUMN required_device VARCHAR(200) NULL AFTER due_time")
             elif parse_varchar_length(required_device_column) < 200:
                 cursor.execute("ALTER TABLE biz_task MODIFY COLUMN required_device VARCHAR(200) NULL")
+            ensure_performance_indexes(cursor)
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS md_test_type (

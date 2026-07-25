@@ -3187,6 +3187,58 @@ describe("staging-management model", () => {
     }));
   });
 
+  test("pre-experiment appearance highlights the original lab instead of the earliest schedule", () => {
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.experiments] = snapshot[STORAGE_KEYS.experiments].map((experiment) => (
+      experiment.experiment_code === "SYLU-2026-04-102-A"
+        ? { ...experiment, experiment_name: "霉菌试验", required_device: "霉菌试验室" }
+        : experiment
+    ));
+    snapshot[STORAGE_KEYS.schedules] = snapshot[STORAGE_KEYS.schedules].map((schedule) => {
+      if (schedule.id === "schedule-102-lab") {
+        return { ...schedule, device: "霉菌试验室", experiment_name: "霉菌试验" };
+      }
+      return schedule;
+    });
+    snapshot[STORAGE_KEYS.samples] = snapshot[STORAGE_KEYS.samples].map((sample) => (
+      sample.code === "SYLU-2026-04-102-SP-001"
+        ? {
+            ...sample,
+            flow_status: "实验前外观检测间存放",
+            location: "外观检测间",
+            status: "实验前外观检测间存放",
+            trays: sample.trays.map((tray) => ({
+              ...tray,
+              status: "实验前外观检测间存放",
+              target_experiment_code: "SYLU-2026-04-102-B",
+              target_lab: "盐雾试验室",
+            })),
+          }
+        : sample
+    ));
+
+    const row = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" })
+      .find((item) => item.trayCode === "SYLU-2026-04-102-TP-001");
+
+    expect(row?.targetDestinations.map((destination) => destination.targetLab)).toEqual([
+      "盐雾试验室",
+      "霉菌试验室",
+      "恒温恒湿间（暂存间）",
+    ]);
+    expect(row?.targetDestinations[0]).toMatchObject({
+      originalPlanned: true,
+      preferred: true,
+      targetExperimentCode: "SYLU-2026-04-102-B",
+      targetLab: "盐雾试验室",
+    });
+    expect(row?.targetDestinations[1]).toMatchObject({
+      originalPlanned: false,
+      preferred: false,
+      targetLab: "霉菌试验室",
+    });
+    expect(row?.targetLab).toBe("盐雾试验室");
+  });
+
   test("stock-out selects a destination by lab code when display names differ", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.schedules] = snapshot[STORAGE_KEYS.schedules].map((schedule) => (

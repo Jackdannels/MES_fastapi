@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.axis_codes import canonical_axis_code
+from app.core.storage_backend import apply_terminal_experiments_for_returned_trays
 from app.core.time_utils import format_business_datetime, now_business_text
 from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
 from app.services.laboratory_operations import clear_fixture_ready_marker
@@ -709,6 +710,23 @@ def complete_storage_laboratory_experiment(
             current_run_no=normalized_run_no,
             ended_at=completed_time,
         )
+
+    terminal_snapshot, _terminal_changed = apply_terminal_experiments_for_returned_trays(
+        {
+            "mes.experiments": experiments,
+            "mes.schedules": schedules,
+            "mes.experiment_trays": experiment_trays,
+            "mes.experiment_run_trays": experiment_run_trays,
+            "mes.staging_events": [
+                dict(item)
+                for item in snapshot.get("staging_events", [])
+                if isinstance(item, dict)
+            ],
+        }
+    )
+    experiments = terminal_snapshot["mes.experiments"]
+    schedules = terminal_snapshot["mes.schedules"]
+    experiment_run_trays = terminal_snapshot["mes.experiment_run_trays"]
 
     return {
         "affectedSampleCount": affected_sample_count,

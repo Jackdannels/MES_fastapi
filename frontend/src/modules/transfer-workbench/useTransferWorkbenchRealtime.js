@@ -63,7 +63,11 @@ function useTransferWorkbenchRealtime({
       return;
     }
     hasPendingSamplesRefresh = false;
-    void refreshTransferWorkspaceAfterTrayChange();
+    storageRefresh.requestRefresh({
+      ...(event?.detail || {}),
+      keys: [STORAGE_KEYS.samples],
+      immediate: true,
+    });
   };
 
   return {

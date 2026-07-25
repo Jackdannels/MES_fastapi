@@ -166,6 +166,30 @@ const mountLaboratoryHook = async ({ loadSnapshot }) => {
   return { exposed, wrapper };
 };
 
+const createClockOnlyWorkbenchView = () => ({
+  allScheduleRows: [],
+  currentExperimentTrayRows: [],
+  currentTask: null,
+  currentTaskFlow: [],
+  currentTaskStatus: "待实验",
+  defaultTask: null,
+  runningExperiment: {
+    active: true,
+    countdownLabel: "00:00:10",
+    endTime: new Date("2026-04-02T10:00:10.000Z").getTime(),
+    overdue: false,
+    overdueLabel: "",
+    remainingSeconds: 10,
+    taskCode: "TASK-CLOCK-001",
+    trayRows: [],
+  },
+  scheduleRows: [],
+  selectedTask: null,
+  selectedTrayFlow: null,
+  selectedTrayRow: null,
+  trayFlowTask: null,
+});
+
 describe("useLaboratoryPage realtime refresh", () => {
   beforeEach(() => {
     Object.defineProperty(window, "localStorage", {
@@ -283,6 +307,35 @@ describe("useLaboratoryPage realtime refresh", () => {
     await flushPromises();
 
     expect(exposed.currentTask.value.id).toBe("schedule-lab-axis-x");
+    wrapper.unmount();
+  });
+
+  test("updates the running countdown every second without rebuilding the laboratory workbench", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-02T10:00:00.000Z"));
+    const buildWorkbenchView = vi.fn(createClockOnlyWorkbenchView);
+    let exposed;
+    const TestHost = defineComponent({
+      setup() {
+        exposed = useLaboratoryPage({
+          buildWorkbenchView,
+          loadSnapshot: vi.fn(async () => ({})),
+          now: () => new Date(Date.now()),
+        });
+        return () => null;
+      },
+    });
+    const wrapper = mount(TestHost);
+    await flushPromises();
+
+    expect(exposed.runningExperiment.value.remainingSeconds).toBe(10);
+    const initialBuildCount = buildWorkbenchView.mock.calls.length;
+
+    vi.advanceTimersByTime(3000);
+    await flushPromises();
+
+    expect(exposed.runningExperiment.value.remainingSeconds).toBe(7);
+    expect(buildWorkbenchView).toHaveBeenCalledTimes(initialBuildCount);
     wrapper.unmount();
   });
 });

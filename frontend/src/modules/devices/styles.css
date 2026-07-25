@@ -54,14 +54,28 @@
   color: var(--accent-2);
 }
 
+.device-status-form-field {
+  grid-column: 1 / -1;
+}
+
 .device-status-field {
-  align-items: center;
+  align-items: stretch;
   display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  width: 100%;
+}
+
+.device-status-form-field .device-status-label {
+  display: block;
+  margin-bottom: 8px;
 }
 
 .device-status-field .action-btn {
+  width: 100%;
+  min-height: 72px;
+  padding-inline: 18px;
+  font-size: 16px;
   white-space: nowrap;
 }
 
@@ -69,24 +83,37 @@
   align-items: center;
   border-radius: var(--radius-panel);
   display: flex;
-  min-height: 40px;
-  padding: 0 12px;
+  justify-content: center;
+  width: 100%;
+  min-height: 72px;
+  padding: 0 16px;
+  font-size: 28px;
+  font-weight: 900;
+  text-align: center;
   user-select: none;
 }
 
-.device-status-display.status {
+.device-status-field .device-status-display.status {
+  align-items: center;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  padding: 0 16px;
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
   color: var(--accent);
 }
 
-.device-status-display.status.running {
+.device-status-field .device-status-display.status.running {
   color: var(--accent);
 }
 
-.device-status-display.status.alert {
+.device-status-field .device-status-display.status.alert {
   color: var(--danger);
 }
 
-.device-status-display.status.warn {
+.device-status-field .device-status-display.status.warn {
   color: var(--accent-2);
 }
 
@@ -154,6 +181,10 @@
 }
 
 @media (max-width: 640px) {
+  .device-status-field {
+    grid-template-columns: minmax(0, 1fr) 140px;
+  }
+
   .modal-content.devices-maintenance-record-modal {
     max-height: calc(100dvh - 16px);
     padding: 16px;

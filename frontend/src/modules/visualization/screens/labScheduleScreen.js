@@ -36,10 +36,9 @@ const SCHEDULE_SLOT_ROTATION_INTERVAL_MS = 4200;
 const scheduleSlotTaskColor = (slot, item = null) =>
   String(item?.color || slot?.taskColor || slot?.items?.find((candidate) => candidate?.color)?.color || "").trim();
 
-const renderScheduleItem = (item, slot, compact) =>
+const renderScheduleItem = (item, slot) =>
   h("div", { class: "visual-schedule-task", style: item?.color || slot.taskColor ? { "--schedule-task-color": item?.color || slot.taskColor } : null }, [
     h("strong", item?.taskCode || slot.label || "-"),
-    compact ? null : h("span", item?.experimentLabel || "-"),
     h("small", compactTimeRange(item?.timeRange || slot.title)),
   ]);
 
@@ -58,7 +57,7 @@ const renderScheduleSlot = (slot, compact, cycleTick = 0) => {
   return h("div", { "aria-label": rotatesItems ? `同一时段共${items.length}项排程，正在轮播第${cycleTick % items.length + 1}项` : undefined, class: ["visual-schedule-slot", `state-${slot.state || "idle"}`, stateLabel === "已排程" ? "is-planned" : "", stateLabel === "空闲" ? "is-idle" : "", slot.displayMode === "conflict" ? "is-conflict" : "", rotatesItems ? "has-rotating-items" : ""], style: taskColor ? { "--schedule-task-color": taskColor } : null }, [
     isPlainCell || isStatusOnlyCell || hidesStateBadge ? null : h("div", { class: "visual-schedule-slot-state" }, stateLabel),
     ...(visibleItems.length
-      ? visibleItems.map((item) => renderScheduleItem(item, slot, compact))
+      ? visibleItems.map((item) => renderScheduleItem(item, slot))
       : isStatusOnlyCell
         ? [h("div", { class: "visual-schedule-status-only" }, stateLabel)]
         : slot.state !== "idle"
@@ -101,7 +100,7 @@ export const LabScheduleScreen = {
     });
 
     return () => {
-      const view = props.scheduleView || { dayCounts: [], days: [], rows: [], summary: {} };
+      const view = props.scheduleView || { days: [], periodCounts: [], rows: [], summary: {} };
       const rows = Array.isArray(view.rows) ? view.rows.slice(0, props.compact ? 5 : 10) : [];
       return h("div", { class: ["visual-board", "visual-schedule-board", props.compact ? "is-compact" : ""] }, [
         h("div", { class: "visual-board-top" }, [
@@ -154,18 +153,14 @@ export const LabScheduleScreen = {
             h("div", [h("span", "冲突"), h("strong", view.summary?.conflicts ?? 0)]),
             props.compact ? null : h("div", [h("span", "空闲实验室"), h("strong", view.summary?.idleLabs ?? 0)]),
           ]),
-          h("div", { class: "visual-schedule-days" }, (view.dayCounts || []).map((day) =>
-            h("div", { class: "visual-schedule-day", key: day.key }, [
-              h("strong", day.dateLabel || day.label),
-              h("small", `${day.count} 项`),
-            ]),
-          )),
           h("div", { class: "visual-schedule-grid", style: { "--visual-schedule-row-count": String(Math.max(rows.length, 1)) } }, [
             h("div", { class: "visual-schedule-grid-head visual-schedule-lab-head" }, "实验室"),
-            ...(view.days || []).flatMap((day) => [
-              h("div", { class: "visual-schedule-grid-head", key: `${day.key}-am` }, `${day.dateLabel || day.label} 上午`),
-              h("div", { class: "visual-schedule-grid-head", key: `${day.key}-pm` }, `${day.dateLabel || day.label} 下午`),
-            ]),
+            ...(view.periodCounts || []).map((period) =>
+              h("div", { class: "visual-schedule-grid-head", key: period.key }, [
+                h("strong", period.label),
+                h("small", `${period.count} 项`),
+              ]),
+            ),
             ...(rows.length
               ? rows.flatMap((row) => [
                 h("div", { class: "visual-schedule-lab-name", key: `${row.device}-name` }, row.device),

@@ -156,6 +156,7 @@
     <AppModal
       :open="destinationModalOpen"
       :title="roomCopy.destinationTitle"
+      content-class="zancun-destination-modal-content"
       data-testid="zancun-destination-modal"
       @close="cancelDestinationAction"
     >
@@ -175,6 +176,7 @@
           class="zancun-destination-card"
           :class="{
             'is-disabled': !destination.scheduled || destination.targetAvailable === false,
+            'is-original-planned': destination.originalPlanned,
             'is-recommended': destination.preferred,
           }"
           :data-testid="`zancun-destination-card-${index}`"
@@ -183,7 +185,8 @@
             <h4>{{ destination.targetLab || "暂无目标实验室" }}</h4>
             <div class="muted">
               {{ destination.targetExperimentName || "待确认实验" }}
-              <span v-if="destination.preferred" class="pill">推荐</span>
+              <span v-if="destination.originalPlanned" class="pill zancun-original-plan-badge">原计划试验间</span>
+              <span v-else-if="destination.preferred" class="pill">推荐</span>
             </div>
             <div v-if="destination.targetUnavailableReason" class="muted zancun-destination-warning">
               {{ destination.targetUnavailableReason }}
@@ -194,7 +197,7 @@
             :data-testid="`zancun-destination-submit-${index}`"
             type="button"
             :disabled="!destination.targetLab || !destination.scheduled || destination.targetAvailable === false || Boolean(destination.targetUnavailableReason)"
-            @click="confirmDestinationAction(destination)"
+            @click="requestDestinationAction(destination)"
           >
             送至{{ destination.targetLab || "目标实验室" }}
           </button>
@@ -221,6 +224,43 @@
           </button>
         </article>
       </div>
+    </AppModal>
+
+    <AppModal
+      :open="destinationDeviationConfirmOpen"
+      class="zancun-destination-deviation-modal"
+      content-class="zancun-destination-deviation-modal-content"
+      data-testid="zancun-destination-deviation-modal"
+      title="非原计划试验间"
+      @close="cancelDestinationDeviation"
+    >
+      <div class="zancun-destination-deviation-warning" role="alert">
+        <strong>确认更改目标试验间？</strong>
+        <p>
+          原计划试验间为
+          <b>{{ originalPlannedLabLabel }}</b>，当前选择为
+          <b>{{ pendingDestinationLabel }}</b>。
+        </p>
+        <span>确认后托盘将送往非原计划试验间，请核对现场安排。</span>
+      </div>
+      <template #footer>
+        <button
+          class="action-btn secondary zancun-destination-deviation-cancel"
+          data-testid="zancun-destination-deviation-cancel"
+          type="button"
+          @click="cancelDestinationDeviation"
+        >
+          返回原计划
+        </button>
+        <button
+          class="action-btn zancun-destination-deviation-confirm"
+          data-testid="zancun-destination-deviation-confirm"
+          type="button"
+          @click="confirmDestinationDeviation"
+        >
+          确认更改并出库
+        </button>
+      </template>
     </AppModal>
 
     <AppModal
@@ -494,6 +534,8 @@ const setCurrentStagingPage = (page) => {
 const scanModalOpen = ref(false);
 const detailModalOpen = ref(false);
 const destinationModalOpen = ref(false);
+const destinationDeviationConfirmOpen = ref(false);
+const pendingDestination = ref(null);
 const returnDangerModalOpen = ref(false);
 const activeScanMode = ref("stockIn");
 const activeDetailMode = ref("stockIn");
@@ -520,6 +562,8 @@ const activeDetail = reactive({
   stockInAtDisplay: "",
   taskCode: "",
   isPostExperimentInbound: false,
+  originalTargetExperimentCode: "",
+  originalTargetLab: "",
   targetExperimentCode: "",
   targetExperimentName: "",
   targetDestinations: [],
@@ -530,6 +574,20 @@ const activeDetail = reactive({
   targetUnavailableReason: "",
   trayCode: "",
 });
+
+const originalPlannedDestination = computed(() => (
+  activeDetail.targetDestinations.find((destination) => destination.originalPlanned) || null
+));
+const originalPlannedLabLabel = computed(() => (
+  originalPlannedDestination.value?.targetLab
+  || activeDetail.originalTargetLab
+  || "原计划试验间"
+));
+const pendingDestinationLabel = computed(() => pendingDestination.value?.targetLab || "当前试验间");
+const destinationIsStaging = (destination) => (
+  String(destination?.targetType || "").trim() === "staging"
+  || String(destination?.targetLab || "").trim() === "恒温恒湿间（暂存间）"
+);
 
 const resetScanForm = () => {
   scanForm.code = "";
@@ -559,6 +617,8 @@ const resetDetail = () => {
   activeDetail.stockInAtDisplay = "";
   activeDetail.taskCode = "";
   activeDetail.isPostExperimentInbound = false;
+  activeDetail.originalTargetExperimentCode = "";
+  activeDetail.originalTargetLab = "";
   activeDetail.targetExperimentCode = "";
   activeDetail.targetExperimentName = "";
   activeDetail.targetDestinations = [];
@@ -591,6 +651,8 @@ const cancelScan = () => {
 };
 
 const openDestinationModal = (detail) => {
+  destinationDeviationConfirmOpen.value = false;
+  pendingDestination.value = null;
   resetDetail();
   Object.assign(activeDetail, detail);
   activeDetailMode.value = "stockOut";
@@ -612,6 +674,8 @@ const closeDetailModal = () => {
 };
 
 const closeDestinationModal = () => {
+  destinationDeviationConfirmOpen.value = false;
+  pendingDestination.value = null;
   destinationModalOpen.value = false;
   resetDetail();
   flushPendingRealtimeRefresh();
@@ -784,6 +848,36 @@ const cancelDestinationAction = () => {
   closeDestinationModal();
 };
 
+const cancelDestinationDeviation = () => {
+  destinationDeviationConfirmOpen.value = false;
+  pendingDestination.value = null;
+};
+
+const requestDestinationAction = async (destination) => {
+  const shouldConfirmDeviation = (
+    activeRoom.value === "appearance"
+    && Boolean(originalPlannedDestination.value)
+    && !destinationIsStaging(destination)
+    && !destination?.originalPlanned
+  );
+  if (shouldConfirmDeviation) {
+    pendingDestination.value = destination;
+    destinationDeviationConfirmOpen.value = true;
+    return;
+  }
+  await confirmDestinationAction(destination);
+};
+
+const confirmDestinationDeviation = async () => {
+  const destination = pendingDestination.value;
+  destinationDeviationConfirmOpen.value = false;
+  pendingDestination.value = null;
+  if (!destination) {
+    return;
+  }
+  await confirmDestinationAction(destination);
+};
+
 const confirmDestinationAction = async (destination = null) => {
   let target = destination || activeDetail.targetDestinations?.[0] || activeDetail;
   if (!target?.scheduled) {
@@ -951,7 +1045,11 @@ const handleSamplesUpdated = (event) => {
     return;
   }
   hasPendingSamplesRefresh = false;
-  void loadSnapshot();
+  storageRefresh.requestRefresh({
+    ...(event?.detail || {}),
+    keys: [STORAGE_KEYS.samples],
+    immediate: true,
+  });
 };
 
 const isRealtimeRefreshPaused = () => Boolean(

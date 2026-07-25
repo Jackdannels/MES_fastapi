@@ -49,9 +49,19 @@ describe("laboratory workbench layout", () => {
     expect(pageSource.match(/class="laboratory-operation-modal"/g)).toHaveLength(2);
     expect(pageSource).toContain("laboratory-operation-modal-button");
     expect(stylesSource).toMatch(/\.laboratory-operation-modal \.modal-content\s*\{[^}]*width:\s*min\(860px,\s*92vw\)[^}]*min-height:\s*360px/i);
-    expect(stylesSource).toMatch(/\.laboratory-operation-modal--compare \.modal-content\s*\{[^}]*width:\s*min\(1040px,\s*94vw\)/i);
+    expect(stylesSource).toMatch(/\.laboratory-operation-modal--compare \.modal-content\s*\{[^}]*width:\s*min\(1320px,\s*96vw\)[^}]*max-width:\s*calc\(100vw\s*-\s*24px\)/i);
     expect(stylesSource).toMatch(/\.laboratory-operation-modal-button\s*\{[^}]*min-width:\s*176px[^}]*min-height:\s*64px/i);
-    expect(stylesSource).toMatch(/\[data-testid="laboratory-compare-modal"\] \.laboratory-compare-scan input\s*\{[^}]*min-height:\s*64px[^}]*font-size:\s*18px/i);
-    expect(stylesSource).toMatch(/\.laboratory-compare-scan-button\s*\{[^}]*min-width:\s*164px[^}]*min-height:\s*64px/i);
+    expect(stylesSource).toMatch(/\.laboratory-compare-scan\s*\{[^}]*width:\s*100%[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+var\(--laboratory-compare-side-action-width\)/i);
+    expect(stylesSource).toMatch(/\[data-testid="laboratory-compare-modal"\] \.laboratory-compare-scan input\s*\{[^}]*height:\s*72px[^}]*min-height:\s*72px[^}]*font-size:\s*18px/i);
+    expect(stylesSource).toMatch(/\.laboratory-compare-scan-button\s*\{[^}]*min-width:\s*220px[^}]*min-height:\s*72px/i);
+    expect(pageSource).toContain("laboratory-compare-complete-button");
+    expect(stylesSource).toMatch(/\[data-testid="laboratory-compare-modal"\] \.form-actions\s*\{[^}]*width:\s*100%[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/i);
+    expect(stylesSource).toMatch(/\.laboratory-compare-complete-button\s*\{[^}]*width:\s*100%[^}]*height:\s*72px[^}]*min-height:\s*72px[^}]*font-size:\s*20px/i);
+  });
+
+  test("renders employee login as a large touch-friendly dialog", () => {
+    expect(stylesSource).toMatch(/\[data-testid="laboratory-attendance-login-modal"\] \.modal-content\s*\{[^}]*width:\s*min\(920px,\s*94vw\)[^}]*min-height:\s*min\(560px,/i);
+    expect(stylesSource).toMatch(/\[data-testid="laboratory-attendance-login-modal"\] \.laboratory-attendance-login-tab\s*\{[^}]*min-height:\s*52px[^}]*font-size:\s*16px/i);
+    expect(stylesSource).toMatch(/\[data-testid="laboratory-attendance-login-modal"\] \.form-field input\s*\{[^}]*min-height:\s*56px/i);
   });
 });

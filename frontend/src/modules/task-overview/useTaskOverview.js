@@ -631,13 +631,17 @@ function useTaskOverview() {
     return true;
   };
 
-  const handleSamplesUpdated = () => {
+  const handleSamplesUpdated = (event) => {
     if (isRealtimeRefreshPaused()) {
       hasPendingSamplesRefresh = true;
       return;
     }
     hasPendingSamplesRefresh = false;
-    void loadOverview({ silent: true });
+    storageRefresh.requestRefresh({
+      ...(event?.detail || {}),
+      keys: [STORAGE_KEYS.samples],
+      immediate: true,
+    });
   };
 
   watch(

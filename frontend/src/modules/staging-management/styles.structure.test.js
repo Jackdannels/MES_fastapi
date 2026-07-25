@@ -55,4 +55,14 @@ describe("staging management styles", () => {
     expect(source).toMatch(/\.action-btn\.zancun-scan-submit-btn\s*\{[^}]*min-width:\s*156px[^}]*min-height:\s*60px/i);
     expect(source).toMatch(/\.action-btn\.zancun-scan-complete-btn\s*\{[^}]*min-width:\s*240px[^}]*min-height:\s*60px/i);
   });
+
+  test("enlarges destination cards and styles the original-plan and orange confirmation states", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/modules/staging-management/styles.css"), "utf8");
+
+    expect(source).toMatch(/\.modal-content\.zancun-destination-modal-content\s*\{[^}]*width:\s*min\(1080px,\s*94vw\)/i);
+    expect(source).toMatch(/\.zancun-destination-card\s*\{[^}]*min-height:\s*120px/i);
+    expect(source).toMatch(/\.zancun-destination-card__action\s*\{[^}]*min-width:\s*240px[^}]*min-height:\s*64px/i);
+    expect(source).toMatch(/\.zancun-destination-card\.is-original-planned\s*\{[^}]*border-color:\s*rgba\(var\(--industrial-accent-rgb\),\s*0\.68\)/i);
+    expect(source).toMatch(/\.modal-content\.zancun-destination-deviation-modal-content\s*\{[^}]*border-color:\s*rgba\(245,\s*158,\s*11,\s*0\.62\)/i);
+  });
 });

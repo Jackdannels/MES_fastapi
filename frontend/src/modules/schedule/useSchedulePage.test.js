@@ -718,4 +718,45 @@ describe("useSchedulePage", () => {
     expect(wrapper.vm.scheduleRows).toEqual([]);
     expect(wrapper.vm.taskOptions).toEqual([]);
   });
+
+  test("keeps large schedule models stable on ordinary clock ticks while updating the next-auto label", async () => {
+    const buildScheduleRows = vi.fn(() => []);
+    const buildGanttRows = vi.fn(() => ({ days: [], rows: [] }));
+    const buildSummaryCards = vi.fn(() => ({
+      changeCount: 0,
+      conflictCount: 0,
+      nextAuto: "",
+      scheduleCount: 0,
+    }));
+    const ClockHarness = defineComponent({
+      setup() {
+        return useSchedulePage({ buildGanttRows, buildScheduleRows, buildSummaryCards });
+      },
+      render() {
+        return null;
+      },
+    });
+    const wrapper = mount(ClockHarness);
+    await settle(wrapper);
+
+    void wrapper.vm.scheduleRows;
+    void wrapper.vm.ganttView;
+    const initialNextAuto = wrapper.vm.summaryCards.nextAuto;
+    const initialCalls = {
+      gantt: buildGanttRows.mock.calls.length,
+      rows: buildScheduleRows.mock.calls.length,
+      summary: buildSummaryCards.mock.calls.length,
+    };
+
+    vi.advanceTimersByTime(61000);
+    await settle(wrapper);
+
+    expect(wrapper.vm.summaryCards.nextAuto).not.toBe(initialNextAuto);
+    void wrapper.vm.scheduleRows;
+    void wrapper.vm.ganttView;
+    expect(buildGanttRows).toHaveBeenCalledTimes(initialCalls.gantt);
+    expect(buildScheduleRows).toHaveBeenCalledTimes(initialCalls.rows);
+    expect(buildSummaryCards).toHaveBeenCalledTimes(initialCalls.summary);
+    wrapper.unmount();
+  });
 });

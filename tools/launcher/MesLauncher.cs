@@ -7,15 +7,15 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 
 namespace MesFastApiLauncher
 {
     internal static class Program
     {
         internal const string ProjectRoot = @"__PROJECT_ROOT__";
-        internal const string LauncherVersion = "1.1";
+        internal const string LauncherVersion = "1.2";
 
         [STAThread]
         private static void Main()
