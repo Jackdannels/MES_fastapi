@@ -129,6 +129,7 @@ def test_task_data_api_counts_completed_experiments_separately_from_pdf_health(c
     assert task["completedExperimentCount"] == 1
     assert task["totalExperimentCount"] == 2
     assert task["progressPercent"] == 50
+    assert task["folderAvailable"] is True
     vibration = task["experiments"][0]
     assert vibration["successfulPdfCount"] == 1
     assert vibration["missingPdfCount"] == 3
@@ -174,16 +175,21 @@ def test_host_file_operations_reject_non_loopback_clients():
     assert exc_info.value.status_code == 403
 
 
-def test_open_folder_api_only_opens_resolved_experiment_folder(client, tmp_path, monkeypatch):
+def test_open_folder_api_only_opens_resolved_task_and_experiment_folders(client, tmp_path, monkeypatch):
     storage = _task_data_storage(tmp_path)
     opened = []
     monkeypatch.setattr(test_data_route, "get_storage_backend", lambda: storage)
     monkeypatch.setattr(test_data_access.os, "startfile", lambda path: opened.append(Path(path)))
 
     response = client.post("/api/test-data/tasks/TASK-1/experiments/EXP-VIB/open-folder")
+    task_response = client.post("/api/test-data/tasks/TASK-1/open-folder")
 
     assert response.status_code == 200
-    assert opened == [(tmp_path / "TASK-1" / "振动试验").resolve()]
+    assert task_response.status_code == 200
+    assert opened == [
+        (tmp_path / "TASK-1" / "振动试验").resolve(),
+        (tmp_path / "TASK-1").resolve(),
+    ]
 
 
 def test_share_api_lists_downloads_and_builds_zip_without_exposing_outside_root(client, tmp_path, monkeypatch):
@@ -223,3 +229,32 @@ def test_share_api_lists_downloads_and_builds_zip_without_exposing_outside_root(
 
     rejected = client.get(f"/api/test-data/share/{share['token']}/files/RUN-1%7Cx%2B%7COUTSIDE")
     assert rejected.status_code == 404
+
+    salt_report = tmp_path / "TASK-1" / "盐雾试验" / "2026-07-27 10.00-11.00" / "SP-2.pdf"
+    salt_report.parent.mkdir(parents=True)
+    salt_report.write_bytes(b"%PDF-1.4\n% salt\n")
+    exports.append(
+        {
+            **exports[0],
+            "exportKey": "RUN-2||SP-2",
+            "experimentCode": "EXP-SALT",
+            "experimentName": "盐雾试验",
+            "axisCode": "",
+            "sampleCode": "SP-2",
+            "filePath": str(salt_report),
+            "relativePath": str(salt_report.relative_to(tmp_path)),
+        }
+    )
+    task_share_response = client.post("/api/test-data/tasks/TASK-1/share")
+    assert task_share_response.status_code == 200
+    task_share = task_share_response.json()
+    assert task_share["experimentCode"] == ""
+
+    task_page = client.get(f"/api/test-data/share/{task_share['token']}")
+    assert task_page.status_code == 200
+    assert "SP-1.pdf" in task_page.text
+    assert "SP-2.pdf" in task_page.text
+
+    task_archive = client.get(f"/api/test-data/share/{task_share['token']}/archive.zip")
+    assert task_archive.status_code == 200
+    assert "TASK-1.zip" in task_archive.headers["content-disposition"]

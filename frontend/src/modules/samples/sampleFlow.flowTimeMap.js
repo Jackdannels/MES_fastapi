@@ -2,6 +2,7 @@ import {
   APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
   APPEARANCE_STOCKED_STATUS,
   EXPERIMENT_FLOW_STATUS_LABELS,
+  POST_EXPERIMENT_STAGING_DISPATCH_TIME_LABEL,
   POST_EXPERIMENT_STAGING_SENT_STATUS,
   POST_EXPERIMENT_STAGING_STOCKED_STATUS,
   RUNNING_EXPERIMENT_RUN_STATUSES,
@@ -188,6 +189,9 @@ const buildTrayFlowTimeMap = (input = {}) => {
       const actionLabel = normalizeHistoryFlowLabel(entry?.action, entry?.location);
       const detailLabel = normalizeHistoryFlowLabel(entry?.detail, entry?.location);
       const experimentEvent = parseExperimentHistoryDetail(entry?.detail, taskCode);
+      const postExperimentStagingDispatch =
+        normalizeText(entry?.action) === "外观检测间扫码出库"
+        && [statusLabel, actionLabel, detailLabel].includes(POST_EXPERIMENT_STAGING_SENT_STATUS);
       const hasPostTestStagingLabel = [statusLabel, actionLabel, detailLabel].some((label) =>
         label === POST_EXPERIMENT_STAGING_SENT_STATUS || label === POST_EXPERIMENT_STAGING_STOCKED_STATUS,
       );
@@ -203,6 +207,9 @@ const buildTrayFlowTimeMap = (input = {}) => {
           return !statusLabel || statusLabel === actionLabel;
         });
       labels.forEach((label) => {
+        if (postExperimentStagingDispatch && label === POST_EXPERIMENT_STAGING_SENT_STATUS) {
+          return;
+        }
         if (hasPostTestStagingLabel && label === "已到达暂存间") {
           return;
         }
@@ -214,6 +221,9 @@ const buildTrayFlowTimeMap = (input = {}) => {
         }
         recordLatestFlowTime(label, time);
       });
+      if (postExperimentStagingDispatch) {
+        recordLatestFlowTime(POST_EXPERIMENT_STAGING_DISPATCH_TIME_LABEL, time);
+      }
       if ([statusLabel, actionLabel, detailLabel].includes("送至实验室")) {
         const dispatchLab = resolveLabDestinationName(entry?.target_lab, entry?.targetLab, entry?.location, entry?.detail);
         const dispatchLabel = buildLabDispatchStepLabel(dispatchLab);

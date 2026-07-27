@@ -235,6 +235,70 @@ describe("samplesFlowModel", () => {
     );
   });
 
+  test("buildTrayFlowView keeps the pre-experiment staging dispatch time after a single experiment returns", () => {
+    const taskCode = "SYLU-2026-08-001";
+    const trayCode = `${taskCode}-TP-003`;
+    const experimentCode = `${taskCode}-B`;
+    const view = buildTrayFlowView({
+      trayCode,
+      taskCode,
+      location: "厂家收回",
+      status: "厂家收回",
+      experiments: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "霉菌试验",
+          required_device: "霉菌试验室",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: experimentCode, tray_code: trayCode },
+      ],
+      experimentRunTrays: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          tray_code: trayCode,
+          run_tray_status: "实验已完成",
+          started_at: "2026-07-27 15:59:46",
+          ended_at: "2026-07-27 15:59:52",
+        },
+      ],
+      samples: [
+        {
+          code: `${taskCode}-SP-005`,
+          task_code: taskCode,
+          location: "厂家收回",
+          status: "厂家收回",
+          trays: [{ tray_code: trayCode, status: "厂家收回", quantity: 1 }],
+          history: [
+            { action: "厂家收回", detail: `${trayCode} 厂家收回`, location: "厂家收回", status: "厂家收回", time: "2026-07-27 18:18:05", tray_code: trayCode },
+            { action: "暂存间扫码入库", detail: `${trayCode} 实验后暂存间存放`, location: "恒温恒湿间（实验后暂存间）", status: "实验后暂存间存放", time: "2026-07-27 18:16:13", tray_code: trayCode },
+            { action: "外观检测间扫码出库", detail: `${trayCode} 送至 恒温恒湿间（暂存间）`, location: "恒温恒湿间（暂存间）", status: "送至暂存间", time: "2026-07-27 16:00:53", tray_code: trayCode },
+            { action: "外观检测间扫码入库", detail: `${trayCode} 实验后外观检测间存放`, location: "外观检测间", status: "实验后外观检测间存放", time: "2026-07-27 16:00:33", tray_code: trayCode },
+            { action: "实验完成", detail: `${taskCode} / 霉菌试验 / 实验已完成`, location: "霉菌试验室", status: "实验已完成", time: "2026-07-27 15:59:52", tray_code: trayCode },
+            { action: "暂存间扫码入库", detail: `${trayCode} 已到达暂存间`, location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-07-27 15:52:04", tray_code: trayCode },
+            { action: "送至暂存间", detail: trayCode, location: "恒温恒湿间（暂存间）", status: "送至暂存间", time: "2026-07-27 15:49:30", tray_code: trayCode },
+          ],
+        },
+      ],
+    });
+
+    expect(view.steps.find((step) => step.label === "送至暂存间")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-07-27 15:49:30" }),
+    );
+    expect(view.steps.find((step) => step.label === "已到达暂存间")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-07-27 15:52:04" }),
+    );
+    expect(view.steps.find((step) => step.label === "霉菌试验已完成")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-07-27 15:59:52" }),
+    );
+    expect(view.steps.find((step) => step.label === "实验后暂存间存放")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-07-27 18:16:13" }),
+    );
+  });
+
   test("buildTrayFlowView shows optional appearance storage after salt or mold completion without a dispatch step", () => {
     const view = buildTrayFlowView({
       trayCode: "SYLU-2026-03-001-TP-004",

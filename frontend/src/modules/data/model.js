@@ -74,13 +74,17 @@ function normalizeTaskOutput(item = {}, index = 0) {
   const progressPercent = Number.isFinite(explicitProgress)
     ? Math.max(0, Math.min(100, Math.round(explicitProgress)))
     : (totalExperimentCount ? Math.round((completedExperimentCount / totalExperimentCount) * 100) : 0);
+  const successfulPdfCount = normalizeCount(item.successfulPdfCount ?? item.successful_pdf_count);
+  const folderAvailable = item.folderAvailable === true || item.folder_available === true;
   return {
+    canOpen: item.canOpen === true || item.can_open === true || folderAvailable,
+    canShare: item.canShare === true || item.can_share === true || successfulPdfCount > 0,
     completedExperimentCount,
     experiments: Array.isArray(item.experiments) ? item.experiments.map(normalizeExperimentOutput) : [],
     failedPdfCount: normalizeCount(item.failedPdfCount ?? item.failed_pdf_count),
     missingPdfCount: normalizeCount(item.missingPdfCount ?? item.missing_pdf_count),
     progressPercent,
-    successfulPdfCount: normalizeCount(item.successfulPdfCount ?? item.successful_pdf_count),
+    successfulPdfCount,
     taskCode: normalizeText(item.taskCode ?? item.task_code) || `task-${index + 1}`,
     totalExperimentCount,
   };

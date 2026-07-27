@@ -85,7 +85,7 @@
         <div>
           <p class="data-eyebrow">任务数据</p>
           <h3 id="data-tasks-title">试验数据输出进度</h3>
-          <p class="data-section-copy">默认仅显示任务编号，双击任务后可查看进度并操作单项试验。</p>
+          <p class="data-section-copy">默认显示任务编号及任务级操作，双击任务后可查看进度并操作单项试验。</p>
         </div>
         <form class="data-task-search" role="search" @submit.prevent="searchTaskOutputs">
           <input
@@ -123,38 +123,69 @@
         <input id="test-data-share-url" :value="shareFallbackUrl" type="text" readonly @focus="$event.target.select()" />
       </div>
 
-      <div v-if="tasksLoading" class="data-empty-state" data-testid="data-tasks-loading" role="status">正在读取任务数据…</div>
+      <div
+        v-if="tasksLoading && !taskOutputs.length"
+        class="data-empty-state data-task-loading-frame"
+        data-testid="data-tasks-loading"
+        role="status"
+      >
+        正在读取任务数据…
+      </div>
       <div v-else-if="!taskOutputs.length" class="data-empty-state" data-testid="data-tasks-empty">
         <strong>暂无任务数据输出记录</strong>
         <span>试验开始执行后，可在这里查看任务进度和 PDF 输出情况。</span>
       </div>
-      <div v-else class="data-task-list" data-testid="data-task-list">
-        <article
-          v-for="task in taskOutputs"
-          :key="task.taskCode"
-          class="data-task-item"
-          :class="{ 'is-expanded': isTaskExpanded(task.taskCode) }"
-        >
-          <button
-            class="data-task-toggle"
-            :aria-controls="`data-task-details-${task.taskCode}`"
-            :aria-expanded="isTaskExpanded(task.taskCode)"
-            :aria-label="`${task.taskCode}，双击${isTaskExpanded(task.taskCode) ? '收起' : '展开'}试验数据`"
-            :data-testid="`data-task-toggle-${task.taskCode}`"
-            :title="`双击${isTaskExpanded(task.taskCode) ? '收起' : '展开'}试验数据`"
-            type="button"
-            @dblclick="toggleTaskExpansion(task.taskCode)"
-            @keydown.enter.prevent="toggleTaskExpansion(task.taskCode)"
-            @keydown.space.prevent="toggleTaskExpansion(task.taskCode)"
+      <div v-else class="data-task-results" :aria-busy="tasksLoading">
+        <div class="data-task-list" data-testid="data-task-list">
+          <article
+            v-for="task in taskOutputs"
+            :key="task.taskCode"
+            class="data-task-item"
+            :class="{ 'is-expanded': isTaskExpanded(task.taskCode) }"
           >
-            <strong class="data-code">{{ task.taskCode }}</strong>
-          </button>
+            <div class="data-task-summary-row">
+              <button
+                class="data-task-toggle"
+                :aria-controls="`data-task-details-${task.taskCode}`"
+                :aria-expanded="isTaskExpanded(task.taskCode)"
+                :aria-label="`${task.taskCode}，${isTaskExpanded(task.taskCode) ? '单击收起' : '双击展开'}试验数据`"
+                :data-testid="`data-task-toggle-${task.taskCode}`"
+                :title="isTaskExpanded(task.taskCode) ? '单击收起试验数据' : '双击展开试验数据'"
+                type="button"
+                @click="handleTaskClick(task.taskCode)"
+                @dblclick="handleTaskDoubleClick(task.taskCode)"
+                @keydown.enter.prevent="toggleTaskExpansion(task.taskCode)"
+                @keydown.space.prevent="toggleTaskExpansion(task.taskCode)"
+              >
+                <strong class="data-code">{{ task.taskCode }}</strong>
+              </button>
+              <div class="data-task-level-actions" aria-label="任务数据操作">
+                <button
+                  class="action-link data-output-action"
+                  :data-testid="`data-task-open-${task.taskCode}`"
+                  type="button"
+                  :disabled="!task.canOpen || isOpeningTask(task.taskCode)"
+                  @click="openTaskFolder(task.taskCode)"
+                >
+                  {{ isOpeningTask(task.taskCode) ? "打开中…" : "打开" }}
+                </button>
+                <button
+                  class="action-link data-output-action"
+                  :data-testid="`data-task-url-${task.taskCode}`"
+                  type="button"
+                  :disabled="!task.canShare || isSharingTask(task.taskCode)"
+                  @click="copyTaskUrl(task.taskCode)"
+                >
+                  {{ isSharingTask(task.taskCode) ? "生成中…" : "URL" }}
+                </button>
+              </div>
+            </div>
 
-          <div
-            v-if="isTaskExpanded(task.taskCode)"
-            :id="`data-task-details-${task.taskCode}`"
-            class="data-task-details"
-          >
+            <div
+              v-if="isTaskExpanded(task.taskCode)"
+              :id="`data-task-details-${task.taskCode}`"
+              class="data-task-details"
+            >
             <header class="data-task-item__header">
               <div class="data-task-identity">
                 <span>试验完成 {{ task.completedExperimentCount }}/{{ task.totalExperimentCount }}</span>
@@ -216,16 +247,20 @@
                 </div>
               </div>
             </div>
-          </div>
-        </article>
+            </div>
+          </article>
+        </div>
+        <div v-if="tasksLoading" class="data-task-refresh-overlay" data-testid="data-tasks-refreshing" role="status">
+          正在读取任务数据…
+        </div>
       </div>
 
-      <div v-if="!tasksLoading && tasksTotal > 0" class="data-task-pagination" aria-label="任务数据分页">
+      <div v-if="tasksTotal > 0" class="data-task-pagination" aria-label="任务数据分页">
         <span>共 {{ tasksTotal }} 个任务</span>
         <div>
-          <button class="action-btn secondary" data-testid="data-task-prev" type="button" :disabled="tasksPage <= 1" @click="goToTaskPage(tasksPage - 1)">上一页</button>
+          <button class="action-btn secondary" data-testid="data-task-prev" type="button" :disabled="tasksLoading || tasksPage <= 1" @click="goToTaskPage(tasksPage - 1)">上一页</button>
           <span>第 {{ tasksPage }} / {{ tasksPageCount }} 页</span>
-          <button class="action-btn secondary" data-testid="data-task-next" type="button" :disabled="tasksPage >= tasksPageCount" @click="goToTaskPage(tasksPage + 1)">下一页</button>
+          <button class="action-btn secondary" data-testid="data-task-next" type="button" :disabled="tasksLoading || tasksPage >= tasksPageCount" @click="goToTaskPage(tasksPage + 1)">下一页</button>
         </div>
       </div>
     </section>
@@ -317,6 +352,7 @@ import { useDataPage } from "./useDataPage";
 const {
   browseDirectory,
   copyExperimentUrl,
+  copyTaskUrl,
   defaultPath,
   directorySelecting,
   exportsError,
@@ -324,11 +360,16 @@ const {
   failedCount,
   failedExports,
   goToTaskPage,
+  handleTaskClick,
+  handleTaskDoubleClick,
   isOpeningExperiment,
+  isOpeningTask,
   isRetrying,
   isSharingExperiment,
+  isSharingTask,
   isTaskExpanded,
   openExperimentFolder,
+  openTaskFolder,
   pathStatusClass,
   pathStatusLabel,
   retryAllFailed,

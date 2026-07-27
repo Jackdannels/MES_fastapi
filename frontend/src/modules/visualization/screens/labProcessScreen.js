@@ -177,11 +177,6 @@ export const LabProcessScreen = {
                     )
                     : [h("div", { class: "visual-empty-tray-flow" }, "暂无托盘流程")]),
                 ]),
-                h("div", { class: "visual-lab-status-row" }, [
-                  h("div", { class: "visual-side-metric" }, [h("span", "样品 / 托盘"), h("strong", `${selectedTask?.sampleCount ?? lab.sampleCount}/${selectedTask?.trays?.length ?? lab.trayCount}`)]),
-                  h("div", { class: "visual-side-metric" }, [h("span", "当前状态"), h("strong", selectedTray?.status || lab.state)]),
-                ]),
-                lab.alert ? h("div", { class: "visual-alert-strip" }, lab.alert) : h("div", { class: "visual-ok-strip" }, lab.trayCount ? "运行正常" : "等待托盘"),
               ]);
             }),
           ]),
@@ -198,7 +193,7 @@ export const LabProcessScreen = {
 const stepClass = (step) => visualFlowStepClass(step);
 
 const FLOW_LAYOUT_COLUMNS = {
-  layoutA: 4,
+  layoutA: 6,
   compact: 4,
 };
 

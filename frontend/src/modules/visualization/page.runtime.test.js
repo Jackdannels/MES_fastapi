@@ -792,6 +792,9 @@ describe("VisualizationPage runtime", () => {
     expect(previewText).not.toContain("05-22 10:00:00");
     expect(previewText).not.toContain("+08:00");
     expect(previewText).not.toContain("任务下发");
+    expect(previewText).not.toContain("样品 / 托盘");
+    expect(previewText).not.toContain("当前状态");
+    expect(previewText).not.toContain("运行正常");
 
     const flowSteps = wrapper.findAll('[data-testid="visual-single-preview"] .visual-flow-step');
     const runningStep = flowSteps.find((step) => step.get("strong").text() === "振动试验进行中");

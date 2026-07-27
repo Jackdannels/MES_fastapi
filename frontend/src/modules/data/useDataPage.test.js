@@ -6,10 +6,12 @@ const apiMocks = vi.hoisted(() => ({
   listFailedTestDataExports: vi.fn(),
   listTestDataTasks: vi.fn(),
   openTestDataExperimentFolder: vi.fn(),
+  openTestDataTaskFolder: vi.fn(),
   readTestDataSettings: vi.fn(),
   retryFailedTestDataExports: vi.fn(),
   selectTestDataDirectory: vi.fn(),
   shareTestDataExperiment: vi.fn(),
+  shareTestDataTask: vi.fn(),
   updateTestDataSettings: vi.fn(),
 }));
 
@@ -52,7 +54,9 @@ describe("useDataPage", () => {
     apiMocks.retryFailedTestDataExports.mockResolvedValue({ ok: true });
     apiMocks.selectTestDataDirectory.mockResolvedValue({ savePath: "F:\\TrialData", cancelled: false });
     apiMocks.openTestDataExperimentFolder.mockResolvedValue({ ok: true });
+    apiMocks.openTestDataTaskFolder.mockResolvedValue({ ok: true });
     apiMocks.shareTestDataExperiment.mockResolvedValue({ url: "http://192.168.1.10/api/test-data/share/token" });
+    apiMocks.shareTestDataTask.mockResolvedValue({ url: "http://192.168.1.10/api/test-data/share/task-token" });
   });
 
   test("loads settings and saves a newly checked directory", async () => {
@@ -106,21 +110,34 @@ describe("useDataPage", () => {
     wrapper.vm.toggleTaskExpansion("TASK-002");
     expect(wrapper.vm.isTaskExpanded("TASK-001")).toBe(false);
     expect(wrapper.vm.isTaskExpanded("TASK-002")).toBe(true);
+    wrapper.vm.handleTaskClick("TASK-002");
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 230));
+    expect(wrapper.vm.isTaskExpanded("TASK-002")).toBe(false);
+    wrapper.vm.handleTaskDoubleClick("TASK-002");
+    expect(wrapper.vm.isTaskExpanded("TASK-002")).toBe(true);
+    wrapper.vm.handleTaskClick("TASK-002");
+    wrapper.vm.handleTaskDoubleClick("TASK-002");
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 230));
+    expect(wrapper.vm.isTaskExpanded("TASK-002")).toBe(false);
     await wrapper.vm.browseDirectory();
     expect(apiMocks.selectTestDataDirectory).toHaveBeenCalledTimes(1);
     expect(wrapper.vm.savePath).toBe("F:\\TrialData");
   });
 
-  test("opens the host folder and falls back to a manually copyable share URL", async () => {
+  test("opens task and experiment folders and exposes manually copyable share URLs", async () => {
     const wrapper = mount(TestHarness);
     await settle(wrapper);
 
     await wrapper.vm.openExperimentFolder("TASK-001", "VIBRATION");
     await wrapper.vm.copyExperimentUrl("TASK-001", "VIBRATION");
+    await wrapper.vm.openTaskFolder("TASK-001");
+    await wrapper.vm.copyTaskUrl("TASK-001");
 
     expect(apiMocks.openTestDataExperimentFolder).toHaveBeenCalledWith("TASK-001", "VIBRATION");
     expect(apiMocks.shareTestDataExperiment).toHaveBeenCalledWith("TASK-001", "VIBRATION");
-    expect(wrapper.vm.shareFallbackUrl).toBe("http://192.168.1.10/api/test-data/share/token");
+    expect(apiMocks.openTestDataTaskFolder).toHaveBeenCalledWith("TASK-001");
+    expect(apiMocks.shareTestDataTask).toHaveBeenCalledWith("TASK-001");
+    expect(wrapper.vm.shareFallbackUrl).toBe("http://192.168.1.10/api/test-data/share/task-token");
     expect(wrapper.vm.taskActionSuccess).toContain("手动复制");
   });
 });

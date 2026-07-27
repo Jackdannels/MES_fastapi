@@ -12,9 +12,11 @@ from app.core.storage_backend import get_storage_backend
 from app.services.test_data_access import (
     create_experiment_share,
     create_share_archive,
+    create_task_share,
     is_loopback_client,
     list_task_data,
     open_experiment_folder,
+    open_task_folder,
     render_share_page,
     resolve_shared_file,
     select_test_data_directory,
@@ -98,6 +100,32 @@ def get_task_data(
         page=page,
         page_size=page_size,
     )
+
+
+@router.post("/tasks/{task_code}/open-folder")
+def open_task_data_folder(task_code: str, request: Request) -> dict[str, Any]:
+    _require_loopback(request)
+    try:
+        folder = open_task_folder(storage=get_storage_backend(), task_code=task_code)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "path": str(folder)}
+
+
+@router.post("/tasks/{task_code}/share")
+def share_task(task_code: str) -> dict[str, Any]:
+    try:
+        return create_task_share(
+            storage=get_storage_backend(),
+            task_code=task_code,
+            public_base_url=settings.TEST_DATA_PUBLIC_BASE_URL,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/tasks/{task_code}/experiments/{experiment_code}/open-folder")

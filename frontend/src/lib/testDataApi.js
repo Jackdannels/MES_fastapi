@@ -52,6 +52,22 @@ function listTestDataTasks({ page = 1, pageSize = 20, query = "" } = {}) {
   return requestJson(`/api/test-data/tasks?${params.toString()}`, {}, "读取任务数据失败");
 }
 
+const taskActionPath = (taskCode, action) => (
+  `/api/test-data/tasks/${encodeURIComponent(String(taskCode || "").trim())}/${action}`
+);
+
+function openTestDataTaskFolder(taskCode) {
+  return requestJson(taskActionPath(taskCode, "open-folder"), {
+    method: "POST",
+  }, "打开任务数据目录失败");
+}
+
+function shareTestDataTask(taskCode) {
+  return requestJson(taskActionPath(taskCode, "share"), {
+    method: "POST",
+  }, "生成任务下载地址失败");
+}
+
 const experimentActionPath = (taskCode, experimentCode, action) => (
   `/api/test-data/tasks/${encodeURIComponent(String(taskCode || "").trim())}`
   + `/experiments/${encodeURIComponent(String(experimentCode || "").trim())}/${action}`
@@ -85,9 +101,11 @@ export {
   listFailedTestDataExports,
   listTestDataTasks,
   openTestDataExperimentFolder,
+  openTestDataTaskFolder,
   readTestDataSettings,
   retryFailedTestDataExports,
   selectTestDataDirectory,
   shareTestDataExperiment,
+  shareTestDataTask,
   updateTestDataSettings,
 };

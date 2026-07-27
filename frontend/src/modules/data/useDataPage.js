@@ -1,14 +1,16 @@
 // 负责归档目录设置、任务输出进度、目录/分享操作与失败 PDF 重试。
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import {
   listFailedTestDataExports,
   listTestDataTasks,
   openTestDataExperimentFolder,
+  openTestDataTaskFolder,
   readTestDataSettings,
   retryFailedTestDataExports,
   selectTestDataDirectory,
   shareTestDataExperiment,
+  shareTestDataTask,
   updateTestDataSettings,
 } from "@/lib/testDataApi";
 import { normalizeFailedExportList, normalizeTaskOutputList, normalizeTestDataSettings } from "./model";
@@ -39,6 +41,7 @@ function useDataPage() {
   const shareFallbackUrl = ref("");
   const openingExperimentKeys = ref(new Set());
   const sharingExperimentKeys = ref(new Set());
+  let taskClickTimer = null;
 
   const failedExports = ref([]);
   const failedCount = ref(0);
@@ -203,13 +206,93 @@ function useDataPage() {
   };
 
   const experimentKey = (taskCode, experimentCode) => `${taskCode}:${experimentCode}`;
+  const taskActionKey = (taskCode) => `${taskCode}:__task__`;
+  const clearTaskClickTimer = () => {
+    if (taskClickTimer !== null) {
+      globalThis.clearTimeout(taskClickTimer);
+      taskClickTimer = null;
+    }
+  };
   const isTaskExpanded = (taskCode) => expandedTaskCode.value === String(taskCode || "").trim();
   const toggleTaskExpansion = (taskCode) => {
     const normalized = String(taskCode || "").trim();
     expandedTaskCode.value = normalized && expandedTaskCode.value !== normalized ? normalized : "";
   };
+  const handleTaskClick = (taskCode) => {
+    const normalized = String(taskCode || "").trim();
+    if (!normalized || !isTaskExpanded(normalized)) {
+      return;
+    }
+    clearTaskClickTimer();
+    taskClickTimer = globalThis.setTimeout(() => {
+      if (isTaskExpanded(normalized)) {
+        expandedTaskCode.value = "";
+      }
+      taskClickTimer = null;
+    }, 220);
+  };
+  const handleTaskDoubleClick = (taskCode) => {
+    clearTaskClickTimer();
+    toggleTaskExpansion(taskCode);
+  };
   const isOpeningExperiment = (taskCode, experimentCode) => openingExperimentKeys.value.has(experimentKey(taskCode, experimentCode));
   const isSharingExperiment = (taskCode, experimentCode) => sharingExperimentKeys.value.has(experimentKey(taskCode, experimentCode));
+  const isOpeningTask = (taskCode) => openingExperimentKeys.value.has(taskActionKey(taskCode));
+  const isSharingTask = (taskCode) => sharingExperimentKeys.value.has(taskActionKey(taskCode));
+
+  const openTaskFolder = async (taskCode) => {
+    const key = taskActionKey(taskCode);
+    if (!taskCode || openingExperimentKeys.value.has(key)) {
+      return;
+    }
+    taskActionError.value = "";
+    taskActionSuccess.value = "";
+    openingExperimentKeys.value = new Set([...openingExperimentKeys.value, key]);
+    try {
+      await openTestDataTaskFolder(taskCode);
+      taskActionSuccess.value = `已在 MES 主机打开 ${taskCode} 的任务数据目录`;
+    } catch (error) {
+      taskActionError.value = error?.message || "打开任务数据目录失败";
+    } finally {
+      const nextKeys = new Set(openingExperimentKeys.value);
+      nextKeys.delete(key);
+      openingExperimentKeys.value = nextKeys;
+    }
+  };
+
+  const copyTaskUrl = async (taskCode) => {
+    const key = taskActionKey(taskCode);
+    if (!taskCode || sharingExperimentKeys.value.has(key)) {
+      return;
+    }
+    taskActionError.value = "";
+    taskActionSuccess.value = "";
+    shareFallbackUrl.value = "";
+    sharingExperimentKeys.value = new Set([...sharingExperimentKeys.value, key]);
+    try {
+      const result = await shareTestDataTask(taskCode);
+      const url = String(result?.url || "").trim();
+      if (!url) {
+        throw new Error("后端未返回可用的任务下载地址");
+      }
+      try {
+        if (!globalThis.navigator?.clipboard?.writeText) {
+          throw new Error("当前浏览器不支持自动复制");
+        }
+        await globalThis.navigator.clipboard.writeText(url);
+        taskActionSuccess.value = "任务下载地址已复制到剪贴板";
+      } catch {
+        shareFallbackUrl.value = url;
+        taskActionSuccess.value = "任务下载地址已生成，请从下方手动复制";
+      }
+    } catch (error) {
+      taskActionError.value = error?.message || "生成任务下载地址失败";
+    } finally {
+      const nextKeys = new Set(sharingExperimentKeys.value);
+      nextKeys.delete(key);
+      sharingExperimentKeys.value = nextKeys;
+    }
+  };
 
   const openExperimentFolder = async (taskCode, experimentCode) => {
     const key = experimentKey(taskCode, experimentCode);
@@ -265,10 +348,16 @@ function useDataPage() {
     }
   };
 
-  const searchTaskOutputs = () => loadTaskOutputs({ page: 1, query: tasksQuery.value });
+  const searchTaskOutputs = () => {
+    clearTaskClickTimer();
+    expandedTaskCode.value = "";
+    return loadTaskOutputs({ page: 1, query: tasksQuery.value });
+  };
   const goToTaskPage = (page) => {
     const nextPage = Math.max(1, Math.min(tasksPageCount.value, Number(page) || 1));
     if (nextPage !== tasksPage.value) {
+      clearTaskClickTimer();
+      expandedTaskCode.value = "";
       return loadTaskOutputs({ page: nextPage, query: tasksQuery.value });
     }
     return Promise.resolve();
@@ -277,10 +366,12 @@ function useDataPage() {
   onMounted(() => {
     void Promise.all([loadSettings(), loadFailedExports(), loadTaskOutputs()]);
   });
+  onBeforeUnmount(clearTaskClickTimer);
 
   return {
     browseDirectory,
     copyExperimentUrl,
+    copyTaskUrl,
     defaultPath,
     directorySelecting,
     expandedTaskCode,
@@ -289,14 +380,19 @@ function useDataPage() {
     failedCount,
     failedExports,
     goToTaskPage,
+    handleTaskClick,
+    handleTaskDoubleClick,
     isOpeningExperiment,
     isRetrying,
     isSharingExperiment,
+    isOpeningTask,
+    isSharingTask,
     isTaskExpanded,
     loadFailedExports,
     loadSettings,
     loadTaskOutputs,
     openExperimentFolder,
+    openTaskFolder,
     pathStatusClass,
     pathStatusLabel,
     retryAllFailed,

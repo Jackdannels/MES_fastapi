@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>流程节点预览 · 每行 5 个</title>
+  <link rel="stylesheet" href="/visual-process-flow-preview.css" />
+</head>
+<body data-columns="5">
+  <header class="preview-header">
+    <div class="preview-title">
+      <span>LAB PROCESS / LAYOUT REVIEW</span>
+      <strong>例行试验站智能控制中心 · 流程节点预览</strong>
+    </div>
+    <nav class="preview-nav" aria-label="预览版本切换">
+      <span class="preview-badge">方案 A · 每行 5 个节点</span>
+      <a class="is-current" href="/visual-process-flow-5-preview.html">5 节点版</a>
+      <a href="/visual-process-flow-6-preview.html">6 节点版</a>
+    </nav>
+  </header>
+  <main class="preview-main">
+    <section class="lab-board">
+      <header class="lab-head">
+        <div class="lab-identity"><strong>霉菌试验室</strong><span>SYLU-2026-07-029</span></div>
+        <div class="lab-state"><span class="state-pill">正常</span></div>
+      </header>
+      <div class="lab-content">
+        <aside class="task-rail">
+          <div class="rail-group">
+            <span class="rail-label">任务切换</span>
+            <div class="rail-card is-active"><strong>SYLU-2026-07-029</strong><span>9 托盘</span></div>
+          </div>
+          <div class="rail-group">
+            <span class="rail-label">托盘切换</span>
+            <div class="rail-card is-active"><strong>SYLU-2026-07-029-TP-001</strong><span>霉菌试验进行中</span></div>
+            <div class="rail-card"><strong>SYLU-2026-07-029-TP-002</strong><span>到货</span></div>
+            <div class="rail-card"><strong>SYLU-2026-07-029-TP-003</strong><span>到货</span></div>
+          </div>
+        </aside>
+        <section class="process-panel">
+          <header class="process-head"><strong>任务编号：SYLU-2026-07-029</strong><span>托盘编号：SYLU-2026-07-029-TP-001</span></header>
+          <div class="flow-canvas" data-flow-canvas aria-label="每行五个节点的试验流程"></div>
+        </section>
+      </div>
+    </section>
+    <p class="preview-note">右侧信息卡内容已删除，流程区域使用释放后的全部宽度。</p>
+  </main>
+  <script src="/visual-process-flow-preview.js"></script>
+</body>
+</html>

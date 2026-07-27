@@ -53,6 +53,7 @@ describe("trial data model", () => {
         successfulPdfCount: 8,
         missingPdfCount: 1,
         failedPdfCount: 1,
+        folderAvailable: true,
         experiments: [{
           experimentCode: "VIBRATION",
           experimentName: "振动试验",
@@ -71,6 +72,8 @@ describe("trial data model", () => {
         successfulPdfCount: 8,
         missingPdfCount: 1,
         failedPdfCount: 1,
+        canOpen: true,
+        canShare: true,
         experiments: [expect.objectContaining({ canOpen: true, canShare: true, pdfCount: 8 })],
       })],
     }));

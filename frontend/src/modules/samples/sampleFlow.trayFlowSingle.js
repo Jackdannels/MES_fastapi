@@ -3,6 +3,7 @@ import {
   APPEARANCE_STOCKED_STATUS,
   FLOW_STEP_INDEX_BY_KEY,
   FLOW_STEP_KEY_BY_LABEL,
+  POST_EXPERIMENT_STAGING_DISPATCH_TIME_LABEL,
   POST_EXPERIMENT_STAGING_SENT_STATUS,
   POST_EXPERIMENT_STAGING_STOCKED_STATUS,
   SAMPLE_FLOW_STEPS,
@@ -112,17 +113,27 @@ function buildSingleExperimentTrayFlow(input, { effectiveInput, stepTimeMap, tra
   const displayStatus = buildSingleExperimentStatusLabel(singleExperimentName, status);
   const holdUncompletedSingleExperiment = status === "厂家收回" && Boolean(singleExperimentName) && !singleExperimentCompleted;
   const preExperimentReturnedReachedIndex = FLOW_STEP_INDEX_BY_KEY.get("arrived_staging") ?? 3;
+  const postExperimentStagingDispatchTime = stepTimeMap.get(POST_EXPERIMENT_STAGING_DISPATCH_TIME_LABEL) || "";
   const steps = singleFlowSteps.map((step, index) => {
     const label = buildSingleExperimentStatusLabel(singleExperimentName, step.label);
     const identityLabel = buildSingleExperimentStatusLabel(singleExperimentIdentityName || singleExperimentName, step.label);
     const displayLabel = step.key === "sent_to_lab" ? buildLabDispatchStepLabel(singleExperimentDestinationLab) : label;
     const active = step.key === currentKey;
     const reached = holdUncompletedSingleExperiment ? index <= preExperimentReturnedReachedIndex : index < currentIndex;
+    const activePostExperimentStagingDispatch =
+      active
+      && step.key === "sent_to_staging"
+      && status === POST_EXPERIMENT_STAGING_SENT_STATUS
+      && Boolean(postExperimentStagingDispatchTime);
     const stepTimeLabel = step.label === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
       ? APPEARANCE_STOCKED_STATUS
       : step.label;
     const time = active || reached
-      ? stepTimeMap.get(label) || stepTimeMap.get(identityLabel) || stepTimeMap.get(stepTimeLabel) || ""
+      ? (activePostExperimentStagingDispatch ? postExperimentStagingDispatchTime : "")
+        || stepTimeMap.get(label)
+        || stepTimeMap.get(identityLabel)
+        || stepTimeMap.get(stepTimeLabel)
+        || ""
       : "";
     return { ...step, label: displayLabel, time, active, reached };
   });

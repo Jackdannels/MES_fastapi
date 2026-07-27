@@ -77,8 +77,8 @@ class SnapshotTestDataRepository:
     def get_or_create_share(self, task_code: str, experiment_code: str) -> dict[str, Any]:
         normalized_task = _text(task_code)
         normalized_experiment = _text(experiment_code)
-        if not normalized_task or not normalized_experiment:
-            raise ValueError("任务编号和试验编号不能为空")
+        if not normalized_task:
+            raise ValueError("任务编号不能为空")
         with self._lock:
             shares = _rows(self.storage.read(SHARES_STORAGE_KEY))
             existing = next(
@@ -270,8 +270,8 @@ class MySQLTestDataRepository:
     def get_or_create_share(self, task_code: str, experiment_code: str) -> dict[str, Any]:
         normalized_task = _text(task_code)
         normalized_experiment = _text(experiment_code)
-        if not normalized_task or not normalized_experiment:
-            raise ValueError("任务编号和试验编号不能为空")
+        if not normalized_task:
+            raise ValueError("任务编号不能为空")
         timestamp = now_business_text()
         token = secrets.token_urlsafe(32)
         with self.storage._connect() as connection:  # noqa: SLF001

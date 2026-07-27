@@ -4,10 +4,12 @@ import {
   listFailedTestDataExports,
   listTestDataTasks,
   openTestDataExperimentFolder,
+  openTestDataTaskFolder,
   readTestDataSettings,
   retryFailedTestDataExports,
   selectTestDataDirectory,
   shareTestDataExperiment,
+  shareTestDataTask,
   updateTestDataSettings,
 } from "./testDataApi";
 
@@ -72,6 +74,8 @@ describe("testDataApi", () => {
 
     await selectTestDataDirectory();
     await listTestDataTasks({ page: 2, pageSize: 10, query: " TASK/001 " });
+    await openTestDataTaskFolder("TASK/001");
+    await shareTestDataTask("TASK/001");
     await openTestDataExperimentFolder("TASK/001", "VIBRATION X+");
     await shareTestDataExperiment("TASK/001", "VIBRATION X+");
 
@@ -79,11 +83,21 @@ describe("testDataApi", () => {
     expect(fetch).toHaveBeenNthCalledWith(2, "/api/test-data/tasks?page=2&pageSize=10&query=TASK%2F001", expect.any(Object));
     expect(fetch).toHaveBeenNthCalledWith(
       3,
-      "/api/test-data/tasks/TASK%2F001/experiments/VIBRATION%20X%2B/open-folder",
+      "/api/test-data/tasks/TASK%2F001/open-folder",
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetch).toHaveBeenNthCalledWith(
       4,
+      "/api/test-data/tasks/TASK%2F001/share",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      5,
+      "/api/test-data/tasks/TASK%2F001/experiments/VIBRATION%20X%2B/open-folder",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      6,
       "/api/test-data/tasks/TASK%2F001/experiments/VIBRATION%20X%2B/share",
       expect.objectContaining({ method: "POST" }),
     );
