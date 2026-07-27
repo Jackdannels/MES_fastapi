@@ -40,6 +40,7 @@ from app.services.external_task_intake_service import (
 )
 from app.services.lims_rabbitmq import EXTERNAL_INTAKE_LOCK
 from app.services.laboratory_operations import with_laboratory_storage_commit_lock
+from app.services.test_data_cleanup import clear_all_test_data_files, prepare_test_data_cleanup
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 TASK_STORAGE_UPDATE_KEYS = (
@@ -674,7 +675,9 @@ def _accept_external_task_intake(intake_id: str) -> dict[str, Any]:
 @with_laboratory_storage_commit_lock
 def reset_tasks() -> dict[str, int]:
     storage = get_storage_backend()
+    test_data_cleanup = prepare_test_data_cleanup(storage=storage)
     result = run_demo_reset(storage)
+    result.update(clear_all_test_data_files(storage=storage, prepared=test_data_cleanup))
     get_attendance_service().clear_all_sessions(reason="task-reset")
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
     return result

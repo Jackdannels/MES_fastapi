@@ -215,6 +215,9 @@ const buildDefaultDueAt = (now = serverNowDate()) => formatBeijingDateTime(new D
 // 任务页表格和标签共用状态样式类映射。
 const statusClass = (value) => {
   const normalized = normalizeText(value);
+  if (normalized === STATUS_WAITING) {
+    return "status waiting";
+  }
   if (normalized === STATUS_RUNNING) {
     return "status running";
   }

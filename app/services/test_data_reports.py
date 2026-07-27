@@ -11,6 +11,7 @@ from uuid import uuid4
 from app.core.axis_codes import canonical_axis_code
 from app.core.storage_backend import get_storage_backend
 from app.core.time_utils import format_business_datetime, now_business_text, parse_business_datetime
+from app.services.test_data_repository import get_test_data_repository
 
 
 SETTINGS_STORAGE_KEY = "mes.test_data_settings"
@@ -150,11 +151,7 @@ def update_test_data_settings(save_path: Any, *, storage: Any | None = None) -> 
 
 def list_export_records(*, storage: Any | None = None, status: str = "") -> list[dict[str, Any]]:
     backend = storage or get_storage_backend()
-    records = _storage_read_list(backend, EXPORTS_STORAGE_KEY)
-    normalized_status = _text(status).lower()
-    if normalized_status:
-        records = [item for item in records if _text(item.get("status")).lower() == normalized_status]
-    return sorted(records, key=lambda item: _text(item.get("updatedAt") or item.get("generatedAt")), reverse=True)
+    return get_test_data_repository(backend).list_exports(status=status)
 
 
 def _find_by_run(rows: Iterable[dict[str, Any]], task_code: str, experiment_code: str, run_no: str) -> dict[str, Any]:
@@ -524,7 +521,8 @@ def archive_completion_reports(
             }
         generated_at = now_business_text()
         with _PERSISTENCE_LOCK:
-            records = _storage_read_list(backend, EXPORTS_STORAGE_KEY)
+            repository = get_test_data_repository(backend)
+            records = repository.list_exports()
             indexes = {_text(item.get("exportKey")): index for index, item in enumerate(records)}
             for sample in samples:
                 sample_code = _text(sample.get("code") or sample.get("sample_code") or sample.get("sample_no"))
@@ -568,8 +566,8 @@ def archive_completion_reports(
                     records.append(record)
                 else:
                     records[current_index] = record
+                repository.upsert_export(record)
                 items.append(record)
-            _persist_exports(backend, records)
     except Exception as exc:
         failed += 1
         return {
@@ -600,7 +598,8 @@ def retry_failed_exports(*, export_keys: Iterable[str] | None = None, storage: A
     try:
         root = Path(read_test_data_settings(storage=backend)["savePath"])
         with _PERSISTENCE_LOCK:
-            records = _storage_read_list(backend, EXPORTS_STORAGE_KEY)
+            repository = get_test_data_repository(backend)
+            records = repository.list_exports()
             for index, current_record in enumerate(records):
                 if _text(current_record.get("status")) != "failed":
                     continue
@@ -628,8 +627,8 @@ def retry_failed_exports(*, export_keys: Iterable[str] | None = None, storage: A
                     record.update({"status": "failed", "filePath": "", "error": str(exc)})
                     failed += 1
                 records[index] = record
+                repository.upsert_export(record)
                 items.append(record)
-            _persist_exports(backend, records)
     except Exception as exc:
         return {
             "ok": False,

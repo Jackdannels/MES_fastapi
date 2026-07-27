@@ -421,6 +421,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("SYLU-2026-03-001");
     expect(wrapper.get("#task-unscheduled-count").text()).toBe("2");
     expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(2);
+    expect(wrapper.findAll(".tasks-table__cell--status .status.waiting")).toHaveLength(2);
 
     await wrapper.get('input[placeholder="筛选任务编号/实验摘要/样品编号"]').setValue("SYLU-2026-03-001");
 
@@ -837,6 +838,7 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("任务进行中（已完成1个实验）");
+    expect(wrapper.get(".tasks-table__cell--status .status").classes()).toContain("running");
   });
 
   test("shows a localized date-time hint and current-time minimum in the intake modal", async () => {

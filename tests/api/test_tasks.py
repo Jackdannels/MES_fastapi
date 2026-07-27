@@ -2386,6 +2386,71 @@ def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and
     assert "mes.staging_events" in tasks_route.TASK_STORAGE_UPDATE_KEYS
 
 
+def test_tasks_reset_deletes_generated_test_data_and_preserves_save_settings(monkeypatch, tmp_path):
+    from app.api.routes import tasks as tasks_route
+    from app.services import test_data_reports
+
+    client = build_client(monkeypatch)
+    storage = client.app.state.storage
+    root = tmp_path / "MES试验数据"
+    report = root / "TASK-OLD" / "振动试验" / "X轴向" / "2026-07-27 09.40-10.00" / "SP-001.pdf"
+    report.parent.mkdir(parents=True)
+    report.write_bytes(b"pdf")
+    settings = [{"savePath": str(root), "updatedAt": "2026-07-27 10:00:00"}]
+    storage.write(test_data_reports.SETTINGS_STORAGE_KEY, settings)
+    storage.write(
+        test_data_reports.EXPORTS_STORAGE_KEY,
+        [
+            {
+                "exportKey": "RUN-OLD|x+|SP-001",
+                "filePath": str(report),
+                "relativePath": str(report.relative_to(root)),
+                "status": "success",
+            }
+        ],
+    )
+    storage.write("mes.test_data_shares", [{"token": "share-token"}])
+    monkeypatch.setattr(tasks_route, "get_storage_backend", lambda: storage)
+
+    response = client.post("/api/tasks/reset")
+
+    assert response.status_code == 200
+    assert response.json()["deleted_file_count"] == 1
+    assert response.json()["cleared_export_count"] == 1
+    assert not report.exists()
+    assert root.is_dir()
+    assert storage.read(test_data_reports.SETTINGS_STORAGE_KEY) == settings
+    assert storage.read(test_data_reports.EXPORTS_STORAGE_KEY) == []
+    assert storage.read("mes.test_data_shares") == []
+
+
+def test_tasks_reset_does_not_delete_test_data_when_task_reset_fails(monkeypatch, tmp_path):
+    from app.api.routes import tasks as tasks_route
+    from app.services import test_data_reports
+
+    client = build_client(monkeypatch)
+    storage = client.app.state.storage
+    root = tmp_path / "MES试验数据"
+    report = root / "TASK-OLD" / "盐雾试验" / "2026-07-27 09.40-10.00" / "SP-001.pdf"
+    report.parent.mkdir(parents=True)
+    report.write_bytes(b"pdf")
+    export = {
+        "exportKey": "RUN-OLD||SP-001",
+        "filePath": str(report),
+        "relativePath": str(report.relative_to(root)),
+        "status": "success",
+    }
+    storage.write(test_data_reports.SETTINGS_STORAGE_KEY, [{"savePath": str(root)}])
+    storage.write(test_data_reports.EXPORTS_STORAGE_KEY, [export])
+    monkeypatch.setattr(tasks_route, "run_demo_reset", lambda _storage: (_ for _ in ()).throw(RuntimeError("reset failed")))
+
+    with pytest.raises(RuntimeError, match="reset failed"):
+        client.post("/api/tasks/reset")
+
+    assert report.read_bytes() == b"pdf"
+    assert storage.read(test_data_reports.EXPORTS_STORAGE_KEY) == [export]
+
+
 def test_tasks_reset_clears_attendance_sessions_without_deleting_users(monkeypatch):
     from app.services.attendance_service import AttendanceService, InMemoryAttendanceRepository, get_attendance_service, set_attendance_service_for_tests
 

@@ -37,6 +37,76 @@ function normalizeFailedExportList(payload = {}) {
   };
 }
 
+const normalizeCount = (value) => {
+  const count = Number(value);
+  return Number.isFinite(count) && count > 0 ? Math.trunc(count) : 0;
+};
+
+function normalizeExperimentOutput(item = {}, index = 0) {
+  const experimentCode = normalizeText(item.experimentCode ?? item.experiment_code);
+  const folderAvailable = item.folderAvailable === true || item.folder_available === true;
+  const successfulPdfCount = normalizeCount(item.successfulPdfCount ?? item.successful_pdf_count);
+  const explicitPdfCount = item.pdfCount ?? item.pdf_count;
+  const rawStatus = normalizeText(item.status).toLowerCase();
+  const status = item.completed === true || ["实验已完成", "实验完成", "实验已经完成"].includes(rawStatus)
+    ? "completed"
+    : (["实验进行中", "实验中", "进行中", "in_progress"].includes(rawStatus) ? "in_progress" : "pending");
+  return {
+    canOpen: item.canOpen === true || item.can_open === true || folderAvailable,
+    canShare: item.canShare === true || item.can_share === true || successfulPdfCount > 0,
+    experimentCode: experimentCode || `experiment-${index + 1}`,
+    experimentName: normalizeText(item.experimentName ?? item.experiment_name) || experimentCode || `试验 ${index + 1}`,
+    failedPdfCount: normalizeCount(item.failedPdfCount ?? item.failed_pdf_count),
+    missingPdfCount: normalizeCount(item.missingPdfCount ?? item.missing_pdf_count),
+    pdfCount: explicitPdfCount == null ? successfulPdfCount : normalizeCount(explicitPdfCount),
+    status,
+    successfulPdfCount,
+  };
+}
+
+function normalizeTaskOutput(item = {}, index = 0) {
+  const totalExperimentCount = normalizeCount(item.totalExperimentCount ?? item.total_experiment_count);
+  const completedExperimentCount = Math.min(
+    totalExperimentCount || Number.MAX_SAFE_INTEGER,
+    normalizeCount(item.completedExperimentCount ?? item.completed_experiment_count),
+  );
+  const explicitProgress = Number(item.progressPercent ?? item.progress_percent);
+  const progressPercent = Number.isFinite(explicitProgress)
+    ? Math.max(0, Math.min(100, Math.round(explicitProgress)))
+    : (totalExperimentCount ? Math.round((completedExperimentCount / totalExperimentCount) * 100) : 0);
+  return {
+    completedExperimentCount,
+    experiments: Array.isArray(item.experiments) ? item.experiments.map(normalizeExperimentOutput) : [],
+    failedPdfCount: normalizeCount(item.failedPdfCount ?? item.failed_pdf_count),
+    missingPdfCount: normalizeCount(item.missingPdfCount ?? item.missing_pdf_count),
+    progressPercent,
+    successfulPdfCount: normalizeCount(item.successfulPdfCount ?? item.successful_pdf_count),
+    taskCode: normalizeText(item.taskCode ?? item.task_code) || `task-${index + 1}`,
+    totalExperimentCount,
+  };
+}
+
+function normalizeTaskOutputList(payload = {}) {
+  const items = Array.isArray(payload.items) ? payload.items.map(normalizeTaskOutput) : [];
+  return {
+    items,
+    page: Math.max(1, normalizeCount(payload.page) || 1),
+    pageSize: Math.max(1, normalizeCount(payload.pageSize ?? payload.page_size) || 20),
+    total: normalizeCount(payload.total),
+  };
+}
+
+function formatExperimentStatus(status) {
+  const normalized = normalizeText(status).toLowerCase();
+  const labels = {
+    completed: "已完成",
+    failed: "完成（PDF异常）",
+    in_progress: "进行中",
+    pending: "待完成",
+  };
+  return labels[normalized] || normalizeText(status) || "待完成";
+}
+
 function formatAxisLabel(axisCode) {
   const normalized = normalizeText(axisCode);
   if (!normalized) {
@@ -64,8 +134,11 @@ function formatExportRange(item = {}) {
 
 export {
   formatAxisLabel,
+  formatExperimentStatus,
   formatExportRange,
   normalizeFailedExport,
   normalizeFailedExportList,
+  normalizeTaskOutput,
+  normalizeTaskOutputList,
   normalizeTestDataSettings,
 };

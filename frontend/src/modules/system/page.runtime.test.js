@@ -77,6 +77,49 @@ describe("SystemPage runtime", () => {
     expect(wrapper.get('[data-testid="open-employee-operation-logs"]').text()).toBe("员工工作日志");
   });
 
+  test("paginates personnel and work-time tables independently with eight fixed row slots", async () => {
+    const employees = stubAttendanceFetch();
+    for (let index = 2; index <= 17; index += 1) {
+      employees.push({
+        ...employees[0],
+        currentLabName: index % 2 === 0 ? "" : "振动一室",
+        employeeName: `员工${index}`,
+        id: index,
+        online: index % 2 !== 0,
+        todaySeconds: index * 60,
+        username: `employee${index}`,
+      });
+    }
+
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+
+    expect(wrapper.findAll("#employee-table tbody tr")).toHaveLength(8);
+    expect(wrapper.findAll("#employee-worktime-table tbody tr")).toHaveLength(8);
+    expect(wrapper.get('[data-testid="employee-pagination-range"]').text()).toContain("1–8");
+    expect(wrapper.get('[data-testid="worktime-pagination-range"]').text()).toContain("1–8");
+    expect(wrapper.findAll(".system-paginated-table-stage")).toHaveLength(2);
+
+    await wrapper.get('[data-testid="employee-pagination"] [data-page="next"]').trigger("click");
+
+    expect(wrapper.get("#employee-table tbody tr:first-child td").text()).toBe("9");
+    expect(wrapper.get('[data-testid="employee-pagination-range"]').text()).toContain("9–16");
+    expect(wrapper.get("#employee-worktime-table tbody tr:first-child td").text()).toBe("1");
+    expect(wrapper.get('[data-testid="worktime-pagination-range"]').text()).toContain("1–8");
+
+    await wrapper.get('[data-testid="employee-pagination"] [data-page="next"]').trigger("click");
+
+    expect(wrapper.findAll("#employee-table tbody tr")).toHaveLength(1);
+    expect(wrapper.get("#employee-table tbody tr:first-child td").text()).toBe("17");
+    expect(wrapper.get('[data-testid="employee-pagination-range"]').text()).toContain("17–17");
+
+    await wrapper.get('[data-testid="worktime-pagination"] [data-page="next"]').trigger("click");
+
+    expect(wrapper.get("#employee-worktime-table tbody tr:first-child td").text()).toBe("9");
+    expect(wrapper.get('[data-testid="worktime-pagination-range"]').text()).toContain("9–16");
+    expect(wrapper.get("#employee-table tbody tr:first-child td").text()).toBe("17");
+  });
+
   test("provides default administrator credentials and multi-select work-log filters", async () => {
     stubAttendanceFetch();
     const wrapper = mount(SystemPage);

@@ -4,8 +4,12 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const apiMocks = vi.hoisted(() => ({
   listFailedTestDataExports: vi.fn(),
+  listTestDataTasks: vi.fn(),
+  openTestDataExperimentFolder: vi.fn(),
   readTestDataSettings: vi.fn(),
   retryFailedTestDataExports: vi.fn(),
+  selectTestDataDirectory: vi.fn(),
+  shareTestDataExperiment: vi.fn(),
   updateTestDataSettings: vi.fn(),
 }));
 
@@ -38,6 +42,7 @@ describe("useDataPage", () => {
       writable: true,
     });
     apiMocks.listFailedTestDataExports.mockResolvedValue({ items: [], failedCount: 0 });
+    apiMocks.listTestDataTasks.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 5 });
     apiMocks.updateTestDataSettings.mockResolvedValue({
       defaultPath: "C:\\Desktop\\MES试验数据",
       detail: "目录可写",
@@ -45,6 +50,9 @@ describe("useDataPage", () => {
       writable: true,
     });
     apiMocks.retryFailedTestDataExports.mockResolvedValue({ ok: true });
+    apiMocks.selectTestDataDirectory.mockResolvedValue({ savePath: "F:\\TrialData", cancelled: false });
+    apiMocks.openTestDataExperimentFolder.mockResolvedValue({ ok: true });
+    apiMocks.shareTestDataExperiment.mockResolvedValue({ url: "http://192.168.1.10/api/test-data/share/token" });
   });
 
   test("loads settings and saves a newly checked directory", async () => {
@@ -78,5 +86,41 @@ describe("useDataPage", () => {
     expect(apiMocks.retryFailedTestDataExports).toHaveBeenCalledWith(["one"]);
     expect(wrapper.vm.failedExports).toEqual([]);
     expect(wrapper.vm.failedCount).toBe(0);
+  });
+
+  test("selects a host folder and loads task experiment progress", async () => {
+    apiMocks.listTestDataTasks.mockResolvedValue({
+      page: 1,
+      pageSize: 5,
+      total: 1,
+      items: [{ taskCode: "TASK-001", totalExperimentCount: 2, completedExperimentCount: 1 }],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.taskOutputs[0]).toEqual(expect.objectContaining({ taskCode: "TASK-001", progressPercent: 50 }));
+    expect(apiMocks.listTestDataTasks).toHaveBeenCalledWith({ page: 1, pageSize: 5, query: "" });
+    expect(wrapper.vm.isTaskExpanded("TASK-001")).toBe(false);
+    wrapper.vm.toggleTaskExpansion("TASK-001");
+    expect(wrapper.vm.isTaskExpanded("TASK-001")).toBe(true);
+    wrapper.vm.toggleTaskExpansion("TASK-002");
+    expect(wrapper.vm.isTaskExpanded("TASK-001")).toBe(false);
+    expect(wrapper.vm.isTaskExpanded("TASK-002")).toBe(true);
+    await wrapper.vm.browseDirectory();
+    expect(apiMocks.selectTestDataDirectory).toHaveBeenCalledTimes(1);
+    expect(wrapper.vm.savePath).toBe("F:\\TrialData");
+  });
+
+  test("opens the host folder and falls back to a manually copyable share URL", async () => {
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    await wrapper.vm.openExperimentFolder("TASK-001", "VIBRATION");
+    await wrapper.vm.copyExperimentUrl("TASK-001", "VIBRATION");
+
+    expect(apiMocks.openTestDataExperimentFolder).toHaveBeenCalledWith("TASK-001", "VIBRATION");
+    expect(apiMocks.shareTestDataExperiment).toHaveBeenCalledWith("TASK-001", "VIBRATION");
+    expect(wrapper.vm.shareFallbackUrl).toBe("http://192.168.1.10/api/test-data/share/token");
+    expect(wrapper.vm.taskActionSuccess).toContain("手动复制");
   });
 });

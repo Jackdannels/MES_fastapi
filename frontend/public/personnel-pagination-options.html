@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>人员信息分页方案预览</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --accent: #63e6be;
+        --accent-rgb: 99, 230, 190;
+        --bg: #070b10;
+        --card: #0e151c;
+        --card-raised: #121b24;
+        --border: rgba(99, 230, 190, 0.2);
+        --border-strong: rgba(99, 230, 190, 0.42);
+        --muted: #93aaa6;
+        --text: #effdfa;
+        --row-height: 46px;
+        font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        padding: 24px;
+        background:
+          linear-gradient(rgba(var(--accent-rgb), 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(var(--accent-rgb), 0.035) 1px, transparent 1px),
+          radial-gradient(circle at 12% 0%, rgba(var(--accent-rgb), 0.1), transparent 28%),
+          var(--bg);
+        background-size: 28px 28px, 28px 28px, auto, auto;
+        color: var(--text);
+      }
+
+      button, input { font: inherit; }
+      button { cursor: pointer; }
+      button:focus-visible, input:focus-visible { outline: 3px solid rgba(var(--accent-rgb), 0.4); outline-offset: 2px; }
+
+      .preview-page {
+        width: min(1540px, 100%);
+        margin: 0 auto;
+      }
+
+      .preview-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 16px;
+        padding: 20px 22px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(14, 21, 28, 0.97);
+        box-shadow: 0 18px 52px rgba(0, 0, 0, 0.36);
+      }
+
+      h1, h2, h3, p { margin: 0; }
+      h1 { font-size: clamp(24px, 2.4vw, 34px); }
+      .preview-head p { margin-top: 8px; color: var(--muted); line-height: 1.65; }
+
+      .preview-badge, .scheme-label, .page-size {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        padding: 5px 11px;
+        border: 1px solid var(--border-strong);
+        border-radius: 999px;
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .scheme-tabs {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+        padding: 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(14, 21, 28, 0.97);
+      }
+
+      .scheme-tab {
+        min-height: 54px;
+        padding: 9px 16px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        font-weight: 800;
+        transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+      }
+
+      .scheme-tab:hover { color: var(--text); background: rgba(var(--accent-rgb), 0.06); }
+      .scheme-tab.is-active { border-color: var(--border-strong); background: rgba(var(--accent-rgb), 0.13); color: var(--text); }
+
+      .scheme { display: none; }
+      .scheme.is-active { display: block; }
+
+      .scheme-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 14px;
+        padding: 16px 18px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(14, 21, 28, 0.96);
+      }
+
+      .scheme-title { display: flex; align-items: center; gap: 10px; }
+      .scheme-title h2 { font-size: 21px; }
+      .scheme-summary p { color: var(--muted); line-height: 1.6; text-align: right; }
+      .recommended { border-color: #3aa981; background: #153b32; color: #e8fff8; }
+
+      .cards { display: grid; gap: 16px; }
+
+      .data-card {
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: rgba(14, 21, 28, 0.98);
+        box-shadow: 0 14px 38px rgba(0, 0, 0, 0.28);
+      }
+
+      .card-head, .card-tools, .card-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .card-head { min-height: 64px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+      .card-head h3 { font-size: 18px; }
+      .card-head-copy { display: grid; gap: 4px; }
+      .card-head-copy small { color: var(--muted); }
+      .card-tools { min-height: 58px; padding: 9px 16px; }
+
+      .search {
+        width: min(300px, 42vw);
+        min-height: 42px;
+        padding: 0 12px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: #111a22;
+        color: var(--text);
+      }
+
+      .action {
+        min-height: 42px;
+        padding: 0 16px;
+        border: 1px solid var(--border-strong);
+        border-radius: 5px;
+        background: rgba(var(--accent-rgb), 0.13);
+        color: var(--text);
+        font-weight: 800;
+      }
+
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; min-width: 980px; border-collapse: collapse; table-layout: fixed; }
+      th, td { height: var(--row-height); padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: center; }
+      th { height: 42px; background: var(--card-raised); color: #e7f7f4; font-size: 13px; }
+      td { color: #d8e9e6; font-size: 13px; font-weight: 600; }
+      tbody tr:nth-child(even):not(.placeholder-row) { background: rgba(255, 255, 255, 0.018); }
+      .placeholder-row td { color: transparent; user-select: none; }
+      .employee-table th:nth-child(1), .work-table th:nth-child(1) { width: 7%; }
+      .employee-table th:nth-child(6) { width: 18%; }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 50px;
+        min-height: 26px;
+        padding: 3px 9px;
+        border: 1px solid rgba(var(--accent-rgb), 0.42);
+        border-radius: 4px;
+        background: rgba(var(--accent-rgb), 0.13);
+        color: #dffcf4;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .status.offline { border-color: rgba(231, 183, 95, 0.46); background: rgba(231, 183, 95, 0.14); color: #f4d99b; }
+      .row-actions { color: var(--accent); white-space: nowrap; }
+
+      .card-footer {
+        min-height: 64px;
+        padding: 10px 16px;
+        background: rgba(8, 13, 18, 0.68);
+      }
+
+      .range { color: var(--muted); font-size: 13px; }
+      .range strong { color: var(--text); }
+
+      .pager { display: flex; align-items: center; gap: 8px; }
+      .pager button, .pager input {
+        min-width: 44px;
+        min-height: 44px;
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        background: #111a22;
+        color: var(--text);
+        font-weight: 800;
+      }
+
+      .pager button:hover:not(:disabled) { border-color: var(--border-strong); background: rgba(var(--accent-rgb), 0.12); }
+      .pager button:disabled { opacity: 0.38; cursor: not-allowed; }
+      .pager .is-current { border-color: var(--border-strong); background: rgba(var(--accent-rgb), 0.2); color: var(--accent); }
+      .pager-status { min-width: 82px; color: #dceeea; font-size: 13px; font-weight: 800; text-align: center; }
+      .jump-label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+      .jump-label input { width: 58px; padding: 0 8px; text-align: center; }
+      .jump-label .jump-submit { min-width: 60px; }
+
+      .scheme-b .card-footer { justify-content: center; position: relative; }
+      .scheme-b .card-footer .range { position: absolute; left: 16px; }
+      .scheme-b .pager { gap: 6px; }
+
+      .scheme-c .card-head { min-height: 76px; }
+      .scheme-c .card-footer { min-height: 48px; justify-content: flex-start; }
+      .scheme-c .pager-status { min-width: 62px; }
+
+      .fixed-note {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin-top: 16px;
+        padding: 13px 16px;
+        border: 1px dashed var(--border-strong);
+        border-radius: 7px;
+        background: rgba(var(--accent-rgb), 0.055);
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .fixed-note strong { color: var(--text); }
+
+      @media (max-width: 840px) {
+        body { padding: 12px; }
+        .preview-head, .scheme-summary { align-items: stretch; flex-direction: column; }
+        .scheme-summary p { text-align: left; }
+        .scheme-tabs { grid-template-columns: 1fr; }
+        .card-head, .card-tools, .card-footer { flex-wrap: wrap; }
+        .scheme-b .card-footer { justify-content: flex-start; }
+        .scheme-b .card-footer .range { position: static; width: 100%; }
+        .search { width: 100%; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="preview-page">
+      <header class="preview-head">
+        <div>
+          <h1>人员信息双表分页方案</h1>
+          <p>独立交互预览 · 两张表分别分页 · 每页最多 8 行 · 末页自动补齐占位行以固定分页器位置</p>
+        </div>
+        <span class="preview-badge">仅供方案选择</span>
+      </header>
+
+      <nav class="scheme-tabs" aria-label="分页方案选择">
+        <button class="scheme-tab is-active" type="button" data-scheme-target="a">方案一 · 底部左右分区（推荐）</button>
+        <button class="scheme-tab" type="button" data-scheme-target="b">方案二 · 底部居中页码</button>
+        <button class="scheme-tab" type="button" data-scheme-target="c">方案三 · 标题栏紧凑分页</button>
+      </nav>
+
+      <section class="scheme scheme-a is-active" data-scheme="a">
+        <div class="scheme-summary">
+          <div class="scheme-title"><span class="scheme-label recommended">推荐</span><h2>底部左右分区</h2></div>
+          <p>左侧明确显示当前数据范围，右侧复用现有分页习惯并支持页码跳转；信息最完整、学习成本最低。</p>
+        </div>
+        <div class="cards" data-cards></div>
+      </section>
+
+      <section class="scheme scheme-b" data-scheme="b">
+        <div class="scheme-summary">
+          <div class="scheme-title"><span class="scheme-label">方案二</span><h2>底部居中页码</h2></div>
+          <p>页码始终居中，适合数据页数不多、需要快速跨页的场景；当前页具有最明显的视觉反馈。</p>
+        </div>
+        <div class="cards" data-cards></div>
+      </section>
+
+      <section class="scheme scheme-c" data-scheme="c">
+        <div class="scheme-summary">
+          <div class="scheme-title"><span class="scheme-label">方案三</span><h2>标题栏紧凑分页</h2></div>
+          <p>分页器与标题、主操作位于同一水平线，减少纵向占用；底部仅保留范围信息。</p>
+        </div>
+        <div class="cards" data-cards></div>
+      </section>
+
+      <div class="fixed-note">
+        <strong>固定位置机制：</strong>
+        <span>每张表始终渲染 8 个等高行槽位，不足 8 条的数据以不可见占位行补齐，所以无论筛选结果或末页数据多少，分页模块都不会发生相对位移。</span>
+      </div>
+    </main>
+
+    <script>
+      const PAGE_SIZE = 8;
+      const people = [
+        ["张三", "zhangsan", "试验员", true, "2小时35分0秒", "冲击一室"],
+        ["李四", "lisi", "试验组长", false, "0小时42分16秒", "-"],
+        ["王兰", "wanglan", "试验员", true, "1小时18分42秒", "霉菌试验室"],
+        ["陈工", "chengong", "设备管理员", false, "0小时0分0秒", "-"],
+        ["赵敏", "zhaomin", "试验员", true, "3小时6分8秒", "盐雾试验室"],
+        ["周琪", "zhouqi", "质控员", false, "0小时26分11秒", "-"],
+        ["吴越", "wuyue", "试验员", true, "2小时11分36秒", "振动一室"],
+        ["郑华", "zhenghua", "试验员", false, "0小时0分0秒", "-"],
+        ["钱峰", "qianfeng", "试验组长", true, "4小时8分20秒", "冲击二室"],
+        ["孙宁", "sunning", "试验员", false, "0小时51分4秒", "-"],
+        ["冯雪", "fengxue", "质控员", true, "1小时46分29秒", "高低温湿热二室"],
+        ["褚航", "chuhang", "试验员", false, "0小时0分0秒", "-"],
+        ["卫东", "weidong", "设备管理员", true, "2小时57分13秒", "四综合试验室"],
+        ["蒋文", "jiangwen", "试验员", false, "0小时33分8秒", "-"],
+        ["沈月", "shenyue", "试验员", true, "3小时22分41秒", "温度冲击一室"],
+        ["韩松", "hansong", "试验组长", false, "0小时0分0秒", "-"],
+        ["杨帆", "yangfan", "试验员", true, "1小时9分56秒", "振动二室"],
+        ["朱琳", "zhulin", "质控员", false, "0小时18分20秒", "-"],
+        ["秦川", "qinchuan", "试验员", true, "2小时28分37秒", "冲击一室"]
+      ].map(([name, username, role, online, time, lab], index) => ({ id: index + 1, name, username, role, online, time, lab }));
+
+      const states = new Map();
+      const stateKey = (scheme, type) => `${scheme}:${type}`;
+      const getState = (scheme, type) => {
+        const key = stateKey(scheme, type);
+        if (!states.has(key)) states.set(key, { page: 1 });
+        return states.get(key);
+      };
+
+      const pageCount = () => Math.ceil(people.length / PAGE_SIZE);
+      const pageRows = (page) => people.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+      const statusMarkup = (employee) => `<span class="status ${employee.online ? "" : "offline"}">${employee.online ? "在线" : "离线"}</span>`;
+
+      const rowMarkup = (employee, index, page, type) => {
+        const number = (page - 1) * PAGE_SIZE + index + 1;
+        if (type === "people") {
+          return `<tr><td>${number}</td><td>${employee.name}</td><td>${employee.username}</td><td>${employee.role}</td><td>${statusMarkup(employee)}</td><td class="row-actions">编辑&nbsp;&nbsp;二维码</td></tr>`;
+        }
+        return `<tr><td>${number}</td><td>${employee.name}</td><td>${employee.username}</td><td>${employee.role}</td><td>${employee.time}</td><td>${employee.lab}</td><td>${statusMarkup(employee)}</td></tr>`;
+      };
+
+      const placeholderMarkup = (type) => {
+        const columns = type === "people" ? 6 : 7;
+        return `<tr class="placeholder-row" aria-hidden="true">${Array.from({ length: columns }, () => "<td>占位</td>").join("")}</tr>`;
+      };
+
+      const pagerMarkup = (scheme, type, page) => {
+        const totalPages = pageCount();
+        if (scheme === "b") {
+          return `<div class="pager" data-pager data-type="${type}">
+            <button type="button" data-action="prev" aria-label="上一页" ${page === 1 ? "disabled" : ""}>‹</button>
+            ${Array.from({ length: totalPages }, (_, index) => index + 1).map((number) => `<button type="button" data-action="page" data-page="${number}" class="${number === page ? "is-current" : ""}" aria-label="第 ${number} 页">${number}</button>`).join("")}
+            <button type="button" data-action="next" aria-label="下一页" ${page === totalPages ? "disabled" : ""}>›</button>
+          </div>`;
+        }
+        if (scheme === "c") {
+          return `<div class="pager" data-pager data-type="${type}">
+            <button type="button" data-action="prev" aria-label="上一页" ${page === 1 ? "disabled" : ""}>‹</button>
+            <span class="pager-status">${page} / ${totalPages}</span>
+            <button type="button" data-action="next" aria-label="下一页" ${page === totalPages ? "disabled" : ""}>›</button>
+          </div>`;
+        }
+        return `<div class="pager" data-pager data-type="${type}">
+          <button type="button" data-action="prev" aria-label="上一页" ${page === 1 ? "disabled" : ""}>‹</button>
+          <span class="pager-status">第 ${page} / ${totalPages} 页</span>
+          <label class="jump-label"><input type="number" min="1" max="${totalPages}" value="${page}" aria-label="跳转页码" data-jump-input /><span>页</span><button class="jump-submit" type="button" data-action="jump">跳转</button></label>
+          <button type="button" data-action="next" aria-label="下一页" ${page === totalPages ? "disabled" : ""}>›</button>
+        </div>`;
+      };
+
+      const cardMarkup = (scheme, type) => {
+        const state = getState(scheme, type);
+        const rows = pageRows(state.page);
+        const placeholderCount = PAGE_SIZE - rows.length;
+        const start = (state.page - 1) * PAGE_SIZE + 1;
+        const end = Math.min(state.page * PAGE_SIZE, people.length);
+        const isPeople = type === "people";
+        const title = isPeople ? "人员信息维护" : "人员工作时间一览表";
+        const headPager = scheme === "c" ? pagerMarkup(scheme, type, state.page) : "";
+        const footerPager = scheme !== "c" ? pagerMarkup(scheme, type, state.page) : "";
+        const headers = isPeople
+          ? ["序号", "员工", "账号", "角色", "状态", "操作"]
+          : ["序号", "员工", "账号", "角色", "今日工作时间", "当前登录试验间", "状态"];
+        return `<article class="data-card" data-card data-type="${type}">
+          <header class="card-head">
+            <div class="card-head-copy"><h3>${title}</h3><small>共 ${people.length} 条 · 每页最多 8 条</small></div>
+            ${headPager}
+          </header>
+          <div class="card-tools">
+            ${isPeople ? '<input class="search" type="text" placeholder="筛选员工/账号/角色" aria-label="筛选员工" />' : '<span class="page-size">每页 8 条</span>'}
+            <button class="action" type="button">${isPeople ? "新增员工账号" : "员工工作日志"}</button>
+          </div>
+          <div class="table-wrap">
+            <table class="${isPeople ? "employee-table" : "work-table"}">
+              <thead><tr>${headers.map((header) => `<th>${header}</th>`).join("")}</tr></thead>
+              <tbody>${rows.map((employee, index) => rowMarkup(employee, index, state.page, type)).join("")}${Array.from({ length: placeholderCount }, () => placeholderMarkup(type)).join("")}</tbody>
+            </table>
+          </div>
+          <footer class="card-footer">
+            <span class="range">显示第 <strong>${start}–${end}</strong> 条，共 <strong>${people.length}</strong> 条</span>
+            ${footerPager}
+          </footer>
+        </article>`;
+      };
+
+      const renderScheme = (scheme) => {
+        const container = document.querySelector(`[data-scheme="${scheme}"] [data-cards]`);
+        container.innerHTML = cardMarkup(scheme, "people") + cardMarkup(scheme, "work");
+        bindSchemeControls(scheme);
+      };
+
+      const updatePage = (scheme, type, nextPage) => {
+        const state = getState(scheme, type);
+        state.page = Math.min(Math.max(Number(nextPage) || state.page, 1), pageCount());
+        renderScheme(scheme);
+      };
+
+      const bindSchemeControls = (scheme) => {
+        document.querySelectorAll(`[data-scheme="${scheme}"] [data-pager]`).forEach((pager) => {
+          const type = pager.dataset.type;
+          const state = getState(scheme, type);
+          pager.querySelectorAll("button[data-action]").forEach((button) => {
+            button.addEventListener("click", () => {
+              const action = button.dataset.action;
+              if (action === "prev") updatePage(scheme, type, state.page - 1);
+              if (action === "next") updatePage(scheme, type, state.page + 1);
+              if (action === "page") updatePage(scheme, type, button.dataset.page);
+              if (action === "jump") updatePage(scheme, type, pager.querySelector("[data-jump-input]")?.value);
+            });
+          });
+          pager.querySelector("[data-jump-input]")?.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") updatePage(scheme, type, event.currentTarget.value);
+          });
+        });
+      };
+
+      document.querySelectorAll("[data-scheme-target]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const target = button.dataset.schemeTarget;
+          document.querySelectorAll("[data-scheme-target]").forEach((tab) => tab.classList.toggle("is-active", tab === button));
+          document.querySelectorAll("[data-scheme]").forEach((section) => section.classList.toggle("is-active", section.dataset.scheme === target));
+        });
+      });
+
+      ["a", "b", "c"].forEach(renderScheme);
+    </script>
+  </body>
+</html>

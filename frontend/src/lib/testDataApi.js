@@ -34,6 +34,41 @@ function updateTestDataSettings(savePath) {
   }, "保存地址检测失败");
 }
 
+function selectTestDataDirectory() {
+  return requestJson("/api/test-data/select-directory", {
+    method: "POST",
+  }, "选择保存目录失败");
+}
+
+function listTestDataTasks({ page = 1, pageSize = 20, query = "" } = {}) {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+  const normalizedQuery = String(query || "").trim();
+  if (normalizedQuery) {
+    params.set("query", normalizedQuery);
+  }
+  return requestJson(`/api/test-data/tasks?${params.toString()}`, {}, "读取任务数据失败");
+}
+
+const experimentActionPath = (taskCode, experimentCode, action) => (
+  `/api/test-data/tasks/${encodeURIComponent(String(taskCode || "").trim())}`
+  + `/experiments/${encodeURIComponent(String(experimentCode || "").trim())}/${action}`
+);
+
+function openTestDataExperimentFolder(taskCode, experimentCode) {
+  return requestJson(experimentActionPath(taskCode, experimentCode, "open-folder"), {
+    method: "POST",
+  }, "打开试验数据目录失败");
+}
+
+function shareTestDataExperiment(taskCode, experimentCode) {
+  return requestJson(experimentActionPath(taskCode, experimentCode, "share"), {
+    method: "POST",
+  }, "生成下载地址失败");
+}
+
 function listFailedTestDataExports() {
   return requestJson("/api/test-data/exports?status=failed", {}, "读取 PDF 失败记录失败");
 }
@@ -48,7 +83,11 @@ function retryFailedTestDataExports(exportKeys) {
 
 export {
   listFailedTestDataExports,
+  listTestDataTasks,
+  openTestDataExperimentFolder,
   readTestDataSettings,
   retryFailedTestDataExports,
+  selectTestDataDirectory,
+  shareTestDataExperiment,
   updateTestDataSettings,
 };

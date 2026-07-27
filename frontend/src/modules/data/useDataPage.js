@@ -1,13 +1,19 @@
-// 负责读取、校验和保存试验数据归档目录，并提供失败 PDF 的重试入口。
+// 负责归档目录设置、任务输出进度、目录/分享操作与失败 PDF 重试。
 import { computed, onMounted, ref } from "vue";
 
 import {
   listFailedTestDataExports,
+  listTestDataTasks,
+  openTestDataExperimentFolder,
   readTestDataSettings,
   retryFailedTestDataExports,
+  selectTestDataDirectory,
+  shareTestDataExperiment,
   updateTestDataSettings,
 } from "@/lib/testDataApi";
-import { normalizeFailedExportList, normalizeTestDataSettings } from "./model";
+import { normalizeFailedExportList, normalizeTaskOutputList, normalizeTestDataSettings } from "./model";
+
+const TASKS_PAGE_SIZE = 5;
 
 function useDataPage() {
   const defaultPath = ref("");
@@ -18,6 +24,21 @@ function useDataPage() {
   const settingsSaving = ref(false);
   const settingsError = ref("");
   const settingsSuccess = ref("");
+  const directorySelecting = ref(false);
+
+  const taskOutputs = ref([]);
+  const tasksLoading = ref(true);
+  const tasksError = ref("");
+  const tasksPage = ref(1);
+  const tasksPageSize = ref(TASKS_PAGE_SIZE);
+  const tasksQuery = ref("");
+  const tasksTotal = ref(0);
+  const expandedTaskCode = ref("");
+  const taskActionSuccess = ref("");
+  const taskActionError = ref("");
+  const shareFallbackUrl = ref("");
+  const openingExperimentKeys = ref(new Set());
+  const sharingExperimentKeys = ref(new Set());
 
   const failedExports = ref([]);
   const failedCount = ref(0);
@@ -37,6 +58,7 @@ function useDataPage() {
     "is-error": !settingsLoading.value && !settingsSaving.value && writable.value !== true,
     "is-writable": !settingsLoading.value && !settingsSaving.value && writable.value === true,
   }));
+  const tasksPageCount = computed(() => Math.max(1, Math.ceil(tasksTotal.value / tasksPageSize.value)));
 
   const applySettings = (payload) => {
     const settings = normalizeTestDataSettings(payload);
@@ -75,6 +97,51 @@ function useDataPage() {
       exportsError.value = error?.message || "读取 PDF 失败记录失败";
     } finally {
       exportsLoading.value = false;
+    }
+  };
+
+  const loadTaskOutputs = async ({ page = tasksPage.value, query = tasksQuery.value } = {}) => {
+    tasksLoading.value = true;
+    tasksError.value = "";
+    try {
+      const result = normalizeTaskOutputList(await listTestDataTasks({
+        page,
+        pageSize: TASKS_PAGE_SIZE,
+        query,
+      }));
+      taskOutputs.value = result.items.slice(0, TASKS_PAGE_SIZE);
+      tasksPage.value = result.page;
+      tasksPageSize.value = TASKS_PAGE_SIZE;
+      tasksTotal.value = result.total;
+      if (!taskOutputs.value.some((task) => task.taskCode === expandedTaskCode.value)) {
+        expandedTaskCode.value = "";
+      }
+    } catch (error) {
+      taskOutputs.value = [];
+      tasksTotal.value = 0;
+      tasksError.value = error?.message || "读取任务数据失败";
+    } finally {
+      tasksLoading.value = false;
+    }
+  };
+
+  const browseDirectory = async () => {
+    if (directorySelecting.value || settingsSaving.value) {
+      return;
+    }
+    directorySelecting.value = true;
+    settingsError.value = "";
+    settingsSuccess.value = "";
+    try {
+      const result = await selectTestDataDirectory();
+      if (!result?.cancelled && String(result?.savePath || "").trim()) {
+        savePath.value = String(result.savePath).trim();
+        settingsSuccess.value = "已选择目录，请点击“保存并检测目录”完成设置";
+      }
+    } catch (error) {
+      settingsError.value = error?.message || "选择保存目录失败";
+    } finally {
+      directorySelecting.value = false;
     }
   };
 
@@ -135,19 +202,101 @@ function useDataPage() {
     }
   };
 
+  const experimentKey = (taskCode, experimentCode) => `${taskCode}:${experimentCode}`;
+  const isTaskExpanded = (taskCode) => expandedTaskCode.value === String(taskCode || "").trim();
+  const toggleTaskExpansion = (taskCode) => {
+    const normalized = String(taskCode || "").trim();
+    expandedTaskCode.value = normalized && expandedTaskCode.value !== normalized ? normalized : "";
+  };
+  const isOpeningExperiment = (taskCode, experimentCode) => openingExperimentKeys.value.has(experimentKey(taskCode, experimentCode));
+  const isSharingExperiment = (taskCode, experimentCode) => sharingExperimentKeys.value.has(experimentKey(taskCode, experimentCode));
+
+  const openExperimentFolder = async (taskCode, experimentCode) => {
+    const key = experimentKey(taskCode, experimentCode);
+    if (!taskCode || !experimentCode || openingExperimentKeys.value.has(key)) {
+      return;
+    }
+    taskActionError.value = "";
+    taskActionSuccess.value = "";
+    openingExperimentKeys.value = new Set([...openingExperimentKeys.value, key]);
+    try {
+      await openTestDataExperimentFolder(taskCode, experimentCode);
+      taskActionSuccess.value = `已在 MES 主机打开 ${experimentCode} 的数据目录`;
+    } catch (error) {
+      taskActionError.value = error?.message || "打开试验数据目录失败";
+    } finally {
+      const nextKeys = new Set(openingExperimentKeys.value);
+      nextKeys.delete(key);
+      openingExperimentKeys.value = nextKeys;
+    }
+  };
+
+  const copyExperimentUrl = async (taskCode, experimentCode) => {
+    const key = experimentKey(taskCode, experimentCode);
+    if (!taskCode || !experimentCode || sharingExperimentKeys.value.has(key)) {
+      return;
+    }
+    taskActionError.value = "";
+    taskActionSuccess.value = "";
+    shareFallbackUrl.value = "";
+    sharingExperimentKeys.value = new Set([...sharingExperimentKeys.value, key]);
+    try {
+      const result = await shareTestDataExperiment(taskCode, experimentCode);
+      const url = String(result?.url || "").trim();
+      if (!url) {
+        throw new Error("后端未返回可用的下载地址");
+      }
+      try {
+        if (!globalThis.navigator?.clipboard?.writeText) {
+          throw new Error("当前浏览器不支持自动复制");
+        }
+        await globalThis.navigator.clipboard.writeText(url);
+        taskActionSuccess.value = "局域网下载地址已复制到剪贴板";
+      } catch {
+        shareFallbackUrl.value = url;
+        taskActionSuccess.value = "下载地址已生成，请从下方手动复制";
+      }
+    } catch (error) {
+      taskActionError.value = error?.message || "生成下载地址失败";
+    } finally {
+      const nextKeys = new Set(sharingExperimentKeys.value);
+      nextKeys.delete(key);
+      sharingExperimentKeys.value = nextKeys;
+    }
+  };
+
+  const searchTaskOutputs = () => loadTaskOutputs({ page: 1, query: tasksQuery.value });
+  const goToTaskPage = (page) => {
+    const nextPage = Math.max(1, Math.min(tasksPageCount.value, Number(page) || 1));
+    if (nextPage !== tasksPage.value) {
+      return loadTaskOutputs({ page: nextPage, query: tasksQuery.value });
+    }
+    return Promise.resolve();
+  };
+
   onMounted(() => {
-    void Promise.all([loadSettings(), loadFailedExports()]);
+    void Promise.all([loadSettings(), loadFailedExports(), loadTaskOutputs()]);
   });
 
   return {
+    browseDirectory,
+    copyExperimentUrl,
     defaultPath,
+    directorySelecting,
+    expandedTaskCode,
     exportsError,
     exportsLoading,
     failedCount,
     failedExports,
+    goToTaskPage,
+    isOpeningExperiment,
     isRetrying,
+    isSharingExperiment,
+    isTaskExpanded,
     loadFailedExports,
     loadSettings,
+    loadTaskOutputs,
+    openExperimentFolder,
     pathStatusClass,
     pathStatusLabel,
     retryAllFailed,
@@ -159,6 +308,18 @@ function useDataPage() {
     settingsLoading,
     settingsSaving,
     settingsSuccess,
+    searchTaskOutputs,
+    shareFallbackUrl,
+    taskActionError,
+    taskActionSuccess,
+    taskOutputs,
+    tasksError,
+    tasksLoading,
+    tasksPage,
+    tasksPageCount,
+    tasksQuery,
+    tasksTotal,
+    toggleTaskExpansion,
     writable,
   };
 }

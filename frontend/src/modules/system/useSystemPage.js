@@ -19,6 +19,7 @@ import { TEST_LABS } from "@/lib/labs";
 import { buildSystemPageState, createEmployeeForm, createEmployeeRow, EMPTY_EMPLOYEE_FORM } from "./model";
 
 const EMPLOYEE_ROLE_OPTIONS = Object.freeze(["试验员", "试验组长"]);
+const PERSONNEL_PAGE_SIZE = 8;
 const WORK_TIME_REFRESH_INTERVAL_MS = 30 * 1000;
 const WORK_TIME_TICK_INTERVAL_MS = 1000;
 const DEFAULT_ADMIN_CREDENTIALS = Object.freeze({
@@ -54,6 +55,19 @@ const resolveLiveTodaySeconds = (employee, nowMs) => {
   return baseSeconds + elapsedSeconds * activeCount;
 };
 
+const createPaginationRange = (currentPage, rows) => computed(() => {
+  const total = rows.value.length;
+  if (!total) {
+    return { end: 0, start: 0, total: 0 };
+  }
+  const start = (currentPage.value - 1) * PERSONNEL_PAGE_SIZE + 1;
+  return {
+    end: Math.min(start + PERSONNEL_PAGE_SIZE - 1, total),
+    start,
+    total,
+  };
+});
+
 // 将系统配置页的员工账号抽屉、弹窗和表格控制集中管理。
 function useSystemPage() {
   const systemState = buildSystemPageState();
@@ -69,11 +83,20 @@ function useSystemPage() {
   const qrEmployeeDialog = useDialogState();
   const operationLogDialog = useDialogState();
 
-  const { query, sortDirection, sortKey, visibleRows } = useTableControls({
-    pageSize: 20,
+  const {
+    currentPage: employeeCurrentPage,
+    filteredRows: filteredEmployeeRows,
+    pageCount: employeePageCount,
+    query,
+    sortDirection,
+    sortKey,
+    visibleRows: visibleEmployeeRows,
+  } = useTableControls({
+    pageSize: PERSONNEL_PAGE_SIZE,
     rows: employeeRows,
     searchFields: ["employeeName", "username", "roleName", "statusLabel"],
   });
+  const employeePageRange = createPaginationRange(employeeCurrentPage, filteredEmployeeRows);
   const workTimeRows = computed(() =>
     employeeRows.value.map((employee) => ({
       ...employee,
@@ -83,6 +106,16 @@ function useSystemPage() {
       }).todayWorkTime,
     })),
   );
+  const {
+    currentPage: workTimeCurrentPage,
+    filteredRows: filteredWorkTimeRows,
+    pageCount: workTimePageCount,
+    visibleRows: visibleWorkTimeRows,
+  } = useTableControls({
+    pageSize: PERSONNEL_PAGE_SIZE,
+    rows: workTimeRows,
+  });
+  const workTimePageRange = createPaginationRange(workTimeCurrentPage, filteredWorkTimeRows);
 
   const createEmployeeFields = ref(createEmployeeForm(EMPTY_EMPLOYEE_FORM));
   const createEmployeeError = ref("");
@@ -477,7 +510,10 @@ function useSystemPage() {
     createEmployeeError,
     createEmployeeFields,
     editEmployeeFields,
+    employeeCurrentPage,
     employeeRoleOptions: EMPLOYEE_ROLE_OPTIONS,
+    employeePageCount,
+    employeePageRange,
     deleteEmployee,
     downloadEmployeeQrCode,
     employeeDrawerOpen: editEmployeeDialog.open,
@@ -513,6 +549,12 @@ function useSystemPage() {
     resetEmployeeQrToken,
     resetEmployeePassword,
     settings,
+    setEmployeePage: (page) => {
+      employeeCurrentPage.value = page;
+    },
+    setWorkTimePage: (page) => {
+      workTimeCurrentPage.value = page;
+    },
     saveNewEmployee,
     summaryCards,
     sortDirection,
@@ -521,8 +563,11 @@ function useSystemPage() {
     toggleOperationLogEmployee,
     toggleOperationLogEmployeeMenu,
     toggleOperationLogLab,
-    visibleEmployeeRows: visibleRows,
-    workTimeRows,
+    visibleEmployeeRows,
+    visibleWorkTimeRows,
+    workTimeCurrentPage,
+    workTimePageCount,
+    workTimePageRange,
   };
 }
 

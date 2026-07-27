@@ -37,6 +37,7 @@ describe("tasks model", () => {
       "SYLU-2026-03-002",
       "SYLU-2026-03-003",
     ]);
+    expect(rows.every((row) => row.statusClass === "status waiting")).toBe(true);
   });
 
   test("buildExperimentTypeAxisSummary displays selected axes in standard sequence", () => {
@@ -63,6 +64,7 @@ describe("tasks model", () => {
       expect.objectContaining({
         code: "SYLU-2026-03-001",
         displayStatus: "已排程",
+        statusClass: "status scheduled",
       }),
     );
   });
@@ -98,7 +100,10 @@ describe("tasks model", () => {
       ],
     );
 
-    expect(rows[0].displayStatus).toBe("任务进行中");
+    expect(rows[0]).toEqual(expect.objectContaining({
+      displayStatus: "任务进行中",
+      statusClass: "status running",
+    }));
   });
 
   test("deleteTaskSnapshot blocks deleting a task while one of its experiments is running", () => {

@@ -2,8 +2,12 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   listFailedTestDataExports,
+  listTestDataTasks,
+  openTestDataExperimentFolder,
   readTestDataSettings,
   retryFailedTestDataExports,
+  selectTestDataDirectory,
+  shareTestDataExperiment,
   updateTestDataSettings,
 } from "./testDataApi";
 
@@ -58,6 +62,31 @@ describe("testDataApi", () => {
       method: "POST",
       body: JSON.stringify({}),
     }));
+  });
+
+  test("selects a host directory and manages task experiment outputs", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true }),
+    }));
+
+    await selectTestDataDirectory();
+    await listTestDataTasks({ page: 2, pageSize: 10, query: " TASK/001 " });
+    await openTestDataExperimentFolder("TASK/001", "VIBRATION X+");
+    await shareTestDataExperiment("TASK/001", "VIBRATION X+");
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/test-data/select-directory", expect.objectContaining({ method: "POST" }));
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/test-data/tasks?page=2&pageSize=10&query=TASK%2F001", expect.any(Object));
+    expect(fetch).toHaveBeenNthCalledWith(
+      3,
+      "/api/test-data/tasks/TASK%2F001/experiments/VIBRATION%20X%2B/open-folder",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      4,
+      "/api/test-data/tasks/TASK%2F001/experiments/VIBRATION%20X%2B/share",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   test("surfaces backend validation details", async () => {

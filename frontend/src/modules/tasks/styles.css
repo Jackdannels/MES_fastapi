@@ -97,7 +97,59 @@
 
 .tasks-table__col--status,
 .tasks-table__cell--status {
-  width: 10%;
+  width: 16%;
+}
+
+.tasks-table__cell--status .status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.tasks-table__cell--status .status.waiting {
+  border-color: rgba(250, 204, 21, 0.62);
+  background: rgba(202, 138, 4, 0.2);
+  color: #fde68a;
+}
+
+.tasks-table__cell--status .status.scheduled {
+  border-color: rgba(96, 165, 250, 0.64);
+  background: rgba(37, 99, 235, 0.2);
+  color: #bfdbfe;
+}
+
+.tasks-table__cell--status .status.running {
+  border-color: rgba(52, 211, 153, 0.66);
+  background: rgba(5, 150, 105, 0.22);
+  color: #a7f3d0;
+}
+
+.tasks-table__cell--status .status.retention {
+  border-color: rgba(251, 146, 60, 0.66);
+  background: rgba(194, 65, 12, 0.22);
+  color: #fed7aa;
+}
+
+.tasks-table__cell--status .status.warn {
+  border-color: rgba(251, 113, 133, 0.66);
+  background: rgba(190, 24, 93, 0.2);
+  color: #fecdd3;
+}
+
+.tasks-table__cell--status .status.completed {
+  border-color: rgba(196, 181, 253, 0.58);
+  background: rgba(109, 40, 217, 0.18);
+  color: #ddd6fe;
 }
 
 .tasks-table__col--actions,

@@ -458,6 +458,42 @@ def ensure_schema_extensions(backend: Any) -> None:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS biz_test_data_export (
+                  export_key VARCHAR(255) NOT NULL PRIMARY KEY,
+                  task_no VARCHAR(100) NOT NULL,
+                  experiment_no VARCHAR(100) NOT NULL,
+                  run_no VARCHAR(100) NOT NULL DEFAULT '',
+                  axis_code VARCHAR(20) NOT NULL DEFAULT '',
+                  sample_no VARCHAR(100) NOT NULL DEFAULT '',
+                  export_status VARCHAR(20) NOT NULL,
+                  file_path VARCHAR(1024) NULL,
+                  relative_path VARCHAR(1024) NULL,
+                  error_text TEXT NULL,
+                  attempts INT NOT NULL DEFAULT 0,
+                  generated_at VARCHAR(40) NULL,
+                  updated_at VARCHAR(40) NULL,
+                  payload_json JSON NOT NULL,
+                  INDEX idx_test_data_export_task (task_no, experiment_no),
+                  INDEX idx_test_data_export_status (export_status, updated_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS biz_test_data_share (
+                  share_token VARCHAR(128) NOT NULL PRIMARY KEY,
+                  task_no VARCHAR(100) NOT NULL,
+                  experiment_no VARCHAR(100) NOT NULL,
+                  active TINYINT(1) NOT NULL DEFAULT 1,
+                  created_at VARCHAR(40) NOT NULL,
+                  updated_at VARCHAR(40) NOT NULL,
+                  UNIQUE KEY uk_test_data_share_scope (task_no, experiment_no),
+                  INDEX idx_test_data_share_active (active, updated_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """
+            )
             cursor.execute("SHOW COLUMNS FROM biz_mq_message_log LIKE 'sub_experiment_code'")
             if cursor.fetchone() is None:
                 cursor.execute("ALTER TABLE biz_mq_message_log ADD COLUMN sub_experiment_code VARCHAR(80) NULL AFTER experiment_no")

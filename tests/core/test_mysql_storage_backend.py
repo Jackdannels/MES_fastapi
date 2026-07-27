@@ -542,6 +542,8 @@ def test_ensure_schema_extensions_adds_mqtt_integration_tables(monkeypatch) -> N
     assert any("CREATE TABLE IF NOT EXISTS biz_mq_message_log" in statement for statement in statements)
     assert any("CREATE TABLE IF NOT EXISTS biz_experiment_event" in statement for statement in statements)
     assert any("CREATE TABLE IF NOT EXISTS biz_experiment_result" in statement for statement in statements)
+    assert any("CREATE TABLE IF NOT EXISTS biz_test_data_export" in statement for statement in statements)
+    assert any("CREATE TABLE IF NOT EXISTS biz_test_data_share" in statement for statement in statements)
     assert connection.committed is True
 
 

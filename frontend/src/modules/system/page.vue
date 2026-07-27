@@ -14,37 +14,50 @@
       <input v-model="query" class="search-input" placeholder="筛选员工/账号/角色" />
       <button class="action-btn" data-testid="open-employee-modal" type="button" @click="openEmployeeModal">新增员工账号</button>
     </div>
-    <table class="table" id="employee-table">
-      <thead>
-        <tr>
-          <th>序号</th>
-          <th data-sort :data-sort-dir="sortKey === 'employeeName' ? sortDirection : ''" @click="toggleSort('employeeName')">员工</th>
-          <th data-sort :data-sort-dir="sortKey === 'username' ? sortDirection : ''" @click="toggleSort('username')">账号</th>
-          <th data-sort :data-sort-dir="sortKey === 'roleName' ? sortDirection : ''" @click="toggleSort('roleName')">角色</th>
-          <th>状态</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="(employee, index) in visibleEmployeeRows" :key="employee.id">
-          <td>{{ index + 1 }}</td>
-          <td>{{ employee.employeeName }}</td>
-          <td>{{ employee.username }}</td>
-          <td>{{ employee.roleName }}</td>
-          <td><span class="status" :class="{ warn: !employee.online }">{{ employee.statusLabel }}</span></td>
-          <td>
-            <div class="system-table-actions">
-              <button class="action-link" :data-testid="`open-employee-drawer-${index}`" type="button" @click="openEmployeeDrawer(employee)">
-                编辑
-              </button>
-              <button class="action-link" :data-testid="`employee-qr-code-${index}`" type="button" @click="openEmployeeQrModal(employee)">
-                二维码
-              </button>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="system-paginated-table-stage">
+      <table class="table" id="employee-table">
+        <thead>
+          <tr>
+            <th>序号</th>
+            <th data-sort :data-sort-dir="sortKey === 'employeeName' ? sortDirection : ''" @click="toggleSort('employeeName')">员工</th>
+            <th data-sort :data-sort-dir="sortKey === 'username' ? sortDirection : ''" @click="toggleSort('username')">账号</th>
+            <th data-sort :data-sort-dir="sortKey === 'roleName' ? sortDirection : ''" @click="toggleSort('roleName')">角色</th>
+            <th>状态</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(employee, index) in visibleEmployeeRows" :key="employee.id">
+            <td>{{ (employeeCurrentPage - 1) * 8 + index + 1 }}</td>
+            <td>{{ employee.employeeName }}</td>
+            <td>{{ employee.username }}</td>
+            <td>{{ employee.roleName }}</td>
+            <td><span class="status" :class="{ warn: !employee.online }">{{ employee.statusLabel }}</span></td>
+            <td>
+              <div class="system-table-actions">
+                <button class="action-link" :data-testid="`open-employee-drawer-${index}`" type="button" @click="openEmployeeDrawer(employee)">
+                  编辑
+                </button>
+                <button class="action-link" :data-testid="`employee-qr-code-${index}`" type="button" @click="openEmployeeQrModal(employee)">
+                  二维码
+                </button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="system-pagination-footer">
+      <span class="system-pagination-range" data-testid="employee-pagination-range">
+        显示第 <strong>{{ employeePageRange.start }}–{{ employeePageRange.end }}</strong> 条，共 <strong>{{ employeePageRange.total }}</strong> 条
+      </span>
+      <AppPagination
+        :current-page="employeeCurrentPage"
+        :page-count="employeePageCount"
+        data-testid="employee-pagination"
+        @change="setEmployeePage"
+      />
+    </div>
   </section>
 
   <section class="card section system-worktime-card">
@@ -52,30 +65,43 @@
       <h3>人员工作时间一览表</h3>
       <button class="action-btn" data-testid="open-employee-operation-logs" type="button" @click="openEmployeeOperationLogs">员工工作日志</button>
     </div>
-    <table class="table" id="employee-worktime-table">
-      <thead>
-        <tr>
-          <th>序号</th>
-          <th>员工</th>
-          <th>账号</th>
-          <th>角色</th>
-          <th>今日工作时间</th>
-          <th>当前登录试验间</th>
-          <th>状态</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="(employee, index) in workTimeRows" :key="`worktime-${employee.id}`">
-          <td>{{ index + 1 }}</td>
-          <td>{{ employee.employeeName }}</td>
-          <td>{{ employee.username }}</td>
-          <td>{{ employee.roleName }}</td>
-          <td>{{ employee.todayWorkTime }}</td>
-          <td>{{ employee.currentLabName || "-" }}</td>
-          <td><span class="status" :class="{ warn: !employee.online }">{{ employee.statusLabel }}</span></td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="system-paginated-table-stage">
+      <table class="table" id="employee-worktime-table">
+        <thead>
+          <tr>
+            <th>序号</th>
+            <th>员工</th>
+            <th>账号</th>
+            <th>角色</th>
+            <th>今日工作时间</th>
+            <th>当前登录试验间</th>
+            <th>状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(employee, index) in visibleWorkTimeRows" :key="`worktime-${employee.id}`">
+            <td>{{ (workTimeCurrentPage - 1) * 8 + index + 1 }}</td>
+            <td>{{ employee.employeeName }}</td>
+            <td>{{ employee.username }}</td>
+            <td>{{ employee.roleName }}</td>
+            <td>{{ employee.todayWorkTime }}</td>
+            <td>{{ employee.currentLabName || "-" }}</td>
+            <td><span class="status" :class="{ warn: !employee.online }">{{ employee.statusLabel }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="system-pagination-footer">
+      <span class="system-pagination-range" data-testid="worktime-pagination-range">
+        显示第 <strong>{{ workTimePageRange.start }}–{{ workTimePageRange.end }}</strong> 条，共 <strong>{{ workTimePageRange.total }}</strong> 条
+      </span>
+      <AppPagination
+        :current-page="workTimeCurrentPage"
+        :page-count="workTimePageCount"
+        data-testid="worktime-pagination"
+        @change="setWorkTimePage"
+      />
+    </div>
   </section>
 
   <section class="card section system-settings-card">
@@ -340,6 +366,7 @@ defineOptions({
 
 import AppModal from "@/components/shared/AppModal.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
+import AppPagination from "@/components/shared/AppPagination.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { useSystemPage } from "./useSystemPage";
@@ -357,6 +384,9 @@ const {
   deleteEmployee,
   downloadEmployeeQrCode,
   editEmployeeFields,
+  employeeCurrentPage,
+  employeePageCount,
+  employeePageRange,
   employeeRoleOptions,
   openEmployeeDrawer,
   openEmployeeModal,
@@ -369,6 +399,8 @@ const {
   settings,
   closeEmployeeQrModal,
   saveNewEmployee,
+  setEmployeePage,
+  setWorkTimePage,
   openEmployeeQrModal,
   openEmployeeOperationLogs,
   summaryCards,
@@ -401,6 +433,9 @@ const {
   toggleOperationLogLab,
   toggleSort,
   visibleEmployeeRows,
-  workTimeRows,
+  visibleWorkTimeRows,
+  workTimeCurrentPage,
+  workTimePageCount,
+  workTimePageRange,
 } = useSystemPage();
 </script>
