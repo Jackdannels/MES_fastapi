@@ -292,6 +292,75 @@ def test_ready_endpoint_preserves_schedule_and_axis_context(monkeypatch):
     }
 
 
+def test_ready_endpoint_marks_axis_adjustment_ready_before_republishing(monkeypatch):
+    client, published = build_client(monkeypatch)
+    transitions = []
+    monkeypatch.setattr(
+        mq_route,
+        "publish_laboratory_command",
+        lambda command, payload: (
+            published.append({"command": command, "payload": dict(payload)})
+            or {"published": True, "reason": ""}
+        ),
+    )
+    monkeypatch.setattr(
+        mq_route.MySQLMqEventRepository,
+        "mark_axis_adjustment_ready",
+        lambda _self, run_no, axis_code, occurred_at: transitions.append((run_no, axis_code, occurred_at)),
+    )
+
+    response = client.post(
+        "/api/mq/laboratory/ready",
+        json={
+            "task_code": "SYLU-2026-06-021",
+            "lab_code": "LAB_IMPACT_2",
+            "experiment_code": "SYLU-2026-06-021-A",
+            "runNo": "RUN-FROM-CLIENT",
+            "currentAxisCode": "x-",
+            "axisAdjustmentReady": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert transitions[0][:2] == ("RUN-FROM-CLIENT", "x-")
+    assert published[0]["payload"]["run_no"] == "RUN-FROM-CLIENT"
+    assert published[0]["payload"]["current_axis_code"] == "x-"
+
+
+def test_ready_endpoint_restores_axis_adjustment_when_republish_fails(monkeypatch):
+    client, _published = build_client(monkeypatch)
+    transitions = []
+    monkeypatch.setattr(
+        mq_route.MySQLMqEventRepository,
+        "mark_axis_adjustment_ready",
+        lambda _self, run_no, axis_code, occurred_at: transitions.append(("waiting", run_no, axis_code)),
+    )
+    monkeypatch.setattr(
+        mq_route.MySQLMqEventRepository,
+        "restore_axis_adjustment",
+        lambda _self, run_no, axis_code, occurred_at: transitions.append(("adjusting", run_no, axis_code)),
+    )
+
+    response = client.post(
+        "/api/mq/laboratory/ready",
+        json={
+            "task_code": "SYLU-2026-06-021",
+            "lab_code": "LAB_IMPACT_2",
+            "experiment_code": "SYLU-2026-06-021-A",
+            "runNo": "RUN-FROM-CLIENT",
+            "currentAxisCode": "x-",
+            "axisAdjustmentReady": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["published"] is False
+    assert transitions == [
+        ("waiting", "RUN-FROM-CLIENT", "x-"),
+        ("adjusting", "RUN-FROM-CLIENT", "x-"),
+    ]
+
+
 def test_mq_realtime_update_publishes_experiment_run_trays(monkeypatch):
     published_updates = []
     monkeypatch.setattr(
@@ -1070,6 +1139,7 @@ class FakeMqEventRepository:
         self.events = []
         self.results = []
         self.started = []
+        self.axis_steps_started = []
         self.ended = []
         self.started_contexts = []
         self.context_payloads = []
@@ -1149,6 +1219,9 @@ class FakeMqEventRepository:
 
     def mark_run_started(self, run_no, occurred_at):
         self.started.append((run_no, occurred_at))
+
+    def mark_axis_step_started(self, run_no, axis_code, occurred_at):
+        self.axis_steps_started.append((run_no, axis_code, occurred_at))
 
     def mark_run_ended(self, run_no, occurred_at, axis_code="", next_axis_code="", sub_experiment_code=""):
         self.ended.append((run_no, occurred_at, axis_code, next_axis_code, sub_experiment_code))
@@ -1432,6 +1505,41 @@ def test_process_experiment_started_ready_context_takes_precedence_over_stale_ru
     assert repository.started_contexts[0][0]["experiment_no"] == "SYLU-2026-06-002-C"
     assert repository.messages[0]["task_no"] == "SYLU-2026-06-002"
     assert repository.messages[0]["experiment_no"] == "SYLU-2026-06-002-C"
+
+
+def test_process_experiment_started_resumes_exact_axis_of_existing_run():
+    repository = FakeMqEventRepository()
+    repository.runs_by_lab["LAB_IMPACT_1"] = {
+        "run_no": "RUN-AXIS-001",
+        "task_no": "SYLU-2026-06-002",
+        "experiment_no": "SYLU-2026-06-002-C",
+        "sub_experiment_code": "SYLU-2026-06-002-C#AXIS-001",
+        "lab_code": "LAB_IMPACT_1",
+        "device_name": "冲击一室",
+        "axis_codes": ["x+", "x-", "y+"],
+        "run_status": "实验进行中",
+    }
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_IMPACT_1/events/experiment-started",
+        {
+            "message_id": "HOST-START-RUN-AXIS-001-X-MINUS",
+            "lab_code": "LAB_IMPACT_1",
+            "run_no": "RUN-AXIS-001",
+            "current_axis_code": "x-",
+            "task_code": "SPOOFED-TASK",
+            "started_at": "2026-06-03 10:08:00",
+        },
+        received_at="2026-06-03 10:08:00",
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.axis_steps_started == [("RUN-AXIS-001", "x-", "2026-06-03 10:08:00")]
+    assert repository.started_contexts == []
+    assert repository.messages[0]["task_no"] == "SYLU-2026-06-002"
+    assert repository.events[0]["run_no"] == "RUN-AXIS-001"
+    assert repository.events[0]["payload"]["current_axis_code"] == "x-"
 
 
 def test_process_experiment_started_rejected_early_event_can_be_retried_after_ready():

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   applyLaboratoryOperation,
   completeLaboratoryExperiment,
+  markLaboratoryAxisAdjustmentReady,
   startLaboratoryExperiment,
   withdrawCurrentLaboratoryExperiment,
 } from "./laboratoryApi.js";
@@ -157,6 +158,42 @@ describe("laboratoryApi", () => {
         trayCodes: ["TP-GDW-001"],
       }),
     });
+  });
+
+  test("persists hostless axis adjustment readiness before local restart", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ ok: true, experimentRunSteps: [] }),
+    }));
+
+    await markLaboratoryAxisAdjustmentReady({
+      axisCode: "x-",
+      experimentCode: "EXP-START",
+      labCode: "LAB_HOT_HUMID_2",
+      labName: "高低温湿热二室",
+      runNo: "run-hot-humid-2",
+      taskCode: "TASK-START",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/laboratory/tasks/TASK-START/experiments/EXP-START/axis-adjustment-ready",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          axisCode: "x-",
+          labCode: "LAB_HOT_HUMID_2",
+          labName: "高低温湿热二室",
+          runNo: "run-hot-humid-2",
+        }),
+      },
+    );
   });
 
   test("posts scoped laboratory experiment completion payload with sub experiment code", async () => {

@@ -149,6 +149,47 @@ const startLaboratoryExperiment = async ({
   return response.json();
 };
 
+const markLaboratoryAxisAdjustmentReady = async ({
+  axisCode,
+  experimentCode,
+  labCode = "",
+  labName = "",
+  runNo,
+  taskCode,
+}) => {
+  const normalizedTaskCode = String(taskCode || "").trim();
+  const normalizedExperimentCode = String(experimentCode || "").trim();
+  const normalizedRunNo = String(runNo || "").trim();
+  const normalizedAxisCode = String(axisCode || "").trim();
+  if (!normalizedTaskCode || !normalizedExperimentCode || !normalizedRunNo || !normalizedAxisCode) {
+    throw new Error("缺少当前任务、实验、运行批次或轴向信息。");
+  }
+  const response = await fetch(
+    buildApiUrl(
+      `/api/laboratory/tasks/${encodeURIComponent(normalizedTaskCode)}/experiments/${encodeURIComponent(normalizedExperimentCode)}/axis-adjustment-ready`,
+      API_BASE_URL,
+    ),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        axisCode: normalizedAxisCode,
+        labCode: String(labCode || "").trim(),
+        labName: String(labName || "").trim(),
+        runNo: normalizedRunNo,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+  return response.json();
+};
+
 const completeLaboratoryExperiment = async ({
   axisCode = "",
   completedAt = "",
@@ -192,4 +233,10 @@ const completeLaboratoryExperiment = async ({
   return response.json();
 };
 
-export { applyLaboratoryOperation, completeLaboratoryExperiment, startLaboratoryExperiment, withdrawCurrentLaboratoryExperiment };
+export {
+  applyLaboratoryOperation,
+  completeLaboratoryExperiment,
+  markLaboratoryAxisAdjustmentReady,
+  startLaboratoryExperiment,
+  withdrawCurrentLaboratoryExperiment,
+};

@@ -61,25 +61,38 @@ function useLaboratoryOperationPersistence({
     };
   };
 
-  const buildReadyPayload = () => {
-    const axisCodes = scheduleAxisCodes(currentTask.value);
-    const subExperimentCode = resolveSubExperimentCode(currentTask.value);
+  const buildReadyPayload = (overrides = {}) => {
+    const normalizedOverrides = overrides && typeof overrides === "object" && !Array.isArray(overrides) ? overrides : {};
+    const overrideAxisCodes = Array.isArray(normalizedOverrides.axisCodes)
+      ? normalizedOverrides.axisCodes.map(normalizeText).filter(Boolean)
+      : [];
+    const axisCodes = overrideAxisCodes.length > 0 ? overrideAxisCodes : scheduleAxisCodes(currentTask.value);
+    const subExperimentCode = normalizeText(normalizedOverrides.subExperimentCode)
+      || resolveSubExperimentCode(currentTask.value);
     const payload = {
       experiment_code: currentTask.value?.experimentCode || "",
       lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
-      schedule_id: currentTask.value?.id || "",
+      schedule_id: normalizeText(normalizedOverrides.scheduleId) || currentTask.value?.id || "",
       task_code: currentTask.value?.taskCode || "",
     };
-    const axisBatchNo = currentTask.value?.axis_batch_no || currentTask.value?.axisBatchNo || "";
+    const axisBatchNo = normalizeText(normalizedOverrides.axisBatchNo)
+      || currentTask.value?.axis_batch_no
+      || currentTask.value?.axisBatchNo
+      || "";
     if (axisBatchNo) {
       payload.axis_batch_no = axisBatchNo;
     }
     if (axisCodes.length > 0) {
       payload.axis_codes = axisCodes;
-      payload.current_axis_code = axisCodes[0];
+      payload.current_axis_code = normalizeText(normalizedOverrides.currentAxisCode) || axisCodes[0];
+    } else if (normalizeText(normalizedOverrides.currentAxisCode)) {
+      payload.current_axis_code = normalizeText(normalizedOverrides.currentAxisCode);
     }
     if (subExperimentCode) {
       payload.sub_experiment_code = subExperimentCode;
+    }
+    if (normalizeText(normalizedOverrides.runNo)) {
+      payload.run_no = normalizeText(normalizedOverrides.runNo);
     }
     return payload;
   };

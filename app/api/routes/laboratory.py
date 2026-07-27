@@ -15,7 +15,12 @@ from app.core.master_data import LAB_INTERFACE_HOSTLESS, require_laboratory_inte
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.core.time_utils import now_business_text, parse_business_datetime
 from app.services.attendance_service import get_attendance_service, should_finish_work_interval_for_completion
-from app.services.laboratory_axis_steps import complete_storage_laboratory_axis_step
+from app.services.laboratory_axis_steps import (
+    AXIS_WAITING_START_STATUS,
+    complete_storage_laboratory_axis_step,
+    mark_storage_laboratory_axis_adjustment_ready,
+    start_storage_laboratory_axis_step,
+)
 from app.services.laboratory_completion import complete_storage_laboratory_experiment
 from app.services.laboratory_operations import (
     acquire_laboratory_operation_locks,
@@ -108,6 +113,15 @@ class LaboratoryStartRequest(BaseModel):
     axis_codes: list[str] = Field(default_factory=list, alias="axisCodes")
     axis_batch_no: int | str | None = Field(default=None, alias="axisBatchNo")
     current_axis_code: str = Field(default="", alias="currentAxisCode")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class LaboratoryAxisAdjustmentReadyRequest(BaseModel):
+    run_no: str = Field(default="", alias="runNo")
+    axis_code: str = Field(default="", alias="axisCode")
+    lab_code: str = Field(default="", alias="labCode")
+    lab_name: str = Field(default="", alias="labName")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -643,6 +657,52 @@ def append_history(sample: dict[str, Any], action: str, detail: str, now: str) -
     sample["history"] = history
 
 
+@router.post("/tasks/{task_code}/experiments/{experiment_code}/axis-adjustment-ready")
+def confirm_axis_adjustment_ready(
+    task_code: str,
+    experiment_code: str,
+    request: LaboratoryAxisAdjustmentReadyRequest,
+) -> dict[str, Any]:
+    normalized_task_code = normalize_text(task_code)
+    normalized_experiment_code = normalize_text(experiment_code)
+    snapshot = read_snapshot()
+    lab_name = resolve_lab_name(snapshot, normalized_task_code, normalized_experiment_code) or request.lab_name
+    require_hostless_laboratory(lab_code=request.lab_code, lab_name=lab_name)
+    resource_keys = operation_resource_keys(lab_code=request.lab_code, lab_name=lab_name)
+    resource_keys.append(f"experiment:{normalized_task_code}:{normalized_experiment_code}")
+    with acquire_laboratory_operation_locks(resource_keys):
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = read_snapshot()
+            scoped_axis_step = next(
+                (
+                    step
+                    for step in snapshot.get("experiment_run_steps", [])
+                    if normalize_text(step.get("run_no") or step.get("runNo")) == normalize_text(request.run_no)
+                    and canonical_axis_code(step.get("axis_code") or step.get("axisCode")) == canonical_axis_code(request.axis_code)
+                    and normalize_text(step.get("task_code") or step.get("task_no")) == normalized_task_code
+                    and normalize_text(step.get("experiment_code") or step.get("experiment_no")) == normalized_experiment_code
+                ),
+                None,
+            )
+            if not scoped_axis_step:
+                raise HTTPException(status_code=409, detail="当前任务和实验不存在对应的轴向调整步骤")
+            try:
+                result = mark_storage_laboratory_axis_adjustment_ready(
+                    snapshot,
+                    run_no=request.run_no,
+                    axis_code=request.axis_code,
+                    occurred_at=now_business_text(),
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            write_laboratory_updates(
+                get_storage_backend(),
+                {"mes.experiment_run_steps": result["experimentRunSteps"]},
+            )
+            publish_storage_update(["mes.experiment_run_steps"])
+    return {"ok": True, **result}
+
+
 @router.post("/tasks/{task_code}/experiments/{experiment_code}/start")
 def start_current_experiment(
     task_code: str,
@@ -672,6 +732,40 @@ def start_current_experiment(
             snapshot = read_snapshot()
             find_task(snapshot, normalized_task_code)
             current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
+            requested_axis_code = canonical_axis_code(request.current_axis_code)
+            prepared_axis_step = next(
+                (
+                    step
+                    for step in snapshot.get("experiment_run_steps", [])
+                    if normalize_text(step.get("run_no") or step.get("runNo")) == normalize_text(request.run_no)
+                    and canonical_axis_code(step.get("axis_code") or step.get("axisCode")) == requested_axis_code
+                    and normalize_text(step.get("task_code") or step.get("task_no")) == normalized_task_code
+                    and normalize_text(step.get("experiment_code") or step.get("experiment_no")) == normalized_experiment_code
+                    and normalize_text(step.get("status")) == AXIS_WAITING_START_STATUS
+                ),
+                None,
+            )
+            if prepared_axis_step:
+                try:
+                    result = start_storage_laboratory_axis_step(
+                        snapshot,
+                        run_no=request.run_no,
+                        axis_code=requested_axis_code,
+                        started_at=started_at,
+                    )
+                except ValueError as exc:
+                    raise HTTPException(status_code=409, detail=str(exc)) from exc
+                write_laboratory_updates(
+                    get_storage_backend(),
+                    {"mes.experiment_run_steps": result["experimentRunSteps"]},
+                )
+                publish_storage_update(["mes.experiment_run_steps"])
+                return {
+                    "ok": True,
+                    "message": f"{normalized_task_code} / {current_experiment_name} / {requested_axis_code}轴向 已开始",
+                    "startedAt": result["occurredAt"],
+                    **result,
+                }
             lab_name = start_lab_name(
                 snapshot,
                 normalized_task_code,

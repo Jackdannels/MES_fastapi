@@ -6,7 +6,6 @@
           <div>
             <h3>托盘信息</h3>
             <div class="muted" data-testid="samples-trays-counter">剩余托盘/总托盘数 {{ trayCounterText }}</div>
-            <div class="muted tray-column-resize-hint">拖动中间列表头分隔线调整列宽，双击恢复默认宽度</div>
           </div>
           <label class="tray-management-filter tray-management-filter-emphasis">
             <span>按任务号筛选</span>
@@ -35,24 +34,24 @@
                 <th
                   v-for="(column, index) in trayTableColumns"
                   :key="column.key"
-                  :class="{ 'is-resizable': isResizableColumn(index) }"
+                  :class="{ 'has-left-resizer': isResizableColumn(index - 1) }"
                 >
                   <span>{{ column.label }}</span>
                   <span
-                    v-if="isResizableColumn(index)"
+                    v-if="isResizableColumn(index - 1)"
                     class="samples-trays-column-resizer"
-                    :class="{ 'is-active': resizingColumnIndex === index }"
+                    :class="{ 'is-active': resizingColumnIndex === index - 1 }"
                     role="separator"
                     tabindex="0"
                     aria-orientation="vertical"
-                    :aria-label="`调整“${column.label}”列宽`"
-                    :aria-valuemin="column.minWidth"
-                    :aria-valuemax="MAX_COLUMN_WIDTH"
-                    :aria-valuenow="columnWidths[index]"
-                    :data-testid="`samples-trays-column-resizer-${column.key}`"
-                    @dblclick="resetColumnWidth(index)"
-                    @keydown="resizeColumnWithKeyboard(index, $event)"
-                    @pointerdown="startColumnResize(index, $event)"
+                    :aria-label="`调整“${trayTableColumns[index - 1].label}”列宽`"
+                    :aria-valuemin="trayTableColumns[index - 1].minWidth"
+                    :aria-valuemax="columnWidths[index - 1] + columnWidths[index] - trayTableColumns[index].minWidth"
+                    :aria-valuenow="columnWidths[index - 1]"
+                    :data-testid="`samples-trays-column-resizer-${trayTableColumns[index - 1].key}`"
+                    @dblclick="resetColumnWidth(index - 1)"
+                    @keydown="resizeColumnWithKeyboard(index - 1, $event)"
+                    @pointerdown="startColumnResize(index - 1, $event)"
                   />
                 </th>
               </tr>
@@ -215,7 +214,6 @@ const SAMPLE_CODES_ELLIPSIS = "...";
 const SAMPLE_CODES_VISIBLE_LIMIT = 5;
 const TRAY_PAGE_SIZE = 5;
 const TRAY_TABLE_COLUMN_STORAGE_KEY = "mes.samples.tray-table-column-widths";
-const MAX_COLUMN_WIDTH = 640;
 const trayTableColumns = [
   { key: "sequence", label: "序号", defaultWidth: 80, minWidth: 64 },
   { key: "taskCode", label: "任务号", defaultWidth: 210, minWidth: 140 },
@@ -224,14 +222,17 @@ const trayTableColumns = [
   { key: "sampleCount", label: "样品数", defaultWidth: 100, minWidth: 80 },
   { key: "sampleCodes", label: "样品编号", defaultWidth: 320, minWidth: 180 },
 ];
-const FIRST_RESIZABLE_COLUMN_INDEX = 1;
+const FIRST_RESIZABLE_COLUMN_INDEX = 0;
 const LAST_RESIZABLE_COLUMN_INDEX = trayTableColumns.length - 2;
 
 const isResizableColumn = (index) =>
   index >= FIRST_RESIZABLE_COLUMN_INDEX && index <= LAST_RESIZABLE_COLUMN_INDEX;
 
-const clampColumnWidth = (width, column) =>
-  Math.min(MAX_COLUMN_WIDTH, Math.max(column.minWidth, Math.round(Number(width) || column.defaultWidth)));
+const clampColumnWidth = (width, column) => {
+  const numericWidth = Number(width);
+  const normalizedWidth = Number.isFinite(numericWidth) ? numericWidth : column.defaultWidth;
+  return Math.max(column.minWidth, Math.round(normalizedWidth));
+};
 
 const loadColumnWidths = () => {
   if (typeof window === "undefined") {
@@ -242,9 +243,7 @@ const loadColumnWidths = () => {
     if (!Array.isArray(storedWidths) || storedWidths.length !== trayTableColumns.length) {
       return trayTableColumns.map((column) => column.defaultWidth);
     }
-    return trayTableColumns.map((column, index) =>
-      isResizableColumn(index) ? clampColumnWidth(storedWidths[index], column) : column.defaultWidth,
-    );
+    return trayTableColumns.map((column, index) => clampColumnWidth(storedWidths[index], column));
   } catch {
     return trayTableColumns.map((column) => column.defaultWidth);
   }
@@ -274,34 +273,13 @@ const setColumnWidth = (index, width, persist = false) => {
     return;
   }
   const nextWidths = [...columnWidths.value];
-  const companionIndices = trayTableColumns
-    .map((_, columnIndex) => columnIndex)
-    .filter((columnIndex) => columnIndex !== index && isResizableColumn(columnIndex))
-    .sort((left, right) => Math.abs(left - index) - Math.abs(right - index));
-  const requestedDelta = clampColumnWidth(width, column) - nextWidths[index];
-  const companionCapacity = companionIndices.reduce((total, companionIndex) => {
-    if (requestedDelta >= 0) {
-      return total + Math.max(0, nextWidths[companionIndex] - trayTableColumns[companionIndex].minWidth);
-    }
-    return total + Math.max(0, MAX_COLUMN_WIDTH - nextWidths[companionIndex]);
-  }, 0);
-  const appliedDelta = requestedDelta >= 0
-    ? Math.min(requestedDelta, companionCapacity)
-    : Math.max(requestedDelta, -companionCapacity);
-  nextWidths[index] += appliedDelta;
-  let remainingCompensation = Math.abs(appliedDelta);
-  companionIndices.forEach((companionIndex) => {
-    if (remainingCompensation <= 0) {
-      return;
-    }
-    const companionColumn = trayTableColumns[companionIndex];
-    const availableWidth = appliedDelta >= 0
-      ? nextWidths[companionIndex] - companionColumn.minWidth
-      : MAX_COLUMN_WIDTH - nextWidths[companionIndex];
-    const compensation = Math.min(remainingCompensation, Math.max(0, availableWidth));
-    nextWidths[companionIndex] += appliedDelta >= 0 ? -compensation : compensation;
-    remainingCompensation -= compensation;
-  });
+  const rightColumnIndex = index + 1;
+  const rightColumn = trayTableColumns[rightColumnIndex];
+  const pairWidth = nextWidths[index] + nextWidths[rightColumnIndex];
+  const maximumLeftWidth = pairWidth - rightColumn.minWidth;
+  const nextLeftWidth = Math.min(maximumLeftWidth, clampColumnWidth(width, column));
+  nextWidths[index] = nextLeftWidth;
+  nextWidths[rightColumnIndex] = pairWidth - nextLeftWidth;
   columnWidths.value = nextWidths;
   if (persist) {
     persistColumnWidths();
@@ -363,7 +341,7 @@ const resizeColumnWithKeyboard = (index, event) => {
     ArrowLeft: columnWidths.value[index] - step,
     ArrowRight: columnWidths.value[index] + step,
     Home: trayTableColumns[index].minWidth,
-    End: MAX_COLUMN_WIDTH,
+    End: columnWidths.value[index] + columnWidths.value[index + 1] - trayTableColumns[index + 1].minWidth,
   };
   if (!Object.prototype.hasOwnProperty.call(keyWidths, event.key)) {
     return;

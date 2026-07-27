@@ -675,6 +675,26 @@ describe("LaboratoryPage runtime", () => {
           }),
         };
       }
+      if (url.includes("/api/laboratory/") && url.includes("/axis-adjustment-ready")) {
+        const body = JSON.parse(String(options.body || "{}"));
+        snapshotState = {
+          ...snapshotState,
+          [STORAGE_KEYS.experiment_run_steps]: (snapshotState[STORAGE_KEYS.experiment_run_steps] || []).map((entry) =>
+            String(entry.run_no || "").trim() === String(body.runNo || "").trim()
+              && String(entry.axis_code || "").trim() === String(body.axisCode || "").trim()
+              ? { ...entry, status: "等待上位机启动" }
+              : entry,
+          ),
+        };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            experimentRunSteps: snapshotState[STORAGE_KEYS.experiment_run_steps],
+            ok: true,
+          }),
+        };
+      }
       if (url.includes("/api/laboratory/") && url.includes("/start")) {
         const match = url.match(/\/api\/laboratory\/tasks\/([^/]+)\/experiments\/([^/]+)\/start/);
         const taskCode = decodeURIComponent(match?.[1] || "");
@@ -5681,7 +5701,7 @@ describe("LaboratoryPage runtime", () => {
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验进行中 1/3轴");
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("已完成：z-");
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("未完成：y+、x-");
-    expect(axisButton?.textContent || "").toContain("当前轴向完成，继续进行下一实验 x-");
+    expect(axisButton?.textContent || "").toContain("当前轴向完成，进行下一轴向调整");
     expect(axisButton?.hasAttribute("disabled")).toBe(true);
     expect(laboratoryEndRequestCalls()).toHaveLength(0);
   });
@@ -5769,8 +5789,189 @@ describe("LaboratoryPage runtime", () => {
     const axisButton = document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]');
 
     expect(document.body.querySelector(".laboratory-recent-task")?.textContent || "").toContain("轴向：x-、y+");
-    expect(axisButton?.textContent || "").toContain("当前轴向完成，继续进行下一实验 y+");
+    expect(axisButton?.textContent || "").toContain("当前轴向完成，进行下一轴向调整");
     expect(axisButton?.hasAttribute("disabled")).toBe(false);
+  });
+
+  test("publishes the original run context after the next-axis fixture adjustment", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    reactiveRoute.query = { lab: "振动一室" };
+    masterLabsState = [
+      { code: "LAB_VIBRATION_1", name: "振动一室", type: "实验室", testTypeName: "振动试验", status: 1 },
+    ];
+    const taskCode = "SYLU-2026-06-207";
+    const experimentCode = `${taskCode}-A`;
+    const runNo = "RUN-VIB-ADJUSTMENT";
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [{ code: taskCode, name: "振动轴向调整任务", test_type: "振动试验" }],
+      [STORAGE_KEYS.experiments]: [{
+        axis_codes: ["x+", "x-"],
+        experiment_code: experimentCode,
+        experiment_name: "振动试验",
+        status: "实验进行中",
+        task_code: taskCode,
+      }],
+      [STORAGE_KEYS.experiment_trays]: [{
+        experiment_code: experimentCode,
+        task_code: taskCode,
+        tray_code: "TP-VIB-207",
+      }],
+      [STORAGE_KEYS.schedules]: [{
+        axis_batch_no: "AXIS-BATCH-207",
+        axis_codes: ["x+", "x-"],
+        device: "振动一室",
+        end_at: "2026-04-02T10:30:00.000Z",
+        experiment_code: experimentCode,
+        id: "schedule-vib-adjustment",
+        start_at: "2026-04-02T09:30:00.000Z",
+        status: "实验进行中",
+        sub_experiment_code: "vib-adjustment-segment",
+        task_code: taskCode,
+      }],
+      [STORAGE_KEYS.samples]: [{
+        code: `${taskCode}-SP-001`,
+        flow_status: "实验进行中",
+        location: "振动一室",
+        status: "实验进行中",
+        task_code: taskCode,
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-VIB-207" }],
+      }],
+      [STORAGE_KEYS.experiment_runs]: [{
+        axis_batch_no: "AXIS-BATCH-207",
+        axis_codes: ["x+", "x-"],
+        experiment_code: experimentCode,
+        id: runNo,
+        run_no: runNo,
+        schedule_id: "schedule-vib-adjustment",
+        status: "实验进行中",
+        sub_experiment_code: "vib-adjustment-segment",
+        task_code: taskCode,
+        tray_codes: ["TP-VIB-207"],
+      }],
+      [STORAGE_KEYS.experiment_run_steps]: [
+        { axis_code: "x+", experiment_code: experimentCode, run_no: runNo, status: "实验已完成", step_no: 1, task_code: taskCode },
+        { axis_code: "x-", experiment_code: experimentCode, run_no: runNo, status: "轴向调整中", step_no: 2, task_code: taskCode },
+      ],
+    };
+
+    await mountPage();
+    const axisButton = document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]');
+
+    expect(axisButton?.textContent || "").toContain("下一轴向调整完成，可继续 x- 试验");
+    expect(axisButton?.hasAttribute("disabled")).toBe(false);
+    axisButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
+    await flushPageUpdates();
+    const readyCalls = laboratoryMqCalls().filter(([input]) => String(input).includes("/ready"));
+    expect(readyCalls).toHaveLength(1);
+    expect(JSON.parse(String(readyCalls[0][1]?.body || "{}"))).toEqual(expect.objectContaining({
+      axis_adjustment_ready: true,
+      axis_batch_no: "AXIS-BATCH-207",
+      axis_codes: ["x+", "x-"],
+      current_axis_code: "x-",
+      experiment_code: experimentCode,
+      lab_code: "LAB_VIBRATION_1",
+      run_no: runNo,
+      schedule_id: "schedule-vib-adjustment",
+      sub_experiment_code: "vib-adjustment-segment",
+      task_code: taskCode,
+    }));
+    expect(axisButton?.textContent || "").toContain("已准备就绪，等待 x- 轴向启动");
+    expect(axisButton?.hasAttribute("disabled")).toBe(true);
+
+    axisButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPageUpdates();
+    expect(laboratoryMqCalls().filter(([input]) => String(input).includes("/ready"))).toHaveLength(1);
+  });
+
+  test("persists hostless axis adjustment readiness before the three-second local start", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    reactiveRoute.query = { lab: "高低温湿热二室" };
+    masterLabsState = [
+      { code: "LAB_HOT_HUMID_2", name: "高低温湿热二室", type: "实验室", testTypeName: "高低温湿热试验", status: 1 },
+    ];
+    const taskCode = "SYLU-2026-06-208";
+    const experimentCode = `${taskCode}-A`;
+    const runNo = "RUN-HOSTLESS-ADJUSTMENT";
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [{ code: taskCode, name: "无上位机轴向调整任务", test_type: "高低温湿热试验" }],
+      [STORAGE_KEYS.experiments]: [{
+        axis_codes: ["x+", "x-"],
+        experiment_code: experimentCode,
+        experiment_name: "高低温湿热试验",
+        status: "实验进行中",
+        task_code: taskCode,
+      }],
+      [STORAGE_KEYS.experiment_trays]: [{ experiment_code: experimentCode, task_code: taskCode, tray_code: "TP-HOSTLESS-208" }],
+      [STORAGE_KEYS.schedules]: [{
+        axis_codes: ["x+", "x-"],
+        device: "高低温湿热二室",
+        end_at: "2026-04-02T12:00:00.000Z",
+        experiment_code: experimentCode,
+        id: "schedule-hostless-adjustment",
+        start_at: "2026-04-02T09:30:00.000Z",
+        status: "实验进行中",
+        sub_experiment_code: "hostless-adjustment-segment",
+        task_code: taskCode,
+      }],
+      [STORAGE_KEYS.samples]: [{
+        code: `${taskCode}-SP-001`,
+        flow_status: "实验进行中",
+        location: "高低温湿热二室",
+        status: "实验进行中",
+        task_code: taskCode,
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-HOSTLESS-208" }],
+      }],
+      [STORAGE_KEYS.experiment_runs]: [{
+        axis_codes: ["x+", "x-"],
+        experiment_code: experimentCode,
+        id: runNo,
+        run_no: runNo,
+        schedule_id: "schedule-hostless-adjustment",
+        status: "实验进行中",
+        sub_experiment_code: "hostless-adjustment-segment",
+        task_code: taskCode,
+        tray_codes: ["TP-HOSTLESS-208"],
+      }],
+      [STORAGE_KEYS.experiment_run_steps]: [
+        { axis_code: "x+", experiment_code: experimentCode, run_no: runNo, status: "实验已完成", step_no: 1, task_code: taskCode },
+        { axis_code: "x-", experiment_code: experimentCode, run_no: runNo, status: "轴向调整中", step_no: 2, task_code: taskCode },
+      ],
+    };
+
+    await mountPage();
+    const axisButton = document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]');
+    axisButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPageUpdates();
+
+    const adjustmentCalls = fetch.mock.calls.filter(([input]) => String(input).includes("/axis-adjustment-ready"));
+    expect(adjustmentCalls).toHaveLength(1);
+    expect(JSON.parse(String(adjustmentCalls[0][1]?.body || "{}"))).toEqual({
+      axisCode: "x-",
+      labCode: "LAB_HOT_HUMID_2",
+      labName: "高低温湿热二室",
+      runNo,
+    });
+    expect(laboratoryMqCalls()).toHaveLength(0);
+    expect(axisButton?.textContent || "").toContain("已准备就绪，等待 x- 轴向启动");
+    expect(laboratoryStartCalls()).toHaveLength(0);
+
+    vi.advanceTimersByTime(2999);
+    await flushPageUpdates();
+    expect(laboratoryStartCalls()).toHaveLength(0);
+
+    vi.advanceTimersByTime(1);
+    await waitForLaboratoryStartCount(1);
+    expect(JSON.parse(String(laboratoryStartCalls()[0][1]?.body || "{}"))).toEqual(expect.objectContaining({
+      axisCodes: ["x+", "x-"],
+      currentAxisCode: "x-",
+      runNo,
+      scheduleId: "schedule-hostless-adjustment",
+      subExperimentCode: "hostless-adjustment-segment",
+      trayCodes: ["TP-HOSTLESS-208"],
+    }));
   });
 
   test("does not prompt attendance logout while continuing the next axis in the same schedule", async () => {
@@ -5968,7 +6169,7 @@ describe("LaboratoryPage runtime", () => {
     await mountPage();
     const axisButton = document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]');
 
-    expect(axisButton?.textContent || "").toContain("当前轴向完成，继续进行下一实验 y-");
+    expect(axisButton?.textContent || "").toContain("当前轴向完成，进行下一轴向调整");
     expect(axisButton?.hasAttribute("disabled")).toBe(false);
   });
 
@@ -6053,7 +6254,7 @@ describe("LaboratoryPage runtime", () => {
     await mountPage();
     const axisButton = document.body.querySelector('[data-testid="laboratory-complete-axis-continue"]');
 
-    expect(axisButton?.textContent || "").toContain("当前轴向完成，继续进行下一实验 y-");
+    expect(axisButton?.textContent || "").toContain("当前轴向完成，进行下一轴向调整");
     expect(axisButton?.hasAttribute("disabled")).toBe(true);
   });
 

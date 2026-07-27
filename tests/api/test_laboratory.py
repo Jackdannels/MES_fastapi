@@ -621,6 +621,52 @@ def test_start_endpoint_rejects_non_hostless_laboratory_before_shared_service(mo
     assert calls == []
 
 
+def test_hostless_axis_adjustment_ready_then_delayed_start_preserves_completed_axis(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    payloads = base_payloads([])
+    payloads["mes.schedules"][2]["device"] = "高低温湿热二室"
+    payloads["mes.experiment_runs"] = [
+        {
+            "run_no": "RUN-HOSTLESS-AXIS",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-C",
+            "sub_experiment_code": "EXP-C#AXIS-001",
+            "axis_codes": ["x+", "x-", "y+"],
+            "device": "高低温湿热二室",
+            "status": "实验进行中",
+        }
+    ]
+    payloads["mes.experiment_run_steps"] = [
+        {"run_no": "RUN-HOSTLESS-AXIS", "task_code": "TASK-501", "experiment_code": "EXP-C", "sub_experiment_code": "EXP-C#AXIS-001", "axis_code": "x+", "step_no": 1, "status": "实验已完成", "ended_at": "2026-07-27 10:00:00"},
+        {"run_no": "RUN-HOSTLESS-AXIS", "task_code": "TASK-501", "experiment_code": "EXP-C", "sub_experiment_code": "EXP-C#AXIS-001", "axis_code": "x-", "step_no": 2, "status": "轴向调整中"},
+        {"run_no": "RUN-HOSTLESS-AXIS", "task_code": "TASK-501", "experiment_code": "EXP-C", "sub_experiment_code": "EXP-C#AXIS-001", "axis_code": "y+", "step_no": 3, "status": "待执行"},
+    ]
+    monkeypatch.setattr(laboratory_route, "publish_storage_update", lambda _keys: None)
+    client, storage = build_client(monkeypatch, payloads)
+
+    ready_response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-C/axis-adjustment-ready",
+        json={"runNo": "RUN-HOSTLESS-AXIS", "axisCode": "x-", "labName": "高低温湿热二室"},
+    )
+    start_response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-C/start",
+        json={
+            "runNo": "RUN-HOSTLESS-AXIS",
+            "currentAxisCode": "x-",
+            "labName": "高低温湿热二室",
+        },
+    )
+
+    assert ready_response.status_code == 200
+    assert start_response.status_code == 200
+    steps = {step["axis_code"]: step for step in storage.read("mes.experiment_run_steps")}
+    assert steps["x+"]["status"] == "实验已完成"
+    assert steps["x+"]["ended_at"] == "2026-07-27 10:00:00"
+    assert steps["x-"]["status"] == "实验进行中"
+    assert steps["y+"]["status"] == "待执行"
+
+
 def test_laboratory_complete_experiment_clears_stale_tray_target(monkeypatch):
     sample = sample_with_history(
         "实验进行中",

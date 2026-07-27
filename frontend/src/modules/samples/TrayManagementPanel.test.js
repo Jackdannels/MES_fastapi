@@ -470,8 +470,8 @@ describe("TrayManagementPanel resizable columns", () => {
     const wrapper = mountPanel();
     const resizer = wrapper.get('[data-testid="samples-trays-column-resizer-taskCode"]');
 
-    expect(wrapper.findAll('[role="separator"]')).toHaveLength(4);
-    expect(wrapper.find('[data-testid="samples-trays-column-resizer-sequence"]').exists()).toBe(false);
+    expect(wrapper.findAll('[role="separator"]')).toHaveLength(5);
+    expect(wrapper.find('[data-testid="samples-trays-column-resizer-sequence"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="samples-trays-column-resizer-sampleCodes"]').exists()).toBe(false);
     expect(resizer.attributes("aria-label")).toBe("调整“任务号”列宽");
     expect(resizer.attributes("aria-valuenow")).toBe("210");
@@ -481,12 +481,11 @@ describe("TrayManagementPanel resizable columns", () => {
     await wrapper.vm.$nextTick();
 
     expect(resizer.attributes("aria-valuenow")).toBe("260");
-    expect(wrapper.findAll("col")[2].attributes("style")).toContain("15.454545454545453%");
 
     document.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
     const persistedWidths = JSON.parse(storageState["mes.samples.tray-table-column-widths"]);
-    expect(persistedWidths).toEqual([80, 260, 170, 170, 100, 320]);
-    expect(persistedWidths.reduce((total, width) => total + width, 0)).toBe(1100);
+    expect(persistedWidths).toEqual([150, 260, 170, 170, 100, 500]);
+    expect(persistedWidths.reduce((total, width) => total + width, 0)).toBe(1350);
     expect(wrapper.get("table").attributes("style")).toBeUndefined();
   });
 
@@ -504,20 +503,79 @@ describe("TrayManagementPanel resizable columns", () => {
     expect(resizer.attributes("aria-valuenow")).toBe("100");
   });
 
-  test("keeps the divider before sample codes draggable when the adjacent status column is at minimum width", async () => {
+  test.each([
+    ["sequence", "任务号"],
+    ["taskCode", "托盘编号"],
+    ["trayCode", "当前状态"],
+    ["status", "样品数"],
+    ["sampleCount", "样品编号"],
+  ])("makes the %s divider genuinely draggable", async (columnKey, boundaryHeaderLabel) => {
+    const wrapper = mountPanel();
+    const resizer = wrapper.get(`[data-testid="samples-trays-column-resizer-${columnKey}"]`);
+    const initialWidth = Number(resizer.attributes("aria-valuenow"));
+    const boundaryHeader = resizer.element.parentElement;
+    const rightColumnIndex = wrapper.findAll("th").findIndex((header) => header.element === boundaryHeader);
+    const leftColumnIndex = rightColumnIndex - 1;
+    const initialLeftPercentage = Number.parseFloat(wrapper.findAll("col")[leftColumnIndex].attributes("style").match(/[\d.]+/)?.[0] || "0");
+    const initialRightPercentage = Number.parseFloat(wrapper.findAll("col")[rightColumnIndex].attributes("style").match(/[\d.]+/)?.[0] || "0");
+    const initialTotal = wrapper.findAll("col").reduce((total, column) => {
+      const percentage = Number.parseFloat(column.attributes("style").match(/[\d.]+/)?.[0] || "0");
+      return total + percentage;
+    }, 0);
+
+    expect(resizer.element.parentElement.textContent).toContain(boundaryHeaderLabel);
+    await resizer.trigger("pointerdown", { button: 0, clientX: 100 });
+    document.dispatchEvent(new MouseEvent("pointermove", { clientX: 120, bubbles: true }));
+    await wrapper.vm.$nextTick();
+
+    expect(Number(resizer.attributes("aria-valuenow"))).toBe(initialWidth + 20);
+    const finalLeftPercentage = Number.parseFloat(wrapper.findAll("col")[leftColumnIndex].attributes("style").match(/[\d.]+/)?.[0] || "0");
+    const finalRightPercentage = Number.parseFloat(wrapper.findAll("col")[rightColumnIndex].attributes("style").match(/[\d.]+/)?.[0] || "0");
+    expect(finalLeftPercentage).toBeGreaterThan(initialLeftPercentage);
+    expect(finalRightPercentage).toBeLessThan(initialRightPercentage);
+
+    document.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    const finalTotal = wrapper.findAll("col").reduce((total, column) => {
+      const percentage = Number.parseFloat(column.attributes("style").match(/[\d.]+/)?.[0] || "0");
+      return total + percentage;
+    }, 0);
+    expect(finalTotal).toBeCloseTo(initialTotal, 8);
+  });
+
+  test("moves the sample-code left boundary to the right by resizing its two adjacent columns", async () => {
     storageState["mes.samples.tray-table-column-widths"] = JSON.stringify([80, 260, 260, 120, 140, 320]);
     const wrapper = mountPanel();
     const resizer = wrapper.get('[data-testid="samples-trays-column-resizer-sampleCount"]');
+    const columns = wrapper.findAll("col");
+    const initialBoundaryPercentage = columns.slice(0, 5).reduce(
+      (total, column) => total + Number.parseFloat(column.attributes("style").match(/[\d.]+/)?.[0] || "0"),
+      0,
+    );
+
+    expect(resizer.element.parentElement.textContent).toContain("样品编号");
+    expect(resizer.attributes("aria-valuemin")).toBe("80");
 
     await resizer.trigger("pointerdown", { button: 0, clientX: 100 });
     document.dispatchEvent(new MouseEvent("pointermove", { clientX: 150, bubbles: true }));
     await wrapper.vm.$nextTick();
 
     expect(resizer.attributes("aria-valuenow")).toBe("190");
+    const finalBoundaryPercentage = wrapper.findAll("col").slice(0, 5).reduce(
+      (total, column) => total + Number.parseFloat(column.attributes("style").match(/[\d.]+/)?.[0] || "0"),
+      0,
+    );
+    expect(finalBoundaryPercentage).toBeGreaterThan(initialBoundaryPercentage);
 
     document.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
     const persistedWidths = JSON.parse(storageState["mes.samples.tray-table-column-widths"]);
-    expect(persistedWidths).toEqual([80, 260, 210, 120, 190, 320]);
+    expect(persistedWidths).toEqual([80, 260, 260, 120, 190, 270]);
     expect(persistedWidths.reduce((total, width) => total + width, 0)).toBe(1180);
+  });
+
+  test("removes the visible column-resize instruction copy", () => {
+    const wrapper = mountPanel();
+
+    expect(wrapper.text()).not.toContain("拖动中间列表头分隔线调整列宽");
+    expect(wrapper.text()).not.toContain("双击恢复默认宽度");
   });
 });

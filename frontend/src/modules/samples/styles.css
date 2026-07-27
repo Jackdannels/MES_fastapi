@@ -789,20 +789,15 @@
   position: relative;
 }
 
-.samples-trays-table th.is-resizable {
+.samples-trays-table th.has-left-resizer {
   z-index: 2;
-}
-
-.tray-column-resize-hint {
-  margin-top: 4px;
-  font-size: 12px;
 }
 
 .samples-trays-column-resizer {
   position: absolute;
   z-index: 3;
   top: 0;
-  right: -6px;
+  left: -6px;
   bottom: 0;
   width: 12px;
   cursor: col-resize;

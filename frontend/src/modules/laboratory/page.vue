@@ -695,12 +695,18 @@
               class="action-btn success"
               data-testid="laboratory-complete-axis-continue"
               type="button"
-              :disabled="Boolean(runningModalExperiment.axisContinuation?.nextAxisCode) && !runningModalExperiment.axisContinuation?.canContinue"
-              @click="confirmCompleteCurrentAxis"
+              :disabled="runningModalExperiment.axisContinuation?.isSubmittingReady
+                || runningModalExperiment.axisContinuation?.isWaitingForStart
+                || (Boolean(runningModalExperiment.axisContinuation?.nextAxisCode) && !runningModalExperiment.axisContinuation?.canContinue)"
+              @click="confirmCurrentAxisAction"
             >
               {{
-                runningModalExperiment.axisContinuation?.nextAxisCode
-                  ? `当前轴向完成，继续进行下一实验 ${runningModalExperiment.axisContinuation.nextAxisCode}`
+                runningModalExperiment.axisContinuation?.isWaitingForStart
+                  ? `已准备就绪，等待 ${runningModalExperiment.axisContinuation.currentAxisCode} 轴向启动`
+                  : runningModalExperiment.axisContinuation?.isAdjusting
+                    ? `下一轴向调整完成，可继续 ${runningModalExperiment.axisContinuation.currentAxisCode} 试验`
+                    : runningModalExperiment.axisContinuation?.nextAxisCode
+                      ? "当前轴向完成，进行下一轴向调整"
                   : "当前轴向完成，完成本试验"
               }}
             </button>
@@ -772,7 +778,7 @@ const {
   confirmCompare,
   confirmResetPrompt,
   confirmResetTask,
-  confirmCompleteCurrentAxis,
+  confirmCurrentAxisAction,
   confirmCompleteExperiment,
   confirmInstall,
   confirmReady,

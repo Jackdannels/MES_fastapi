@@ -14,8 +14,10 @@ from app.services.laboratory_run_lifecycle import close_superseded_running_runs_
 
 
 AXIS_COMPLETED_STATUS = "实验已完成"
+AXIS_ADJUSTING_STATUS = "轴向调整中"
 AXIS_PENDING_STATUS = "待执行"
 AXIS_RUNNING_STATUS = "实验进行中"
+AXIS_WAITING_START_STATUS = "等待上位机启动"
 PARTIAL_AXIS_CONTINUATION_STATUS = "送至实验室"
 
 
@@ -203,6 +205,114 @@ def ensure_run_steps(
     return next_steps
 
 
+def _transition_storage_laboratory_axis_step(
+    snapshot: dict[str, list[dict[str, Any]]],
+    *,
+    run_no: str,
+    axis_code: str,
+    expected_statuses: set[str],
+    next_status: str,
+    occurred_at: str = "",
+) -> dict[str, Any]:
+    normalized_run_no = normalize_text(run_no)
+    normalized_axis_code = canonical_axis_code(axis_code)
+    occurred_time = format_business_datetime(occurred_at) or normalize_text(occurred_at) or now_business_text()
+    if not normalized_run_no or not normalized_axis_code:
+        raise ValueError("run_no and axis_code are required")
+
+    matched = False
+    next_steps: list[dict[str, Any]] = []
+    for step in snapshot.get("experiment_run_steps", []):
+        step_run_no = normalize_text(step.get("run_no") or step.get("runNo"))
+        step_axis_code = canonical_axis_code(step.get("axis_code") or step.get("axisCode"))
+        if step_run_no != normalized_run_no or step_axis_code != normalized_axis_code:
+            next_steps.append(dict(step))
+            continue
+        matched = True
+        current_status = normalize_text(step.get("status") or step.get("step_status") or step.get("stepStatus"))
+        if current_status == next_status:
+            next_steps.append(dict(step))
+            continue
+        if current_status not in expected_statuses:
+            raise ValueError(
+                f"axis step {normalized_run_no}/{normalized_axis_code} cannot transition "
+                f"from {current_status or '-'} to {next_status}"
+            )
+        transitioned = {
+            **step,
+            "status": next_status,
+            "updated_at": occurred_time,
+        }
+        if next_status == AXIS_RUNNING_STATUS:
+            transitioned["started_at"] = occurred_time
+            transitioned["ended_at"] = ""
+        next_steps.append(transitioned)
+
+    if not matched:
+        raise ValueError(f"axis step is required for run_no/axis_code: {normalized_run_no}/{normalized_axis_code}")
+    return {
+        "experimentRunSteps": next_steps,
+        "occurredAt": occurred_time,
+    }
+
+
+def mark_storage_laboratory_axis_adjustment_ready(
+    snapshot: dict[str, list[dict[str, Any]]],
+    *,
+    run_no: str,
+    axis_code: str,
+    occurred_at: str = "",
+) -> dict[str, Any]:
+    """Persist the operator's fixture-switch confirmation for one existing run axis."""
+
+    return _transition_storage_laboratory_axis_step(
+        snapshot,
+        run_no=run_no,
+        axis_code=axis_code,
+        expected_statuses={AXIS_ADJUSTING_STATUS},
+        next_status=AXIS_WAITING_START_STATUS,
+        occurred_at=occurred_at,
+    )
+
+
+def restore_storage_laboratory_axis_adjustment(
+    snapshot: dict[str, list[dict[str, Any]]],
+    *,
+    run_no: str,
+    axis_code: str,
+    occurred_at: str = "",
+) -> dict[str, Any]:
+    """Restore the adjustment action when its READY command was not published."""
+
+    return _transition_storage_laboratory_axis_step(
+        snapshot,
+        run_no=run_no,
+        axis_code=axis_code,
+        expected_statuses={AXIS_WAITING_START_STATUS},
+        next_status=AXIS_ADJUSTING_STATUS,
+        occurred_at=occurred_at,
+    )
+
+
+def start_storage_laboratory_axis_step(
+    snapshot: dict[str, list[dict[str, Any]]],
+    *,
+    run_no: str,
+    axis_code: str,
+    started_at: str = "",
+) -> dict[str, Any]:
+    """Start exactly one prepared axis without rebuilding its experiment run."""
+
+    return _transition_storage_laboratory_axis_step(
+        snapshot,
+        run_no=run_no,
+        axis_code=axis_code,
+        expected_statuses={AXIS_WAITING_START_STATUS},
+        next_status=AXIS_RUNNING_STATUS,
+        occurred_at=started_at,
+    )
+
+
 def complete_storage_laboratory_axis_step(
     snapshot: dict[str, list[dict[str, Any]]],
     *,
@@ -304,8 +414,7 @@ def complete_storage_laboratory_axis_step(
                 {
                     **step,
                     "sub_experiment_code": normalized_sub_experiment_code or record_sub_experiment_code(step),
-                    "status": AXIS_RUNNING_STATUS,
-                    "started_at": normalize_text(step.get("started_at") or step.get("startedAt")) or completed_time,
+                    "status": AXIS_ADJUSTING_STATUS,
                     "updated_at": completed_time,
                 }
             )

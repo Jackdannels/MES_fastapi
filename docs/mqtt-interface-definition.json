@@ -23,7 +23,12 @@
       "topic": "mes/v1/labs/{lab_code}/commands/experiment-ready",
       "payload": {
         "task_code": "任务编号",
-        "lab_code": "试验间编码"
+        "lab_code": "试验间编码",
+        "experiment_code": "实验编号",
+        "run_no": "MES实验运行批次号；轴向接续沿用原值",
+        "sub_experiment_code": "轴向分段实验编号，非轴向省略",
+        "axis_codes": ["x+", "x-", "y+"],
+        "current_axis_code": "本次准备启动的轴向，非轴向省略"
       }
     }
   ],
@@ -44,6 +49,9 @@
       "topic": "mes/v1/labs/{lab_code}/events/experiment-started",
       "payload": {
         "lab_code": "试验间编码",
+        "run_no": "MES实验运行批次号",
+        "sub_experiment_code": "轴向分段实验编号，非轴向省略",
+        "current_axis_code": "本次实际启动的轴向，非轴向省略",
         "started_at": "2026-05-16 10:00:00"
       }
     },

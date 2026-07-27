@@ -148,9 +148,14 @@ Payload：
   "task_code": "SYLU-2026-06-001",
   "lab_code": "LAB_IMPACT_1",
   "experiment_code": "SYLU-2026-06-001-A",
-  "run_no": "run-20260607193000123456"
+  "run_no": "run-20260607193000123456",
+  "sub_experiment_code": "EXP-001-AXIS-001",
+  "axis_codes": ["x+", "x-", "y+"],
+  "current_axis_code": "x-"
 }
 ```
+
+首次启动时，`current_axis_code` 为该批次首轴向。工作人员完成夹具切换后，MES 会使用同一个 `run_no` 再次下发 `experiment-ready`，并把 `current_axis_code` 更新为待启动的下一轴向。上位机必须以每次 READY 的最新轴向上下文为准。
 
 字段说明：
 
@@ -203,6 +208,8 @@ Payload：
 {
   "lab_code": "LAB_IMPACT_1",
   "run_no": "run-20260607193000123456",
+  "sub_experiment_code": "EXP-001-AXIS-001",
+  "current_axis_code": "x-",
   "started_at": "2026-06-01 09:30:00"
 }
 ```
@@ -213,6 +220,8 @@ Payload：
 | --- | --- | --- | --- |
 | lab_code | string | 是 | 试验间编号 |
 | run_no | string | 是 | 来自 `experiment-ready` 的实验批次号 |
+| sub_experiment_code | string | 轴向任务是 | MES 下发的分段实验编号，原样带回 |
+| current_axis_code | string | 轴向任务是 | 本次实际启动的轴向，原样带回 |
 | started_at | string | 是 | 实验开始时间，北京时间 |
 
 ### 5.3 实验结束时间
@@ -294,7 +303,7 @@ fixture-ready:
 根据 lab_code 找到当前试验间处于工装夹具安装状态的唯一任务/实验上下文，记录 fixture_ready_at。
 
 experiment-started:
-优先使用 payload.run_no 创建并启动对应实验批次；同时根据 lab_code 找到当前试验间待开始 / 已准备就绪的唯一任务/实验上下文，写入 started_at。
+首次启动时使用 payload.run_no 创建并启动对应实验批次。轴向接续时使用 payload.run_no + payload.current_axis_code 精确恢复原批次的目标轴向，只把该轴向从“等待上位机启动”更新为“实验进行中”，不会重建批次或重新激活已完成轴向。
 
 experiment-ended:
 根据 payload.run_no 精确找到实验批次。轴向任务按 payload.axis_code 完成当前轴向，最后一个轴向完成后再将实验置为实验已完成；非轴向任务直接完成实验。如未携带 run_no，则仅兼容旧协议按 lab_code 找正在运行批次。

@@ -17,7 +17,12 @@ from app.services.fixture_installations import (
     find_fixture_installation,
     mark_fixture_installation_ready,
 )
-from app.services.laboratory_axis_steps import complete_storage_laboratory_axis_step
+from app.services.laboratory_axis_steps import (
+    complete_storage_laboratory_axis_step,
+    mark_storage_laboratory_axis_adjustment_ready,
+    restore_storage_laboratory_axis_adjustment,
+    start_storage_laboratory_axis_step,
+)
 from app.services.laboratory_completion import (
     complete_storage_laboratory_experiment,
 )
@@ -74,6 +79,10 @@ class MqEventRepository(Protocol):
     def start_run_for_context(self, context: dict[str, Any], occurred_at: str, run_no: str = "") -> dict[str, Any]: ...
 
     def mark_run_started(self, run_no: str, occurred_at: str) -> None: ...
+
+    def mark_axis_adjustment_ready(self, run_no: str, axis_code: str, occurred_at: str) -> None: ...
+
+    def mark_axis_step_started(self, run_no: str, axis_code: str, occurred_at: str) -> None: ...
 
     def mark_run_ended(
         self,
@@ -766,6 +775,54 @@ class MySQLMqEventRepository:
                 normalized_axis_code,
             )
 
+    def mark_axis_adjustment_ready(self, run_no: str, axis_code: str, occurred_at: str) -> None:
+        storage = get_storage_backend()
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = storage_completion_snapshot(storage.read_all())
+            run_context_from_snapshot(snapshot, run_no)
+            result = mark_storage_laboratory_axis_adjustment_ready(
+                snapshot,
+                run_no=run_no,
+                axis_code=axis_code,
+                occurred_at=occurred_at,
+            )
+            write_laboratory_updates(
+                storage,
+                {"mes.experiment_run_steps": result["experimentRunSteps"]},
+            )
+
+    def restore_axis_adjustment(self, run_no: str, axis_code: str, occurred_at: str) -> None:
+        storage = get_storage_backend()
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = storage_completion_snapshot(storage.read_all())
+            run_context_from_snapshot(snapshot, run_no)
+            result = restore_storage_laboratory_axis_adjustment(
+                snapshot,
+                run_no=run_no,
+                axis_code=axis_code,
+                occurred_at=occurred_at,
+            )
+            write_laboratory_updates(
+                storage,
+                {"mes.experiment_run_steps": result["experimentRunSteps"]},
+            )
+
+    def mark_axis_step_started(self, run_no: str, axis_code: str, occurred_at: str) -> None:
+        storage = get_storage_backend()
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = storage_completion_snapshot(storage.read_all())
+            run_context_from_snapshot(snapshot, run_no)
+            result = start_storage_laboratory_axis_step(
+                snapshot,
+                run_no=run_no,
+                axis_code=axis_code,
+                started_at=occurred_at,
+            )
+            write_laboratory_updates(
+                storage,
+                {"mes.experiment_run_steps": result["experimentRunSteps"]},
+            )
+
 
 def process_laboratory_event(
     topic: str,
@@ -813,7 +870,7 @@ def process_laboratory_event(
         }
     payload_run_no = first_text(payload, "run_no", "runNo")
     payload_sub_experiment_code = first_text(payload, "sub_experiment_code", "subExperimentCode", "sub_experiment_no", "subExperimentNo")
-    payload_axis_code = first_text(payload, "axis_code", "axisCode")
+    payload_axis_code = first_text(payload, "axis_code", "axisCode", "current_axis_code", "currentAxisCode")
     payload_next_axis_code = first_text(payload, "next_axis_code", "nextAxisCode")
     if message_type == "EXPERIMENT_RESULT" and not payload_run_no:
         raise ValueError("run_no is required for experiment result")
@@ -821,18 +878,25 @@ def process_laboratory_event(
     if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"}:
         run = repo.find_run_by_no(payload_run_no) if payload_run_no else repo.find_active_run_by_lab(lab_code)
     created_run_from_context = False
+    started_existing_axis = False
     if message_type == "EXPERIMENT_STARTED":
-        context = repo.find_current_context_by_lab(lab_code, ["实验准备就绪"], payload)
-        if context:
-            run = repo.start_run_for_context(context, occurred_at, payload_run_no)
-            created_run_from_context = True
+        if payload_run_no and payload_axis_code:
+            run = repo.find_run_by_no(payload_run_no)
+            started_existing_axis = bool(run and run_axis_codes(run))
+        if started_existing_axis:
+            context = run
         else:
-            return build_ack(
-                message_id,
-                "REJECTED",
-                "READY_CONTEXT_REQUIRED",
-                f"ready experiment context is required for lab_code: {lab_code}",
-            )
+            context = repo.find_current_context_by_lab(lab_code, ["实验准备就绪"], payload)
+            if context:
+                run = repo.start_run_for_context(context, occurred_at, payload_run_no)
+                created_run_from_context = True
+            else:
+                return build_ack(
+                    message_id,
+                    "REJECTED",
+                    "READY_CONTEXT_REQUIRED",
+                    f"ready experiment context is required for lab_code: {lab_code}",
+                )
     if message_type == "EXPERIMENT_ENDED" and not run:
         raise ValueError(f"active experiment run is required for lab_code: {lab_code}")
     if message_type == "EXPERIMENT_RESULT" and not run:
@@ -840,7 +904,7 @@ def process_laboratory_event(
     if message_type == "EXPERIMENT_ENDED" and run_axis_codes(run) and not payload_axis_code:
         raise ValueError("axis_code is required for axis-aware experiment end")
     context_task_no = normalize_text((run or {}).get("task_no")) or normalize_text((context or {}).get("task_no"))
-    authoritative_context = created_run_from_context or message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"}
+    authoritative_context = created_run_from_context or started_existing_axis or message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"}
     if fixture_installation:
         task_no = fixture_installation["task_code"]
     elif authoritative_context:
@@ -901,7 +965,9 @@ def process_laboratory_event(
         apply_pending_fixture_ready(fixture_installation, occurred_at)
         mark_fixture_installation_ready(fixture_install_id)
     elif message_type == "EXPERIMENT_STARTED":
-        if not created_run_from_context:
+        if started_existing_axis:
+            repo.mark_axis_step_started(run_no, payload_axis_code, occurred_at)
+        elif not created_run_from_context:
             repo.mark_run_started(run_no, occurred_at)
         get_attendance_service().start_work_interval(
             lab_code=lab_code,

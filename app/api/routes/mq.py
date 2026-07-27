@@ -6,10 +6,11 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator
 from app.core.axis_codes import sort_axis_codes
 from app.core.config import settings
 from app.core.master_data import LAB_INTERFACE_MQTT, require_laboratory_interface
-from app.services.mq_event_processor import generated_run_no, process_laboratory_event
+from app.services.mq_event_processor import MySQLMqEventRepository, generated_run_no, now_iso, process_laboratory_event
 from app.services.fixture_installations import mark_fixture_installation_failed, normalize_tray_codes, register_pending_fixture_installation
 from app.services.mq_publisher import publish_laboratory_command
 from app.services.mq_runtime import default_mq_runtime
+from app.services.storage_update_bus import publish_storage_update
 
 
 router = APIRouter(prefix="/api/mq", tags=["mq"])
@@ -47,6 +48,10 @@ class ReadyRequest(BaseModel):
     axis_codes: list[str] = Field(default_factory=list, validation_alias=AliasChoices("axis_codes", "axisCodes"))
     axis_batch_no: str = Field(default="", validation_alias=AliasChoices("axis_batch_no", "axisBatchNo"))
     current_axis_code: str = Field(default="", validation_alias=AliasChoices("current_axis_code", "currentAxisCode", "axis_code", "axisCode"))
+    axis_adjustment_ready: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("axis_adjustment_ready", "axisAdjustmentReady"),
+    )
 
     @field_validator("task_code", "lab_code", "experiment_code", "sub_experiment_code", "run_no", "schedule_id", "axis_batch_no", "current_axis_code", mode="before")
     @classmethod
@@ -177,6 +182,19 @@ def publish_fixture_install(request: FixtureInstallRequest) -> dict[str, Any]:
 @router.post("/laboratory/ready")
 def publish_ready(request: ReadyRequest) -> dict[str, Any]:
     require_mqtt_laboratory(request.lab_code)
+    axis_repository = None
+    if request.axis_adjustment_ready:
+        if not request.run_no or not request.current_axis_code:
+            raise HTTPException(status_code=422, detail="轴向调整完成必须携带 run_no 和 current_axis_code")
+        axis_repository = MySQLMqEventRepository()
+        try:
+            axis_repository.mark_axis_adjustment_ready(
+                request.run_no,
+                request.current_axis_code,
+                now_iso(),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     payload = {
         "task_code": request.task_code,
         "lab_code": request.lab_code,
@@ -196,7 +214,14 @@ def publish_ready(request: ReadyRequest) -> dict[str, Any]:
     try:
         result = publish_laboratory_command("READY", payload)
     except RuntimeError as exc:
+        if axis_repository is not None:
+            axis_repository.restore_axis_adjustment(request.run_no, request.current_axis_code, now_iso())
+            publish_storage_update(["mes.experiment_run_steps"])
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if axis_repository is not None:
+        if not result.get("published"):
+            axis_repository.restore_axis_adjustment(request.run_no, request.current_axis_code, now_iso())
+        publish_storage_update(["mes.experiment_run_steps"])
     return {"ok": True, "payload": payload, **result}
 
 

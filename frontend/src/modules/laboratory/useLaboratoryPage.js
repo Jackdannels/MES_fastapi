@@ -7,6 +7,7 @@ import {
   HOST_INTERFACE_MODE_STORAGE_KEY,
 } from "@/lib/hostInterfaceMode";
 import {
+  markLaboratoryAxisAdjustmentReady,
   startLaboratoryExperiment,
 } from "@/lib/laboratoryApi";
 import { formatLocalDateTime } from "@/lib/dateTime";
@@ -118,6 +119,8 @@ function useLaboratoryPage(options = {}) {
   const completePromptVisible = ref(false);
   const runningModalVisible = ref(false);
   const completedRunningExperiment = ref(null);
+  const axisReadySubmitting = ref(false);
+  const axisReadyPendingKey = ref("");
   const tickNow = ref(readNow());
   const structuralNow = ref(tickNow.value);
   let temporalBoundaryState = null;
@@ -280,6 +283,27 @@ function useLaboratoryPage(options = {}) {
       enabled: Boolean(continuation.hasAxisSteps && continuation.currentAxisCode),
     };
   });
+  const axisTransitionKey = (continuation = {}) => [
+    normalizeText(continuation.runNo),
+    normalizeText(continuation.currentAxisCode),
+  ].filter(Boolean).join("::");
+  watch(
+    () => [
+      axisContinuation.value.runNo,
+      axisContinuation.value.currentAxisCode,
+      axisContinuation.value.currentStepStatus,
+    ],
+    ([runNo, currentAxisCode, currentStepStatus]) => {
+      const currentKey = [normalizeText(runNo), normalizeText(currentAxisCode)].filter(Boolean).join("::");
+      if (
+        !currentKey
+        || (axisReadyPendingKey.value && currentKey !== axisReadyPendingKey.value)
+        || normalizeText(currentStepStatus) === "实验进行中"
+      ) {
+        axisReadyPendingKey.value = "";
+      }
+    },
+  );
   const runningInteractionLocked = computed(() => runningExperiment.value.active);
   const startAttendanceWorkForRunningExperiment = () => {
     startWorkForRunningExperiment(runningAttendanceStartKey.value);
@@ -380,11 +404,22 @@ function useLaboratoryPage(options = {}) {
   const runningModalExperiment = computed(() => {
     const base = completedRunningExperiment.value?.active ? completedRunningExperiment.value : runningExperiment.value;
     const continuation = axisContinuation.value;
+    const locallyWaitingForStart = Boolean(
+      axisReadyPendingKey.value
+      && axisReadyPendingKey.value === axisTransitionKey(continuation)
+      && (continuation.isAdjusting || continuation.isWaitingForStart),
+    );
     return {
       ...base,
       axisCompletedLabel: continuation.completedAxisCodes.length ? `已完成：${continuation.completedAxisCodes.join("、")}` : "已完成：暂无",
-      axisContinuation: continuation,
-      axisStatusLabel: continuation.statusLabel,
+      axisContinuation: {
+        ...continuation,
+        isSubmittingReady: axisReadySubmitting.value,
+        isWaitingForStart: continuation.isWaitingForStart || locallyWaitingForStart,
+      },
+      axisStatusLabel: locallyWaitingForStart
+        ? `等待上位机启动 ${continuation.completedAxisCodes.length}/${continuation.completedAxisCodes.length + continuation.unfinishedAxisCodes.length}轴`
+        : continuation.statusLabel,
       axisUnfinishedLabel: continuation.unfinishedAxisCodes.length ? `未完成：${continuation.unfinishedAxisCodes.join("、")}` : "未完成：暂无",
     };
   });
@@ -799,11 +834,12 @@ function useLaboratoryPage(options = {}) {
     experimentCode,
     plannedEndAt = "",
     plannedHours = null,
-        runNo = "",
-        scheduleId = "",
+    runNo = "",
+    scheduleId = "",
     subExperimentCode = "",
     taskCode,
     trayCodes = [],
+    onFailure = () => {},
   }) => {
     const startExperiment = () => {
       const startedAt = formatLocalDateTime();
@@ -834,6 +870,7 @@ function useLaboratoryPage(options = {}) {
         .catch((error) => {
           rollbackOptimisticAttendanceWork(previousAttendanceSession, startedAt);
           setSuppressNextAttendanceWorkStart(false);
+          onFailure(error);
           laboratoryMqError.value = {
             detail: formatErrorMessage(error),
             title: "实验启动失败",
@@ -841,6 +878,85 @@ function useLaboratoryPage(options = {}) {
         });
     };
     scheduleHostlessStart(startExperiment);
+  };
+  const confirmAxisAdjustmentReady = async () => {
+    await runWithAttendance(async () => {
+      const continuation = axisContinuation.value;
+      const transitionKey = axisTransitionKey(continuation);
+      if (!continuation.isAdjusting || !transitionKey || axisReadySubmitting.value || axisReadyPendingKey.value === transitionKey) {
+        return;
+      }
+      axisReadySubmitting.value = true;
+      const targetAxisCode = normalizeText(continuation.currentAxisCode);
+      const runAxisCodes = Array.isArray(continuation.runAxisCodes) && continuation.runAxisCodes.length > 0
+        ? continuation.runAxisCodes
+        : [targetAxisCode].filter(Boolean);
+      const payload = buildReadyPayload({
+        axisBatchNo: continuation.axisBatchNo,
+        axisCodes: runAxisCodes,
+        currentAxisCode: targetAxisCode,
+        runNo: continuation.runNo,
+        scheduleId: continuation.scheduleId,
+        subExperimentCode: continuation.subExperimentCode,
+      });
+      payload.axis_adjustment_ready = true;
+      try {
+        if (isHostlessMqttLab()) {
+          const adjustmentPayload = await markLaboratoryAxisAdjustmentReady({
+            axisCode: targetAxisCode,
+            experimentCode: currentTask.value?.experimentCode || payload.experiment_code,
+            labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
+            labName: laboratoryConfig.value.labName,
+            runNo: continuation.runNo,
+            taskCode: currentTask.value?.taskCode || payload.task_code,
+          });
+          applyExperimentStartResponse(adjustmentPayload);
+          axisReadyPendingKey.value = transitionKey;
+          scheduleHostlessExperimentStart({
+            axisBatchNo: continuation.axisBatchNo,
+            axisCodes: runAxisCodes,
+            currentAxisCode: targetAxisCode,
+            experimentCode: currentTask.value?.experimentCode || payload.experiment_code,
+            plannedEndAt: currentTask.value?.endAt || "",
+            runNo: continuation.runNo,
+            scheduleId: continuation.scheduleId,
+            subExperimentCode: continuation.subExperimentCode,
+            taskCode: currentTask.value?.taskCode || payload.task_code,
+            trayCodes: runningExperiment.value?.trayCodes || [],
+            onFailure: () => {
+              if (axisReadyPendingKey.value === transitionKey) {
+                axisReadyPendingKey.value = "";
+              }
+            },
+          });
+          return;
+        }
+        const published = await publishLaboratoryMqSafely(publishLaboratoryReady, payload, "准备就绪");
+        if (published) {
+          axisReadyPendingKey.value = transitionKey;
+        }
+      } catch (error) {
+        if (axisReadyPendingKey.value === transitionKey) {
+          axisReadyPendingKey.value = "";
+        }
+        laboratoryMqError.value = {
+          detail: formatErrorMessage(error),
+          title: "轴向准备就绪失败",
+        };
+      } finally {
+        axisReadySubmitting.value = false;
+      }
+    });
+  };
+  const confirmCurrentAxisAction = async () => {
+    if (axisContinuation.value.isAdjusting) {
+      await confirmAxisAdjustmentReady();
+      return;
+    }
+    if (axisContinuation.value.isWaitingForStart) {
+      return;
+    }
+    await confirmCompleteCurrentAxis();
   };
   const confirmCompare = async () => {
     if (!currentTask.value || !canCompleteCompare.value) {
@@ -1049,7 +1165,7 @@ function useLaboratoryPage(options = {}) {
       confirmCompare,
     confirmResetPrompt,
     confirmResetTask,
-    confirmCompleteCurrentAxis,
+    confirmCurrentAxisAction,
     confirmCompleteExperiment,
     confirmInstall,
     confirmReady,
