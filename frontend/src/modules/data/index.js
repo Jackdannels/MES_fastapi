@@ -8,7 +8,7 @@ export const route = {
   component: () => import("./page.vue"),
   meta: {
     title: "试验数据",
-    subtitle: "监控采集链路，执行数据校验，并生成固定模板报告。",
+    subtitle: "配置试验完成后的 PDF 自动归档地址，并处理生成失败记录。",
     module: "central",
   },
 };

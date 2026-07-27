@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
@@ -28,6 +29,7 @@ from app.services.laboratory_operations import (
 )
 from app.services.laboratory_start import start_storage_laboratory_experiment
 from app.services.storage_update_bus import publish_storage_update
+from app.services.test_data_reports import archive_completion_reports
 from app.services.mq_event_protocol import (
     ACK_MESSAGE_TYPE,
     BEIJING_TZ,
@@ -44,6 +46,9 @@ from app.services.mq_event_protocol import (
     parse_float,
     topic_lab_code,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class MqEventRepository(Protocol):
@@ -739,6 +744,26 @@ class MySQLMqEventRepository:
                 storage,
                 updates,
                 scoped_samples=result["samples"],
+            )
+        try:
+            archive_completion_reports(
+                snapshot=scoped_snapshot,
+                result=result,
+                task_code=task_no,
+                experiment_code=experiment_no,
+                run_no=run_no,
+                axis_code=normalized_axis_code,
+                completed_at=occurred_at,
+            )
+        except Exception:
+            # MQTT completion acknowledgement reflects the persisted physical event;
+            # unexpected archive errors must not change its completion semantics.
+            logger.exception(
+                "Failed to archive MQTT completion reports for task=%s experiment=%s run=%s axis=%s",
+                task_no,
+                experiment_no,
+                run_no,
+                normalized_axis_code,
             )
 
 

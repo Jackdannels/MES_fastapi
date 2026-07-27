@@ -1,100 +1,165 @@
-// 负责试验数据页的数据流加载、报告动作和详情展示。
+// 负责读取、校验和保存试验数据归档目录，并提供失败 PDF 的重试入口。
 import { computed, onMounted, ref } from "vue";
 
-import { useDialogState } from "@/composables/useDialogState";
-import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
-import { useTableControls } from "@/composables/useTableControls";
 import {
-  buildDataMetrics,
-  buildDataRows,
-  buildSelectedDataRow,
-  calculateAverageQuality,
-  createReportForm,
-} from "./model";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
+  listFailedTestDataExports,
+  readTestDataSettings,
+  retryFailedTestDataExports,
+  updateTestDataSettings,
+} from "@/lib/testDataApi";
+import { normalizeFailedExportList, normalizeTestDataSettings } from "./model";
 
-// 输出用于筛选数据表格和预览报告的响应式状态。
 function useDataPage() {
-  const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.streams]);
-  const rawStreams = ref([]);
-  const reportForm = ref(createReportForm());
-  const selectedRow = ref(buildSelectedDataRow());
-  const reportModal = useDialogState();
-  const dataDrawer = useDialogState();
+  const defaultPath = ref("");
+  const savePath = ref("");
+  const writable = ref(null);
+  const settingsDetail = ref("");
+  const settingsLoading = ref(true);
+  const settingsSaving = ref(false);
+  const settingsError = ref("");
+  const settingsSuccess = ref("");
 
-  const baseRows = computed(() => buildDataRows(rawStreams.value));
-  const metrics = computed(() => buildDataMetrics(rawStreams.value));
+  const failedExports = ref([]);
+  const failedCount = ref(0);
+  const exportsLoading = ref(true);
+  const exportsError = ref("");
+  const retryingKeys = ref(new Set());
+  const retryingAll = ref(false);
 
-  const { query, sortDirection, sortKey, visibleRows } = useTableControls({
-    rows: baseRows,
-    searchFields: ["taskCode", "device", "status"],
-    pageSize: 100,
+  const pathStatusLabel = computed(() => {
+    if (settingsLoading.value || settingsSaving.value) {
+      return "正在检测";
+    }
+    return writable.value ? "目录可写" : "目录不可写";
   });
+  const pathStatusClass = computed(() => ({
+    "is-checking": settingsLoading.value || settingsSaving.value,
+    "is-error": !settingsLoading.value && !settingsSaving.value && writable.value !== true,
+    "is-writable": !settingsLoading.value && !settingsSaving.value && writable.value === true,
+  }));
 
-  const toggleSort = (nextKey) => {
-    // 同列点击时切换升降序，不同列点击时重置为升序。
-    if (sortKey.value === nextKey) {
-      sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
+  const applySettings = (payload) => {
+    const settings = normalizeTestDataSettings(payload);
+    defaultPath.value = settings.defaultPath;
+    savePath.value = settings.savePath || settings.defaultPath;
+    settingsDetail.value = settings.detail;
+    writable.value = settings.writable;
+  };
+
+  const loadSettings = async () => {
+    settingsLoading.value = true;
+    settingsError.value = "";
+    try {
+      applySettings(await readTestDataSettings());
+      if (writable.value !== true) {
+        settingsError.value = settingsDetail.value || "当前保存地址不可写，请修改后重新检测";
+      }
+    } catch (error) {
+      writable.value = false;
+      settingsError.value = error?.message || "读取保存地址失败";
+    } finally {
+      settingsLoading.value = false;
+    }
+  };
+
+  const loadFailedExports = async () => {
+    exportsLoading.value = true;
+    exportsError.value = "";
+    try {
+      const result = normalizeFailedExportList(await listFailedTestDataExports());
+      failedExports.value = result.items;
+      failedCount.value = result.failedCount;
+    } catch (error) {
+      failedExports.value = [];
+      failedCount.value = 0;
+      exportsError.value = error?.message || "读取 PDF 失败记录失败";
+    } finally {
+      exportsLoading.value = false;
+    }
+  };
+
+  const saveSettings = async () => {
+    const nextPath = String(savePath.value || "").trim();
+    settingsError.value = "";
+    settingsSuccess.value = "";
+    if (!nextPath) {
+      writable.value = false;
+      settingsError.value = "请输入试验数据保存地址";
       return;
     }
-    sortKey.value = nextKey;
-    sortDirection.value = "asc";
+    settingsSaving.value = true;
+    try {
+      applySettings(await updateTestDataSettings(nextPath));
+      settingsSuccess.value = settingsDetail.value || "保存地址已更新，目录可正常写入";
+    } catch (error) {
+      writable.value = false;
+      settingsError.value = error?.message || "保存地址检测失败";
+    } finally {
+      settingsSaving.value = false;
+    }
   };
 
-  const validateReport = () => {
-    // 报告校验只返回报告弹窗当前需要的两个核心指标。
-    return {
-      averageQuality: calculateAverageQuality(rawStreams.value),
-      validationCount: metrics.value.validationCount,
-    };
+  const isRetrying = (exportKey) => retryingKeys.value.has(exportKey);
+
+  const retryFailed = async (exportKey) => {
+    if (!exportKey || isRetrying(exportKey)) {
+      return;
+    }
+    exportsError.value = "";
+    retryingKeys.value = new Set([...retryingKeys.value, exportKey]);
+    try {
+      await retryFailedTestDataExports([exportKey]);
+      await loadFailedExports();
+    } catch (error) {
+      exportsError.value = error?.message || "重新生成 PDF 失败";
+    } finally {
+      const nextKeys = new Set(retryingKeys.value);
+      nextKeys.delete(exportKey);
+      retryingKeys.value = nextKeys;
+    }
   };
 
-  const openReportModal = () => {
-    reportModal.openWith({ id: "report-preview" });
+  const retryAllFailed = async () => {
+    if (retryingAll.value || !failedExports.value.length) {
+      return;
+    }
+    exportsError.value = "";
+    retryingAll.value = true;
+    try {
+      await retryFailedTestDataExports();
+      await loadFailedExports();
+    } catch (error) {
+      exportsError.value = error?.message || "批量重新生成 PDF 失败";
+    } finally {
+      retryingAll.value = false;
+    }
   };
 
-  const closeReportModal = () => {
-    reportModal.close();
-  };
-
-  const generateReport = () => {
-    closeReportModal();
-  };
-
-  const openDataDrawer = (row) => {
-    // 抽屉只保留详情区真正要展示的字段，避免直接暴露整行数据。
-    selectedRow.value = buildSelectedDataRow(row);
-    dataDrawer.openWith(row);
-  };
-
-  const closeDataDrawer = () => {
-    dataDrawer.close();
-  };
-
-  const loadDataPage = async () => {
-    const snapshot = await loadSnapshot();
-    rawStreams.value = Array.isArray(snapshot[STORAGE_KEYS.streams]) ? snapshot[STORAGE_KEYS.streams] : [];
-  };
-
-  onMounted(loadDataPage);
+  onMounted(() => {
+    void Promise.all([loadSettings(), loadFailedExports()]);
+  });
 
   return {
-    closeDataDrawer,
-    closeReportModal,
-    dataDrawerOpen: dataDrawer.open,
-    dataRows: visibleRows,
-    generateReport,
-    metrics,
-    openDataDrawer,
-    openReportModal,
-    query,
-    reportForm,
-    reportModalOpen: reportModal.open,
-    selectedRow,
-    sortDirection,
-    sortKey,
-    toggleSort,
-    validateReport,
+    defaultPath,
+    exportsError,
+    exportsLoading,
+    failedCount,
+    failedExports,
+    isRetrying,
+    loadFailedExports,
+    loadSettings,
+    pathStatusClass,
+    pathStatusLabel,
+    retryAllFailed,
+    retryFailed,
+    retryingAll,
+    savePath,
+    saveSettings,
+    settingsError,
+    settingsLoading,
+    settingsSaving,
+    settingsSuccess,
+    writable,
   };
 }
 

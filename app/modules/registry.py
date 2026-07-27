@@ -22,6 +22,7 @@ from app.api.routes.storage import router as storage_router
 from app.api.routes.system_time import router as system_time_router
 from app.api.routes.task_history import router as task_history_router
 from app.api.routes.tasks import router as tasks_router
+from app.api.routes.test_data import router as test_data_router
 from app.api.routes.terminal_control import router as terminal_control_router
 from app.api.routes.technologies import router as technologies_router
 from app.api.routes.transfer_area import router as transfer_area_router
@@ -73,7 +74,7 @@ MODULES = (
         api_routers=(material_router, storage_router),
         spa_routes=("/devices",),
     ),
-    AppModule(key="data", api_routers=(yt_barcode_router, yt_object_router), spa_routes=("/data",)),
+    AppModule(key="data", api_routers=(yt_barcode_router, yt_object_router, test_data_router), spa_routes=("/data",)),
     AppModule(key="system", api_routers=(attendance_router, system_time_router, terminal_control_router), spa_routes=("/system",)),
     AppModule(key="visualization", spa_routes=("/visualization",)),
     AppModule(key="staging-management", spa_routes=("/staging-management",)),

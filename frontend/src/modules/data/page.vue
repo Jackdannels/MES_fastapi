@@ -1,128 +1,148 @@
 <template>
   <div class="data-page">
-  <section class="grid cols-3 stagger">
-    <div class="card">
-      <div class="muted">自动采集流</div>
-      <div class="kpi" id="data-stream-count">{{ metrics.streamCount }}</div>
-      <div class="muted">Modbus 节点在线</div>
-    </div>
-    <div class="card">
-      <div class="muted">校验队列</div>
-      <div class="kpi" id="data-validation-count">{{ metrics.validationCount }}</div>
-      <div class="muted">待复核</div>
-    </div>
-    <div class="card">
-      <div class="muted">报告待出</div>
-      <div class="kpi" id="data-report-count">{{ metrics.reportCount }}</div>
-      <div class="muted">固定模板</div>
-    </div>
-  </section>
+    <section class="card data-settings-card" aria-labelledby="data-settings-title">
+      <div class="data-section-heading">
+        <div>
+          <p class="data-eyebrow">PDF 自动归档</p>
+          <h3 id="data-settings-title">试验数据保存设置</h3>
+          <p class="data-section-copy">试验或当前轴向完成后，系统会为本批次的每个样品自动生成一份 PDF。</p>
+        </div>
+        <span class="data-path-status" :class="pathStatusClass" data-testid="data-path-status" role="status">
+          <span class="data-path-status__dot" aria-hidden="true"></span>
+          {{ pathStatusLabel }}
+        </span>
+      </div>
 
-  <section class="card section data-monitor-card">
-    <h3>采集监控</h3>
-    <div class="toolbar">
-      <input v-model="query" class="search-input" placeholder="筛选任务/设备/状态" />
-    </div>
-    <table class="table" id="data-table">
-      <thead>
-        <tr>
-          <th>序号</th>
-          <th data-sort :data-sort-dir="sortKey === 'taskCode' ? sortDirection : ''" @click="toggleSort('taskCode')">任务</th>
-          <th data-sort :data-sort-dir="sortKey === 'device' ? sortDirection : ''" @click="toggleSort('device')">设备</th>
-          <th data-sort :data-sort-dir="sortKey === 'lastPacket' ? sortDirection : ''" @click="toggleSort('lastPacket')">最近数据包</th>
-          <th data-sort :data-sort-dir="sortKey === 'quality' ? sortDirection : ''" @click="toggleSort('quality')">数据质量</th>
-          <th data-sort :data-sort-dir="sortKey === 'status' ? sortDirection : ''" @click="toggleSort('status')">状态</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody id="data-table-body">
-        <tr v-for="(row, index) in dataRows" :key="row.id">
-          <td>{{ index + 1 }}</td>
-          <td>{{ row.taskCode }}</td>
-          <td>{{ row.device }}</td>
-          <td>{{ row.lastPacket }}</td>
-          <td>{{ row.quality }}</td>
-          <td><span :class="row.statusClass">{{ row.status }}</span></td>
-          <td>
-            <button class="action-link" :data-testid="`open-data-drawer-${index}`" type="button" @click="openDataDrawer(row)">
-              详情
+      <form class="data-path-form" @submit.prevent="saveSettings">
+        <div class="form-field data-path-field">
+          <label for="test-data-save-path">保存地址</label>
+          <div class="data-path-control">
+            <input
+              id="test-data-save-path"
+              v-model="savePath"
+              data-testid="data-save-path"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="请输入后端服务器上的绝对文件夹路径"
+              :aria-invalid="Boolean(settingsError)"
+              :disabled="settingsLoading || settingsSaving"
+            />
+            <button
+              class="action-btn data-save-button"
+              data-testid="data-save-settings"
+              type="submit"
+              :disabled="settingsLoading || settingsSaving || !savePath.trim()"
+            >
+              {{ settingsSaving ? "正在检测…" : "保存并检测目录" }}
             </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </section>
+          </div>
+          <p class="helper data-path-helper">
+            此路径位于运行 MES 后端的电脑上。默认地址：<span class="data-code">{{ defaultPath || "桌面\\MES试验数据" }}</span>
+          </p>
+        </div>
+      </form>
 
-  <section class="card section data-report-card">
-    <h3>数据校验与报告</h3>
-    <div class="form-grid">
-      <div class="form-field">
-        <label>校验规则</label>
-        <select v-model="reportForm.rule" name="rule">
-          <option>完整性校验</option>
-          <option>范围校验</option>
-          <option>时间戳一致性</option>
-        </select>
-      </div>
-      <div class="form-field">
-        <label>报告模板</label>
-        <select v-model="reportForm.template" name="template">
-          <option>重金属检测固定模板</option>
-          <option>含量检测固定模板</option>
-          <option>稳定性固定模板</option>
-        </select>
-      </div>
-      <div class="form-field">
-        <label>关联任务</label>
-        <input v-model="reportForm.taskCode" type="text" name="task_code" placeholder="任务编号" />
-      </div>
-      <div class="form-field">
-        <label>开始时间</label>
-        <PickerOnlyInput v-model="reportForm.rangeStart" type="datetime-local" name="range_start" :max="reportForm.rangeEnd || undefined" />
-      </div>
-      <div class="form-field">
-        <label>结束时间</label>
-        <PickerOnlyInput v-model="reportForm.rangeEnd" type="datetime-local" name="range_end" :min="reportForm.rangeStart || undefined" />
-      </div>
-      <div class="form-field" style="grid-column: 1 / -1;">
-        <label>异常说明</label>
-        <textarea v-model="reportForm.remark" name="remark" placeholder="记录异常数据原因与处理方式"></textarea>
-      </div>
-    </div>
-    <div class="form-actions">
-      <button class="action-btn" data-testid="data-validate" type="button" @click="validateReport">执行校验</button>
-      <button class="action-btn secondary" data-testid="open-report-modal" type="button" @click="openReportModal">生成报告</button>
-    </div>
-  </section>
+      <AppFeedback
+        v-if="settingsError"
+        :message="settingsError"
+        tone="error"
+        :auto-dismiss-ms="0"
+        data-testid="data-settings-error"
+        @close="settingsError = ''"
+      />
+      <AppFeedback
+        v-if="settingsSuccess"
+        :message="settingsSuccess"
+        tone="success"
+        data-testid="data-settings-success"
+        @close="settingsSuccess = ''"
+      />
 
-  <AppModal :open="reportModalOpen" title="报告预览" @close="closeReportModal">
-    <p class="muted">将使用固定模板生成报告，包含任务信息、设备数据与结论摘要。</p>
-    <template #footer>
-      <button class="action-btn" type="button" @click="generateReport">确认生成</button>
-      <button class="action-btn secondary" type="button" @click="closeReportModal">取消</button>
-    </template>
-  </AppModal>
+      <div class="data-archive-guide" aria-label="自动归档目录结构">
+        <div class="data-guide-item">
+          <span>普通试验</span>
+          <code>任务编号 / 试验名称 / 日期 起止时间 / 样品编号.pdf</code>
+        </div>
+        <div class="data-guide-item">
+          <span>轴向试验</span>
+          <code>任务编号 / 试验名称 / X+轴向 / 日期 起止时间 / 样品编号.pdf</code>
+        </div>
+      </div>
+    </section>
 
-  <AppDrawer :open="dataDrawerOpen" title="数据明细" @close="closeDataDrawer">
-    <div class="form-grid">
-      <div class="form-field">
-        <label>采集状态</label>
-        <select :value="selectedRow.status">
-          <option>采集中</option>
-          <option>已完成</option>
-          <option>有缺口</option>
-        </select>
+    <section class="card data-failures-card" aria-labelledby="data-failures-title">
+      <div class="data-section-heading data-failures-heading">
+        <div>
+          <p class="data-eyebrow">异常处理</p>
+          <h3 id="data-failures-title">PDF 生成失败</h3>
+          <p class="data-section-copy">试验完成状态不会受文件写入失败影响，可在问题处理后重新生成。</p>
+        </div>
+        <button
+          v-if="failedExports.length"
+          class="action-btn secondary"
+          data-testid="data-retry-all"
+          type="button"
+          :disabled="retryingAll"
+          @click="retryAllFailed"
+        >
+          {{ retryingAll ? "正在重试…" : `全部重试（${failedCount}）` }}
+        </button>
       </div>
-      <div class="form-field">
-        <label>数据质量</label>
-        <input :value="selectedRow.quality" type="text" placeholder="98.8%" />
+
+      <AppFeedback
+        v-if="exportsError"
+        :message="exportsError"
+        tone="error"
+        :auto-dismiss-ms="0"
+        data-testid="data-exports-error"
+        @close="exportsError = ''"
+      />
+
+      <div v-if="exportsLoading" class="data-empty-state" data-testid="data-exports-loading" role="status">正在读取失败记录…</div>
+      <div v-else-if="!failedExports.length" class="data-empty-state data-empty-state--success" data-testid="data-exports-empty">
+        <span class="data-empty-state__mark" aria-hidden="true">✓</span>
+        <strong>暂无生成失败的 PDF</strong>
+        <span>后续出现写入异常时，可在这里查看原因并重试。</span>
       </div>
-      <div class="form-field" style="grid-column: 1 / -1;">
-        <label>异常记录</label>
-        <textarea :value="selectedRow.taskCode" placeholder="记录缺口或异常信息"></textarea>
+      <div v-else class="data-table-wrap">
+        <table class="table data-failures-table" data-testid="data-failed-exports">
+          <thead>
+            <tr>
+              <th>任务 / 试验</th>
+              <th>样品</th>
+              <th>轴向</th>
+              <th>批次时间</th>
+              <th>失败原因</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in failedExports" :key="item.exportKey">
+              <td>
+                <strong>{{ item.taskCode || "-" }}</strong>
+                <span>{{ item.experimentName || item.experimentCode || "-" }}</span>
+              </td>
+              <td><span class="data-code">{{ item.sampleCode || "-" }}</span></td>
+              <td>{{ formatAxisLabel(item.axisCode) }}</td>
+              <td>{{ formatExportRange(item) }}</td>
+              <td class="data-error-cell" :title="item.error || ''">{{ item.error || "未知错误" }}</td>
+              <td>
+                <button
+                  class="action-link data-retry-button"
+                  :data-testid="`data-retry-${item.exportKey}`"
+                  type="button"
+                  :disabled="isRetrying(item.exportKey)"
+                  @click="retryFailed(item.exportKey)"
+                >
+                  {{ isRetrying(item.exportKey) ? "重试中…" : "重新生成" }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-    </div>
-  </AppDrawer>
+    </section>
   </div>
 </template>
 
@@ -131,27 +151,27 @@ defineOptions({
   name: "DataPage",
 });
 
-import AppDrawer from "@/components/shared/AppDrawer.vue";
-import AppModal from "@/components/shared/AppModal.vue";
-import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
+import AppFeedback from "@/components/shared/AppFeedback.vue";
+import { formatAxisLabel, formatExportRange } from "./model";
 import { useDataPage } from "./useDataPage";
 
 const {
-  closeDataDrawer,
-  closeReportModal,
-  dataDrawerOpen,
-  dataRows,
-  generateReport,
-  metrics,
-  openDataDrawer,
-  openReportModal,
-  query,
-  reportForm,
-  reportModalOpen,
-  selectedRow,
-  sortDirection,
-  sortKey,
-  toggleSort,
-  validateReport,
+  defaultPath,
+  exportsError,
+  exportsLoading,
+  failedCount,
+  failedExports,
+  isRetrying,
+  pathStatusClass,
+  pathStatusLabel,
+  retryAllFailed,
+  retryFailed,
+  retryingAll,
+  savePath,
+  saveSettings,
+  settingsError,
+  settingsLoading,
+  settingsSaving,
+  settingsSuccess,
 } = useDataPage();
 </script>

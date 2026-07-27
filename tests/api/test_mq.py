@@ -23,7 +23,19 @@ from app.core.legacy_fallback import get_legacy_fallback_hits, reset_legacy_fall
 
 
 @pytest.fixture(autouse=True)
-def _reset_legacy_fallback_hits():
+def _reset_legacy_fallback_hits(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.archive_completion_reports",
+        lambda **_kwargs: {
+            "ok": True,
+            "attempted": 0,
+            "succeeded": 0,
+            "skipped": 0,
+            "failed": 0,
+            "items": [],
+            "error": "",
+        },
+    )
     reset_legacy_fallback_hits()
     yield
     reset_legacy_fallback_hits()
@@ -2905,6 +2917,14 @@ def test_mysql_mark_run_ended_uses_shared_completion_rules(monkeypatch):
 
     storage = FakeStorage()
     monkeypatch.setattr("app.services.mq_event_processor.get_storage_backend", lambda: storage, raising=False)
+    archive_calls = []
+
+    def fake_archive(**kwargs):
+        assert storage.payload["mes.experiment_runs"][0]["status"] == "实验已完成"
+        archive_calls.append(kwargs)
+        return {"ok": True, "attempted": 1, "succeeded": 1, "skipped": 0, "failed": 0, "items": [], "error": ""}
+
+    monkeypatch.setattr("app.services.mq_event_processor.archive_completion_reports", fake_archive)
     monkeypatch.setattr(
         "app.services.mq_event_processor.get_connection",
         lambda: (_ for _ in ()).throw(AssertionError("MQTT ended should use shared completion storage adapter")),
@@ -2922,6 +2942,13 @@ def test_mysql_mark_run_ended_uses_shared_completion_rules(monkeypatch):
     assert written["mes.schedules"][0]["status"] == "实验已完成"
     assert written["mes.experiment_runs"][0]["status"] == "实验已完成"
     assert written["mes.experiment_run_trays"][0]["run_tray_status"] == "实验已完成"
+    assert len(archive_calls) == 1
+    assert archive_calls[0]["snapshot"]["experiment_runs"][0]["status"] == "实验进行中"
+    assert archive_calls[0]["task_code"] == "TASK-001"
+    assert archive_calls[0]["experiment_code"] == "EXP-001"
+    assert archive_calls[0]["run_no"] == "RUN-001"
+    assert archive_calls[0]["axis_code"] == ""
+    assert archive_calls[0]["completed_at"] == "2026-05-16 12:00:00"
 
 
 def test_mysql_mark_axis_run_ended_marks_current_schedule_complete_without_finishing_all_axes(monkeypatch):

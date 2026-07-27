@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import TrayManagementPanel from "./TrayManagementPanel.vue";
 
@@ -400,5 +400,124 @@ describe("TrayManagementPanel", () => {
     const runningStep = wrapper.get('[data-testid="samples-tray-flow-step-experiment-current-0"]');
     expect(runningStep.text()).toContain("冲击试验进行中");
     expect(runningStep.text()).toContain("2026-06-04 19:12:09");
+  });
+});
+
+describe("TrayManagementPanel resizable columns", () => {
+  const mountedWrappers = [];
+  let storageState = {};
+
+  const createSamplesFlow = () => ({
+    trayRows: [
+      {
+        trayCode: "SYLU-2026-07-001-TP-001",
+        taskCode: "SYLU-2026-07-001",
+        status: "待试验",
+        sampleCount: 1,
+        sampleCodes: ["SYLU-2026-07-001-SP-001"],
+      },
+    ],
+    rawExperimentRuns: [],
+    rawExperimentRunSteps: [],
+    rawExperimentRunTrays: [],
+    rawExperimentTrays: [],
+    rawExperiments: [],
+    rawSamples: [],
+    rawSchedules: [],
+    rawTasks: [],
+    warning: "",
+    clearWarning: () => {},
+  });
+
+  const mountPanel = () => {
+    const wrapper = mount(TrayManagementPanel, {
+      props: { samplesFlow: createSamplesFlow() },
+      global: {
+        stubs: {
+          AppFeedback: true,
+          AppPagination: true,
+        },
+      },
+    });
+    mountedWrappers.push(wrapper);
+    return wrapper;
+  };
+
+  beforeEach(() => {
+    storageState = {};
+    vi.stubGlobal("localStorage", {
+      getItem: (key) => storageState[key] ?? null,
+      setItem: (key, value) => {
+        storageState[key] = String(value);
+      },
+      removeItem: (key) => {
+        delete storageState[key];
+      },
+      clear: () => {
+        storageState = {};
+      },
+    });
+  });
+
+  afterEach(() => {
+    mountedWrappers.splice(0).forEach((wrapper) => wrapper.unmount());
+    document.documentElement.classList.remove("samples-column-resizing");
+    vi.unstubAllGlobals();
+  });
+
+  test("resizes a header with pointer drag and persists the resulting width", async () => {
+    storageState["mes.samples.tray-table-column-widths"] = JSON.stringify([150, 210, 220, 170, 100, 500]);
+    const wrapper = mountPanel();
+    const resizer = wrapper.get('[data-testid="samples-trays-column-resizer-taskCode"]');
+
+    expect(wrapper.findAll('[role="separator"]')).toHaveLength(4);
+    expect(wrapper.find('[data-testid="samples-trays-column-resizer-sequence"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="samples-trays-column-resizer-sampleCodes"]').exists()).toBe(false);
+    expect(resizer.attributes("aria-label")).toBe("调整“任务号”列宽");
+    expect(resizer.attributes("aria-valuenow")).toBe("210");
+
+    await resizer.trigger("pointerdown", { button: 0, clientX: 100 });
+    document.dispatchEvent(new MouseEvent("pointermove", { clientX: 150, bubbles: true }));
+    await wrapper.vm.$nextTick();
+
+    expect(resizer.attributes("aria-valuenow")).toBe("260");
+    expect(wrapper.findAll("col")[2].attributes("style")).toContain("15.454545454545453%");
+
+    document.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    const persistedWidths = JSON.parse(storageState["mes.samples.tray-table-column-widths"]);
+    expect(persistedWidths).toEqual([80, 260, 170, 170, 100, 320]);
+    expect(persistedWidths.reduce((total, width) => total + width, 0)).toBe(1100);
+    expect(wrapper.get("table").attributes("style")).toBeUndefined();
+  });
+
+  test("supports keyboard adjustment and double-click reset", async () => {
+    const wrapper = mountPanel();
+    const resizer = wrapper.get('[data-testid="samples-trays-column-resizer-sampleCount"]');
+
+    await resizer.trigger("keydown", { key: "ArrowRight" });
+    expect(resizer.attributes("aria-valuenow")).toBe("110");
+
+    await resizer.trigger("keydown", { key: "ArrowLeft", shiftKey: true });
+    expect(resizer.attributes("aria-valuenow")).toBe("80");
+
+    await resizer.trigger("dblclick");
+    expect(resizer.attributes("aria-valuenow")).toBe("100");
+  });
+
+  test("keeps the divider before sample codes draggable when the adjacent status column is at minimum width", async () => {
+    storageState["mes.samples.tray-table-column-widths"] = JSON.stringify([80, 260, 260, 120, 140, 320]);
+    const wrapper = mountPanel();
+    const resizer = wrapper.get('[data-testid="samples-trays-column-resizer-sampleCount"]');
+
+    await resizer.trigger("pointerdown", { button: 0, clientX: 100 });
+    document.dispatchEvent(new MouseEvent("pointermove", { clientX: 150, bubbles: true }));
+    await wrapper.vm.$nextTick();
+
+    expect(resizer.attributes("aria-valuenow")).toBe("190");
+
+    document.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+    const persistedWidths = JSON.parse(storageState["mes.samples.tray-table-column-widths"]);
+    expect(persistedWidths).toEqual([80, 260, 210, 120, 190, 320]);
+    expect(persistedWidths.reduce((total, width) => total + width, 0)).toBe(1180);
   });
 });

@@ -6,6 +6,7 @@
           <div>
             <h3>托盘信息</h3>
             <div class="muted" data-testid="samples-trays-counter">剩余托盘/总托盘数 {{ trayCounterText }}</div>
+            <div class="muted tray-column-resize-hint">拖动中间列表头分隔线调整列宽，双击恢复默认宽度</div>
           </div>
           <label class="tray-management-filter tray-management-filter-emphasis">
             <span>按任务号筛选</span>
@@ -17,18 +18,46 @@
             </select>
           </label>
         </div>
-        <table class="table samples-trays-table">
-          <thead>
-            <tr>
-              <th>序号</th>
-              <th>任务号</th>
-              <th>托盘编号</th>
-              <th>当前状态</th>
-              <th>样品数</th>
-              <th>样品编号</th>
-            </tr>
-          </thead>
-          <tbody>
+        <div class="samples-trays-table-scroll">
+          <table
+            ref="trayTableRef"
+            class="table samples-trays-table"
+          >
+            <colgroup>
+              <col
+                v-for="(column, index) in trayTableColumns"
+                :key="column.key"
+                :style="{ width: `${(columnWidths[index] / trayTableWidth) * 100}%` }"
+              />
+            </colgroup>
+            <thead>
+              <tr>
+                <th
+                  v-for="(column, index) in trayTableColumns"
+                  :key="column.key"
+                  :class="{ 'is-resizable': isResizableColumn(index) }"
+                >
+                  <span>{{ column.label }}</span>
+                  <span
+                    v-if="isResizableColumn(index)"
+                    class="samples-trays-column-resizer"
+                    :class="{ 'is-active': resizingColumnIndex === index }"
+                    role="separator"
+                    tabindex="0"
+                    aria-orientation="vertical"
+                    :aria-label="`调整“${column.label}”列宽`"
+                    :aria-valuemin="column.minWidth"
+                    :aria-valuemax="MAX_COLUMN_WIDTH"
+                    :aria-valuenow="columnWidths[index]"
+                    :data-testid="`samples-trays-column-resizer-${column.key}`"
+                    @dblclick="resetColumnWidth(index)"
+                    @keydown="resizeColumnWithKeyboard(index, $event)"
+                    @pointerdown="startColumnResize(index, $event)"
+                  />
+                </th>
+              </tr>
+            </thead>
+            <tbody>
             <tr v-if="filteredTrayRows.length === 0">
               <td colspan="6" class="muted">暂无托盘数据</td>
             </tr>
@@ -96,8 +125,9 @@
               </template>
               <td v-else colspan="6" aria-hidden="true">&nbsp;</td>
             </tr>
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
         <AppPagination
           v-if="trayPageCount > 1"
           :current-page="trayPage"
@@ -184,6 +214,168 @@ const TASK_FLOW_STEPS = [
 const SAMPLE_CODES_ELLIPSIS = "...";
 const SAMPLE_CODES_VISIBLE_LIMIT = 5;
 const TRAY_PAGE_SIZE = 5;
+const TRAY_TABLE_COLUMN_STORAGE_KEY = "mes.samples.tray-table-column-widths";
+const MAX_COLUMN_WIDTH = 640;
+const trayTableColumns = [
+  { key: "sequence", label: "序号", defaultWidth: 80, minWidth: 64 },
+  { key: "taskCode", label: "任务号", defaultWidth: 210, minWidth: 140 },
+  { key: "trayCode", label: "托盘编号", defaultWidth: 220, minWidth: 150 },
+  { key: "status", label: "当前状态", defaultWidth: 170, minWidth: 120 },
+  { key: "sampleCount", label: "样品数", defaultWidth: 100, minWidth: 80 },
+  { key: "sampleCodes", label: "样品编号", defaultWidth: 320, minWidth: 180 },
+];
+const FIRST_RESIZABLE_COLUMN_INDEX = 1;
+const LAST_RESIZABLE_COLUMN_INDEX = trayTableColumns.length - 2;
+
+const isResizableColumn = (index) =>
+  index >= FIRST_RESIZABLE_COLUMN_INDEX && index <= LAST_RESIZABLE_COLUMN_INDEX;
+
+const clampColumnWidth = (width, column) =>
+  Math.min(MAX_COLUMN_WIDTH, Math.max(column.minWidth, Math.round(Number(width) || column.defaultWidth)));
+
+const loadColumnWidths = () => {
+  if (typeof window === "undefined") {
+    return trayTableColumns.map((column) => column.defaultWidth);
+  }
+  try {
+    const storedWidths = JSON.parse(window.localStorage.getItem(TRAY_TABLE_COLUMN_STORAGE_KEY) || "[]");
+    if (!Array.isArray(storedWidths) || storedWidths.length !== trayTableColumns.length) {
+      return trayTableColumns.map((column) => column.defaultWidth);
+    }
+    return trayTableColumns.map((column, index) =>
+      isResizableColumn(index) ? clampColumnWidth(storedWidths[index], column) : column.defaultWidth,
+    );
+  } catch {
+    return trayTableColumns.map((column) => column.defaultWidth);
+  }
+};
+
+const trayTableRef = ref(null);
+const columnWidths = ref(loadColumnWidths());
+const resizingColumnIndex = ref(-1);
+const trayTableWidth = computed(() => columnWidths.value.reduce((total, width) => total + width, 0));
+let columnResizeStartX = 0;
+let columnResizeStartWidth = 0;
+
+const persistColumnWidths = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(TRAY_TABLE_COLUMN_STORAGE_KEY, JSON.stringify(columnWidths.value));
+  } catch {
+    // 浏览器禁用本地存储时仍保留当前页面内的列宽调整能力。
+  }
+};
+
+const setColumnWidth = (index, width, persist = false) => {
+  const column = trayTableColumns[index];
+  if (!column || !isResizableColumn(index)) {
+    return;
+  }
+  const nextWidths = [...columnWidths.value];
+  const companionIndices = trayTableColumns
+    .map((_, columnIndex) => columnIndex)
+    .filter((columnIndex) => columnIndex !== index && isResizableColumn(columnIndex))
+    .sort((left, right) => Math.abs(left - index) - Math.abs(right - index));
+  const requestedDelta = clampColumnWidth(width, column) - nextWidths[index];
+  const companionCapacity = companionIndices.reduce((total, companionIndex) => {
+    if (requestedDelta >= 0) {
+      return total + Math.max(0, nextWidths[companionIndex] - trayTableColumns[companionIndex].minWidth);
+    }
+    return total + Math.max(0, MAX_COLUMN_WIDTH - nextWidths[companionIndex]);
+  }, 0);
+  const appliedDelta = requestedDelta >= 0
+    ? Math.min(requestedDelta, companionCapacity)
+    : Math.max(requestedDelta, -companionCapacity);
+  nextWidths[index] += appliedDelta;
+  let remainingCompensation = Math.abs(appliedDelta);
+  companionIndices.forEach((companionIndex) => {
+    if (remainingCompensation <= 0) {
+      return;
+    }
+    const companionColumn = trayTableColumns[companionIndex];
+    const availableWidth = appliedDelta >= 0
+      ? nextWidths[companionIndex] - companionColumn.minWidth
+      : MAX_COLUMN_WIDTH - nextWidths[companionIndex];
+    const compensation = Math.min(remainingCompensation, Math.max(0, availableWidth));
+    nextWidths[companionIndex] += appliedDelta >= 0 ? -compensation : compensation;
+    remainingCompensation -= compensation;
+  });
+  columnWidths.value = nextWidths;
+  if (persist) {
+    persistColumnWidths();
+  }
+};
+
+const captureRenderedColumnWidths = () => {
+  const headerCells = trayTableRef.value?.querySelectorAll("thead th");
+  if (!headerCells || headerCells.length !== trayTableColumns.length) {
+    return;
+  }
+  const measuredWidths = Array.from(headerCells, (cell) => Math.round(cell.getBoundingClientRect().width));
+  if (measuredWidths.every((width) => width > 0)) {
+    columnWidths.value = measuredWidths.map((width, index) => clampColumnWidth(width, trayTableColumns[index]));
+  }
+};
+
+const finishColumnResize = () => {
+  if (resizingColumnIndex.value < 0) {
+    return;
+  }
+  resizingColumnIndex.value = -1;
+  document.removeEventListener("pointermove", handleColumnResize);
+  document.removeEventListener("pointerup", finishColumnResize);
+  document.removeEventListener("pointercancel", finishColumnResize);
+  document.documentElement.classList.remove("samples-column-resizing");
+  persistColumnWidths();
+};
+
+const handleColumnResize = (event) => {
+  if (resizingColumnIndex.value < 0) {
+    return;
+  }
+  event.preventDefault();
+  setColumnWidth(
+    resizingColumnIndex.value,
+    columnResizeStartWidth + Number(event.clientX - columnResizeStartX),
+  );
+};
+
+const startColumnResize = (index, event) => {
+  if (event.button !== 0) {
+    return;
+  }
+  event.preventDefault();
+  captureRenderedColumnWidths();
+  resizingColumnIndex.value = index;
+  columnResizeStartX = Number(event.clientX) || 0;
+  columnResizeStartWidth = columnWidths.value[index];
+  document.documentElement.classList.add("samples-column-resizing");
+  document.addEventListener("pointermove", handleColumnResize, { passive: false });
+  document.addEventListener("pointerup", finishColumnResize);
+  document.addEventListener("pointercancel", finishColumnResize);
+};
+
+const resizeColumnWithKeyboard = (index, event) => {
+  const step = event.shiftKey ? 30 : 10;
+  const keyWidths = {
+    ArrowLeft: columnWidths.value[index] - step,
+    ArrowRight: columnWidths.value[index] + step,
+    Home: trayTableColumns[index].minWidth,
+    End: MAX_COLUMN_WIDTH,
+  };
+  if (!Object.prototype.hasOwnProperty.call(keyWidths, event.key)) {
+    return;
+  }
+  event.preventDefault();
+  setColumnWidth(index, keyWidths[event.key], true);
+};
+
+const resetColumnWidth = (index) => {
+  setColumnWidth(index, trayTableColumns[index].defaultWidth, true);
+};
+
 const formatFlowTime = (value) => {
   const normalized = String(value || "").trim();
   if (!normalized) {
@@ -304,6 +496,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  finishColumnResize();
   document.removeEventListener("click", closeSampleCodesPopoverOnOutsideClick);
 });
 

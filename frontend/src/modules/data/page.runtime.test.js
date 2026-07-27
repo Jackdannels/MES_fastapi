@@ -1,94 +1,80 @@
 import { mount } from "@vue/test-utils";
-import { computed, reactive, ref } from "vue";
-import { describe, expect, test, vi } from "vitest";
+import { computed, ref } from "vue";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import DataPage from "./page.vue";
 
-const validateReportMock = vi.fn();
-const generateReportMock = vi.fn();
-const openDataDrawerMock = vi.fn();
-const closeDataDrawerMock = vi.fn();
-const closeReportModalMock = vi.fn();
-const openReportModalMock = vi.fn();
-
-const dataState = reactive({
-  dataDrawerOpen: false,
-  reportModalOpen: false,
-});
+const saveSettingsMock = vi.fn();
+const retryFailedMock = vi.fn();
+const retryAllFailedMock = vi.fn();
+const savePath = ref("C:\\Users\\tester\\Desktop\\MES试验数据");
+const failedExports = ref([]);
 
 vi.mock("./useDataPage", () => ({
   useDataPage: () => ({
-    closeDataDrawer: closeDataDrawerMock,
-    closeReportModal: closeReportModalMock,
-    dataDrawerOpen: computed(() => dataState.dataDrawerOpen),
-    dataRows: computed(() => [
-      {
-        device: "HPLC-01",
-        id: "stream-1",
-        lastPacket: "2026-03-12 10:00",
-        quality: "98.8",
-        status: "采集中",
-        statusClass: "status running",
-        taskCode: "TASK-001",
-      },
-    ]),
-    generateReport: generateReportMock,
-    metrics: computed(() => ({
-      reportCount: 1,
-      streamCount: 2,
-      validationCount: 1,
-    })),
-    openDataDrawer: openDataDrawerMock,
-    openReportModal: openReportModalMock,
-    reportForm: ref({
-      rangeEnd: "",
-      rangeStart: "",
-      remark: "",
-      rule: "完整性校验",
-      taskCode: "",
-      template: "重金属检测固定模板",
-    }),
-    reportModalOpen: computed(() => dataState.reportModalOpen),
-    selectedRow: computed(() => ({
-      quality: "98.8%",
-      status: "采集中",
-      taskCode: "TASK-001",
-    })),
-    validateReport: validateReportMock,
+    defaultPath: ref("C:\\Users\\tester\\Desktop\\MES试验数据"),
+    exportsError: ref(""),
+    exportsLoading: ref(false),
+    failedCount: computed(() => failedExports.value.length),
+    failedExports,
+    isRetrying: () => false,
+    pathStatusClass: computed(() => ({ "is-writable": true })),
+    pathStatusLabel: ref("目录可写"),
+    retryAllFailed: retryAllFailedMock,
+    retryFailed: retryFailedMock,
+    retryingAll: ref(false),
+    savePath,
+    saveSettings: saveSettingsMock,
+    settingsError: ref(""),
+    settingsLoading: ref(false),
+    settingsSaving: ref(false),
+    settingsSuccess: ref(""),
   }),
 }));
 
 describe("DataPage runtime", () => {
-  test("renders stream rows and opens the report modal from Vue state", async () => {
-    const wrapper = mount(DataPage);
-
-    expect(wrapper.text()).toContain("TASK-001");
-    expect(wrapper.text()).toContain("HPLC-01");
-
-    dataState.reportModalOpen = true;
-    await wrapper.vm.$nextTick();
-
-    expect(wrapper.find(".modal.is-open").exists()).toBe(true);
-    expect(wrapper.text()).toContain("报告预览");
+  beforeEach(() => {
+    failedExports.value = [];
+    savePath.value = "C:\\Users\\tester\\Desktop\\MES试验数据";
+    vi.clearAllMocks();
   });
 
-  test("delegates report validation and opens the detail drawer from Vue state", async () => {
+  test("renders the save directory and delegates save-and-check", async () => {
     const wrapper = mount(DataPage);
 
-    await wrapper.get('[data-testid="data-validate"]').trigger("click");
-    await wrapper.get('[data-testid="open-data-drawer-0"]').trigger("click");
+    expect(wrapper.text()).toContain("试验数据保存设置");
+    expect(wrapper.get('[data-testid="data-save-path"]').element.value).toBe("C:\\Users\\tester\\Desktop\\MES试验数据");
+    expect(wrapper.get('[data-testid="data-path-status"]').text()).toContain("目录可写");
+    expect(wrapper.text()).not.toContain("采集监控");
+    expect(wrapper.text()).not.toContain("数据校验与报告");
 
-    expect(validateReportMock).toHaveBeenCalledTimes(1);
-    expect(openDataDrawerMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        taskCode: "TASK-001",
-      })
-    );
+    await wrapper.get("form").trigger("submit");
+    expect(saveSettingsMock).toHaveBeenCalledTimes(1);
+  });
 
-    dataState.dataDrawerOpen = true;
-    await wrapper.vm.$nextTick();
+  test("shows failed exports and delegates individual and bulk retries", async () => {
+    failedExports.value = [{
+      axisCode: "X+",
+      endedAt: "2026-07-27T10:00:00",
+      error: "目录无写入权限",
+      experimentCode: "VIBRATION",
+      experimentName: "振动试验",
+      exportKey: "run-1:X+:SP-001",
+      sampleCode: "SP-001",
+      startedAt: "2026-07-27T09:40:00",
+      taskCode: "SYLU-2026-07-029",
+    }];
+    const wrapper = mount(DataPage);
 
-    expect(wrapper.find(".drawer.is-open").exists()).toBe(true);
-    expect(wrapper.text()).toContain("数据明细");
+    expect(wrapper.text()).toContain("SYLU-2026-07-029");
+    expect(wrapper.text()).toContain("SP-001");
+    expect(wrapper.text()).toContain("X+轴向");
+    expect(wrapper.text()).toContain("目录无写入权限");
+
+    await wrapper.get('[data-testid="data-retry-run-1:X+:SP-001"]').trigger("click");
+    await wrapper.get('[data-testid="data-retry-all"]').trigger("click");
+
+    expect(retryFailedMock).toHaveBeenCalledWith("run-1:X+:SP-001");
+    expect(retryAllFailedMock).toHaveBeenCalledTimes(1);
   });
 });

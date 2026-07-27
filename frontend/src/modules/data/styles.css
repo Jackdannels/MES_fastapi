@@ -1,30 +1,268 @@
-/* 试验数据页的页面布局、报告预览间距和详情面板样式。 */
-/* 页面采用纵向网格组织各个数据区块。 */
+/* 试验数据页仅保留自动归档设置与失败恢复，避免旧采集面板造成误导。 */
 .data-page {
   display: grid;
   gap: 22px;
 }
 
-/* 复用公共 section 时去掉默认外边距，保持页内节奏一致。 */
-.data-page > .section {
-  margin-top: 0;
-}
-
-/* 工具栏和表格在数据页内做轻量定制。 */
-.data-page .toolbar {
-  justify-content: space-between;
-}
-
-.data-page .table {
-  table-layout: fixed;
-}
-
-.data-monitor-card {
-  overflow: hidden;
-}
-
-/* 报告预览卡片内部使用网格堆叠内容。 */
-.data-report-card {
+.data-settings-card,
+.data-failures-card {
   display: grid;
-  gap: 16px;
+  gap: 18px;
+  min-width: 0;
+}
+
+.data-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.data-section-heading h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.data-eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.data-section-copy {
+  max-width: 720px;
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.data-path-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.data-path-status__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.data-path-status.is-writable {
+  border-color: rgba(var(--industrial-accent-rgb), 0.42);
+  background: rgba(var(--industrial-accent-rgb), 0.1);
+  color: var(--accent);
+}
+
+.data-path-status.is-error {
+  border-color: rgba(255, 107, 90, 0.42);
+  background: rgba(255, 107, 90, 0.1);
+  color: var(--danger);
+}
+
+.data-path-status.is-checking .data-path-status__dot {
+  animation: data-status-pulse 1s ease-in-out infinite;
+}
+
+.data-path-form,
+.data-path-field {
+  min-width: 0;
+}
+
+.data-path-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.data-path-control input {
+  min-height: 46px;
+  padding-inline: 14px;
+  font-family: var(--font-code);
+  font-size: 14px;
+}
+
+.data-path-control input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.data-save-button {
+  min-height: 46px;
+  min-width: 150px;
+}
+
+.data-path-helper {
+  margin-bottom: 0;
+  line-height: 1.6;
+}
+
+.data-code {
+  font-family: var(--font-code);
+  overflow-wrap: anywhere;
+}
+
+.data-archive-guide {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.data-guide-item {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: rgba(var(--industrial-accent-rgb), 0.045);
+}
+
+.data-guide-item span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.data-guide-item code {
+  color: var(--text);
+  font-family: var(--font-code);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.data-failures-heading {
+  align-items: center;
+}
+
+.data-failures-heading .action-btn {
+  min-height: 44px;
+}
+
+.data-empty-state {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  min-height: 150px;
+  padding: 24px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-panel);
+  color: var(--muted);
+  text-align: center;
+}
+
+.data-empty-state--success strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.data-empty-state__mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 4px;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.46);
+  border-radius: 50%;
+  background: rgba(var(--industrial-accent-rgb), 0.1);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.data-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+}
+
+.data-failures-table {
+  min-width: 900px;
+}
+
+.data-failures-table th:nth-child(1) { width: 19%; }
+.data-failures-table th:nth-child(2) { width: 13%; }
+.data-failures-table th:nth-child(3) { width: 9%; }
+.data-failures-table th:nth-child(4) { width: 20%; }
+.data-failures-table th:nth-child(5) { width: 27%; }
+.data-failures-table th:nth-child(6) { width: 12%; }
+
+.data-failures-table td:first-child {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+}
+
+.data-failures-table td:first-child span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.data-error-cell {
+  color: #ff9d94 !important;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  text-align: left !important;
+}
+
+.data-retry-button {
+  min-height: 44px;
+  padding-inline: 8px;
+}
+
+.data-retry-button:disabled {
+  cursor: wait;
+  opacity: 0.52;
+}
+
+@keyframes data-status-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .data-path-status.is-checking .data-path-status__dot {
+    animation: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .data-section-heading,
+  .data-failures-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .data-path-status {
+    align-self: flex-start;
+  }
+
+  .data-path-control {
+    grid-template-columns: 1fr;
+  }
+
+  .data-save-button,
+  .data-failures-heading .action-btn {
+    width: 100%;
+  }
+
+  .data-archive-guide {
+    grid-template-columns: 1fr;
+  }
 }

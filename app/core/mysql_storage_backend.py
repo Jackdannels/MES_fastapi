@@ -167,6 +167,8 @@ SNAPSHOT_STORAGE_KEYS = (
     "mes.lims_outbox",
     "mes.maintenance_records",
     "mes.staging_events",
+    "mes.test_data_settings",
+    "mes.test_data_exports",
     STORAGE_META_KEY,
 )
 

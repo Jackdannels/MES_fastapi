@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime
+import logging
 from threading import Lock
 from typing import Any
 
@@ -28,6 +29,7 @@ from app.services.laboratory_operations import (
     write_laboratory_updates,
 )
 from app.services.laboratory_start import start_storage_laboratory_experiment
+from app.services.test_data_reports import archive_completion_reports
 from app.services.laboratory_withdrawal import (
     COMPLETED_EXPERIMENT_STATUSES,
     completed_axis_tray_codes,
@@ -43,6 +45,9 @@ from app.services.laboratory_snapshot_adapter import (
     snapshot_from_storage_payload,
     start_updates,
 )
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/laboratory", tags=["laboratory"])
 LABORATORY_WITHDRAW_LOCK = Lock()
@@ -772,11 +777,39 @@ def complete_current_experiment(
                     lab_name=resolve_lab_name(snapshot, normalized_task_code, normalized_experiment_code),
                     ended_at=completed_at,
                 )
-            return {
-                "ok": True,
-                "message": f"{normalized_task_code} / {current_experiment_name} 已完成",
-                **result,
+        try:
+            report_archive = archive_completion_reports(
+                snapshot=snapshot,
+                result=result,
+                task_code=normalized_task_code,
+                experiment_code=normalized_experiment_code,
+                run_no=request.run_no,
+                axis_code=request.axis_code,
+                completed_at=completed_at,
+            )
+        except Exception as exc:  # Physical completion must remain committed if report IO fails.
+            logger.exception(
+                "Failed to archive completion reports for task=%s experiment=%s run=%s axis=%s",
+                normalized_task_code,
+                normalized_experiment_code,
+                request.run_no,
+                request.axis_code,
+            )
+            report_archive = {
+                "ok": False,
+                "attempted": 0,
+                "succeeded": 0,
+                "skipped": 0,
+                "failed": 1,
+                "items": [],
+                "error": str(exc),
             }
+        return {
+            "ok": True,
+            "message": f"{normalized_task_code} / {current_experiment_name} 已完成",
+            **result,
+            "reportArchive": report_archive,
+        }
 
 
 @router.post("/tasks/{task_code}/experiments/{experiment_code}/withdraw-current")

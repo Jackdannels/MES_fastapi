@@ -48,6 +48,19 @@ def build_client(monkeypatch, payloads, *, bypass_completion_interface_guard=Tru
 
     storage = FakeLaboratoryStorage(payloads)
     monkeypatch.setattr(laboratory_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(
+        laboratory_route,
+        "archive_completion_reports",
+        lambda **_kwargs: {
+            "ok": True,
+            "attempted": 0,
+            "succeeded": 0,
+            "skipped": 0,
+            "failed": 0,
+            "items": [],
+            "error": "",
+        },
+    )
     if bypass_completion_interface_guard:
         monkeypatch.setattr(laboratory_route, "require_hostless_completion_laboratory", lambda **_kwargs: None)
 
@@ -172,6 +185,107 @@ def test_laboratory_complete_experiment_updates_storage_through_common_endpoint(
     ]
 
 
+def test_laboratory_completion_archives_after_storage_commit_and_returns_status(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    monkeypatch.setattr(laboratory_route, "now_business_text", lambda: "2026-07-27 10:00:00")
+    sample = sample_with_history("实验进行中", "盐雾试验室", [])
+    payloads = base_payloads(
+        [sample],
+        experiment_trays=[{"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-501"}],
+    )
+    payloads["mes.experiment_runs"] = [
+        {
+            "run_no": "RUN-501",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "status": "实验进行中",
+            "started_at": "2026-07-27 09:40:00",
+        }
+    ]
+    client, storage = build_client(monkeypatch, payloads)
+    archive_calls = []
+
+    def fake_archive(**kwargs):
+        assert storage.read("mes.experiment_runs")[0]["status"] == "实验已完成"
+        archive_calls.append(kwargs)
+        return {
+            "ok": True,
+            "attempted": 1,
+            "succeeded": 1,
+            "skipped": 0,
+            "failed": 0,
+            "items": [],
+            "error": "",
+        }
+
+    monkeypatch.setattr(laboratory_route, "archive_completion_reports", fake_archive)
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-A/complete",
+        json={"runNo": "RUN-501", "trayCodes": ["TP-501"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reportArchive"] == {
+        "ok": True,
+        "attempted": 1,
+        "succeeded": 1,
+        "skipped": 0,
+        "failed": 0,
+        "items": [],
+        "error": "",
+    }
+    assert len(archive_calls) == 1
+    assert archive_calls[0]["snapshot"]["experiment_runs"][0]["status"] == "实验进行中"
+    assert archive_calls[0]["task_code"] == "TASK-501"
+    assert archive_calls[0]["experiment_code"] == "EXP-A"
+    assert archive_calls[0]["run_no"] == "RUN-501"
+    assert archive_calls[0]["axis_code"] == ""
+    assert archive_calls[0]["completed_at"] == "2026-07-27 10:00:00"
+
+
+def test_laboratory_completion_report_failure_does_not_roll_back_completion(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    sample = sample_with_history("实验进行中", "盐雾试验室", [])
+    payloads = base_payloads(
+        [sample],
+        experiment_trays=[{"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-501"}],
+    )
+    payloads["mes.experiment_runs"] = [
+        {
+            "run_no": "RUN-501",
+            "task_code": "TASK-501",
+            "experiment_code": "EXP-A",
+            "status": "实验进行中",
+        }
+    ]
+    client, storage = build_client(monkeypatch, payloads)
+    monkeypatch.setattr(
+        laboratory_route,
+        "archive_completion_reports",
+        lambda **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-A/complete",
+        json={"runNo": "RUN-501", "trayCodes": ["TP-501"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reportArchive"] == {
+        "ok": False,
+        "attempted": 0,
+        "succeeded": 0,
+        "skipped": 0,
+        "failed": 1,
+        "items": [],
+        "error": "disk full",
+    }
+    assert storage.read("mes.experiment_runs")[0]["status"] == "实验已完成"
+
+
 def test_laboratory_axis_complete_passes_sub_experiment_code_to_shared_service(monkeypatch):
     from app.api.routes import laboratory as laboratory_route
 
@@ -190,6 +304,7 @@ def test_laboratory_axis_complete_passes_sub_experiment_code_to_shared_service(m
     ]
     client, storage = build_client(monkeypatch, payloads)
     captured = {}
+    archive_calls = []
 
     def fake_complete_axis(snapshot, **kwargs):
         captured.update(kwargs)
@@ -200,9 +315,28 @@ def test_laboratory_axis_complete_passes_sub_experiment_code_to_shared_service(m
             "experimentRuns": snapshot["experiment_runs"],
             "experimentRunTrays": snapshot["experiment_run_trays"],
             "experimentRunSteps": snapshot.get("experiment_run_steps", []),
+            "allAxesCompleted": True,
         }
 
     monkeypatch.setattr(laboratory_route, "complete_storage_laboratory_axis_step", fake_complete_axis)
+
+    def fake_archive(**kwargs):
+        archive_calls.append(kwargs)
+        return {
+            "ok": True,
+            "attempted": 1,
+            "succeeded": 1,
+            "skipped": 0,
+            "failed": 0,
+            "items": [],
+            "error": "",
+        }
+
+    monkeypatch.setattr(
+        laboratory_route,
+        "archive_completion_reports",
+        fake_archive,
+    )
 
     response = client.post(
         "/api/laboratory/tasks/TASK-501/experiments/EXP-C/complete",
@@ -217,6 +351,9 @@ def test_laboratory_axis_complete_passes_sub_experiment_code_to_shared_service(m
     assert response.status_code == 200
     assert captured["sub_experiment_code"] == "EXP-C-AXIS-Z"
     assert captured["axis_code"] == "z+"
+    assert len(archive_calls) == 1
+    assert archive_calls[0]["axis_code"] == "z+"
+    assert response.json()["reportArchive"]["ok"] is True
     assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验进行中"
 
 
