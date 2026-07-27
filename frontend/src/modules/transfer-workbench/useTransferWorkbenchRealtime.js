@@ -10,6 +10,7 @@ function useTransferWorkbenchRealtime({
   refreshTransferWorkspaceAfterTrayChange,
   sampleCodesModalVisible,
   selectedTaskId,
+  storageOperationPending,
   viewMode,
 }) {
   let hasPendingSamplesRefresh = false;
@@ -21,6 +22,7 @@ function useTransferWorkbenchRealtime({
     || errorSample.state.open
     || errorSample.state.loading
     || errorSample.state.submitting
+    || storageOperationPending.value
     || (viewMode.value === "detail" && selectedTaskId.value && !allocationReadOnly.value)
   );
 

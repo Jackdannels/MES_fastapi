@@ -730,7 +730,7 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.text()).toContain("SYLU-2026-03-102-TP-001已撤回出库");
     expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("到货");
     expect(wrapper.find('[data-testid="tray-error-sample-withdraw"]').exists()).toBe(false);
-    await wrapper.get('[data-testid="tray-error-sample-close"]').trigger("click");
+    await wrapper.get('[data-testid="tray-error-sample-dialog"] .modal-close').trigger("click");
     await settle(wrapper);
 
     expect(fetch.mock.calls.filter(([input]) => String(input).includes("/api/transfer-area/bootstrap"))).toHaveLength(3);
@@ -2481,5 +2481,141 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.text()).not.toContain("该任务已有托盘开始实验，不能重新分配。");
     expect(wrapper.get(".transfer-print-all-btn").attributes("disabled")).toBeUndefined();
     expect(wrapper.get(".transfer-tray-actions--top .action-btn:nth-child(3)").attributes("disabled")).toBeDefined();
+  });
+
+  test("confirmation locks conflicting controls and reports save and storage phases", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const workspacePayload = createWorkspacePayload();
+    const savedWorkspace = { ...workspacePayload, allocationSaved: true };
+    const confirmedWorkspace = {
+      ...savedWorkspace,
+      task: {
+        ...savedWorkspace.task,
+        taskStatus: "到货",
+        taskProgress: "已确认入库",
+      },
+      assignedTrays: savedWorkspace.assignedTrays.map((tray) => ({
+        ...tray,
+        trayStatus: "到货",
+        samples: tray.samples.map((sample) => ({ ...sample, sampleStatus: "到货" })),
+      })),
+    };
+    let resolveAllocation;
+    let resolveConfirmation;
+    const allocationResponse = new Promise((resolve) => {
+      resolveAllocation = resolve;
+    });
+    const confirmationResponse = new Promise((resolve) => {
+      resolveConfirmation = resolve;
+    });
+
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/allocate") && options.method === "POST") {
+        return allocationResponse;
+      }
+      if (url.includes("/api/transfer-area/tasks/101/confirm-storage") && options.method === "POST") {
+        return confirmationResponse;
+      }
+      throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, { props: { mode: "handover" } });
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="transfer-confirm-storage"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-storage-progress"]').text()).toContain("正在保存托盘分配（1/2）");
+    expect(wrapper.get('[data-testid="transfer-confirm-storage"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="transfer-reset-workspace"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="transfer-assign-all-experiments"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="handover-nav-dispatch"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get(".transfer-detail-shell__top .action-btn").attributes("disabled")).toBeDefined();
+
+    await wrapper.get('[data-testid="transfer-confirm-storage"]').trigger("click");
+    expect(fetch.mock.calls.filter(([input]) => String(input).includes("/allocate"))).toHaveLength(1);
+    expect(fetch.mock.calls.filter(([input]) => String(input).includes("/confirm-storage"))).toHaveLength(0);
+
+    resolveAllocation({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, message: "托盘分配已保存", workspace: savedWorkspace }),
+    });
+    await settle(wrapper);
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-storage-progress"]').text()).toContain("正在确认入库（2/2）");
+    expect(fetch.mock.calls.filter(([input]) => String(input).includes("/confirm-storage"))).toHaveLength(1);
+    expect(wrapper.get('[data-testid="transfer-tray-limit-input"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"] .sample-tray-sample-tag').attributes("disabled")).toBeDefined();
+
+    resolveConfirmation({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, message: "任务已确认入库", workspace: confirmedWorkspace }),
+    });
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="transfer-storage-progress"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="transfer-detail-feedback"]').text()).toContain("任务已确认入库");
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("托盘状态 到货");
+  });
+
+  test("confirmation failure releases the operation lock", async () => {
+    const bootstrapPayload = createBootstrapPayload();
+    const savedWorkspace = { ...createWorkspacePayload(), allocationSaved: true };
+    let resolveConfirmation;
+    const confirmationResponse = new Promise((resolve) => {
+      resolveConfirmation = resolve;
+    });
+
+    vi.stubGlobal("fetch", vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => bootstrapPayload };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => savedWorkspace };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/confirm-storage") && options.method === "POST") {
+        return confirmationResponse;
+      }
+      throw new Error(`Unhandled fetch: ${url} ${options.method || "GET"}`);
+    }));
+
+    const wrapper = mount(TransferWorkbench, { props: { mode: "handover" } });
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="transfer-print-barcodes"]').attributes("disabled")).toBeUndefined();
+    await wrapper.get('[data-testid="transfer-confirm-storage"]').trigger("click");
+    await settle(wrapper);
+    expect(wrapper.get('[data-testid="transfer-storage-progress"]').text()).toContain("正在确认入库");
+    expect(wrapper.get('[data-testid="transfer-print-barcodes"]').attributes("disabled")).toBeDefined();
+
+    resolveConfirmation({
+      ok: false,
+      status: 500,
+      json: async () => ({ message: "确认入库失败，请稍后重试" }),
+    });
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-testid="transfer-storage-progress"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="transfer-confirm-storage"]').attributes("disabled")).toBeUndefined();
+    expect(wrapper.get('[data-testid="transfer-print-barcodes"]').attributes("disabled")).toBeUndefined();
+    expect(wrapper.get('[data-testid="transfer-detail-feedback"]').text()).toContain("确认入库失败，请稍后重试");
+    expect(wrapper.get('[data-testid="transfer-detail-feedback"]').classes()).toContain("app-feedback--error");
   });
 });

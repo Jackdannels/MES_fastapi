@@ -47,7 +47,8 @@ def load_samples(
     cursor.execute(
         f"""
         SELECT ti.sample_id, t.task_no, tr.tray_no AS tray_code, s.sample_no AS sample_code, ti.quantity, ti.status,
-               tr.test_state, tr.tray_status, tr.fixture_ready, ti.created_at, ti.updated_at
+               tr.test_state, tr.tray_status, tr.fixture_ready, tr.target_sub_experiment_code,
+               ti.created_at, ti.updated_at
         FROM biz_tray_item ti
         JOIN biz_tray tr ON tr.tray_id = ti.tray_id
         JOIN biz_sample s ON s.sample_id = ti.sample_id

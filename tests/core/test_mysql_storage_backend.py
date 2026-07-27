@@ -630,6 +630,8 @@ def test_ensure_schema_extensions_adds_axis_schedule_run_and_step_storage(monkey
                 self._result = None
             elif "SHOW COLUMNS FROM biz_schedule LIKE 'sub_experiment_code'" in statement:
                 self._result = None
+            elif "SHOW COLUMNS FROM biz_tray LIKE 'target_sub_experiment_code'" in statement:
+                self._result = None
             elif "SHOW COLUMNS FROM biz_experiment LIKE 'axis_codes_json'" in statement:
                 self._result = None
             elif "SHOW COLUMNS FROM biz_experiment_run LIKE 'axis_codes_json'" in statement:
@@ -684,6 +686,10 @@ def test_ensure_schema_extensions_adds_axis_schedule_run_and_step_storage(monkey
     assert any("ALTER TABLE biz_schedule ADD COLUMN axis_codes_json JSON NULL" in statement for statement in statements)
     assert any("ALTER TABLE biz_schedule ADD COLUMN axis_batch_no VARCHAR(50) NULL" in statement for statement in statements)
     assert any("ALTER TABLE biz_schedule ADD COLUMN sub_experiment_code VARCHAR(80) NULL" in statement for statement in statements)
+    assert any(
+        "ALTER TABLE biz_tray ADD COLUMN target_sub_experiment_code VARCHAR(80) NULL" in statement
+        for statement in statements
+    )
     assert any("ALTER TABLE biz_experiment ADD COLUMN axis_codes_json JSON NULL" in statement for statement in statements)
     assert any("ALTER TABLE biz_experiment_run ADD COLUMN axis_codes_json JSON NULL" in statement for statement in statements)
     assert any("ALTER TABLE biz_experiment_run ADD COLUMN axis_batch_no VARCHAR(50) NULL" in statement for statement in statements)
@@ -2240,6 +2246,99 @@ def test_build_storage_sample_item_uses_latest_lab_operation_as_tray_target() ->
     assert storage_item["trays"][0]["target_experiment_code"] == "SYLU-2026-07-001-B"
 
 
+def test_build_storage_sample_item_does_not_pair_latest_lab_with_stale_staging_experiment() -> None:
+    task_code = "SYLU-2026-07-029"
+    tray_code = f"{task_code}-TP-001"
+    impact_experiment_code = f"{task_code}-A"
+    comprehensive_experiment_code = f"{task_code}-C"
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 160,
+            "sample_no": f"{task_code}-SP-016",
+            "task_no": task_code,
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "四综合实验室",
+            "sample_status": "已到达实验室",
+            "flow_status": "已到达实验室",
+            "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+            "created_at": "2026-07-26 12:06:43",
+            "updated_at": "2026-07-26 12:42:11",
+        },
+        tray_rows=[
+            {
+                "id": tray_code,
+                "tray_code": tray_code,
+                "sample_code": f"{task_code}-SP-016",
+                "quantity": 1,
+                "status": "已到达实验室",
+                "created_at": "2026-07-26 12:06:52",
+                "updated_at": "2026-07-26 12:41:21",
+            }
+        ],
+        event_rows=[
+            {
+                "event_id": 6076331,
+                "event_time": "2026-07-26 12:41:21",
+                "action_type": "任务比对",
+                "location_desc": "四综合实验室",
+                "sample_status": "已到达实验室",
+                "detail": f"{task_code} / 四综合试验 / 已到达实验室 / 托盘：{tray_code}",
+            },
+            {
+                "event_id": 6076337,
+                "event_time": "2026-07-26 12:16:50",
+                "action_type": "暂存间扫码出库",
+                "location_desc": "冲击二室",
+                "sample_status": "送至实验室",
+                "detail": f"{tray_code} 送至 冲击二室",
+            },
+        ],
+        staging_event_rows=[
+            {
+                "tray_code": tray_code,
+                "task_code": task_code,
+                "room": "staging",
+                "action": "stock_out",
+                "time": "2026-07-26 12:16:50",
+                "target_lab": "冲击二室",
+                "target_experiment_code": impact_experiment_code,
+            }
+        ],
+        schedules=[
+            {
+                "task_code": task_code,
+                "experiment_code": impact_experiment_code,
+                "device": "冲击二室",
+            },
+            {
+                "task_code": task_code,
+                "experiment_code": comprehensive_experiment_code,
+                "device": "四综合实验室",
+            },
+        ],
+        experiment_trays=[
+            {
+                "task_code": task_code,
+                "experiment_code": impact_experiment_code,
+                "tray_code": tray_code,
+            },
+            {
+                "task_code": task_code,
+                "experiment_code": comprehensive_experiment_code,
+                "tray_code": tray_code,
+            },
+        ],
+    )
+
+    assert storage_item["trays"][0]["target_lab"] == "四综合实验室"
+    assert storage_item["trays"][0]["target_experiment_code"] == comprehensive_experiment_code
+
+
 def test_build_storage_sample_item_keeps_staging_dispatch_pair_after_other_axis_partial_completion() -> None:
     storage_item = build_storage_sample_item(
         {
@@ -2893,6 +2992,82 @@ def test_load_samples_marks_task_trays_fixture_ready_from_tray_column() -> None:
     assert samples[0]["trays"][0]["fixtureReady"] is True
 
 
+def test_load_samples_preserves_compared_axis_target_from_tray_column() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    task_code = "SYLU-2026-07-029"
+    experiment_code = f"{task_code}-A"
+    sub_experiment_code = f"{experiment_code}-AXIS-001"
+
+    class _Cursor:
+        def __init__(self) -> None:
+            self._result = []
+
+        def execute(self, statement, params=None):
+            normalized = " ".join(str(statement).split())
+            if "FROM biz_sample s" in normalized:
+                self._result = [{
+                    "sample_id": 102,
+                    "sample_no": f"{task_code}-SP-001",
+                    "task_no": task_code,
+                    "sample_type": "",
+                    "batch_no": "",
+                    "arrival_time": None,
+                    "quantity": 1,
+                    "storage_condition": "",
+                    "barcode_no": "",
+                    "location_desc": "振动一室",
+                    "sample_status": "已到达实验室",
+                    "flow_status": "已到达实验室",
+                    "remark": f"{STORAGE_MARKER}:SAMPLE:{{\"owner\":\"\",\"remark\":\"\"}}",
+                    "created_at": "2026-07-26 13:00:00",
+                    "updated_at": "2026-07-26 13:07:57",
+                }]
+            elif "FROM biz_tray_item" in normalized:
+                assert "tr.target_sub_experiment_code" in normalized
+                self._result = [{
+                    "sample_id": 102,
+                    "task_no": task_code,
+                    "tray_code": f"{task_code}-TP-001",
+                    "sample_code": f"{task_code}-SP-001",
+                    "quantity": 1,
+                    "status": "已到达实验室",
+                    "test_state": "已到达实验室",
+                    "tray_status": "ACTIVE",
+                    "fixture_ready": 0,
+                    "target_sub_experiment_code": sub_experiment_code,
+                    "created_at": "2026-07-26 13:00:00",
+                    "updated_at": "2026-07-26 13:07:57",
+                }]
+            elif "FROM biz_sample_event" in normalized:
+                self._result = []
+            else:
+                self._result = []
+
+        def fetchall(self):
+            return self._result
+
+    samples = backend._load_samples(
+        _Cursor(),
+        schedules=[{
+            "id": "schedule-axis-001",
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "sub_experiment_code": sub_experiment_code,
+            "device": "振动一室",
+        }],
+        experiment_trays=[{
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "tray_code": f"{task_code}-TP-001",
+        }],
+    )
+
+    assert samples[0]["trays"][0]["target_sub_experiment_code"] == sub_experiment_code
+
+
 def test_load_samples_reads_fixture_ready_per_tray_column() -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -3327,6 +3502,72 @@ def test_replace_samples_persists_fixture_ready_on_tray() -> None:
     assert tray_upsert_rows[0]["tray_no"] == "SYLU-2026-03-003-TP-001"
     assert tray_upsert_rows[0]["fixture_ready"] == 1
     assert not any("biz_experiment_event" in sql for sql, _params in cursor.execute_calls)
+
+
+def test_replace_samples_persists_compared_axis_target_on_tray() -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    task_code = "SYLU-2026-07-029"
+    experiment_code = f"{task_code}-A"
+    sub_experiment_code = f"{experiment_code}-AXIS-001"
+
+    class _CaptureCursor:
+        def __init__(self) -> None:
+            self._result = []
+            self.executemany_calls = []
+
+        def execute(self, sql, params=None):
+            statement = " ".join(str(sql).split())
+            if "SELECT task_id, task_no FROM biz_task" in statement:
+                self._result = [{"task_id": 1, "task_no": task_code}]
+            elif "SELECT lab_id, lab_code, lab_name FROM md_lab" in statement:
+                self._result = [{"lab_id": 8, "lab_code": "LAB_VIBRATION_1", "lab_name": "振动一室"}]
+            elif "SELECT sample_id, sample_no, task_id FROM biz_sample" in statement:
+                self._result = [{"sample_id": 11, "sample_no": f"{task_code}-SP-001", "task_id": 1}]
+            elif "SELECT tray_id, tray_no FROM biz_tray" in statement:
+                self._result = [{"tray_id": 21, "tray_no": f"{task_code}-TP-001"}]
+            else:
+                self._result = []
+
+        def executemany(self, sql, rows):
+            self.executemany_calls.append((" ".join(str(sql).split()), list(rows)))
+
+        def fetchall(self):
+            return self._result
+
+    cursor = _CaptureCursor()
+    backend._replace_samples(
+        cursor,
+        [{
+            "code": f"{task_code}-SP-001",
+            "task_code": task_code,
+            "status": "已到达实验室",
+            "flow_status": "已到达实验室",
+            "location": "振动一室",
+            "updated_at": "2026-07-26T13:07:57Z",
+            "trays": [{
+                "tray_code": f"{task_code}-TP-001",
+                "sample_code": f"{task_code}-SP-001",
+                "quantity": 1,
+                "status": "已到达实验室",
+                "target_lab": "振动一室",
+                "target_experiment_code": experiment_code,
+                "target_sub_experiment_code": sub_experiment_code,
+                "updated_at": "2026-07-26T13:07:57Z",
+            }],
+            "history": [],
+        }],
+    )
+
+    tray_sql, tray_upsert_rows = next(
+        (sql, rows)
+        for sql, rows in cursor.executemany_calls
+        if "INSERT INTO biz_tray" in sql
+    )
+    assert "target_sub_experiment_code" in tray_sql
+    assert tray_upsert_rows[0]["target_sub_experiment_code"] == sub_experiment_code
 
 
 def test_replace_schedules_backfills_task_id_from_task_no() -> None:

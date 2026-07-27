@@ -128,6 +128,9 @@ def build_sample_tray_write_state(
                     "tray_status": "ACTIVE",
                     "test_state": normalize_text(tray.get("status")) or normalize_text(sample.get("status")),
                     "fixture_ready": parse_fixture_ready_flag(tray.get("fixture_ready", tray.get("fixtureReady"))),
+                    "target_sub_experiment_code": normalize_text(
+                        tray.get("target_sub_experiment_code") or tray.get("targetSubExperimentCode")
+                    ),
                     "bind_time": parse_storage_datetime(tray.get("created_at")) or parse_storage_datetime(sample.get("updated_at")),
                     "remark": TRAY_META_PREFIX,
                     "target_lab": normalize_text(tray.get("target_lab") or tray.get("targetLab")),
@@ -137,6 +140,11 @@ def build_sample_tray_write_state(
             target_lab = normalize_text(tray.get("target_lab") or tray.get("targetLab"))
             if target_lab:
                 tray_defs[tray_code]["target_lab"] = target_lab
+            target_sub_experiment_code = normalize_text(
+                tray.get("target_sub_experiment_code") or tray.get("targetSubExperimentCode")
+            )
+            if target_sub_experiment_code:
+                tray_defs[tray_code]["target_sub_experiment_code"] = target_sub_experiment_code
             tray_defs[tray_code]["fixture_ready"] = tray_defs[tray_code]["fixture_ready"] or parse_fixture_ready_flag(
                 tray.get("fixture_ready", tray.get("fixtureReady"))
             )
@@ -275,6 +283,7 @@ def upsert_tray_rows(cursor, tray_defs: Dict[str, dict[str, Any]], sample_task_i
                 "tray_status": tray["tray_status"],
                 "test_state": tray["test_state"],
                 "fixture_ready": 1 if tray["fixture_ready"] else 0,
+                "target_sub_experiment_code": tray["target_sub_experiment_code"] or None,
                 "bind_time": tray["bind_time"],
                 "remark": TRAY_META_PREFIX,
             }
@@ -283,12 +292,14 @@ def upsert_tray_rows(cursor, tray_defs: Dict[str, dict[str, Any]], sample_task_i
         """
         INSERT INTO biz_tray (
           tray_no, tray_type, task_id, current_temp_room_id, current_lab_id, current_equipment_id,
-          temp_position_no, capacity, load_qty, tray_status, test_state, fixture_ready, bind_time, in_temp_room_time,
+          temp_position_no, capacity, load_qty, tray_status, test_state, fixture_ready, target_sub_experiment_code,
+          bind_time, in_temp_room_time,
           out_temp_room_time, current_barcode_id, unbind_time, last_barcode_print_time, current_owner_id,
           remark
         ) VALUES (
           %(tray_no)s, %(tray_type)s, %(task_id)s, NULL, %(current_lab_id)s, NULL,
-          NULL, %(capacity)s, %(load_qty)s, %(tray_status)s, %(test_state)s, %(fixture_ready)s, %(bind_time)s, NULL,
+          NULL, %(capacity)s, %(load_qty)s, %(tray_status)s, %(test_state)s, %(fixture_ready)s,
+          %(target_sub_experiment_code)s, %(bind_time)s, NULL,
           NULL, NULL, NULL, NULL, NULL,
           %(remark)s
         )
@@ -301,6 +312,7 @@ def upsert_tray_rows(cursor, tray_defs: Dict[str, dict[str, Any]], sample_task_i
           tray_status = VALUES(tray_status),
           test_state = VALUES(test_state),
           fixture_ready = VALUES(fixture_ready),
+          target_sub_experiment_code = VALUES(target_sub_experiment_code),
           bind_time = VALUES(bind_time),
           remark = VALUES(remark)
         """,

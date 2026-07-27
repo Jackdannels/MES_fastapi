@@ -109,6 +109,14 @@ TRANSFER_STORAGE_UPDATE_KEYS = (
     "mes.experiment_samples",
     "mes.staging_events",
 )
+CONFIRM_STORAGE_READ_FIELDS = (
+    "tasks",
+    "samples",
+    "schedules",
+    "experiments",
+    "experiment_trays",
+    "experiment_samples",
+)
 
 
 def now_text() -> str:
@@ -155,6 +163,33 @@ def write_snapshot(
                 replace_task_codes=replace_task_codes,
             )
         )
+    source = normalize_text(update_source)
+    request_id = normalize_text(update_request_id)
+    if source or request_id:
+        publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS), source=source, request_id=request_id)
+    else:
+        publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS))
+
+
+def write_confirm_storage_changes(
+    snapshot: dict[str, list[dict[str, Any]]],
+    task_samples: list[dict[str, Any]],
+    *,
+    update_source: str = "",
+    update_request_id: str = "",
+) -> None:
+    storage = get_storage_backend()
+    updates = {
+        "mes.tasks": snapshot["tasks"],
+        "mes.samples": task_samples,
+        "mes.experiments": snapshot["experiments"],
+    }
+    scoped_writer = getattr(storage, "write_many_scoped", None)
+    if callable(scoped_writer):
+        scoped_writer(updates)
+    else:
+        storage.write_many({**updates, "mes.samples": snapshot["samples"]})
+
     source = normalize_text(update_source)
     request_id = normalize_text(update_request_id)
     if source or request_id:
@@ -665,10 +700,24 @@ def confirm_task_storage(
     update_source: str = Header(default="", alias="X-MES-Update-Source"),
     update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
 ) -> dict[str, Any]:
-    snapshot = read_snapshot()
+    snapshot = read_snapshot(CONFIRM_STORAGE_READ_FIELDS)
     task = find_task(snapshot, task_id)
     task_samples, _changed = ensure_task_samples(snapshot, task)
     ensure_task_not_returned(task, task_samples)
+    if transfer_status_for_task(task, task_samples) == TASK_STATUS_STORED:
+        return {
+            "ok": True,
+            "message": "任务已确认入库",
+            "workspace": serialize_workspace(
+                task,
+                task_samples,
+                snapshot["samples"],
+                snapshot["experiments"],
+                snapshot["experiment_trays"],
+                snapshot["experiment_samples"],
+                snapshot["schedules"],
+            ),
+        }
     assigned_trays = [tray for tray in build_assigned_trays(task, task_samples, TASK_STATUS_PENDING) if tray["samples"]]
     if not assigned_trays:
         raise HTTPException(status_code=400, detail="当前任务没有待入库托盘")
@@ -677,7 +726,12 @@ def confirm_task_storage(
     validate_saved_experiment_tray_allocation(task, task_samples, snapshot["experiments"], snapshot["experiment_trays"])
 
     apply_confirm_storage(snapshot, task, task_samples)
-    write_snapshot(snapshot, update_source=update_source, update_request_id=update_request_id)
+    write_confirm_storage_changes(
+        snapshot,
+        task_samples,
+        update_source=update_source,
+        update_request_id=update_request_id,
+    )
     return {
         "ok": True,
         "message": "任务已确认入库",

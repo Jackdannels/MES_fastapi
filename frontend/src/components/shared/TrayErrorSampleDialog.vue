@@ -94,10 +94,6 @@
         </div>
       </section>
     </div>
-
-    <template #footer>
-      <button class="action-btn secondary" data-testid="tray-error-sample-close" type="button" @click="handleClose">关闭</button>
-    </template>
   </AppModal>
 
   <AppModal

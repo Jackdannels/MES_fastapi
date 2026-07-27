@@ -56,6 +56,24 @@ class TrackingReadManyTransferStorage(FakeTransferStorage):
         return {key: list(self.payloads.get(key, [])) for key in requested_keys}
 
 
+class ScopedTrackingTransferStorage(TrackingReadManyTransferStorage):
+    def __init__(self, payloads=None):
+        super().__init__(payloads)
+        self.scoped_writes = []
+
+    def write_many_scoped(self, updates):
+        copied_updates = {key: deepcopy(value) for key, value in dict(updates).items()}
+        self.scoped_writes.append(copied_updates)
+        for key, value in copied_updates.items():
+            if key != "mes.samples":
+                self.payloads[key] = list(value)
+                continue
+            samples_by_code = {sample.get("code"): sample for sample in self.payloads[key]}
+            for sample in value:
+                samples_by_code[sample.get("code")] = sample
+            self.payloads[key] = list(samples_by_code.values())
+
+
 def create_payloads():
     return {
         "mes.tasks": [
@@ -3365,6 +3383,104 @@ def test_transfer_area_confirm_storage_succeeds_after_save_without_printing(monk
     assert confirmed.status_code == 200
     assert confirmed.json()["workspace"]["task"]["taskStatus"] == "到货"
     assert confirmed.json()["workspace"]["assignedTrays"][0]["samples"][0]["sampleStatus"] == "到货"
+
+
+def test_transfer_area_confirm_storage_uses_targeted_read_and_scoped_sample_write(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    storage = ScopedTrackingTransferStorage(create_payloads())
+    monkeypatch.setattr(transfer_area_route, "get_storage_backend", lambda: storage)
+    app = FastAPI()
+    app.include_router(transfer_area_route.router)
+    client = TestClient(app)
+
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace").json()
+    allocation = {
+        "trayLimit": workspace["task"]["trayLimit"],
+        "trays": [
+            {
+                "trayId": tray["trayId"],
+                "sampleIds": [sample["sampleId"] for sample in tray["samples"]],
+            }
+            for tray in workspace["assignedTrays"]
+        ],
+        "experimentTrays": valid_task_101_experiment_trays(
+            workspace["assignedTrays"][0]["trayId"],
+            workspace["assignedTrays"][0]["trayId"],
+        ),
+    }
+    assert client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation).status_code == 200
+    unrelated_sample_before = deepcopy(
+        next(sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102")
+    )
+    storage.read_all_calls = 0
+    storage.read_many_calls.clear()
+    storage.scoped_writes.clear()
+
+    confirmed = client.post("/api/transfer-area/tasks/task-101/confirm-storage")
+
+    assert confirmed.status_code == 200
+    assert storage.read_all_calls == 0
+    assert storage.read_many_calls == [
+        [
+            "mes.tasks",
+            "mes.samples",
+            "mes.schedules",
+            "mes.experiments",
+            "mes.experiment_trays",
+            "mes.experiment_samples",
+        ]
+    ]
+    assert len(storage.scoped_writes) == 1
+    scoped_update = storage.scoped_writes[0]
+    assert set(scoped_update) == {"mes.tasks", "mes.samples", "mes.experiments"}
+    assert {sample["task_code"] for sample in scoped_update["mes.samples"]} == {"SYLU-2026-03-101"}
+    assert next(sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-102") == unrelated_sample_before
+
+
+def test_transfer_area_confirm_storage_is_idempotent_without_rewriting_or_republishing(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    published_updates = []
+    monkeypatch.setattr(
+        transfer_area_route,
+        "publish_storage_update",
+        lambda keys, **metadata: published_updates.append((list(keys), dict(metadata))),
+        raising=False,
+    )
+    client, storage = build_client(monkeypatch)
+    workspace = client.get("/api/transfer-area/tasks/task-101/workspace").json()
+    allocation = {
+        "trayLimit": workspace["task"]["trayLimit"],
+        "trays": [
+            {
+                "trayId": tray["trayId"],
+                "sampleIds": [sample["sampleId"] for sample in tray["samples"]],
+            }
+            for tray in workspace["assignedTrays"]
+        ],
+        "experimentTrays": valid_task_101_experiment_trays(
+            workspace["assignedTrays"][0]["trayId"],
+            workspace["assignedTrays"][0]["trayId"],
+        ),
+    }
+    assert client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation).status_code == 200
+    assert client.post("/api/transfer-area/tasks/task-101/confirm-storage").status_code == 200
+    stored_payload = deepcopy(storage.payloads)
+    published_count = len(published_updates)
+
+    duplicate = client.post(
+        "/api/transfer-area/tasks/task-101/confirm-storage",
+        headers={
+            "X-MES-Update-Source": "transfer-workbench",
+            "X-MES-Update-Request-Id": "duplicate-confirm",
+        },
+    )
+
+    assert duplicate.status_code == 200
+    assert duplicate.json()["workspace"]["task"]["taskStatus"] == "到货"
+    assert storage.payloads == stored_payload
+    assert len(published_updates) == published_count
 
 
 def test_transfer_area_confirm_storage_rejects_saved_trays_without_experiment_matching(monkeypatch):

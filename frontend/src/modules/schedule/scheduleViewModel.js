@@ -17,6 +17,7 @@ import {
   toLocalTimeValue,
 } from "./sharedModel";
 import {
+  STATUS_RUNNING,
   STATUS_WAITING,
   buildActiveTaskContext,
   buildExperimentCandidates,
@@ -792,7 +793,15 @@ function hasFormalExperimentSchedule(schedules, taskCode, experimentCode) {
   );
 }
 
-function syncExperimentUnscheduledSince({ experiments, schedules, taskCode, experimentCode, tasks = [], samples = [] }) {
+function syncExperimentUnscheduledSince({
+  experiments,
+  experimentRunSteps = [],
+  schedules,
+  taskCode,
+  experimentCode,
+  tasks = [],
+  samples = [],
+}) {
   const normalizedTaskCode = normalizeText(taskCode);
   const normalizedExperimentCode = normalizeText(experimentCode);
   const nextExperiments = Array.isArray(experiments) ? experiments.map((experiment) => ({ ...experiment })) : [];
@@ -816,10 +825,24 @@ function syncExperimentUnscheduledSince({ experiments, schedules, taskCode, expe
       return experiment;
     }
 
+    const axisCodes = resolveExperimentAxisCodes(experiment);
+    const completedAxisCodes = completedAxisCodesForExperiment({
+      experimentCode: normalizedExperimentCode,
+      experimentRunSteps,
+      taskCode: normalizedTaskCode,
+    });
+    const completedRequiredAxisCodes = axisCodes.filter((axisCode) => completedAxisCodes.includes(axisCode));
+    const hasPartialAxisProgress =
+      experimentSupportsAxisScheduling(experiment) &&
+      axisCodes.length > 0 &&
+      completedRequiredAxisCodes.length > 0 &&
+      completedRequiredAxisCodes.length < axisCodes.length;
+
     return {
       ...experiment,
-      status: hasFormalSchedule ? experiment.status : STATUS_WAITING,
-      unscheduled_since: hasFormalSchedule ? "" : confirmedAt ? formatLocalDateTime(confirmedAt) : "",
+      status: hasPartialAxisProgress ? STATUS_RUNNING : hasFormalSchedule ? experiment.status : STATUS_WAITING,
+      unscheduled_since:
+        hasFormalSchedule || hasPartialAxisProgress ? "" : confirmedAt ? formatLocalDateTime(confirmedAt) : "",
     };
   });
 }
@@ -846,6 +869,7 @@ function buildExperimentOptions({ taskCode, experiments, experimentRunSteps = []
       });
       const unavailableAxisCodes = new Set([...scheduledAxisCodes, ...completedAxisCodes]);
       const remainingAxisCodes = axisCodes.filter((axisCode) => !unavailableAxisCodes.has(axisCode));
+      const completedRequiredAxisCodes = axisCodes.filter((axisCode) => completedAxisCodes.includes(axisCode));
       const matchingFormalSchedules = activeSchedules.filter(
         (schedule) =>
           !isRetentionDevice(schedule) &&
@@ -858,15 +882,19 @@ function buildExperimentOptions({ taskCode, experiments, experimentRunSteps = []
       const axisExperimentComplete =
         experimentSupportsAxisScheduling(experiment) &&
         axisCodes.length > 0 &&
-        remainingAxisCodes.length === 0 &&
-        completedAxisCodes.length >= axisCodes.length;
+        completedRequiredAxisCodes.length === axisCodes.length;
+      const hasUnscheduledAxisAfterPartialCompletion =
+        experimentSupportsAxisScheduling(experiment) &&
+        axisCodes.length > 0 &&
+        completedRequiredAxisCodes.length > 0 &&
+        remainingAxisCodes.length > 0;
       return {
         experiment,
         axisCodes,
         scheduledAxisCodes,
         completedAxisCodes,
         remainingAxisCodes,
-        hiddenByExperimentStatus: experimentTerminal,
+        hiddenByExperimentStatus: experimentTerminal && !hasUnscheduledAxisAfterPartialCompletion,
         hiddenByCompletedAxes: axisExperimentComplete,
         hiddenBySchedule:
           hasFormalSchedule &&

@@ -801,12 +801,28 @@ def build_storage_sample_item(
             )
         else:
             target_lab = event_target_lab or raw_target_lab or staging_target_lab
-            target_experiment_code = (
-                raw_target_experiment_code
-                or staging_target_experiment_code
-                or scheduled_target_by_key.get((resolved_task_code, tray_code, target_lab), "")
+            scheduled_target_experiment_code = scheduled_target_by_key.get(
+                (resolved_task_code, tray_code, target_lab),
+                "",
             )
-        trays.append({
+            matching_raw_target_experiment_code = (
+                raw_target_experiment_code
+                if raw_target_lab and raw_target_lab == target_lab
+                else ""
+            )
+            unscoped_raw_target_experiment_code = raw_target_experiment_code if not raw_target_lab else ""
+            matching_staging_target_experiment_code = (
+                staging_target_experiment_code
+                if not staging_target_lab or staging_target_lab == target_lab
+                else ""
+            )
+            target_experiment_code = (
+                matching_raw_target_experiment_code
+                or scheduled_target_experiment_code
+                or unscoped_raw_target_experiment_code
+                or matching_staging_target_experiment_code
+            )
+        tray_item = {
             "id": normalize_text(tray.get("tray_code") or tray.get("id")),
             "tray_code": tray_code,
             "sample_code": normalize_text(tray.get("sample_code") or row.get("sample_no")),
@@ -818,7 +834,13 @@ def build_storage_sample_item(
             "fixtureReady": parse_fixture_ready_flag(tray.get("fixtureReady", tray.get("fixture_ready"))),
             "created_at": format_iso_storage_datetime(tray.get("created_at")),
             "updated_at": format_iso_storage_datetime(tray.get("updated_at")),
-        })
+        }
+        target_sub_experiment_code = normalize_text(
+            tray.get("target_sub_experiment_code") or tray.get("targetSubExperimentCode")
+        )
+        if target_sub_experiment_code:
+            tray_item["target_sub_experiment_code"] = target_sub_experiment_code
+        trays.append(tray_item)
     history = [
         {
             "id": normalize_text(event.get("id") or event.get("event_id") or event.get("sample_no")),

@@ -233,6 +233,7 @@ function createScheduleRecord({
   const nextTasks = syncTaskStatuses(tasks, nextSchedules, now, samples, experimentTrays);
   const nextExperiments = syncExperimentUnscheduledSince({
     experimentCode: candidate.experiment_code,
+    experimentRunSteps,
     experiments,
     samples,
     schedules: nextSchedules,
@@ -335,6 +336,7 @@ function updateScheduleRecord({
   const nextTasks = syncTaskStatuses(tasks, nextSchedules, now, samples, experimentTrays);
   const nextExperiments = syncExperimentUnscheduledSince({
     experimentCode: candidate.experiment_code,
+    experimentRunSteps,
     experiments,
     samples,
     schedules: nextSchedules,
@@ -386,6 +388,7 @@ function deleteScheduleRecord({
   const nextTasks = syncTaskStatuses(tasks, nextSchedules, now, samples, experimentTrays);
   const nextExperiments = syncExperimentUnscheduledSince({
     experimentCode: normalizeText(removedSchedule?.experiment_code),
+    experimentRunSteps,
     experiments,
     samples,
     schedules: nextSchedules,

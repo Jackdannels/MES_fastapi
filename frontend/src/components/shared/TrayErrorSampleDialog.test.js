@@ -47,6 +47,7 @@ describe("TrayErrorSampleDialog", () => {
 
     expect(wrapper.get('[data-testid="tray-error-sample-result"]').text()).toContain("送至暂存间");
     expect(wrapper.find('[data-testid="tray-error-sample-withdraw"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="tray-error-sample-close"]').exists()).toBe(false);
 
     await wrapper.get('[data-testid="tray-error-sample-withdraw"]').trigger("click");
 

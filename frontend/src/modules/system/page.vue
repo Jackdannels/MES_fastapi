@@ -195,7 +195,6 @@
       >
         删除账号
       </button>
-      <button class="action-btn secondary" type="button" @click="closeEmployeeDrawer">关闭</button>
     </template>
   </AppModal>
 
@@ -238,7 +237,6 @@
       >
         下载图片
       </button>
-      <button class="action-btn secondary" type="button" @click="closeEmployeeQrModal">关闭</button>
     </template>
   </AppModal>
 
@@ -301,7 +299,6 @@
     </div>
     <template #footer>
       <button class="action-btn" data-testid="query-employee-operation-logs" type="button" :disabled="operationLogSubmitting" @click="loadEmployeeOperationLogs">查询</button>
-      <button class="action-btn secondary" type="button" @click="closeEmployeeOperationLogs">关闭</button>
     </template>
   </AppModal>
 

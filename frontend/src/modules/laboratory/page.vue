@@ -246,7 +246,6 @@
           />
         </div>
         <template #footer>
-          <button class="action-btn secondary" type="button" @click="closeAttendanceLogin">取消</button>
           <button
             v-if="!attendanceLoginRunningExperimentActive"
             class="action-btn secondary laboratory-attendance-modal-footer-logout"
@@ -565,9 +564,6 @@
       <div class="laboratory-modal-body laboratory-prompt-card">
         <p>当前任务已确认实验准备就绪。</p>
       </div>
-      <template #footer>
-        <button class="action-btn" type="button" @click="closeConfirmed">关闭</button>
-      </template>
     </AppModal>
 
     <AppModal

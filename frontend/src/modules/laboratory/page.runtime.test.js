@@ -1236,7 +1236,7 @@ describe("LaboratoryPage runtime", () => {
     expect(attendanceLogoutCalls()).toHaveLength(0);
   });
 
-  test("places the laboratory logout action in the center of the login modal footer", async () => {
+  test("keeps login actions without a duplicate footer cancel button", async () => {
     attendanceSessionState = {
       active: true,
       employeeName: "张三",
@@ -1253,7 +1253,6 @@ describe("LaboratoryPage runtime", () => {
     const footerButtons = Array.from(document.body.querySelectorAll('[data-testid="laboratory-attendance-login-modal"] .form-actions button'))
       .map((button) => button.getAttribute("data-testid") || String(button.textContent || "").trim());
     expect(footerButtons).toEqual([
-      "取消",
       "laboratory-attendance-modal-logout",
       "laboratory-attendance-qr-submit",
     ]);

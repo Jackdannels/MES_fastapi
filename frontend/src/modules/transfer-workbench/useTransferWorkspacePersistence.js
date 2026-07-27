@@ -39,6 +39,8 @@ function useTransferWorkspacePersistence({
   sampleCodesModalVisible,
   selectedTaskId,
   showWorkbenchFeedback,
+  storageOperationMessage,
+  storageOperationPending,
   storedStatus,
   storedTaskCount,
   taskOverview,
@@ -231,15 +233,16 @@ function useTransferWorkspacePersistence({
     }
   };
 
-  const refreshWorkspaceSaveGuards = async () => {
-    if (!selectedTaskId.value) {
+  const refreshWorkspaceSaveGuards = async (taskId = selectedTaskId.value) => {
+    if (!taskId) {
       return;
     }
-    const workspace = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/workspace`);
+    const workspace = await fetchJson(`/api/transfer-area/tasks/${taskId}/workspace`);
     applyWorkspaceSaveGuards(workspace);
   };
 
   const openTask = async (task) => {
+    if (storageOperationPending.value) return;
     selectedTaskId.value = task.taskId;
     clearWorkbenchFeedback();
     barcodeModalVisible.value = false;
@@ -268,8 +271,20 @@ function useTransferWorkspacePersistence({
     await loadWorkspace(selectedTaskId.value);
   };
 
-  const persistAllocation = async (showMessage = true, { allowExperimentMode = false } = {}) => {
-    if (!selectedTaskId.value || normalizeTaskStatus(currentTask.value?.taskStatus) === storedStatus) return false;
+  const persistAllocation = async (
+    showMessage = true,
+    {
+      allowDuringStorageOperation = false,
+      allowExperimentMode = false,
+      taskId = selectedTaskId.value,
+      throwOnError = false,
+    } = {},
+  ) => {
+    if (
+      (!allowDuringStorageOperation && storageOperationPending.value)
+      || !taskId
+      || normalizeTaskStatus(currentTask.value?.taskStatus) === storedStatus
+    ) return false;
     const canPersist = allowExperimentMode ? canPersistAllocationDraft.value : canSaveAllocation.value;
     if (!canPersist) {
       const message = allocationValidationMessage.value || "托盘分配尚未完成，请检查实验与托盘关系。";
@@ -277,7 +292,7 @@ function useTransferWorkspacePersistence({
       return false;
     }
     try {
-      await refreshWorkspaceSaveGuards();
+      await refreshWorkspaceSaveGuards(taskId);
       const canPersistAfterRefresh = allowExperimentMode ? canPersistAllocationDraft.value : canSaveAllocation.value;
       if (!canPersistAfterRefresh) {
         const message = allocationValidationMessage.value || "托盘分配尚未完成，请检查实验与托盘关系。";
@@ -285,7 +300,7 @@ function useTransferWorkspacePersistence({
         return false;
       }
       const storageUpdateMeta = trackOwnStorageRequest("allocate");
-      const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/allocate`, {
+      const payload = await fetchJson(`/api/transfer-area/tasks/${taskId}/allocate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -302,6 +317,9 @@ function useTransferWorkspacePersistence({
       if (showMessage) showWorkbenchFeedback(payload.message, "success");
       return true;
     } catch (error) {
+      if (throwOnError) {
+        throw error;
+      }
       if (showMessage) {
         showWorkbenchFeedback(error instanceof Error ? error.message : "托盘分配保存失败，请重试。", "error");
       }
@@ -310,36 +328,64 @@ function useTransferWorkspacePersistence({
   };
 
   const confirmStorage = async () => {
-    if (!canConfirm.value) return;
-    if (!allocationSaved.value) {
-      const saved = await persistAllocation(false, { allowExperimentMode: true });
-      if (!saved) return;
+    if (storageOperationPending.value || !canConfirm.value) return;
+    const taskId = selectedTaskId.value;
+    if (!taskId) return;
+
+    const needsAllocationSave = !allocationSaved.value;
+    storageOperationPending.value = true;
+    storageOperationMessage.value = needsAllocationSave
+      ? "正在保存托盘分配（1/2）"
+      : "正在确认入库，请稍候";
+    clearWorkbenchFeedback();
+
+    try {
+      if (needsAllocationSave) {
+        const saved = await persistAllocation(false, {
+          allowDuringStorageOperation: true,
+          allowExperimentMode: true,
+          taskId,
+          throwOnError: true,
+        });
+        if (!saved) {
+          throw new Error(allocationValidationMessage.value || "托盘分配保存失败，请重试。");
+        }
+        storageOperationMessage.value = "正在确认入库（2/2）";
+      }
+
+      const storageUpdateMeta = trackOwnStorageRequest("confirm-storage");
+      const payload = await fetchJson(`/api/transfer-area/tasks/${taskId}/confirm-storage`, {
+        method: "POST",
+        headers: {
+          "X-MES-Update-Source": storageUpdateMeta.source,
+          "X-MES-Update-Request-Id": storageUpdateMeta.requestId,
+        },
+      });
+      const confirmedProgress = payload?.workspace?.task?.taskProgress || "已确认入库";
+      if (selectedTaskId.value === taskId) {
+        applyWorkspace(payload.workspace);
+        applyConfirmedStorageState(confirmedProgress);
+      }
+      updateOverviewTaskStatus(taskId, storedStatus, confirmedProgress);
+      showWorkbenchFeedback(payload.message, "success");
+      window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, {
+        detail: { source: "transfer-workbench", reason: "confirm-storage", requestId: storageUpdateMeta.requestId },
+      }));
+      taskStatusFilter.value = storedStatus;
+    } catch (error) {
+      showWorkbenchFeedback(
+        error instanceof Error ? error.message : "确认入库失败，请重试。",
+        "error",
+      );
+    } finally {
+      storageOperationPending.value = false;
+      storageOperationMessage.value = "";
+      flushPendingRealtimeRefresh();
     }
-    const storageUpdateMeta = trackOwnStorageRequest("confirm-storage");
-    const payload = await fetchJson(`/api/transfer-area/tasks/${selectedTaskId.value}/confirm-storage`, {
-      method: "POST",
-      headers: {
-        "X-MES-Update-Source": storageUpdateMeta.source,
-        "X-MES-Update-Request-Id": storageUpdateMeta.requestId,
-      },
-    });
-    const confirmedTaskId = selectedTaskId.value;
-    const confirmedProgress = payload?.workspace?.task?.taskProgress || "已确认入库";
-    applyWorkspace(payload.workspace);
-    applyConfirmedStorageState(confirmedProgress);
-    if (confirmedTaskId) {
-      updateOverviewTaskStatus(confirmedTaskId, storedStatus, confirmedProgress);
-    }
-    showWorkbenchFeedback(payload.message, "success");
-    window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, {
-      detail: { source: "transfer-workbench", reason: "confirm-storage", requestId: storageUpdateMeta.requestId },
-    }));
-    flushPendingRealtimeRefresh();
-    taskStatusFilter.value = storedStatus;
   };
 
   const executeReloadWorkspace = async () => {
-    if (!canResetWorkspace.value) return;
+    if (storageOperationPending.value || !canResetWorkspace.value) return;
     clearWorkbenchFeedback();
     barcodeModalVisible.value = false;
     barcodePreviewItems.value = [];
@@ -367,7 +413,7 @@ function useTransferWorkspacePersistence({
   };
 
   const reloadWorkspace = async () => {
-    if (!canResetWorkspace.value) return;
+    if (storageOperationPending.value || !canResetWorkspace.value) return;
     if (currentTask.value?.hasSchedules) {
       openScheduleResetConfirm();
       return;
@@ -378,6 +424,7 @@ function useTransferWorkspacePersistence({
   return {
     applyWorkspace,
     backToOverview: async () => {
+      if (storageOperationPending.value) return;
       barcodeModalVisible.value = false;
       sampleCodesModalVisible.value = false;
       sampleCodesModalTask.value = null;

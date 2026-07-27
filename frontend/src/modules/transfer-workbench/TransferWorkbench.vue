@@ -9,6 +9,7 @@
           class="action-btn secondary"
           :class="{ 'is-active': activeWorkbenchView === 'overview' }"
           data-testid="handover-nav-overview"
+          :disabled="storageOperationPending"
           type="button"
           @click="setActiveWorkbenchView('overview')"
         >
@@ -18,6 +19,7 @@
           class="action-btn secondary"
           :class="{ 'is-active': activeWorkbenchView === 'dispatch' }"
           data-testid="handover-nav-dispatch"
+          :disabled="storageOperationPending"
           type="button"
           @click="setActiveWorkbenchView('dispatch')"
         >
@@ -27,12 +29,13 @@
           v-if="mode === 'handover'"
           class="action-btn tray-error-sample-trigger"
           data-testid="handover-error-sample"
+          :disabled="storageOperationPending"
           type="button"
           @click="errorSample.open()"
         >
           出错样品处理
         </button>
-        <button class="action-btn secondary" data-testid="handover-logout" type="button" @click="handleLogout">退出登录</button>
+        <button class="action-btn secondary" data-testid="handover-logout" type="button" :disabled="storageOperationPending" @click="handleLogout">退出登录</button>
       </div>
     </header>
 
@@ -233,7 +236,7 @@
       <template v-else>
         <section class="card transfer-detail-shell" @click="handleDetailShellClick">
           <div class="transfer-detail-shell__top">
-            <button class="action-btn secondary" type="button" @click="backToOverview">返回总览</button>
+            <button class="action-btn secondary" type="button" :disabled="storageOperationPending" @click="backToOverview">返回总览</button>
             <div class="transfer-detail-shell__title">
               <h2>{{ modeConfig.detailTitle }}</h2>
               <div class="muted">{{ isExperimentMode ? `${currentExperimentName} 托盘选择模式` : modeConfig.detailHint }}</div>
@@ -253,6 +256,7 @@
                 :class="{ active: activeAssignmentMode === experiment.experimentCode, 'is-disabled': experimentSelectionLocked }"
                 :data-testid="`transfer-experiment-tab-${experiment.experimentCode}`"
                 :aria-disabled="experimentSelectionLocked ? 'true' : 'false'"
+                :disabled="storageOperationPending"
                 :title="experiment.experimentCode"
                 type="button"
                 @click.stop="setAssignmentMode(experiment.experimentCode)"
@@ -291,16 +295,18 @@
             </div>
 
             <div class="form-actions transfer-tray-actions transfer-tray-actions--top">
-              <button class="action-btn transfer-print-all-btn" data-testid="transfer-print-barcodes" type="button" :disabled="!canPrint || printingAllBarcodes" @click="printAllTrayBarcodes">
+              <button class="action-btn transfer-print-all-btn" data-testid="transfer-print-barcodes" type="button" :disabled="!canPrint || printingAllBarcodes || storageOperationPending" @click="printAllTrayBarcodes">
                 {{ printingAllBarcodes ? "生成中..." : `打印二维码（${loadedTrayCount}）` }}
               </button>
-              <button class="action-btn secondary" data-testid="transfer-save-trays" type="button" :disabled="!canSaveAllocation" @click="persistAllocation()">保存托盘</button>
-              <button v-if="modeConfig.allowConfirm" class="action-btn" type="button" :disabled="!canConfirm" @click="confirmStorage">确认入库</button>
+              <button class="action-btn secondary" data-testid="transfer-save-trays" type="button" :disabled="!canSaveAllocation || storageOperationPending" @click="persistAllocation()">保存托盘</button>
+              <button v-if="modeConfig.allowConfirm" class="action-btn" data-testid="transfer-confirm-storage" type="button" :disabled="!canConfirm || storageOperationPending" @click="confirmStorage">
+                {{ storageOperationPending ? "处理中..." : "确认入库" }}
+              </button>
               <button
                 v-if="modeConfig.allowReset"
                 class="action-btn secondary"
                 data-testid="transfer-reset-workspace"
-                :disabled="!canResetWorkspace"
+                :disabled="!canResetWorkspace || storageOperationPending"
                 @click="reloadWorkspace"
               >
                 {{ modeConfig.resetActionLabel }}
@@ -315,6 +321,18 @@
               >
                 全部托盘应用全部试验
               </button>
+            </div>
+
+            <div
+              v-if="storageOperationPending"
+              class="transfer-storage-progress"
+              data-testid="transfer-storage-progress"
+              role="status"
+              aria-live="polite"
+            >
+              <div class="transfer-storage-progress__text">{{ storageOperationMessage }}</div>
+              <progress class="transfer-storage-progress__bar" :aria-label="storageOperationMessage"></progress>
+              <div class="muted">入库完成前已暂停托盘编辑、试验分配及任务切换，请稍候。</div>
             </div>
 
             <div v-if="trayCapacityExceeded" class="form-alert" data-testid="transfer-tray-capacity-warning">{{ trayCapacityWarning }}</div>
@@ -379,6 +397,7 @@
                     class="sample-tray-sample-tag sample-tray-chip--with-status"
                     :class="{ 'is-selected': isSampleSelected(sample.sampleId) }"
                     :draggable="canDragSamples"
+                    :disabled="storageOperationPending"
                     @dragstart.stop="startDragging(sample.sampleId, index)"
                     @click.stop="selectTraySample(sample.sampleId, index)"
                   >
@@ -395,7 +414,7 @@
                       :class="{ 'is-disabled': taskEditingLocked }"
                       type="button"
                       :aria-disabled="taskEditingLocked ? 'true' : 'false'"
-                      :disabled="isStoredTask || Boolean(reloadBlockedReason)"
+                      :disabled="storageOperationPending || isStoredTask || Boolean(reloadBlockedReason)"
                       @click.stop="removeTray(index)"
                     >
                       删除托盘
@@ -620,6 +639,8 @@ const {
 } = useTransferWorkbenchOverview({ pendingStatus, taskOverview });
 const selectedTaskId = ref(null);
 const currentTask = ref(null);
+const storageOperationPending = ref(false);
+const storageOperationMessage = ref("");
 const workbenchFeedback = useFeedback();
 const feedback = workbenchFeedback.message;
 const feedbackTone = workbenchFeedback.tone;
@@ -679,6 +700,7 @@ const {
   pendingStatus,
   selectedTaskId,
   showWorkbenchFeedback,
+  storageOperationPending,
   storedStatus,
 });
 const printingAllBarcodes = ref(false);
@@ -776,6 +798,8 @@ const {
   sampleCodesModalVisible,
   selectedTaskId,
   showWorkbenchFeedback,
+  storageOperationMessage,
+  storageOperationPending,
   storedStatus,
   storedTaskCount,
   taskOverview,
@@ -803,13 +827,14 @@ const transferRealtime = useTransferWorkbenchRealtime({
   refreshTransferWorkspaceAfterTrayChange,
   sampleCodesModalVisible,
   selectedTaskId,
+  storageOperationPending,
   viewMode,
 });
 flushPendingRealtimeRefresh = transferRealtime.flushPendingRealtimeRefresh;
 const handleSamplesUpdated = transferRealtime.handleSamplesUpdated;
 
 const setActiveWorkbenchView = (nextView) => {
-  if (props.mode !== "handover") {
+  if (props.mode !== "handover" || storageOperationPending.value) {
     return;
   }
   const resolvedView = nextView === "dispatch" ? "dispatch" : "overview";
@@ -848,6 +873,7 @@ const {
   sampleCodesModalVisible,
   selectedTaskId,
   showWorkbenchFeedback,
+  storageOperationPending,
 });
 const confirmScheduleReset = async () => {
   closeScheduleResetConfirm();
@@ -865,3 +891,26 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped src="../handover-system/styles.css"></style>
+
+<style scoped>
+.transfer-storage-progress {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(56, 189, 248, 0.34);
+  border-radius: 10px;
+  background: rgba(14, 116, 144, 0.12);
+}
+
+.transfer-storage-progress__text {
+  color: #bae6fd;
+  font-weight: 700;
+}
+
+.transfer-storage-progress__bar {
+  width: 100%;
+  height: 8px;
+  accent-color: #22d3ee;
+}
+</style>

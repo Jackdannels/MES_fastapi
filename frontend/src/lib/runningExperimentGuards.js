@@ -164,22 +164,18 @@ function scheduleExperimentHasStarted({
   if (!taskCode || !experimentCode) {
     return false;
   }
-  if (rowHasRunningExperimentStatus(schedule)) {
-    return true;
-  }
-
-  const matchingRunningRunNos = new Set();
-  const hasMatchingRunningRun = asList(experimentRuns).some((row) => {
-    if (!rowMatchesScheduleScope(row, schedule, { allowLegacyExperimentFallback: true }) || !rowHasRunningExperimentStatus(row)) {
+  const matchingLockedRunNos = new Set();
+  const hasMatchingLockedRun = asList(experimentRuns).some((row) => {
+    if (!rowMatchesScheduleScope(row, schedule, { allowLegacyExperimentFallback: true }) || !rowHasScheduleLockedStatus(row)) {
       return false;
     }
     const runNo = rowRunNo(row);
     if (runNo) {
-      matchingRunningRunNos.add(runNo);
+      matchingLockedRunNos.add(runNo);
     }
     return true;
   });
-  if (hasMatchingRunningRun) {
+  if (hasMatchingLockedRun) {
     return true;
   }
   if (
@@ -188,11 +184,11 @@ function scheduleExperimentHasStarted({
         if (!rowMatchesExperiment(row, taskCode, experimentCode)) {
           return false;
         }
-        if (!rowHasRunningExperimentStatus(row, ["run_tray_status", "status", "experiment_status"])) {
+        if (!rowHasScheduleLockedStatus(row, ["run_tray_status", "status", "experiment_status"])) {
           return false;
         }
         const runNo = rowRunNo(row);
-        return (runNo && matchingRunningRunNos.has(runNo)) || rowMatchesScheduleScope(row, schedule);
+        return (runNo && matchingLockedRunNos.has(runNo)) || rowMatchesScheduleScope(row, schedule);
       },
     )
   ) {

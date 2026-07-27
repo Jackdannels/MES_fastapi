@@ -20,6 +20,7 @@ function useTransferTrayAssignment({
   pendingStatus,
   selectedTaskId,
   showWorkbenchFeedback,
+  storageOperationPending,
   storedStatus,
 }) {
   const assignedTrays = ref([]);
@@ -48,12 +49,15 @@ function useTransferTrayAssignment({
   const minimumTrayCount = computed(() => Math.max(1, Math.ceil(totalAssignedSampleCount.value / Math.max(1, trayLimit.value))));
   const loadedTrayCount = computed(() => assignedTrays.value.filter((tray) => tray.samples.length > 0).length);
   const isStoredTask = computed(() => normalizeTaskStatus(currentTask.value?.taskStatus) === storedStatus);
+  const isStorageOperationPending = computed(() => Boolean(storageOperationPending?.value));
   const isExperimentMode = computed(() => activeAssignmentMode.value !== "task");
   const currentExperimentCode = computed(() => (isExperimentMode.value ? activeAssignmentMode.value : ""));
   const currentExperimentName = computed(() => resolveExperimentDisplayName(
     experiments.value.find((item) => item.experimentCode === currentExperimentCode.value),
   ));
-  const allocationReadOnly = computed(() => isStoredTask.value || allocationSaved.value);
+  const allocationReadOnly = computed(() => (
+    isStoredTask.value || allocationSaved.value || isStorageOperationPending.value
+  ));
   const experimentSelectionLocked = computed(() => allocationReadOnly.value);
   const taskEditingLocked = computed(() => allocationReadOnly.value || isExperimentMode.value);
   const canDragSamples = computed(() => !taskEditingLocked.value);
@@ -150,6 +154,7 @@ function useTransferTrayAssignment({
     && allocationSaved.value
     && hasCompleteExperimentTrayAllocation.value
     && !trayCapacityExceeded.value
+    && !isStorageOperationPending.value
   ));
   const reloadBlockedReason = computed(() => {
     if (!currentTask.value?.reloadBlocked) {
@@ -160,7 +165,7 @@ function useTransferTrayAssignment({
       : "该任务已有托盘开始实验，不能重新入库。";
   });
   const canResetWorkspace = computed(() => {
-    if (!selectedTaskId.value || reloadBlockedReason.value) {
+    if (!selectedTaskId.value || reloadBlockedReason.value || isStorageOperationPending.value) {
       return false;
     }
     if (mode.value === "pre-allocation") {
@@ -310,6 +315,9 @@ function useTransferTrayAssignment({
       && Boolean(experimentCodesByTrayNo.get(trayNo)?.has(currentExperimentCode.value));
   };
   const setAssignmentMode = (nextMode) => {
+    if (isStorageOperationPending.value) {
+      return;
+    }
     if (nextMode && nextMode !== "task" && showSavedAllocationHint()) {
       return;
     }

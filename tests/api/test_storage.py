@@ -2830,6 +2830,94 @@ def test_storage_allows_deleting_untouched_shared_tray_experiment_while_salt_spr
     assert storage.read("mes.schedules") == [schedules[0]]
 
 
+def test_storage_ignores_derived_running_status_for_untouched_schedule_after_shared_tray_return(monkeypatch):
+    task_code = "SYLU-2026-07-030"
+    salt_experiment_code = f"{task_code}-G"
+    future_experiment_code = f"{task_code}-B"
+    returned_tray_code = f"{task_code}-TP-001"
+    waiting_tray_code = f"{task_code}-TP-002"
+    schedules = [
+        {
+            "id": "schedule-future-07-030",
+            "task_code": task_code,
+            "experiment_code": future_experiment_code,
+            "device": "高低温湿热一室",
+            "status": "实验进行中",
+        },
+        {
+            "id": "schedule-salt-07-030",
+            "task_code": task_code,
+            "experiment_code": salt_experiment_code,
+            "device": "盐雾试验室",
+            "status": "实验进行中",
+        },
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.experiment_runs": [{
+                "run_no": "run-salt-07-030",
+                "schedule_id": "schedule-salt-07-030",
+                "task_code": task_code,
+                "experiment_code": salt_experiment_code,
+                "status": "实验已完成",
+            }],
+            "mes.experiment_run_trays": [
+                {
+                    "run_no": f"RETURNED-{future_experiment_code}",
+                    "task_code": task_code,
+                    "experiment_code": future_experiment_code,
+                    "tray_code": returned_tray_code,
+                    "run_tray_status": "厂家收回",
+                },
+                {
+                    "run_no": "run-salt-07-030",
+                    "task_code": task_code,
+                    "experiment_code": salt_experiment_code,
+                    "tray_code": returned_tray_code,
+                    "run_tray_status": "实验已完成",
+                },
+            ],
+            "mes.experiment_trays": [
+                {"task_code": task_code, "experiment_code": future_experiment_code, "tray_code": returned_tray_code},
+                {"task_code": task_code, "experiment_code": future_experiment_code, "tray_code": waiting_tray_code},
+                {"task_code": task_code, "experiment_code": salt_experiment_code, "tray_code": returned_tray_code},
+                {"task_code": task_code, "experiment_code": salt_experiment_code, "tray_code": waiting_tray_code},
+            ],
+            "mes.samples": [
+                {
+                    "code": f"{task_code}-SP-001",
+                    "task_code": task_code,
+                    "status": "厂家收回",
+                    "flow_status": "厂家收回",
+                    "trays": [{
+                        "tray_code": returned_tray_code,
+                        "status": "厂家收回",
+                        "target_experiment_code": salt_experiment_code,
+                    }],
+                },
+                {
+                    "code": f"{task_code}-SP-011",
+                    "task_code": task_code,
+                    "status": "已到达暂存间",
+                    "flow_status": "已到达暂存间",
+                    "trays": [{"tray_code": waiting_tray_code, "status": "已到达暂存间"}],
+                },
+            ],
+            "mes.schedules": schedules,
+        },
+    )
+
+    future_response = client.put("/api/storage/mes.schedules", json=[schedules[1]])
+    assert future_response.status_code == 200
+    assert storage.read("mes.schedules") == [schedules[1]]
+
+    completed_response = client.put("/api/storage/mes.schedules", json=[])
+    assert completed_response.status_code == 400
+    assert completed_response.json()["detail"] == "完成任务比对后排程不可删除或重新排程。"
+    assert storage.read("mes.schedules") == [schedules[1]]
+
+
 def test_storage_allows_deleting_untouched_future_axis_schedule_after_sibling_starts(monkeypatch):
     schedules = [
         {

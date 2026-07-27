@@ -2819,6 +2819,51 @@ describe("schedulePageModel", () => {
     ]);
   });
 
+  test("buildExperimentOptions keeps a terminal vibration experiment available when deleted schedules leave unfinished axes", () => {
+    const taskCode = "SYLU-2026-08-001";
+    const experimentCode = `${taskCode}-D`;
+    const options = buildExperimentOptions({
+      taskCode,
+      experiments: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "振动试验",
+          required_device: "振动试验",
+          status: STATUS_COMPLETED,
+          axis_codes: ["x+", "x-"],
+        },
+      ],
+      experimentRunSteps: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          run_no: "run-vibration-x-plus",
+          axis_code: "x+",
+          status: STATUS_COMPLETED,
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-vibration-x-plus",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "振动一室",
+          status: STATUS_COMPLETED,
+          axis_codes: ["x+"],
+        },
+      ],
+    });
+
+    expect(options).toEqual([
+      expect.objectContaining({
+        code: experimentCode,
+        completedAxisCodes: ["x+"],
+        remainingAxisCodes: ["x-"],
+      }),
+    ]);
+  });
+
   test("buildExperimentOptions hides impact experiments after all axes are completed", () => {
     const options = buildExperimentOptions({
       taskCode: "SYLU-2026-07-026",
@@ -3503,6 +3548,55 @@ describe("schedulePageModel", () => {
     expect(result.experiments[0].status).toBe(STATUS_WAITING);
   });
 
+  test("deleteScheduleRecord restores partial axis experiment status after deleting its unfinished schedule", () => {
+    const taskCode = "SYLU-2026-08-001";
+    const experimentCode = `${taskCode}-D`;
+    const result = deleteScheduleRecord({
+      experiments: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          experiment_name: "振动试验",
+          status: STATUS_COMPLETED,
+          axis_codes: ["x+", "x-"],
+        },
+      ],
+      experimentRunSteps: [
+        {
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          run_no: "run-vibration-x-plus",
+          axis_code: "x+",
+          status: STATUS_COMPLETED,
+        },
+      ],
+      scheduleId: "schedule-vibration-x-minus",
+      schedules: [
+        {
+          id: "schedule-vibration-x-plus",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "振动一室",
+          status: STATUS_COMPLETED,
+          axis_codes: ["x+"],
+        },
+        {
+          id: "schedule-vibration-x-minus",
+          task_code: taskCode,
+          experiment_code: experimentCode,
+          device: "振动一室",
+          status: STATUS_SCHEDULED,
+          axis_codes: ["x-"],
+        },
+      ],
+      streams: [],
+      tasks: [{ code: taskCode, status: "任务进行中", test_type: "振动试验" }],
+    });
+
+    expect(result.schedules.map((schedule) => schedule.id)).toEqual(["schedule-vibration-x-plus"]);
+    expect(result.experiments[0].status).toBe("实验进行中");
+  });
+
   test("deleteScheduleRecord blocks deleting a schedule after the experiment has started", () => {
     const result = deleteScheduleRecord({
       experiments: [
@@ -3641,6 +3735,90 @@ describe("schedulePageModel", () => {
       scheduleId: "schedule-salt-07-031",
     });
     expect(runningResult.error).toBe("排程已完成任务比对，不能删除");
+  });
+
+  test("deleteScheduleRecord ignores derived running status for an untouched future schedule after a shared tray is returned", () => {
+    const taskCode = "SYLU-2026-07-030";
+    const saltExperimentCode = `${taskCode}-G`;
+    const futureExperimentCode = `${taskCode}-B`;
+    const returnedTrayCode = `${taskCode}-TP-001`;
+    const waitingTrayCode = `${taskCode}-TP-002`;
+    const input = {
+      experiments: [
+        { task_code: taskCode, experiment_code: futureExperimentCode, experiment_name: "高低温湿热试验", status: "实验进行中" },
+        { task_code: taskCode, experiment_code: saltExperimentCode, experiment_name: "盐雾试验", status: "实验进行中" },
+      ],
+      experimentRuns: [{
+        run_no: "run-salt-07-030",
+        schedule_id: "schedule-salt-07-030",
+        task_code: taskCode,
+        experiment_code: saltExperimentCode,
+        status: "实验已完成",
+      }],
+      experimentRunTrays: [
+        {
+          run_no: `RETURNED-${futureExperimentCode}`,
+          task_code: taskCode,
+          experiment_code: futureExperimentCode,
+          tray_code: returnedTrayCode,
+          run_tray_status: "厂家收回",
+        },
+        {
+          run_no: "run-salt-07-030",
+          task_code: taskCode,
+          experiment_code: saltExperimentCode,
+          tray_code: returnedTrayCode,
+          run_tray_status: "实验已完成",
+        },
+      ],
+      experimentTrays: [
+        { task_code: taskCode, experiment_code: futureExperimentCode, tray_code: returnedTrayCode },
+        { task_code: taskCode, experiment_code: futureExperimentCode, tray_code: waitingTrayCode },
+        { task_code: taskCode, experiment_code: saltExperimentCode, tray_code: returnedTrayCode },
+        { task_code: taskCode, experiment_code: saltExperimentCode, tray_code: waitingTrayCode },
+      ],
+      samples: [
+        {
+          task_code: taskCode,
+          status: "厂家收回",
+          trays: [{
+            tray_code: returnedTrayCode,
+            status: "厂家收回",
+            target_experiment_code: saltExperimentCode,
+          }],
+        },
+        {
+          task_code: taskCode,
+          status: "已到达暂存间",
+          trays: [{ tray_code: waitingTrayCode, status: "已到达暂存间" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-future-07-030",
+          task_code: taskCode,
+          experiment_code: futureExperimentCode,
+          device: "高低温湿热一室",
+          status: "实验进行中",
+        },
+        {
+          id: "schedule-salt-07-030",
+          task_code: taskCode,
+          experiment_code: saltExperimentCode,
+          device: "盐雾试验室",
+          status: "实验进行中",
+        },
+      ],
+      streams: [],
+      tasks: [{ code: taskCode, status: "任务进行中", test_type: "高低温湿热试验 / 盐雾试验" }],
+    };
+
+    const futureResult = deleteScheduleRecord({ ...input, scheduleId: "schedule-future-07-030" });
+    expect(futureResult.error).toBeUndefined();
+    expect(futureResult.schedules).toEqual([expect.objectContaining({ id: "schedule-salt-07-030" })]);
+
+    const completedResult = deleteScheduleRecord({ ...input, scheduleId: "schedule-salt-07-030" });
+    expect(completedResult.error).toBe("排程已完成任务比对，不能删除");
   });
 
   test("deleteScheduleRecord locks the compared axis schedule but allows deleting an independent unstarted sibling", () => {

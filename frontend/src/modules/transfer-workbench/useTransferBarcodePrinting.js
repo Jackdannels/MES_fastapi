@@ -28,6 +28,7 @@ function useTransferBarcodePrinting({
   sampleCodesModalVisible,
   selectedTaskId,
   showWorkbenchFeedback,
+  storageOperationPending,
 }) {
   const buildBarcodeSvg = (value) => buildQrCodeSvg(value);
 
@@ -198,7 +199,7 @@ ${buildExperimentTagPrintCss()}
   };
 
   const printAllTrayBarcodes = async () => {
-    if (!canPrint.value) return;
+    if (storageOperationPending.value || !canPrint.value) return;
     printingAllBarcodes.value = true;
     try {
       if (!isStoredTask.value && !allocationSaved.value) {

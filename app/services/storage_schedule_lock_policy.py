@@ -158,8 +158,6 @@ def _record_matches_schedule_scope(record: Any, schedule: Any, *, allow_legacy_e
 def _schedule_has_started_record(schedule: Any, experiment_runs: Any, experiment_run_trays: Any) -> bool:
     if not isinstance(schedule, dict):
         return False
-    if _record_has_schedule_locked_status(schedule):
-        return True
     matching_run_nos: set[str] = set()
     for run in _as_list(experiment_runs):
         if (

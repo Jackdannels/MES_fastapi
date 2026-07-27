@@ -54,6 +54,11 @@ def ensure_schema_extensions(backend: Any) -> None:
             cursor.execute("SHOW COLUMNS FROM biz_tray LIKE 'fixture_ready'")
             if cursor.fetchone() is None:
                 cursor.execute("ALTER TABLE biz_tray ADD COLUMN fixture_ready TINYINT NOT NULL DEFAULT 0 AFTER test_state")
+            cursor.execute("SHOW COLUMNS FROM biz_tray LIKE 'target_sub_experiment_code'")
+            if cursor.fetchone() is None:
+                cursor.execute(
+                    "ALTER TABLE biz_tray ADD COLUMN target_sub_experiment_code VARCHAR(80) NULL AFTER fixture_ready"
+                )
             cursor.execute("SHOW COLUMNS FROM biz_task LIKE 'tray_limit'")
             if cursor.fetchone() is None:
                 cursor.execute("ALTER TABLE biz_task ADD COLUMN tray_limit INT NULL AFTER sample_count")

@@ -240,9 +240,6 @@
         </table>
       </div>
     </div>
-    <template #footer>
-      <button class="action-btn secondary" type="button" @click="closeDeviceDrawer">关闭</button>
-    </template>
   </AppModal>
   </div>
 </template>
