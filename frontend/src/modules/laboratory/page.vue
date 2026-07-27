@@ -473,7 +473,7 @@
 
     <AppModal
       :open="installModalOpen"
-      class="laboratory-operation-modal"
+      class="laboratory-operation-modal laboratory-confirmation-modal"
       data-testid="laboratory-install-modal"
       title="样品安装"
       @close="closeInstall"
@@ -546,7 +546,7 @@
 
     <AppModal
       :open="readyModalOpen"
-      class="laboratory-operation-modal"
+      class="laboratory-operation-modal laboratory-confirmation-modal"
       data-testid="laboratory-ready-modal"
       title="确认实验准备就绪"
       @close="closeReady"
@@ -642,9 +642,15 @@
                 </span>
               </div>
             </div>
-            <div>
+            <button
+              class="laboratory-running-samples-trigger"
+              data-testid="laboratory-running-samples-trigger"
+              type="button"
+              aria-label="查看全部样品信息"
+              @click="openRunningFullContent"
+            >
               <strong>对应样品</strong>
-              <div class="laboratory-running-tags">
+              <span class="laboratory-running-tags">
                 <span
                   v-for="sampleCode in previewItems(runningModalExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT)"
                   :key="`running-sample-${sampleCode}`"
@@ -656,18 +662,9 @@
                 <span v-if="overflowCount(runningModalExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT) > 0" class="laboratory-more-count">
                   +{{ overflowCount(runningModalExperiment.sampleCodes, RUNNING_SAMPLE_PREVIEW_LIMIT) }}
                 </span>
-              </div>
-            </div>
+              </span>
+            </button>
           </div>
-          <button
-            v-if="runningModalExperiment.trayCodes.length > RUNNING_TRAY_PREVIEW_LIMIT || runningModalExperiment.sampleCodes.length > RUNNING_SAMPLE_PREVIEW_LIMIT"
-            class="laboratory-inline-link laboratory-running-show-all"
-            data-testid="laboratory-running-show-all"
-            type="button"
-            @click="openRunningFullContent"
-          >
-            查看全部
-          </button>
           <div class="laboratory-running-modal__hint muted">
             <span>{{ runningModalExperiment.completed ? "实验状态已自动更新为实验已完成。" : "点击空白处可临时隐藏弹窗，10 秒无操作后会自动恢复。" }}</span>
             <span v-if="!runningModalExperiment.completed && runningModalExperiment.remainingSeconds <= 0">实验已超时，请在确认现场状态后完成实验。</span>
@@ -677,7 +674,6 @@
             <p><strong>实验名称</strong> {{ runningModalExperiment.experimentName }}</p>
             <p><strong>托盘</strong> {{ runningModalExperiment.trayCodes.length }} 个</p>
             <p><strong>样品</strong> {{ runningModalExperiment.sampleCodes.length }} 个</p>
-            <button class="laboratory-inline-link" type="button" @click="openRunningFullContent">查看全部</button>
             <p>{{ completionConfirmMessage }}</p>
             <div class="laboratory-running-complete-prompt__actions">
               <button class="action-btn secondary" type="button" @click="closeCompleteConfirm">取消</button>
@@ -687,7 +683,7 @@
             </div>
           </div>
           <div class="laboratory-running-actions">
-            <button v-if="!completePromptVisible && !runningModalExperiment.completed && !currentAxisCompletion.enabled" class="action-btn" data-testid="laboratory-complete-experiment" type="button" @click="openCompleteConfirm">
+            <button v-if="!completePromptVisible && !runningModalExperiment.completed && !currentAxisCompletion.enabled" class="action-btn laboratory-running-complete-button" data-testid="laboratory-complete-experiment" type="button" @click="openCompleteConfirm">
               实验完成
             </button>
             <button

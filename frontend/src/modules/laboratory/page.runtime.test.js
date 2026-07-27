@@ -4035,6 +4035,7 @@ describe("LaboratoryPage runtime", () => {
     expect(resetTaskButton()?.hasAttribute("disabled")).toBe(false);
 
     await mounted.get('[data-testid="laboratory-install"]').trigger("click");
+    expect(mounted.get('[data-testid="laboratory-install-modal"]').classes()).toContain("laboratory-confirmation-modal");
     await mounted.get('[data-testid="laboratory-install-confirm"]').trigger("click");
     await waitForSamplesUpdatedEvent(dispatchEventSpy, 2);
 
@@ -4100,6 +4101,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
 
     await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
+    expect(mounted.get('[data-testid="laboratory-ready-modal"]').classes()).toContain("laboratory-confirmation-modal");
     await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
     await waitForSamplesUpdatedEvent(dispatchEventSpy, 4);
 
@@ -4859,7 +4861,7 @@ describe("LaboratoryPage runtime", () => {
     expect(findRunningModal()?.textContent || "").toContain("TP-001");
   });
 
-  test("collapses oversized running modal content and exposes all trays and samples on demand", async () => {
+  test("opens all trays and samples by clicking the running sample area without a separate view-all button", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.experiment_trays] = Array.from({ length: 7 }, (_, index) => ({
       task_code: "SYLU-2026-04-101",
@@ -4890,8 +4892,10 @@ describe("LaboratoryPage runtime", () => {
     expect(runningModal()?.textContent || "").toContain("+4");
     expect(runningModal()?.textContent || "").toContain("+2");
     expect(runningModal()?.textContent || "").not.toContain("TP-007");
+    expect(runningModal()?.querySelector('[data-testid="laboratory-running-show-all"]')).toBeNull();
+    expect(runningModal()?.textContent || "").not.toContain("查看全部");
 
-    runningModal()?.querySelector('[data-testid="laboratory-running-show-all"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    runningModal()?.querySelector('[data-testid="laboratory-running-samples-trigger"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
 
     expect(mounted.find('[data-testid="laboratory-full-content-modal"].is-open').exists()).toBe(true);
@@ -4901,11 +4905,14 @@ describe("LaboratoryPage runtime", () => {
 
     mounted.get('[data-testid="laboratory-full-content-modal"] .modal-close').trigger("click");
     await nextTick();
-    runningModal()?.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const completeExperimentButton = runningModal()?.querySelector('[data-testid="laboratory-complete-experiment"]');
+    expect(completeExperimentButton?.classList.contains("laboratory-running-complete-button")).toBe(true);
+    completeExperimentButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
 
     expect(runningModal()?.textContent || "").toContain("托盘 7 个");
     expect(runningModal()?.textContent || "").toContain("样品 7 个");
+    expect(runningModal()?.textContent || "").not.toContain("查看全部");
     expect(runningModal()?.textContent || "").not.toContain("TP-007、");
   });
 
