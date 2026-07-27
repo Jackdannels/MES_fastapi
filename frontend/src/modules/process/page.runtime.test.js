@@ -334,7 +334,7 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.find("[data-testid='process-start-button-盐雾试验室']").exists()).toBe(false);
   });
 
-  test("collapses oversized task tray and sample sections behind a full detail modal", async () => {
+  test("shows up to nine samples and opens the full detail modal from the ellipsis", async () => {
     mocks.reset();
     const trayRows = Array.from({ length: 8 }, (_, index) => {
       const number = String(index + 1).padStart(3, "0");
@@ -355,8 +355,8 @@ describe("ProcessPage runtime", () => {
       runningTrayRows: trayRows.slice(0, 4),
       selectedTraySummary: {
         ...mocks.createSelectedTaskDetail().selectedTraySummary,
-        sampleCodes: Array.from({ length: 9 }, (_, index) => `SP-LONG-${index + 1}`),
-        sampleSummary: "SP-LONG-1、SP-LONG-2、SP-LONG-3、SP-LONG-4、SP-LONG-5 +4",
+        sampleCodes: Array.from({ length: 16 }, (_, index) => `SP-LONG-${index + 1}`),
+        sampleSummary: "SP-LONG-1、SP-LONG-2、SP-LONG-3、SP-LONG-4、SP-LONG-5、SP-LONG-6、SP-LONG-7、SP-LONG-8、SP-LONG-9 +7",
       },
       trayCodes: trayRows.map((row) => row.trayCode),
       trayCount: trayRows.length,
@@ -367,11 +367,23 @@ describe("ProcessPage runtime", () => {
 
     expect(wrapper.findAll(".process-task-tray-chip")).toHaveLength(5);
     expect(wrapper.find("[data-testid='process-tray-chip-TRAY-006']").exists()).toBe(false);
-    expect(wrapper.findAll("[data-testid^='process-selected-tray-sample-item-']")).toHaveLength(5);
+    expect(wrapper.findAll("[data-testid^='process-selected-tray-sample-item-']")).toHaveLength(9);
     expect(wrapper.findAll(".process-task-tray-row")).toHaveLength(4);
     expect(wrapper.find("[data-testid='process-tray-button-TRAY-008']").exists()).toBe(false);
     expect(wrapper.get("[data-testid='process-tray-button-TRAY-001']").text()).not.toContain("SP-001-B");
-    expect(wrapper.text()).toContain("+4");
+    const sampleCard = wrapper.get("[data-testid='process-sample-code-card']");
+    const sampleOverflowButton = sampleCard.get("[data-testid='process-show-all-samples']");
+    expect(sampleCard.text()).toContain("SP-LONG-9");
+    expect(sampleCard.text()).not.toContain("SP-LONG-10");
+    expect(sampleCard.text()).not.toContain("+7");
+    expect(sampleCard.text()).not.toContain("查看全部");
+    expect(sampleOverflowButton.text()).toBe("…");
+    expect(sampleOverflowButton.attributes("aria-label")).toContain("另有 7 个样品未显示");
+
+    await sampleOverflowButton.trigger("click");
+
+    expect(wrapper.find('[data-testid="process-task-full-list-modal"].is-open').exists()).toBe(true);
+    await wrapper.get('[data-testid="process-task-full-list-modal"] .modal-close').trigger("click");
 
     await wrapper.get("[data-testid='process-show-all-trays']").trigger("click");
 

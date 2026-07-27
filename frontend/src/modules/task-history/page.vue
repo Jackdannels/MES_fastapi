@@ -120,6 +120,46 @@
               </div>
 
               <div v-if="selectedTray" class="history-tray-detail">
+                <div class="history-tray-export-bar" data-testid="history-tray-export-bar">
+                  <div class="history-tray-export-copy">
+                    <strong>托盘日志导出</strong>
+                  </div>
+                  <div class="history-tray-export-actions" aria-label="导出托盘日志">
+                    <button
+                      class="history-export-button"
+                      :disabled="!hasAnyTrayAuditEvents"
+                      type="button"
+                      @click="openExportChoice('csv')"
+                    >
+                      CSV
+                    </button>
+                    <button
+                      class="history-export-button"
+                      :disabled="!hasAnyTrayAuditEvents"
+                      type="button"
+                      @click="openExportChoice('json')"
+                    >
+                      JSON
+                    </button>
+                    <button
+                      class="history-export-button history-export-button--primary"
+                      :disabled="!hasAnyTrayAuditEvents"
+                      type="button"
+                      @click="openExportChoice('svg')"
+                    >
+                      导出日志图
+                    </button>
+                  </div>
+                </div>
+                <p
+                  v-if="exportFeedback"
+                  class="history-export-feedback"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {{ exportFeedback }}
+                </p>
+
                 <div class="history-tray-unified-flow" data-testid="history-tray-unified-flow">
                   <div class="history-tray-flow-current">{{ selectedTrayFlow.currentStatus }}</div>
                   <div class="history-tray-flow-grid">
@@ -130,16 +170,9 @@
                       :class="{ current: step.active, reached: step.reached }"
                     >
                       <span class="history-flow-label">{{ step.label }}</span>
-                      <span
-                        class="history-flow-time"
-                        :title="formatHistoryTime(step.time)"
-                      >
-                        <span class="history-flow-time__date">
-                          {{ formatHistoryDatePart(step.time) }}
-                        </span>
-                        <span class="history-flow-time__clock">
-                          {{ formatHistoryClockPart(step.time) }}
-                        </span>
+                      <span class="history-flow-time" :title="formatHistoryTime(step.time)">
+                        <span class="history-flow-time__date">{{ formatHistoryDatePart(step.time) }}</span>
+                        <span class="history-flow-time__clock">{{ formatHistoryClockPart(step.time) }}</span>
                       </span>
                       <span class="history-flow-dot"></span>
                     </div>
@@ -152,6 +185,37 @@
         </section>
       </aside>
     </div>
+
+    <AppModal
+      :open="exportChoiceOpen"
+      content-class="history-export-scope-modal"
+      :title="`导出${pendingExportLabel}`"
+      @close="closeExportChoice"
+    >
+      <div class="history-export-scope-options" data-testid="history-export-scope-options">
+        <p v-if="exportSubmitting" class="history-export-progress" role="status" aria-live="polite">
+          正在生成导出文件，请稍候…
+        </p>
+        <button
+          class="history-export-scope-option"
+          :disabled="exportSubmitting || selectedTrayAuditLog.events.length === 0"
+          type="button"
+          @click="exportTrayScope('current')"
+        >
+          <strong>当前托盘</strong>
+          <span>{{ selectedTray?.trayCode || "-" }}，直接生成一个{{ pendingExportLabel }}文件</span>
+        </button>
+        <button
+          class="history-export-scope-option"
+          :disabled="exportSubmitting || !hasAnyTrayAuditEvents"
+          type="button"
+          @click="exportTrayScope('all')"
+        >
+          <strong>本任务全部托盘</strong>
+          <span>{{ selectedTaskTrayAuditLogs.length }} 个托盘，自动打包为 ZIP 压缩文件</span>
+        </button>
+      </div>
+    </AppModal>
   </section>
 </template>
 
@@ -160,9 +224,10 @@ defineOptions({
   name: "TaskHistoryPage",
 });
 
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
+import AppModal from "@/components/shared/AppModal.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { readTaskHistoryPage } from "@/lib/taskHistoryApi";
@@ -174,6 +239,13 @@ import {
   formatHistoryDatePart,
   formatHistoryTime,
 } from "./model";
+import {
+  buildTrayAuditCsv,
+  buildTrayAuditJson,
+  buildTrayAuditLog,
+  buildTrayAuditSvg,
+} from "./trayAuditLog";
+import { buildZipArchive } from "./zipArchive";
 
 const tasks = ref([]);
 const samples = ref([]);
@@ -188,8 +260,15 @@ const experimentRuns = ref([]);
 const experimentRunTrays = ref([]);
 const experimentTrays = ref([]);
 const schedules = ref([]);
+const stagingEvents = ref([]);
+const attendanceOperations = ref([]);
+const exportFeedback = ref("");
+const exportChoiceOpen = ref(false);
+const exportSubmitting = ref(false);
+const pendingExportFormat = ref("svg");
 const historyServerTotalCount = ref(0);
 const historyServerPageCount = ref(1);
+let exportFeedbackTimer = 0;
 const HISTORY_SNAPSHOT_KEYS = [
   STORAGE_KEYS.samples,
   STORAGE_KEYS.experiments,
@@ -197,6 +276,7 @@ const HISTORY_SNAPSHOT_KEYS = [
   STORAGE_KEYS.experiment_run_trays,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.schedules,
+  STORAGE_KEYS.staging_events,
 ];
 const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
 
@@ -232,6 +312,27 @@ const selectedTraySampleRows = computed(() => {
   }
   return rows;
 });
+const buildAuditLogForTray = (trayCode) => buildTrayAuditLog({
+  attendanceOperations: attendanceOperations.value,
+  experimentTrays: experimentTrays.value,
+  samples: samples.value,
+  stagingEvents: stagingEvents.value,
+  taskCode: selectedTask.value?.code,
+  trayCode,
+});
+const selectedTaskTrayAuditLogs = computed(() => (selectedTask.value?.trays || []).map((tray) => ({
+  log: buildAuditLogForTray(tray.trayCode),
+  trayCode: tray.trayCode,
+})));
+const selectedTrayAuditLog = computed(() => selectedTaskTrayAuditLogs.value
+  .find((item) => item.trayCode === selectedTray.value?.trayCode)?.log || buildTrayAuditLog());
+const hasAnyTrayAuditEvents = computed(() => selectedTaskTrayAuditLogs.value
+  .some((item) => item.log.events.length > 0));
+const pendingExportLabel = computed(() => ({
+  csv: "CSV",
+  json: "JSON",
+  svg: "日志图",
+}[pendingExportFormat.value] || "日志"));
 const selectedTrayFlow = computed(() => {
   if (!selectedTray.value) {
     return buildTrayFlowView();
@@ -249,6 +350,100 @@ const selectedTrayFlow = computed(() => {
     trayCode: selectedTray.value.trayCode,
   });
 });
+
+const setExportFeedback = (message) => {
+  window.clearTimeout(exportFeedbackTimer);
+  exportFeedback.value = message;
+  exportFeedbackTimer = window.setTimeout(() => {
+    exportFeedback.value = "";
+  }, 4000);
+};
+
+const downloadBlob = ({ blob, filename }) => {
+  const url = URL.createObjectURL(blob);
+  const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => revokeObjectURL(url), 0);
+};
+
+const buildExportFile = ({ events, format, taskCode, trayCode }) => {
+  const baseName = `${trayCode}-托盘日志`;
+  if (format === "csv") {
+    return {
+      content: buildTrayAuditCsv({ events, taskCode, trayCode }),
+      name: `${baseName}.csv`,
+      mimeType: "text/csv;charset=utf-8",
+    };
+  }
+  if (format === "json") {
+    return {
+      content: buildTrayAuditJson({ events, taskCode, trayCode }),
+      name: `${baseName}.json`,
+      mimeType: "application/json;charset=utf-8",
+    };
+  }
+  return {
+    content: buildTrayAuditSvg({ events, taskCode, trayCode }),
+    name: `${baseName}.svg`,
+    mimeType: "image/svg+xml;charset=utf-8",
+  };
+};
+
+const openExportChoice = (format) => {
+  pendingExportFormat.value = format;
+  exportChoiceOpen.value = true;
+};
+
+const closeExportChoice = () => {
+  if (!exportSubmitting.value) {
+    exportChoiceOpen.value = false;
+  }
+};
+
+const exportTrayScope = async (scope) => {
+  if (exportSubmitting.value) {
+    return;
+  }
+  const taskCode = selectedTask.value?.code || "task";
+  const selectedItems = scope === "all"
+    ? selectedTaskTrayAuditLogs.value.filter((item) => item.log.events.length > 0)
+    : selectedTaskTrayAuditLogs.value.filter((item) => item.trayCode === selectedTray.value?.trayCode && item.log.events.length > 0);
+  if (!selectedItems.length) {
+    return;
+  }
+  exportSubmitting.value = true;
+  try {
+    const files = selectedItems.map((item) => buildExportFile({
+      events: item.log.events,
+      format: pendingExportFormat.value,
+      taskCode,
+      trayCode: item.trayCode,
+    }));
+    if (scope === "all") {
+      const archive = await buildZipArchive(files);
+      downloadBlob({
+        blob: new Blob([archive], { type: "application/zip" }),
+        filename: `${taskCode}-全部托盘-${pendingExportFormat.value}.zip`,
+      });
+      setExportFeedback(`已将 ${files.length} 个托盘的${pendingExportLabel.value}打包为 ZIP。`);
+    } else {
+      const [file] = files;
+      downloadBlob({
+        blob: new Blob([file.content], { type: file.mimeType }),
+        filename: file.name,
+      });
+      setExportFeedback(`已导出当前托盘${pendingExportLabel.value}。`);
+    }
+    exportChoiceOpen.value = false;
+  } finally {
+    exportSubmitting.value = false;
+  }
+};
 
 const selectTask = (taskCode) => {
   selectedTaskCode.value = taskCode;
@@ -307,6 +502,8 @@ const refreshHistoryData = async () => {
     assignArrayFromSnapshot(experimentRunTrays, safePayload, "experimentRunTrays");
     assignArrayFromSnapshot(experimentTrays, safePayload, "experimentTrays");
     assignArrayFromSnapshot(schedules, safePayload, "schedules");
+    assignArrayFromSnapshot(stagingEvents, safePayload, "stagingEvents");
+    assignArrayFromSnapshot(attendanceOperations, safePayload, "attendanceOperations");
     historyServerTotalCount.value = Number.isFinite(Number(safePayload.totalCount)) ? Number(safePayload.totalCount) : historyView.value.totalCount || 0;
     historyServerPageCount.value = Math.max(1, Number.isFinite(Number(safePayload.totalPages)) ? Number(safePayload.totalPages) : historyView.value.totalPages || 1);
     const currentPage = Number.parseInt(String(safePayload.currentPage ?? historyPage.value), 10);
@@ -324,7 +521,6 @@ useStorageSnapshotRefresh({
   keys: [
     STORAGE_KEYS.tasks,
     ...HISTORY_SNAPSHOT_KEYS,
-    STORAGE_KEYS.staging_events,
   ],
   refresh: refreshHistoryData,
   debounceMs: 100,
@@ -332,6 +528,10 @@ useStorageSnapshotRefresh({
 
 onMounted(async () => {
   await refreshHistoryData();
+});
+
+onBeforeUnmount(() => {
+  window.clearTimeout(exportFeedbackTimer);
 });
 </script>
 
@@ -561,6 +761,7 @@ onMounted(async () => {
 }
 
 .history-tray-tab {
+  min-height: 44px;
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -582,7 +783,7 @@ onMounted(async () => {
 
 .history-tray-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(540px, max-content);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, max-content);
   gap: 12px;
   align-items: start;
 }
@@ -620,6 +821,125 @@ onMounted(async () => {
   line-height: 1.45;
   text-align: left;
   white-space: nowrap;
+}
+
+.history-tray-export-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(var(--industrial-accent-rgb), 0.08);
+}
+
+.history-tray-export-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.history-tray-export-copy strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.history-tray-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: end;
+}
+
+.history-export-button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-panel-strong);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.history-export-button:hover:not(:disabled),
+.history-export-button:focus-visible {
+  border-color: var(--accent);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
+}
+
+.history-export-button--primary {
+  border-color: rgba(var(--industrial-accent-rgb), 0.55);
+  background: rgba(var(--industrial-accent-rgb), 0.16);
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.history-export-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.history-export-feedback {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.history-export-feedback {
+  border: 1px solid rgba(34, 197, 94, 0.34);
+  background: rgba(34, 197, 94, 0.09);
+  color: var(--success);
+}
+
+.history-export-scope-options {
+  display: grid;
+  gap: 12px;
+}
+
+.history-export-progress {
+  margin: 0;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.history-export-scope-option {
+  display: grid;
+  gap: 5px;
+  min-height: 76px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel-strong);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease;
+}
+
+.history-export-scope-option:hover:not(:disabled),
+.history-export-scope-option:focus-visible {
+  border-color: var(--accent);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+}
+
+.history-export-scope-option span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.history-export-scope-option:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+:deep(.history-export-scope-modal) {
+  width: min(520px, calc(100vw - 32px));
 }
 
 .history-tray-unified-flow {
@@ -757,6 +1077,14 @@ onMounted(async () => {
     justify-content: start;
   }
 
+  .history-tray-export-bar {
+    display: grid;
+  }
+
+  .history-tray-export-actions {
+    justify-content: flex-start;
+  }
+
   .history-tray-flow-grid {
     grid-template-columns: 1fr;
   }
@@ -767,6 +1095,13 @@ onMounted(async () => {
     width: 2px;
     height: 10px;
     transform: translateX(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-export-button,
+  .history-export-scope-option {
+    transition: none;
   }
 }
 

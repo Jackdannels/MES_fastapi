@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Query
 
 from app.core.storage_backend import get_storage_backend
+from app.services.attendance_service import get_attendance_service
 
 
 router = APIRouter(prefix="/api/task-history", tags=["task-history"])
@@ -214,6 +215,14 @@ def filter_rows_by_task(snapshot: dict[str, Any], key: str, task_codes: set[str]
     return [dict(row) for row in as_list(snapshot.get(key)) if isinstance(row, dict) and relation_task_code(row) in task_codes]
 
 
+def read_task_attendance_operations(task_codes: set[str]) -> list[dict[str, Any]]:
+    try:
+        rows = get_attendance_service().list_operation_logs()
+    except Exception:
+        return []
+    return [dict(row) for row in rows if isinstance(row, dict) and relation_task_code(row) in task_codes]
+
+
 @router.get("")
 def read_task_history_page(
     page: int = Query(default=1, ge=1),
@@ -248,4 +257,6 @@ def read_task_history_page(
         "experimentRunTrays": filter_rows_by_task(snapshot, "mes.experiment_run_trays", page_codes),
         "experimentTrays": filter_rows_by_task(snapshot, "mes.experiment_trays", page_codes),
         "schedules": filter_rows_by_task(snapshot, "mes.schedules", page_codes),
+        "stagingEvents": filter_rows_by_task(snapshot, "mes.staging_events", page_codes),
+        "attendanceOperations": read_task_attendance_operations(page_codes),
     }

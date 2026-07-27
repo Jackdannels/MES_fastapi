@@ -82,10 +82,16 @@
             >
               {{ sampleCode }}
             </div>
-            <div v-if="hiddenSelectedSampleCount > 0" class="process-task-more-line">
-              <span class="process-task-more-count">+{{ hiddenSelectedSampleCount }}</span>
-              <button class="process-task-more-button" type="button" @click="$emit('open-full-list')">查看全部</button>
-            </div>
+            <button
+              v-if="hiddenSelectedSampleCount > 0"
+              class="process-task-more-count process-task-more-button process-task-sample-overflow-button"
+              :aria-label="`显示全部样品，另有 ${hiddenSelectedSampleCount} 个样品未显示`"
+              data-testid="process-show-all-samples"
+              type="button"
+              @click="$emit('open-full-list')"
+            >
+              …
+            </button>
           </div>
           <div v-else class="muted">当前托盘暂无样品编号。</div>
         </section>
@@ -125,7 +131,7 @@ const props = defineProps({
 
 defineEmits(["close", "open-full-list", "open-task-selection", "select-tray"]);
 
-const TASK_SAMPLE_PREVIEW_LIMIT = 5;
+const TASK_SAMPLE_PREVIEW_LIMIT = 9;
 const takePreview = (items, limit) => (Array.isArray(items) ? items.slice(0, limit) : []);
 const hiddenCount = (items, limit) => Math.max(0, (Array.isArray(items) ? items.length : 0) - limit);
 const previewSelectedSampleCodes = computed(() => takePreview(props.detail?.selectedTraySummary?.sampleCodes, TASK_SAMPLE_PREVIEW_LIMIT));
@@ -144,15 +150,15 @@ const formatFlowTime = (value) => {
 </script>
 
 <style scoped>
-.process-task-modal-content { width: min(1260px, 97vw); max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; padding: 24px; }
-.process-task-detail-modal-content { display: flex; flex-direction: column; height: min(900px, calc(100dvh - 32px)); max-height: calc(100dvh - 32px); overflow: hidden; box-sizing: border-box; }
+.process-task-modal-content { width: min(1260px, 97vw); max-height: calc(100dvh - 16px); overflow: auto; overscroll-behavior: contain; padding: 24px; }
+.process-task-detail-modal-content { display: flex; flex-direction: column; height: min(980px, calc(100dvh - 16px)); max-height: calc(100dvh - 16px); overflow: hidden; box-sizing: border-box; }
 .process-task-modal-header { margin-bottom: 18px; }
 .process-task-modal-eyebrow { margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.12em; }
 .process-task-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.16), rgba(19, 26, 34, 0.96)); }
 .process-task-code-headline { margin: 0; font-size: clamp(30px, 4vw, 42px); line-height: 1; font-weight: 800; letter-spacing: 0.04em; color: var(--text); }
 .process-task-name-subtitle { margin: 10px 0 0; font-size: 15px; line-height: 1.4; color: var(--muted); }
 .process-task-status { flex-shrink: 0; }
-.process-task-detail-grid { display: grid; grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1.05fr) minmax(320px, 0.88fr); grid-template-rows: minmax(320px, 1.15fr) minmax(180px, 0.85fr); gap: 16px; flex: 1 1 auto; min-height: 0; margin-top: 16px; overflow: hidden; }
+.process-task-detail-grid { display: grid; grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1.05fr) minmax(320px, 0.88fr); grid-template-rows: minmax(320px, 1.15fr) minmax(300px, 0.85fr); gap: 16px; flex: 1 1 auto; min-height: 0; margin-top: 16px; overflow: hidden; }
 .process-task-summary-card,
 .process-task-keyfact { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel-strong); color: var(--text); min-width: 0; overflow: hidden; padding: 14px 16px; }
 .process-task-overview-panel { grid-column: 1; grid-row: 1; display: grid; grid-template-rows: auto auto auto; align-content: start; gap: 12px; min-height: 0; overflow: auto; }
@@ -168,11 +174,12 @@ const formatFlowTime = (value) => {
 .process-task-stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
 .process-task-stat { border-radius: 8px; background: var(--bg-panel-strong); padding: 12px; border: 1px solid var(--border); color: var(--text); }
 .process-task-selected-samples { grid-column: 1 / span 2; grid-row: 2; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.process-task-sample-code-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 8px; min-height: 0; overflow: auto; overscroll-behavior: contain; padding-right: 4px; scrollbar-gutter: stable; }
+.process-task-sample-code-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 8px; min-height: 0; overflow: visible; }
 .process-task-sample-code-row { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-panel-strong); font-size: 14px; font-weight: 600; color: var(--text); word-break: break-all; }
 .process-task-more-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 2px; }
 .process-task-more-count { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(var(--industrial-accent-rgb), 0.38); background: rgba(var(--industrial-accent-rgb), 0.12); color: var(--text); font-size: 13px; font-weight: 700; }
 .process-task-more-button { appearance: none; cursor: pointer; min-height: 32px; padding: 5px 12px; border: 1px solid rgba(var(--industrial-accent-rgb), 0.38); border-radius: 999px; background: rgba(var(--industrial-accent-rgb), 0.12); color: var(--text); font-size: 13px; font-weight: 700; }
+.process-task-sample-overflow-button { width: 100%; min-height: 44px; font-size: 20px; letter-spacing: 0.12em; }
 .process-task-select-entry { margin-bottom: 12px; }
 .process-task-select-button { appearance: none; width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg-panel-strong); color: var(--text); font: inherit; font-size: 14px; font-weight: 800; text-align: left; cursor: pointer; overflow-wrap: anywhere; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .process-task-select-button strong { color: var(--accent); font-size: 13px; }

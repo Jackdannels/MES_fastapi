@@ -14,6 +14,7 @@ class FakeStorage:
             "mes.experiment_run_trays": [],
             "mes.experiment_trays": [],
             "mes.schedules": [],
+            "mes.staging_events": [],
         }
         self.payloads.update(deepcopy(payloads or {}))
 
@@ -21,11 +22,20 @@ class FakeStorage:
         return deepcopy(self.payloads)
 
 
-def build_client(monkeypatch, payloads=None):
+def build_client(monkeypatch, payloads=None, attendance_operations=None):
     from app.api.routes import task_history as task_history_route
 
     storage = FakeStorage(payloads)
     monkeypatch.setattr(task_history_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(
+        task_history_route,
+        "read_task_attendance_operations",
+        lambda task_codes: [
+            deepcopy(row)
+            for row in (attendance_operations or [])
+            if row.get("taskCode") in task_codes
+        ],
+    )
 
     app = FastAPI()
     app.include_router(task_history_route.router)
@@ -66,7 +76,17 @@ def test_task_history_page_returns_only_requested_page_snapshot(monkeypatch):
                 {"task_code": "TASK-B", "experiment_code": "TASK-B-A", "tray_code": "TP-B"},
                 {"task_code": "TASK-C", "experiment_code": "TASK-C-A", "tray_code": "TP-C"},
             ],
+            "mes.staging_events": [
+                {"id": "event-a", "task_code": "TASK-A", "tray_code": "TP-A", "action": "manufacturer_return"},
+                {"id": "event-b", "task_code": "TASK-B", "tray_code": "TP-B", "action": "manufacturer_return"},
+                {"id": "event-c", "task_code": "TASK-C", "tray_code": "TP-C", "action": "manufacturer_return"},
+            ],
         },
+        attendance_operations=[
+            {"id": 1, "taskCode": "TASK-A", "employeeName": "甲"},
+            {"id": 2, "taskCode": "TASK-B", "employeeName": "乙"},
+            {"id": 3, "taskCode": "TASK-C", "employeeName": "丙"},
+        ],
     )
 
     response = client.get("/api/task-history?page=1&pageSize=2")
@@ -79,6 +99,8 @@ def test_task_history_page_returns_only_requested_page_snapshot(monkeypatch):
     assert {sample["task_code"] for sample in payload["samples"]} == {"TASK-C", "TASK-B"}
     assert {experiment["task_code"] for experiment in payload["experiments"]} == {"TASK-C", "TASK-B"}
     assert {entry["task_code"] for entry in payload["experimentTrays"]} == {"TASK-C", "TASK-B"}
+    assert {event["id"] for event in payload["stagingEvents"]} == {"event-c", "event-b"}
+    assert {operation["id"] for operation in payload["attendanceOperations"]} == {2, 3}
 
 
 def test_task_history_page_filters_by_query_and_days(monkeypatch):

@@ -53,13 +53,13 @@ describe("ProcessPage structure", () => {
     expect(source).toContain("process-task-overview-panel");
     expect(source).toContain("process-task-tray-panel");
     expect(source).toContain("process-task-flow-card");
-    expect(detailModal).toContain("height: min(900px, calc(100dvh - 32px))");
+    expect(detailModal).toContain("height: min(980px, calc(100dvh - 16px))");
     expect(detailModal).toContain("overflow: hidden");
     expect(detailModal).not.toContain("overflow: auto");
     expect(detailModal).not.toContain("overflow: scroll");
 
     expect(detailGrid).toContain("grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1.05fr) minmax(320px, 0.88fr)");
-    expect(detailGrid).toContain("grid-template-rows: minmax(320px, 1.15fr) minmax(180px, 0.85fr)");
+    expect(detailGrid).toContain("grid-template-rows: minmax(320px, 1.15fr) minmax(300px, 0.85fr)");
     expect(detailGrid).toContain("overflow: hidden");
     expect(overviewPanel).toContain("display: grid");
     expect(overviewPanel).toContain("grid-column: 1");
@@ -108,9 +108,12 @@ describe("ProcessPage structure", () => {
     expect(source).not.toContain("process-remaining-tray-count");
     expect(sampleCodeCard).toContain("grid-column: 1 / span 2");
     expect(sampleCodeCard).toContain("grid-row: 2");
+    expect(source).toContain("TASK_SAMPLE_PREVIEW_LIMIT = 9");
     expect(sampleCodeCard).toContain("overflow: hidden");
     expect(sampleCodeList).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
-    expect(sampleCodeList).toContain("overflow: auto");
+    expect(sampleCodeList).toContain("overflow: visible");
+    expect(sampleCodeList).not.toMatch(/overflow:\s*(auto|scroll)/);
+    expect(sampleCodeList).not.toContain("scrollbar-gutter");
   });
 
   test("keeps process task selector controls on industrial dark tokens", () => {
