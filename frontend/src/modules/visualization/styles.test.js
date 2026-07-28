@@ -241,7 +241,7 @@ describe("visualization styles", () => {
     expect(pageSource).toContain("实验数量");
     expect(pageSource).toContain("todayTaskPlanView");
     expect(pageSource).not.toContain("mockTodayTaskPlans");
-    expect(source).toMatch(/\.visual-task-plan-table\s*{[^}]*grid-auto-rows:\s*minmax\(92px,\s*auto\);/s);
+    expect(source).toMatch(/\.visual-task-plan-table\s*{[^}]*grid-template-rows:\s*42px minmax\(0,\s*1fr\);/s);
     expect(source).toMatch(/\.visual-task-plan-table\.is-empty\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\);/s);
     expect(pageSource).toContain("taskRows.length ? \"\" : \"is-empty\"");
     expect(source).toMatch(/\.visual-task-plan-row\.is-flat\s*{[^}]*min-height:\s*92px;/s);
@@ -253,8 +253,16 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-task-plan-table-head span\s*{[^}]*min-height:\s*42px;[^}]*font-size:\s*18px;/s);
     expect(pageSource).toContain("visual-task-plan-tray-chip");
     expect(source).toMatch(/\.visual-task-plan-table-head\.is-flat,\s*\.visual-task-plan-row\.is-flat\s*{[^}]*grid-template-columns:\s*minmax\(154px,\s*1\.08fr\)\s+minmax\(96px,\s*0\.7fr\)\s+minmax\(112px,\s*0\.74fr\)\s+minmax\(104px,\s*0\.68fr\)\s+minmax\(220px,\s*1\.62fr\)\s+minmax\(72px,\s*0\.44fr\);/s);
-    expect(source).toMatch(/\.visual-task-plan-tray-list\s*{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;/s);
-    expect(source).toMatch(/\.visual-task-plan-tray-chip\s*{[^}]*flex:\s*0 1 calc\(50% - 5px\);/s);
+    expect(pageSource).toContain("resolveTaskColor(row.taskCode)");
+    expect(pageSource).toContain("singleCycleHeight > viewport.clientHeight");
+    expect(pageSource).toContain("任务循环播放");
+    expect(source).toMatch(/\.visual-task-plan-tray-list\s*{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/s);
+    expect(source).toMatch(/\.visual-task-plan-row-list\.is-looping\s*{[^}]*animation:\s*task-plan-row-loop/s);
+    expect(source).toContain("@keyframes task-plan-row-loop");
+    const taskRowViewportRule = source.match(/\.visual-task-plan-row-viewport\s*{[^}]*}/s)?.[0] || "";
+    expect(taskRowViewportRule).toContain("contain: layout paint");
+    expect(taskRowViewportRule).not.toContain("mask-image");
+    expect(source).toMatch(/\.visual-task-plan-row-viewport\.is-scrollable::before,\s*\.visual-task-plan-row-viewport\.is-scrollable::after/s);
     expect(source).toMatch(/\.visual-task-plan-row \.visual-task-plan-tray-chip\s*{[^}]*min-height:\s*32px;[^}]*font-size:\s*16px;/s);
   });
 

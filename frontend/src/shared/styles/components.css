@@ -1008,6 +1008,10 @@ input[type="datetime-local"] {
   background: var(--bg-panel);
 }
 
+.task-list-pagination__jump .task-list-pagination__page-input--wide {
+  width: 68px;
+}
+
 .task-list-pagination__jump .app-number-input__field {
   min-height: 26px;
   padding: 4px 28px 4px 8px;

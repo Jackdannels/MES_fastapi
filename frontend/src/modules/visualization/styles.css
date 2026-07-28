@@ -1699,13 +1699,13 @@
   background:
     linear-gradient(
       135deg,
-      color-mix(in srgb, var(--schedule-task-color), transparent 74%),
-      color-mix(in srgb, var(--schedule-task-color), transparent 88%)
+      color-mix(in srgb, var(--schedule-task-color), transparent 58%),
+      color-mix(in srgb, var(--schedule-task-color), transparent 78%)
     ),
     rgba(2, 15, 20, 0.74);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--schedule-task-color), transparent 70%),
-    inset 0 0 24px color-mix(in srgb, var(--schedule-task-color), transparent 84%);
+    inset 0 0 0 1px color-mix(in srgb, var(--schedule-task-color), transparent 52%),
+    inset 0 0 24px color-mix(in srgb, var(--schedule-task-color), transparent 70%);
 }
 
 .visual-schedule-slot.state-running {
@@ -1713,8 +1713,8 @@
   background:
     linear-gradient(
       135deg,
-      color-mix(in srgb, var(--schedule-task-color), transparent 66%),
-      color-mix(in srgb, var(--schedule-task-color), transparent 82%)
+      color-mix(in srgb, var(--schedule-task-color), transparent 48%),
+      color-mix(in srgb, var(--schedule-task-color), transparent 70%)
     ),
     rgba(2, 15, 20, 0.76);
 }
@@ -2055,7 +2055,7 @@
 
 .visual-task-plan-table {
   display: grid;
-  grid-auto-rows: minmax(92px, auto);
+  grid-template-rows: 42px minmax(0, 1fr);
   align-content: start;
   gap: 7px;
   min-width: 0;
@@ -2065,6 +2065,60 @@
 
 .visual-task-plan-table.is-empty {
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+.visual-task-plan-row-viewport {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  contain: layout paint;
+}
+
+.visual-task-plan-row-viewport.is-scrollable::before,
+.visual-task-plan-row-viewport.is-scrollable::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  left: 0;
+  height: 18px;
+  pointer-events: none;
+}
+
+.visual-task-plan-row-viewport.is-scrollable::before {
+  top: 0;
+  background: linear-gradient(rgba(5, 7, 10, 0.94), transparent);
+}
+
+.visual-task-plan-row-viewport.is-scrollable::after {
+  bottom: 0;
+  background: linear-gradient(transparent, rgba(5, 7, 10, 0.94));
+}
+
+.visual-task-plan-row-list {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  will-change: transform;
+  backface-visibility: hidden;
+  contain: layout paint style;
+  transform: translate3d(0, 0, 0);
+}
+
+.visual-task-plan-row-list.is-looping {
+  animation: task-plan-row-loop var(--task-plan-row-loop-duration, 36s) linear infinite;
+}
+
+.visual-task-plan-row-viewport.is-scrollable:hover .visual-task-plan-row-list {
+  animation-play-state: paused;
+}
+
+.visual-task-plan-row-cycle {
+  display: grid;
+  gap: 7px;
+  padding-bottom: 7px;
 }
 
 .visual-task-plan-table-head,
@@ -2104,28 +2158,28 @@
   min-height: 38px;
   padding: 0 6px;
   border: 1px solid rgba(238, 253, 249, 0.1);
-  border-left: 3px solid var(--screen-cyan);
+  border-left: 4px solid color-mix(in srgb, var(--task-plan-row-color, var(--screen-cyan)), white 18%);
   border-radius: 5px;
   background:
-    linear-gradient(90deg, rgba(34, 211, 238, 0.1), transparent 70%),
+    linear-gradient(90deg, color-mix(in srgb, var(--task-plan-row-color, var(--screen-cyan)), transparent 70%), transparent 78%),
     rgba(5, 7, 10, 0.42);
 }
 
 .visual-task-plan-row.is-flat {
   min-height: 92px;
+  height: auto;
   padding: 0;
 }
 
 .visual-task-plan-row.is-tone-a {
   background:
-    linear-gradient(90deg, rgba(34, 211, 238, 0.14), rgba(34, 211, 238, 0.045) 60%, transparent),
+    linear-gradient(90deg, color-mix(in srgb, var(--task-plan-row-color, var(--screen-cyan)), transparent 64%), color-mix(in srgb, var(--task-plan-row-color, var(--screen-cyan)), transparent 88%) 62%, transparent),
     rgba(5, 7, 10, 0.42);
 }
 
 .visual-task-plan-row.is-tone-b {
-  border-left-color: rgba(134, 239, 172, 0.9);
   background:
-    linear-gradient(90deg, rgba(74, 222, 128, 0.12), rgba(74, 222, 128, 0.04) 60%, transparent),
+    linear-gradient(90deg, color-mix(in srgb, var(--task-plan-row-color, var(--screen-cyan)), transparent 60%), color-mix(in srgb, var(--task-plan-row-color, var(--screen-cyan)), transparent 86%) 58%, transparent),
     rgba(5, 7, 10, 0.42);
 }
 
@@ -2171,19 +2225,14 @@
 }
 
 .visual-task-plan-tray-list {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: center;
   gap: 8px 10px;
   width: 100%;
   min-width: 0;
   height: 100%;
   padding: 8px 10px;
-}
-
-.visual-task-plan-tray-chip {
-  flex: 0 1 calc(50% - 5px);
 }
 
 .visual-task-plan-row .visual-task-plan-tray-chip {
@@ -2206,6 +2255,15 @@
   text-overflow: clip;
   white-space: normal;
   word-break: break-all;
+}
+
+@keyframes task-plan-row-loop {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, -50%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visual-task-plan-row-list.is-looping { animation: none; }
 }
 
 .visual-task-plan-row .is-pending {

@@ -1,5 +1,6 @@
 import { h, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { serverNowMs } from "@/lib/serverClock";
 
 const normalizeVisualText = (value) => String(value || "").trim();
 const formatLoginTimeLabel = (value) => {
@@ -13,6 +14,34 @@ const formatLoginTimeLabel = (value) => {
   }
   return `${formatted}登录`;
 };
+const formatCountdownDuration = (totalSeconds) => {
+  const safeSeconds = Math.max(0, Math.floor(Number(totalSeconds) || 0));
+  const hours = String(Math.floor(safeSeconds / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((safeSeconds % 3600) / 60)).padStart(2, "0");
+  const seconds = String(safeSeconds % 60).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+};
+const buildLiveCountdown = (countdown, nowMs) => {
+  if (!countdown?.active) {
+    return countdown || { active: false, progressPercent: 0, remainingLabel: "" };
+  }
+  const startTime = Number(countdown.startTime);
+  const endTime = Number(countdown.endTime);
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) {
+    return countdown;
+  }
+  const remainingSeconds = Math.floor((endTime - nowMs) / 1000);
+  const duration = endTime - startTime;
+  const elapsed = Math.min(duration, Math.max(0, nowMs - startTime));
+  return {
+    ...countdown,
+    progressPercent: Math.min(100, Math.max(0, (elapsed / duration) * 100)),
+    remainingLabel: remainingSeconds >= 0
+      ? formatCountdownDuration(remainingSeconds)
+      : `已超时 ${formatCountdownDuration(Math.abs(remainingSeconds))}`,
+    remainingSeconds,
+  };
+};
 
 export const CurrentLabTasksScreen = {
   name: "CurrentLabTasksScreen",
@@ -25,6 +54,8 @@ export const CurrentLabTasksScreen = {
   setup(props) {
     const matrixRoot = ref(null);
     const scrollingLabs = ref(new Set());
+    const liveNowMs = ref(serverNowMs());
+    let clockTimer = null;
     let resizeObserver = null;
     let refreshQueued = false;
 
@@ -70,6 +101,9 @@ export const CurrentLabTasksScreen = {
 
     onMounted(() => {
       queueRefreshTrayLoops();
+      clockTimer = window.setInterval(() => {
+        liveNowMs.value = serverNowMs();
+      }, 1000);
       if (typeof ResizeObserver !== "undefined" && matrixRoot.value) {
         resizeObserver = new ResizeObserver(queueRefreshTrayLoops);
         resizeObserver.observe(matrixRoot.value);
@@ -79,6 +113,10 @@ export const CurrentLabTasksScreen = {
     });
 
     onUnmounted(() => {
+      if (clockTimer) {
+        window.clearInterval(clockTimer);
+        clockTimer = null;
+      }
       if (resizeObserver) {
         resizeObserver.disconnect();
         resizeObserver = null;
@@ -114,11 +152,12 @@ export const CurrentLabTasksScreen = {
         }));
       const shouldLoopTrays = scrollingLabs.value.has(lab.labName);
       const visibleTrayItems = shouldLoopTrays ? [...trayItems, ...trayItems] : trayItems;
-      const countdown = lab.countdown || {};
+      const countdown = buildLiveCountdown(lab.countdown || {}, liveNowMs.value);
+      const shouldBlink = lab.shouldBlink || (countdown.active && countdown.remainingSeconds >= 0 && countdown.remainingSeconds <= 5 * 60);
       return h(
         "article",
         {
-          class: ["card", previewToneClass, lab.shouldBlink ? "is-blinking" : ""],
+          class: ["card", previewToneClass, shouldBlink ? "is-blinking" : ""],
           "data-lab-name": lab.labName,
           "data-testid": "lab-matrix-card",
           key: lab.labName,

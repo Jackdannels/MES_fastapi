@@ -70,6 +70,18 @@ describe("AppPagination", () => {
     expect(wrapper.emitted("change")).toEqual([[8], [12]]);
   });
 
+  test("widens the jump input when the page range has three digits", () => {
+    const wrapper = mount(AppPagination, {
+      props: {
+        currentPage: 100,
+        pageCount: 214,
+      },
+    });
+
+    expect(wrapper.find(".task-list-pagination__page-input--wide").exists()).toBe(true);
+    expect(wrapper.get('[data-testid="pagination-jump-input"]').element.value).toBe("100");
+  });
+
   test("submits jump input with Enter and syncs when current page changes", async () => {
     const wrapper = mount(AppPagination, {
       props: {

@@ -155,7 +155,7 @@ const findLatestCompletedSchedule = ({ schedules, taskByCode, experimentByKey, l
 
 const buildCountdown = (runningExperiment) => {
   if (!runningExperiment?.active) {
-    return { active: false, progressPercent: 0, remainingLabel: "" };
+    return { active: false, endTime: null, progressPercent: 0, remainingLabel: "", startTime: null };
   }
   const startTime = Number(runningExperiment.startTime);
   const endTime = Number(runningExperiment.endTime);
@@ -164,8 +164,10 @@ const buildCountdown = (runningExperiment) => {
   const elapsed = duration > 0 ? duration - Math.max(0, remainingSeconds * 1000) : 0;
   return {
     active: true,
+    endTime: Number.isFinite(endTime) ? endTime : null,
     progressPercent: duration > 0 ? clampPercent((elapsed / duration) * 100) : 0,
     remainingLabel: runningExperiment.countdownLabel || "",
+    startTime: Number.isFinite(startTime) ? startTime : null,
   };
 };
 

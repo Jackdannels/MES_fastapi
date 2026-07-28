@@ -397,8 +397,6 @@ const labPickerGroup = ref("");
 const manualLabSelection = ref(false);
 const labRandomSeed = ref(Math.random());
 const scheduleWindowOffsetDays = ref(0);
-const currentNow = ref(serverNowDate());
-let clockTimer = null;
 let attendanceRefreshTimer = null;
 const SCREEN_STAGE_WIDTH = 1920;
 const SCREEN_STAGE_HEIGHT = 1080;
@@ -455,7 +453,7 @@ const currentLabTaskView = computed(() => {
   const snapshot = rawSnapshot.value || {};
   return buildLabCurrentTaskMatrixView({
     labNames: labNames.value,
-    now: currentNow.value,
+    now: serverNowDate(),
     tasks: snapshot[STORAGE_KEYS.tasks],
     samples: snapshot[STORAGE_KEYS.samples],
     devices: snapshot[STORAGE_KEYS.devices],
@@ -470,7 +468,7 @@ const currentLabTaskView = computed(() => {
 const todayTaskPlanView = computed(() => {
   const snapshot = rawSnapshot.value || {};
   return buildTodayTaskPlanView({
-    now: currentNow.value,
+    now: serverNowDate(),
     tasks: snapshot[STORAGE_KEYS.tasks],
     samples: snapshot[STORAGE_KEYS.samples],
     experiments: snapshot[STORAGE_KEYS.experiments],
@@ -702,27 +700,16 @@ const refreshViewportSize = () => {
     width: window.innerWidth || SCREEN_STAGE_WIDTH,
   };
 };
-const refreshVisualizationClock = () => {
-  currentNow.value = serverNowDate();
-};
-
-
 onMounted(() => {
   refreshViewportSize();
-  refreshVisualizationClock();
   initializeSnapshot();
   refreshAttendanceSessions();
   window.addEventListener("resize", refreshViewportSize);
-  clockTimer = window.setInterval(refreshVisualizationClock, 1000);
   attendanceRefreshTimer = window.setInterval(refreshAttendanceSessions, ATTENDANCE_REFRESH_MS);
 });
 
 onUnmounted(() => {
   window.removeEventListener("resize", refreshViewportSize);
-  if (clockTimer) {
-    window.clearInterval(clockTimer);
-    clockTimer = null;
-  }
   if (attendanceRefreshTimer) {
     window.clearInterval(attendanceRefreshTimer);
     attendanceRefreshTimer = null;

@@ -20,6 +20,7 @@
     <label v-if="showJumpControls" class="task-list-pagination__jump">
       <AppNumberInput
         v-model="jumpValue"
+        :class="{ 'task-list-pagination__page-input--wide': safePageCount >= 100 }"
         data-testid="pagination-jump-input"
         aria-label="页码"
         min="1"
