@@ -367,6 +367,13 @@
     <h3>{{ uiText.scheduleList }}</h3>
     <div class="toolbar">
       <input v-model="scheduleSearch" class="search-input" :placeholder="uiText.scheduleSearchPlaceholder" />
+      <AppPagination
+        v-if="schedulePageCount > 1"
+        :current-page="scheduleCurrentPage"
+        :page-count="schedulePageCount"
+        data-testid="schedule-pagination"
+        @change="setSchedulePage"
+      />
     </div>
     <table class="table" id="schedule-table">
       <thead>
@@ -387,7 +394,7 @@
           <td class="muted" colspan="9">{{ uiText.noScheduleRecords }}</td>
         </tr>
         <tr v-for="(row, index) in scheduleRows" :key="row.id">
-          <td>{{ index + 1 }}</td>
+          <td>{{ (scheduleCurrentPage - 1) * schedulePageSize + index + 1 }}</td>
           <td>{{ row.taskCode }}</td>
           <td>{{ row.experimentLabel || "-" }}</td>
           <td>{{ row.axisLabel || "-" }}</td>
@@ -673,6 +680,7 @@ import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import AppNumberInput from "@/components/shared/AppNumberInput.vue";
+import AppPagination from "@/components/shared/AppPagination.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { useSchedulePage } from "./useSchedulePage";
@@ -794,6 +802,9 @@ const {
   scheduleDrawerOpen,
   scheduleForm,
   scheduleCustomStartMinTime,
+  scheduleCurrentPage,
+  schedulePageCount,
+  schedulePageSize,
   scheduleAxisRequirementOptions,
   scheduleCompletedAxisOptions,
   scheduleAxisOptions,
@@ -803,6 +814,7 @@ const {
   maintenanceLabNotice,
   PLANNED_DURATION_MAX_DAYS,
   PLANNED_DURATION_MAX_HOURS,
+  setSchedulePage,
   submitSchedule,
   summaryCards,
   taskOptions,

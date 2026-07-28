@@ -115,9 +115,7 @@ def replace_experiment_run_steps(cursor, experiment_run_steps: list[dict[str, An
     )
 
 
-def replace_experiments(cursor, experiments: list[dict[str, Any]]) -> None:
-    rows = [build_experiment_insert_row(experiment) for experiment in experiments if normalize_text(experiment.get("experiment_code"))]
-    cursor.execute("DELETE FROM biz_experiment")
+def upsert_experiment_rows(cursor, rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
     task_nos = sorted({row["task_no"] for row in rows if row["task_no"]})
@@ -152,6 +150,30 @@ def replace_experiments(cursor, experiments: list[dict[str, Any]]) -> None:
         """,
         [{**row, "task_id": task_map.get(row["task_no"])} for row in rows],
     )
+
+
+def replace_experiments(cursor, experiments: list[dict[str, Any]]) -> None:
+    rows = [build_experiment_insert_row(experiment) for experiment in experiments if normalize_text(experiment.get("experiment_code"))]
+    cursor.execute("DELETE FROM biz_experiment")
+    upsert_experiment_rows(cursor, rows)
+
+
+def replace_task_experiments(cursor, experiments: list[dict[str, Any]], task_codes: set[str]) -> None:
+    normalized_task_codes = sorted({normalize_text(code) for code in task_codes if normalize_text(code)})
+    if not normalized_task_codes:
+        return
+    placeholders = ", ".join(["%s"] * len(normalized_task_codes))
+    cursor.execute(
+        f"DELETE FROM biz_experiment WHERE task_no IN ({placeholders})",
+        normalized_task_codes,
+    )
+    rows = [
+        build_experiment_insert_row(experiment)
+        for experiment in experiments
+        if normalize_text(experiment.get("experiment_code"))
+        and normalize_text(experiment.get("task_code")) in normalized_task_codes
+    ]
+    upsert_experiment_rows(cursor, rows)
 
 
 def replace_tasks(cursor, tasks: list[dict[str, Any]], *, prune: bool = True) -> None:

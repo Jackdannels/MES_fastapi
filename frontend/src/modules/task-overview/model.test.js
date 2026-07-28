@@ -91,7 +91,7 @@ describe("taskOverviewModel", () => {
         },
       ],
       experiments: [
-        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "A实验", status: "待排程" },
+        { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "A实验", priority: "高", planned_hours: 3.5, status: "待排程" },
         { task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "B实验", status: "实验已经完成" },
       ],
       samples: [{ task_code: "SYLU-2026-03-006", code: "SYLU-2026-03-006-SP-001", trays: [] }],
@@ -109,7 +109,7 @@ describe("taskOverviewModel", () => {
       scheduledExperimentCount: 2,
     });
     expect(rows[0].experiments).toEqual([
-      expect.objectContaining({ experimentCode: "SYLU-2026-03-006-A", experimentName: "A实验", displayStatus: "已排程" }),
+      expect.objectContaining({ experimentCode: "SYLU-2026-03-006-A", experimentName: "A实验", priority: "高", plannedHours: 3.5, displayStatus: "已排程" }),
       expect.objectContaining({ experimentCode: "SYLU-2026-03-006-B", experimentName: "B实验", displayStatus: "实验已完成" }),
     ]);
   });

@@ -415,6 +415,8 @@ function buildTaskRows({
         || normalizeText(experiment?.required_device)
         || normalizeText(experiment?.experiment_code),
       requiredDevice: normalizeText(experiment?.required_device),
+      priority: normalizeText(experiment?.priority),
+      plannedHours: experiment?.planned_hours ?? experiment?.plannedHours ?? 0,
       status: normalizeExperimentStatus(experiment?.status),
       task_code: taskCode,
       unscheduledSince: parseTimeValue(experiment?.unscheduled_since),

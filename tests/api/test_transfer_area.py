@@ -56,6 +56,21 @@ class TrackingReadManyTransferStorage(FakeTransferStorage):
         return {key: list(self.payloads.get(key, [])) for key in requested_keys}
 
 
+class ReadOnlyTrackingTransferStorage(TrackingReadManyTransferStorage):
+    def __init__(self, payloads=None):
+        super().__init__(payloads)
+        self.write_calls = []
+        self.write_many_calls = []
+
+    def write(self, key, value):
+        self.write_calls.append((key, deepcopy(value)))
+        super().write(key, value)
+
+    def write_many(self, updates):
+        self.write_many_calls.append(deepcopy(dict(updates)))
+        super().write_many(updates)
+
+
 class ScopedTrackingTransferStorage(TrackingReadManyTransferStorage):
     def __init__(self, payloads=None):
         super().__init__(payloads)
@@ -456,6 +471,31 @@ def test_transfer_area_bootstrap_reads_only_contract_required_storage_keys(monke
     assert storage.read_all_calls == 0
 
 
+def test_transfer_area_bootstrap_is_read_only_when_planned_and_stored_sample_counts_differ(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    payloads = create_payloads()
+    payloads["mes.tasks"][0] = {**payloads["mes.tasks"][0], "sample_count": 1}
+    storage = ReadOnlyTrackingTransferStorage(payloads)
+    monkeypatch.setattr(transfer_area_route, "get_storage_backend", lambda: storage)
+    app = FastAPI()
+    app.include_router(transfer_area_route.router)
+    client = TestClient(app)
+
+    first = client.get("/api/transfer-area/bootstrap")
+    second = client.get("/api/transfer-area/bootstrap")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    for response in (first, second):
+        task_row = next(item for item in response.json()["taskOverview"] if item["taskNo"] == "SYLU-2026-03-101")
+        assert task_row["sampleCount"] == 1
+        assert task_row["sampleCodes"] == ["SYLU-2026-03-101-SP-001"]
+    assert storage.write_calls == []
+    assert storage.write_many_calls == []
+    assert len([sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101"]) == 4
+
+
 def test_transfer_area_bootstrap_uses_required_device_as_task_experiment_type(monkeypatch):
     client, storage = build_client(monkeypatch)
     experiments = storage.read("mes.experiments")
@@ -515,7 +555,7 @@ def test_transfer_area_workspace_reads_only_contract_required_storage_keys(monke
     assert storage.read_all_calls == 0
 
 
-def test_transfer_area_legacy_stored_status_generates_in_transit_samples(monkeypatch):
+def test_transfer_area_legacy_stored_status_renders_generated_samples_without_persisting(monkeypatch):
     client, storage = build_client(monkeypatch)
     storage.write(
         "mes.tasks",
@@ -539,10 +579,11 @@ def test_transfer_area_legacy_stored_status_generates_in_transit_samples(monkeyp
 
     assert response.status_code == 200
     assert response.json()["task"]["taskStatus"] == "未入库"
-    generated_samples = storage.read("mes.samples")
-    assert {sample["status"] for sample in generated_samples} == {"运输中"}
-    assert {sample["flow_status"] for sample in generated_samples} == {"运输中"}
-    assert {sample["location"] for sample in generated_samples} == {""}
+    assert [sample["sampleNo"] for sample in response.json()["assignedTrays"][0]["samples"]] == [
+        "SYLU-2026-03-legacy-SP-001",
+        "SYLU-2026-03-legacy-SP-002",
+    ]
+    assert storage.read("mes.samples") == []
 
 
 def test_transfer_area_legacy_stored_status_cannot_dispatch_as_arrived(monkeypatch):
@@ -2685,7 +2726,7 @@ def test_transfer_area_workspace_scopes_legacy_sample_and_tray_experiment_fallba
     assert tray["samples"][0]["experimentCodes"] == []
 
 
-def test_transfer_area_backfills_missing_task_samples_from_sample_count(monkeypatch):
+def test_transfer_area_renders_missing_task_samples_without_persisting_from_get_requests(monkeypatch):
     client, storage = build_client(monkeypatch)
     storage.write(
         "mes.samples",
@@ -2713,12 +2754,7 @@ def test_transfer_area_backfills_missing_task_samples_from_sample_count(monkeypa
     ]
 
     stored_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101"]
-    assert [sample["code"] for sample in stored_samples] == [
-        "SYLU-2026-03-101-SP-001",
-        "SYLU-2026-03-101-SP-002",
-        "SYLU-2026-03-101-SP-003",
-        "SYLU-2026-03-101-SP-004",
-    ]
+    assert stored_samples == []
 
 
 def test_transfer_area_bootstrap_reuses_sample_index_for_many_tasks(monkeypatch):
@@ -2813,7 +2849,7 @@ def test_transfer_area_bootstrap_returns_preview_codes_for_large_sample_tasks(mo
     assert f"{task_code}-SP-099" in task_row["sampleCodeSearchText"]
 
 
-def test_transfer_area_lazy_sample_backfill_publishes_storage_update(monkeypatch):
+def test_transfer_area_lazy_sample_backfill_does_not_publish_storage_update_from_get(monkeypatch):
     from app.api.routes import transfer_area as transfer_area_route
 
     published_updates = []
@@ -2827,9 +2863,7 @@ def test_transfer_area_lazy_sample_backfill_publishes_storage_update(monkeypatch
     response = client.get("/api/transfer-area/bootstrap")
 
     assert response.status_code == 200
-    assert len(published_updates) == 1
-    assert "mes.samples" in published_updates[0]
-    assert "mes.tasks" in published_updates[0]
+    assert published_updates == []
 
 
 def test_transfer_area_limits_unassigned_samples_to_task_sample_count(monkeypatch):
@@ -2853,7 +2887,12 @@ def test_transfer_area_limits_unassigned_samples_to_task_sample_count(monkeypatc
     ]
 
     stored_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101"]
-    assert [sample["code"] for sample in stored_samples] == ["SYLU-2026-03-101-SP-001"]
+    assert [sample["code"] for sample in stored_samples] == [
+        "SYLU-2026-03-101-SP-001",
+        "SYLU-2026-03-101-SP-002",
+        "SYLU-2026-03-101-SP-003",
+        "SYLU-2026-03-101-SP-004",
+    ]
 
 
 def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch):
@@ -4145,7 +4184,7 @@ def test_transfer_area_reallocate_clears_stale_experiment_runs_for_task(monkeypa
     ]
 
 
-def test_transfer_area_workspace_repairs_legacy_gap_tray_codes_without_printed_barcodes(monkeypatch):
+def test_transfer_area_workspace_repairs_legacy_gap_tray_codes_in_response_without_persisting(monkeypatch):
     client, storage = build_client(monkeypatch)
 
     samples = storage.read("mes.samples")
@@ -4182,10 +4221,10 @@ def test_transfer_area_workspace_repairs_legacy_gap_tray_codes_without_printed_b
     payload = response.json()
     assert [tray["trayNo"] for tray in payload["assignedTrays"]] == ["SYLU-2026-03-101-TP-001", "SYLU-2026-03-101-TP-002"]
     updated_task = storage.read("mes.tasks")[0]
-    assert updated_task["tray_codes"] == ["SYLU-2026-03-101-TP-001", "SYLU-2026-03-101-TP-002"]
+    assert updated_task["tray_codes"] == ["SYLU-2026-03-101-TP-002", "SYLU-2026-03-101-TP-003"]
     updated_samples = [sample for sample in storage.read("mes.samples") if sample["task_code"] == "SYLU-2026-03-101"]
-    assert updated_samples[0]["trays"][0]["tray_code"] == "SYLU-2026-03-101-TP-001"
-    assert updated_samples[2]["trays"][0]["tray_code"] == "SYLU-2026-03-101-TP-002"
+    assert updated_samples[0]["trays"][0]["tray_code"] == "SYLU-2026-03-101-TP-002"
+    assert updated_samples[2]["trays"][0]["tray_code"] == "SYLU-2026-03-101-TP-003"
 
 
 def test_transfer_area_allocate_rejects_when_system_trays_are_insufficient(monkeypatch):

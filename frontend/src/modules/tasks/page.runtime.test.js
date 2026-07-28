@@ -484,7 +484,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.find('[data-testid="task-sample-codes-modal"].modal.is-open').exists()).toBe(true);
 
     await wrapper.get('[data-testid="task-sample-codes-textarea"]').setValue(
-      "SYLU-2026-03-001-SP-101\nSYLU-2026-03-001-SP-102",
+      Array.from({ length: 6 }, (_, index) => `SYLU-2026-03-001-SP-${index + 101}`).join("\n"),
     );
     await wrapper.get('[data-testid="task-sample-codes-confirm"]').trigger("click");
     await settle(wrapper);
@@ -492,16 +492,24 @@ describe("TasksPage runtime", () => {
     expect(state.samples.filter((sample) => sample.task_code === "SYLU-2026-03-001").map((sample) => sample.code)).toEqual([
       "SYLU-2026-03-001-SP-101",
       "SYLU-2026-03-001-SP-102",
+      "SYLU-2026-03-001-SP-103",
+      "SYLU-2026-03-001-SP-104",
+      "SYLU-2026-03-001-SP-105",
+      "SYLU-2026-03-001-SP-106",
     ]);
     expect(state.samples.filter((sample) => sample.task_code === "SYLU-2026-03-001").map((sample) => sample.trays[0].sample_code)).toEqual([
       "SYLU-2026-03-001-SP-101",
       "SYLU-2026-03-001-SP-102",
+      "SYLU-2026-03-001-SP-103",
+      "SYLU-2026-03-001-SP-104",
+      "SYLU-2026-03-001-SP-105",
+      "SYLU-2026-03-001-SP-106",
     ]);
     expect(state.experimentSamples).toEqual([
       { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", sample_code: "SYLU-2026-03-001-SP-101" },
       { task_code: "SYLU-2026-03-001", experiment_code: "SYLU-2026-03-001-A", sample_code: "SYLU-2026-03-001-SP-102" },
     ]);
-    expect(state.tasks[0].sample_count).toBe(2);
+    expect(state.tasks[0].sample_count).toBe(6);
     expect(wrapper.find('[data-testid="task-sample-codes-modal"].modal.is-open').exists()).toBe(false);
     expect(wrapper.get('[data-testid="task-detail-sample-code-preview"]').text()).toContain("SYLU-2026-03-001-SP-101");
   });
@@ -546,6 +554,32 @@ describe("TasksPage runtime", () => {
 
     expect(wrapper.text()).toContain("共 99 个，显示前 5 个");
     expect(wrapper.get('[data-testid="task-detail-sample-code-preview"]').text()).toContain("SYLU-2026-03-001-SP-005");
+  });
+
+  test("renders task sample count as read-only after pre-allocation trays are saved", async () => {
+    const taskCode = "SYLU-2026-03-001";
+    installApiFetchMock({
+      tasks: [createTask({
+        sample_count: 2,
+        transfer_status: "未入库",
+        tray_codes: [`${taskCode}-TP-001`],
+      })],
+      samples: [1, 2].map((index) => ({
+        id: `sample-${index}`,
+        code: `${taskCode}-SP-${String(index).padStart(3, "0")}`,
+        task_code: taskCode,
+        status: "运输中",
+        trays: [{ tray_code: `${taskCode}-TP-001`, status: "未入库" }],
+      })),
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get('[data-testid="task-detail-modal"] input[name="sample_count"]').attributes("readonly")).toBeDefined();
+    expect(wrapper.get('[data-testid="task-sample-count-locked-hint"]').text()).toContain("重新入库后才能修改样品数量");
   });
 
   test("does not mention showing the first five sample codes when fewer than five exist", async () => {

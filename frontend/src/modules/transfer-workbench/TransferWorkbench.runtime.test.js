@@ -483,6 +483,51 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
   });
 
+  test("coalesces concurrent bootstrap reloads into one request", async () => {
+    let bootstrapCalls = 0;
+    let resolveReload = null;
+    const emptyBootstrapPayload = {
+      ...createBootstrapPayload(),
+      taskOverview: [],
+      pendingTaskCount: 0,
+      storedTaskCount: 0,
+    };
+    vi.stubGlobal("fetch", vi.fn((input) => {
+      const url = String(input);
+      if (!url.includes("/api/transfer-area/bootstrap")) {
+        throw new Error(`Unhandled fetch: ${url}`);
+      }
+      bootstrapCalls += 1;
+      if (bootstrapCalls === 1) {
+        return Promise.resolve({ ok: true, status: 200, json: async () => emptyBootstrapPayload });
+      }
+      return new Promise((resolve) => {
+        resolveReload = () => resolve({ ok: true, status: 200, json: async () => createBootstrapPayload() });
+      });
+    }));
+
+    const wrapper = mount(TransferWorkbench, {
+      props: {
+        embedded: true,
+        mode: "pre-allocation",
+        showHeader: false,
+      },
+    });
+    await settle(wrapper);
+
+    const reloadButton = wrapper.findAll("button").find((button) => button.text() === "重新加载");
+    expect(reloadButton).toBeDefined();
+
+    const firstClick = reloadButton.trigger("click");
+    const secondClick = reloadButton.trigger("click");
+    await Promise.all([firstClick, secondClick]);
+
+    expect(bootstrapCalls).toBe(2);
+    resolveReload();
+    await settle(wrapper);
+    expect(wrapper.find('[data-testid="transfer-task-row-101"]').exists()).toBe(true);
+  });
+
   test("does not treat legacy stored task status as arrived in the overview filter", async () => {
     const bootstrapPayload = createBootstrapPayload();
     bootstrapPayload.taskOverview = [

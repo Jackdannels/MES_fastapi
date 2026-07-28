@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { buildTemporalBoundaryState, temporalBoundaryHasElapsed } from "@/composables/temporalBoundaryClock";
 import { useDialogState } from "@/composables/useDialogState";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { useTableControls } from "@/composables/useTableControls";
 import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { serverNowDate } from "@/lib/serverClock";
@@ -38,6 +39,8 @@ import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { useScheduleFormState } from "./useScheduleFormState";
 import { useScheduleRealtime } from "./useScheduleRealtime";
 
+const SCHEDULE_PAGE_SIZE = 10;
+
 function useSchedulePage(options = {}) {
   const buildRows = options.buildScheduleRows || buildScheduleRows;
   const buildGantt = options.buildGanttRows || buildGanttRows;
@@ -68,7 +71,6 @@ function useSchedulePage(options = {}) {
   const rawStreams = ref([]);
   const rawTasks = ref([]);
   const masterLabs = ref([]);
-  const scheduleSearch = ref("");
   const conflictSearch = ref("");
   const now = ref(serverNowDate());
   const structuralNow = ref(now.value);
@@ -376,18 +378,23 @@ function useSchedulePage(options = {}) {
     };
   });
 
-  const filteredScheduleRows = computed(() => {
-    const query = normalizeText(scheduleSearch.value);
-    if (!query) {
-      return scheduleRows.value;
-    }
-    return scheduleRows.value.filter((row) =>
-      // 排程表搜索覆盖任务号、实验号、实验室、时间段和状态文本。
-      [row.taskCode, row.experimentCode, row.experimentLabel, row.axisLabel, row.device, row.startAt, row.endAt, row.rowStatus].some((value) =>
-        normalizeText(value).includes(query),
-      ),
-    );
+  const {
+    currentPage: scheduleCurrentPage,
+    pageCount: schedulePageCount,
+    query: scheduleSearch,
+    visibleRows: pagedScheduleRows,
+  } = useTableControls({
+    rows: scheduleRows,
+    pageSize: SCHEDULE_PAGE_SIZE,
+    // 排程表搜索覆盖任务号、实验号、实验室、时间段和状态文本。
+    searchFields: ["taskCode", "experimentCode", "experimentLabel", "axisLabel", "device", "startAt", "endAt", "rowStatus"],
   });
+
+  const setSchedulePage = (page) => {
+    const parsedPage = Number.parseInt(String(page ?? ""), 10);
+    const nextPage = Number.isFinite(parsedPage) ? parsedPage : 1;
+    scheduleCurrentPage.value = Math.min(Math.max(nextPage, 1), schedulePageCount.value);
+  };
 
   const filteredConflictRows = computed(() => {
     const query = normalizeText(conflictSearch.value);
@@ -1002,7 +1009,10 @@ function useSchedulePage(options = {}) {
     taskScheduledOverlays,
     scheduleForm,
     scheduleCustomStartMinTime,
-    scheduleRows: filteredScheduleRows,
+    scheduleCurrentPage,
+    schedulePageCount,
+    schedulePageSize: SCHEDULE_PAGE_SIZE,
+    scheduleRows: pagedScheduleRows,
     scheduleSearch,
     scheduleWarning,
     scheduleAxisRequirementOptions,
@@ -1012,6 +1022,7 @@ function useSchedulePage(options = {}) {
     isScheduleAxisSelected,
     maintenanceLabNotice,
     selectedSchedule: scheduleDrawer.payload,
+    setSchedulePage,
     submitSchedule,
     summaryCards,
     taskOptions,

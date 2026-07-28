@@ -47,6 +47,41 @@ const TASK_RESET_EVENT = "mes:open-task-reset";
 const EXTERNAL_TASK_INTAKE_EVENT = "mes:open-external-task-intake";
 const RESET_FEEDBACK_DISMISS_MS = 10000;
 
+const taskCodeOf = (task) => normalizeText(task?.task_code || task?.code || task?.taskNo || task?.id);
+const isStorageConfirmedStatus = (value) => normalizeText(value) === "到货";
+
+const taskStorageConfirmed = (task, samples) => {
+  const taskCode = taskCodeOf(task);
+  if (isStorageConfirmedStatus(task?.transfer_status || task?.transferStatus)) {
+    return true;
+  }
+  return (Array.isArray(samples) ? samples : []).some((sample) => {
+    if (taskCodeOf(sample) !== taskCode) {
+      return false;
+    }
+    if (isStorageConfirmedStatus(sample?.status) || isStorageConfirmedStatus(sample?.flow_status)) {
+      return true;
+    }
+    return (Array.isArray(sample?.trays) ? sample.trays : []).some((tray) =>
+      isStorageConfirmedStatus(tray?.status || tray?.tray_status || tray?.trayStatus),
+    );
+  });
+};
+
+const taskHasSavedAllocation = (task, samples) => {
+  if ((Array.isArray(task?.tray_codes) ? task.tray_codes : []).some((trayCode) => normalizeText(trayCode))) {
+    return true;
+  }
+  const taskCode = taskCodeOf(task);
+  const taskSamples = (Array.isArray(samples) ? samples : []).filter((sample) => taskCodeOf(sample) === taskCode);
+  return taskSamples.length > 0
+    && taskSamples.every((sample) => Array.isArray(sample?.trays) && sample.trays.length > 0);
+};
+
+const taskSampleCountLocked = (task, samples) => (
+  taskStorageConfirmed(task, samples) || taskHasSavedAllocation(task, samples)
+);
+
 // 将存储快照与弹窗、抽屉、表格状态连接起来，供任务页统一使用。
 function useTasksPage() {
   const route = useRoute();
@@ -196,6 +231,14 @@ function useTasksPage() {
   const isCompletedTaskDetail = computed(() => normalizeText(editForm.value.status) === STATUS_COMPLETED);
   const isRunningTaskDetail = computed(() => normalizeText(editForm.value.status) === STATUS_RUNNING);
   const isTaskDetailLocked = computed(() => isCompletedTaskDetail.value || isRunningTaskDetail.value);
+  const isTaskSampleCountLocked = computed(() => {
+    const taskId = normalizeText(editForm.value.id);
+    const taskCode = normalizeText(editForm.value.code);
+    const task = rawTasks.value.find((entry) => (
+      normalizeText(entry?.id) === taskId || taskCodeOf(entry) === taskCode
+    ));
+    return Boolean(task && taskSampleCountLocked(task, rawSamples.value));
+  });
 
   const syncIntakeDerivedFields = () => {
     intakeForm.value.test_type = intakeExperimentPlainSummary.value;
@@ -461,8 +504,6 @@ function useTasksPage() {
     }
   };
 
-  const taskCodeOf = (task) => normalizeText(task?.task_code || task?.code || task?.taskNo || task?.id);
-
   const experimentCodeOf = (entry) => normalizeText(entry?.experiment_code || entry?.experimentCode);
 
   const experimentLabelOf = (entry) =>
@@ -472,34 +513,6 @@ function useTasksPage() {
     const leftItems = collectExperimentTypes(left);
     const rightItems = collectExperimentTypes(right);
     return leftItems.length === rightItems.length && leftItems.every((item, index) => item === rightItems[index]);
-  };
-
-  const isStorageConfirmedStatus = (value) => normalizeText(value) === "到货";
-
-  const taskStorageConfirmed = (task, samples) => {
-    const taskCode = taskCodeOf(task);
-    if (isStorageConfirmedStatus(task?.transfer_status || task?.transferStatus)) {
-      return true;
-    }
-    return (Array.isArray(samples) ? samples : []).some((sample) => {
-      if (taskCodeOf(sample) !== taskCode) {
-        return false;
-      }
-      if (isStorageConfirmedStatus(sample?.status) || isStorageConfirmedStatus(sample?.flow_status)) {
-        return true;
-      }
-      return (Array.isArray(sample?.trays) ? sample.trays : []).some((tray) =>
-        isStorageConfirmedStatus(tray?.status || tray?.tray_status || tray?.trayStatus),
-      );
-    });
-  };
-
-  const taskHasSelectedExperiments = (task) => {
-    const taskCode = taskCodeOf(task);
-    if (rawExperiments.value.some((experiment) => taskCodeOf(experiment) === taskCode)) {
-      return true;
-    }
-    return collectExperimentTypes(task?.test_types, task?.test_type).length > 0;
   };
 
   const sampleCountChanged = (originalTask, updatedTask) => {
@@ -649,7 +662,7 @@ function useTasksPage() {
     scheduledExperimentRemovalModal,
     taskCodeOf,
     taskDetailSampleCodes,
-    taskHasSelectedExperiments,
+    taskSampleCountLocked,
     taskStorageConfirmed,
   });
   const submitTask = async () => {
@@ -905,6 +918,7 @@ function useTasksPage() {
     isCompletedTaskDetail,
     isRunningTaskDetail,
     isTaskDetailLocked,
+    isTaskSampleCountLocked,
     intakeModalOpen: intakeModal.open,
     intakeSampleCodePreview,
     intakeWarning,

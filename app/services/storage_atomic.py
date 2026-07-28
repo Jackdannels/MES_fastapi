@@ -97,7 +97,17 @@ def merge_trays(current_trays: list[Any], incoming_trays: list[Any], *, preserve
     return merged
 
 
-def merge_samples(current_samples: list[Any], incoming_samples: list[Any]) -> list[dict[str, Any]]:
+def merge_samples(
+    current_samples: list[Any],
+    incoming_samples: list[Any],
+    *,
+    replace_task_codes: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    normalized_replace_task_codes = {
+        normalize_text(task_code)
+        for task_code in replace_task_codes or set()
+        if normalize_text(task_code)
+    }
     current_by_key = {sample_key(sample): dict(sample) for sample in as_list(current_samples) if isinstance(sample, dict) and sample_key(sample)}
     incoming_by_key = {sample_key(sample): dict(sample) for sample in as_list(incoming_samples) if isinstance(sample, dict) and sample_key(sample)}
     ordered_keys = []
@@ -115,8 +125,12 @@ def merge_samples(current_samples: list[Any], incoming_samples: list[Any]) -> li
         if current is None and incoming is not None:
             merged.append(dict(incoming))
             continue
-        if incoming is None and current is not None and item_time(current) is not None:
-            merged.append(dict(current))
+        if incoming is None and current is not None:
+            current_task_code = task_code_value(current)
+            if current_task_code in normalized_replace_task_codes:
+                continue
+            if normalized_replace_task_codes or item_time(current) is not None:
+                merged.append(dict(current))
             continue
         if current is None or incoming is None:
             continue
@@ -251,7 +265,11 @@ def merge_concurrent_storage_updates(
 ) -> dict[str, Any]:
     merged = dict(updates)
     if "mes.samples" in merged:
-        merged["mes.samples"] = merge_samples(current_payload.get("mes.samples"), merged["mes.samples"])
+        merged["mes.samples"] = merge_samples(
+            current_payload.get("mes.samples"),
+            merged["mes.samples"],
+            replace_task_codes=replace_task_codes,
+        )
     if "mes.staging_events" in merged:
         merged["mes.staging_events"] = merge_events(current_payload.get("mes.staging_events"), merged["mes.staging_events"])
     for key in (

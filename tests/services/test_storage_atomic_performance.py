@@ -46,3 +46,50 @@ def test_merge_samples_deduplicates_order_keys_with_linear_equality_work(monkeyp
     storage_atomic.merge_samples(current, incoming)
 
     assert CountedKey.equality_calls < 1_000
+
+
+def test_merge_samples_task_scoped_replacement_drops_only_omitted_target_samples() -> None:
+    current = [
+        {"code": "TASK-A-SP-001", "task_code": "TASK-A", "updated_at": "2026-07-24T08:00:00"},
+        {"code": "TASK-A-SP-002", "task_code": "TASK-A", "updated_at": "2026-07-24T08:00:00"},
+        {"code": "TASK-B-SP-001", "task_code": "TASK-B", "updated_at": "2026-07-24T08:00:00"},
+        {"code": "TASK-B-SP-002", "task_code": "TASK-B", "updated_at": "2026-07-24T10:00:00"},
+    ]
+    incoming = [
+        {"code": "TASK-A-SP-001", "task_code": "TASK-A", "updated_at": "2026-07-24T09:00:00"},
+        {"code": "TASK-B-SP-001", "task_code": "TASK-B", "updated_at": "2026-07-24T09:00:00"},
+    ]
+
+    merged = storage_atomic.merge_samples(current, incoming, replace_task_codes={"TASK-A"})
+
+    assert [sample["code"] for sample in merged] == [
+        "TASK-A-SP-001",
+        "TASK-B-SP-001",
+        "TASK-B-SP-002",
+    ]
+
+
+def test_merge_concurrent_storage_updates_forwards_task_scoped_sample_replacement() -> None:
+    current = {
+        "mes.samples": [
+            {"code": "TASK-A-SP-001", "task_code": "TASK-A", "updated_at": "2026-07-24T08:00:00"},
+            {"code": "TASK-A-SP-002", "task_code": "TASK-A", "updated_at": "2026-07-24T08:00:00"},
+            {"code": "TASK-B-SP-001", "task_code": "TASK-B", "updated_at": "2026-07-24T10:00:00"},
+        ],
+    }
+    updates = {
+        "mes.samples": [
+            {"code": "TASK-A-SP-001", "task_code": "TASK-A", "updated_at": "2026-07-24T09:00:00"},
+        ],
+    }
+
+    merged = storage_atomic.merge_concurrent_storage_updates(
+        current,
+        updates,
+        replace_task_codes={"TASK-A"},
+    )
+
+    assert [sample["code"] for sample in merged["mes.samples"]] == [
+        "TASK-A-SP-001",
+        "TASK-B-SP-001",
+    ]

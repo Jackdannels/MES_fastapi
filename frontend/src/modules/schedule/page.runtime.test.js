@@ -252,6 +252,43 @@ describe("SchedulePage runtime", () => {
     expect(actions.text()).not.toContain("清空");
   });
 
+  test("shows at most ten schedule rows per page and keeps sequence numbers across pages", async () => {
+    setStorage(TASKS_KEY, [
+      { id: "task-pagination", code: "TASK-PAGINATION", name: "分页任务", test_type: "冲击试验", status: STATUS_WAITING },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(EXPERIMENTS_KEY, [
+      { task_code: "TASK-PAGINATION", experiment_code: "TASK-PAGINATION-A", experiment_name: "冲击试验" },
+    ]);
+    setStorage(SCHEDULES_KEY, Array.from({ length: 11 }, (_, index) => {
+      const startAt = new Date(Date.UTC(2099, 2, 20, index, 0, 0));
+      return {
+        id: `schedule-pagination-${index + 1}`,
+        task_code: "TASK-PAGINATION",
+        experiment_code: "TASK-PAGINATION-A",
+        device: PRIMARY_LAB,
+        start_at: startAt.toISOString(),
+        end_at: new Date(startAt.getTime() + 30 * 60 * 1000).toISOString(),
+        status: STATUS_SCHEDULED,
+      };
+    }));
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    expect(wrapper.findAll("#schedule-table tbody tr")).toHaveLength(10);
+    expect(wrapper.get('[data-testid="schedule-pagination"]').text()).toContain("第 1 / 2 页");
+
+    await wrapper.get('[data-testid="schedule-pagination"] button[data-page="next"]').trigger("click");
+    await settle(wrapper);
+
+    const secondPageRows = wrapper.findAll("#schedule-table tbody tr");
+    expect(secondPageRows).toHaveLength(1);
+    expect(secondPageRows[0].get("td").text()).toBe("11");
+    expect(wrapper.get('[data-testid="schedule-pagination"]').text()).toContain("第 2 / 2 页");
+    wrapper.unmount();
+  });
+
   test("shows a warning and keeps storage unchanged when deleting a running schedule from task detail", async () => {
     const today = buildDateParts(0);
     setStorage(TASKS_KEY, [

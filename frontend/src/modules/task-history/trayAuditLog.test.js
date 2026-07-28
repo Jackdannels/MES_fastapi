@@ -127,6 +127,10 @@ describe("tray audit log", () => {
     expect(svg).toContain("托盘审计事件时间轴");
     expect(svg).toContain("厂家收回 &lt;完成&gt;");
     expect(svg).not.toContain("厂家收回 <完成>");
+    expect(svg).toContain('<svg xmlns="http://www.w3.org/2000/svg" width="100%"');
+    expect(svg).toContain('preserveAspectRatio="xMidYMin meet"');
+    expect(svg).toContain('style="display:block;min-height:100vh;background:#0f172a"');
+    expect(svg).toContain('<title id="tray-audit-title">TP-1 托盘审计事件时间轴</title>');
     expect(formatAuditDuration(2 * 60 * 60 * 1000 + 35 * 1000)).toBe("02:00:35");
     expect(formatAuditExportTime("2026-07-27 15:49:30")).toBe("2026年7月27日 15时49分30秒");
   });

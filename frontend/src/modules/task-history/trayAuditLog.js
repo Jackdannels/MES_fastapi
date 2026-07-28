@@ -385,6 +385,7 @@ const escapeXml = (value) => normalizeText(value)
 
 function buildTrayAuditSvg({ events = [], taskCode = "", trayCode = "" } = {}) {
   const safeEvents = asArray(events);
+  const canvasWidth = 1200;
   const height = Math.max(300, 170 + safeEvents.length * 68);
   const rows = safeEvents.map((event, index) => {
     const y = 142 + index * 68;
@@ -395,8 +396,9 @@ function buildTrayAuditSvg({ events = [], taskCode = "", trayCode = "" } = {}) {
       + `<text x="378" y="${y + 23}" fill="#94a3b8" font-family="Microsoft YaHei,Segoe UI,sans-serif" font-size="11">${escapeXml([event.stage, event.source, event.operator || "操作人未记录"].join(" / "))}</text>`;
   }).join("");
   const lineEnd = safeEvents.length ? 137 + (safeEvents.length - 1) * 68 : 142;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="${height}" viewBox="0 0 1200 ${height}">`
-    + `<rect width="1200" height="${height}" fill="#0f172a"/>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="${height}" viewBox="0 0 ${canvasWidth} ${height}" preserveAspectRatio="xMidYMin meet" role="img" aria-labelledby="tray-audit-title" style="display:block;min-height:100vh;background:#0f172a">`
+    + `<title id="tray-audit-title">${escapeXml(`${trayCode} 托盘审计事件时间轴`)}</title>`
+    + `<rect width="${canvasWidth}" height="${height}" fill="#0f172a"/>`
     + `<text x="58" y="50" fill="#38bdf8" font-family="Microsoft YaHei,Segoe UI,sans-serif" font-size="14" font-weight="700">托盘审计事件时间轴</text>`
     + `<text x="58" y="88" fill="#f8fafc" font-family="Consolas,monospace" font-size="23" font-weight="700">${escapeXml(trayCode)}</text>`
     + `<text x="58" y="112" fill="#94a3b8" font-family="Microsoft YaHei,Segoe UI,sans-serif" font-size="12">任务 ${escapeXml(taskCode)} / ${safeEvents.length} 个关键事件</text>`

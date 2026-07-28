@@ -719,6 +719,50 @@ describe("useSchedulePage", () => {
     expect(wrapper.vm.taskOptions).toEqual([]);
   });
 
+  test("paginates the schedule list at ten rows and resets to page one after filtering", async () => {
+    const rows = Array.from({ length: 12 }, (_, index) => ({
+      axisLabel: "-",
+      device: `实验室-${index + 1}`,
+      endAt: `2099-03-20 ${String(index + 1).padStart(2, "0")}:30`,
+      experimentCode: `EXP-${String(index + 1).padStart(3, "0")}`,
+      experimentLabel: `实验-${index + 1}`,
+      id: `schedule-${index + 1}`,
+      rowStatus: STATUS_SCHEDULED,
+      startAt: `2099-03-20 ${String(index + 1).padStart(2, "0")}:00`,
+      taskCode: `TASK-${String(index + 1).padStart(3, "0")}`,
+    }));
+    const PaginationHarness = defineComponent({
+      setup() {
+        return useSchedulePage({ buildScheduleRows: () => rows });
+      },
+      render() {
+        return null;
+      },
+    });
+    const wrapper = mount(PaginationHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.schedulePageSize).toBe(10);
+    expect(wrapper.vm.schedulePageCount).toBe(2);
+    expect(wrapper.vm.scheduleRows.map((row) => row.id)).toEqual(
+      Array.from({ length: 10 }, (_, index) => `schedule-${index + 1}`),
+    );
+
+    wrapper.vm.setSchedulePage(2);
+    await settle(wrapper);
+
+    expect(wrapper.vm.scheduleCurrentPage).toBe(2);
+    expect(wrapper.vm.scheduleRows.map((row) => row.id)).toEqual(["schedule-11", "schedule-12"]);
+
+    wrapper.vm.scheduleSearch = "TASK-001";
+    await settle(wrapper);
+
+    expect(wrapper.vm.scheduleCurrentPage).toBe(1);
+    expect(wrapper.vm.schedulePageCount).toBe(1);
+    expect(wrapper.vm.scheduleRows.map((row) => row.id)).toEqual(["schedule-1"]);
+    wrapper.unmount();
+  });
+
   test("keeps large schedule models stable on ordinary clock ticks while updating the next-auto label", async () => {
     const buildScheduleRows = vi.fn(() => []);
     const buildGanttRows = vi.fn(() => ({ days: [], rows: [] }));

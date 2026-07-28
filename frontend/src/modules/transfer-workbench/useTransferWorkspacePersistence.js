@@ -52,6 +52,9 @@ function useTransferWorkspacePersistence({
   const API_BASE_URL = getFrontendApiBaseUrl();
   const isBootstrapLoading = ref(false);
   const bootstrapError = ref("");
+  let activeBootstrapRequest = null;
+  let bootstrapRequestSequence = 0;
+  let latestAppliedBootstrapRequest = 0;
 
   const updateOverviewTaskStatus = (taskId, status, progress) => {
     const normalizedStatus = normalizeTaskStatus(status);
@@ -182,37 +185,70 @@ function useTransferWorkspacePersistence({
     resetInteractiveState();
   };
 
-  const loadBootstrap = async ({ silent = false } = {}) => {
+  const applyBootstrapPayload = (payload) => {
+    taskOverview.value = (payload.taskOverview || []).map((task) => normalizeTaskRecord(task));
+    if (selectedTaskId.value && !taskOverview.value.some((task) => task.taskId === selectedTaskId.value)) {
+      clearWorkspace();
+      viewMode.value = "overview";
+    }
+    pendingTaskCount.value = taskOverview.value.filter(
+      (task) => normalizeTaskStatus(task.taskStatus) === pendingStatus,
+    ).length;
+    storedTaskCount.value = taskOverview.value.filter(
+      (task) => normalizeTaskStatus(task.taskStatus) === storedStatus,
+    ).length;
+  };
+
+  const loadBootstrap = ({ silent = false } = {}) => {
     const showBlockingLoading = !silent || taskOverview.value.length === 0;
+
+    if (activeBootstrapRequest) {
+      if (showBlockingLoading) {
+        activeBootstrapRequest.showBlockingLoading = true;
+        isBootstrapLoading.value = true;
+        bootstrapError.value = "";
+      }
+      return activeBootstrapRequest.promise;
+    }
+
+    const requestId = ++bootstrapRequestSequence;
+    const requestState = {
+      promise: null,
+      showBlockingLoading,
+    };
+    activeBootstrapRequest = requestState;
+
     if (showBlockingLoading) {
       isBootstrapLoading.value = true;
     }
     bootstrapError.value = "";
-    try {
-      const payload = await fetchJson("/api/transfer-area/bootstrap");
-      taskOverview.value = (payload.taskOverview || []).map((task) => normalizeTaskRecord(task));
-      if (selectedTaskId.value && !taskOverview.value.some((task) => task.taskId === selectedTaskId.value)) {
-        clearWorkspace();
-        viewMode.value = "overview";
+
+    requestState.promise = (async () => {
+      try {
+        const payload = await fetchJson("/api/transfer-area/bootstrap");
+        if (requestId < latestAppliedBootstrapRequest) {
+          return;
+        }
+        latestAppliedBootstrapRequest = requestId;
+        applyBootstrapPayload(payload);
+      } catch (error) {
+        if (requestId >= latestAppliedBootstrapRequest && requestState.showBlockingLoading) {
+          bootstrapError.value = error instanceof Error ? error.message : "请稍后重试";
+          taskOverview.value = [];
+          pendingTaskCount.value = 0;
+          storedTaskCount.value = 0;
+        }
+      } finally {
+        if (activeBootstrapRequest === requestState) {
+          activeBootstrapRequest = null;
+        }
+        if (requestState.showBlockingLoading) {
+          isBootstrapLoading.value = false;
+        }
       }
-      pendingTaskCount.value = taskOverview.value.filter(
-        (task) => normalizeTaskStatus(task.taskStatus) === pendingStatus,
-      ).length;
-      storedTaskCount.value = taskOverview.value.filter(
-        (task) => normalizeTaskStatus(task.taskStatus) === storedStatus,
-      ).length;
-    } catch (error) {
-      if (showBlockingLoading) {
-        bootstrapError.value = error instanceof Error ? error.message : "请稍后重试";
-        taskOverview.value = [];
-        pendingTaskCount.value = 0;
-        storedTaskCount.value = 0;
-      }
-    } finally {
-      if (showBlockingLoading) {
-        isBootstrapLoading.value = false;
-      }
-    }
+    })();
+
+    return requestState.promise;
   };
 
   const loadWorkspace = async (taskId = selectedTaskId.value) => {

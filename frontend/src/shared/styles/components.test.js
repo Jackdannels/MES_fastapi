@@ -28,8 +28,10 @@ describe("shared table styles", () => {
   test("renders the error-sample workflow in a large scannable dialog", () => {
     const source = readFileSync(stylesPath, "utf8");
 
-    expect(source).toMatch(/\.modal-content\.tray-error-sample-modal-content\s*\{[^}]*width:\s*min\(960px,\s*94vw\)[^}]*min-height:\s*min\(520px,/i);
-    expect(source).toMatch(/\.tray-error-sample-input\s*\{[^}]*min-height:\s*56px[^}]*font-size:\s*16px/i);
-    expect(source).toMatch(/\.tray-error-sample-query\s*\{[^}]*min-width:\s*180px[^}]*min-height:\s*56px/i);
+    expect(source).toMatch(/\.modal-content\.tray-error-sample-modal-content\s*\{[^}]*width:\s*min\(1180px,\s*calc\(100vw - 16px\)\)[^}]*min-height:\s*min\(660px,/i);
+    expect(source).toMatch(/\.tray-error-sample-panel__head h3\s*\{[^}]*font-size:\s*26px/i);
+    expect(source).toMatch(/\.tray-error-sample-input\s*\{[^}]*min-height:\s*64px[^}]*font-size:\s*18px/i);
+    expect(source).toMatch(/\.tray-error-sample-query\s*\{[^}]*min-width:\s*200px[^}]*min-height:\s*64px[^}]*font-size:\s*18px/i);
+    expect(source).toMatch(/\.action-btn\.tray-error-sample-withdraw\s*\{[^}]*min-width:\s*200px[^}]*min-height:\s*64px[^}]*font-size:\s*18px[^}]*font-weight:\s*800/i);
   });
 });

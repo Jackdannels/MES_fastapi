@@ -139,7 +139,7 @@ describe("useTasksPage", () => {
     }
   });
 
-  test("rejects sample count edits after storage is confirmed with selected experiments", async () => {
+  test("rejects sample count edits after handover confirms arrival", async () => {
     const confirmedTask = {
       ...task,
       sample_count: 2,
@@ -175,7 +175,62 @@ describe("useTasksPage", () => {
       await settle(wrapper);
 
       expect(mocks.updateTask).not.toHaveBeenCalled();
-      expect(wrapper.vm.editWarning).toBe("该任务样品已在接驳区确认到货，不允许更改样品数量");
+      expect(wrapper.vm.isTaskSampleCountLocked).toBe(true);
+      expect(wrapper.vm.editWarning).toBe("该任务已保存预接驳托盘或已确认到货，请先重新入库后再修改样品数量");
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  test("locks sample count after pre-allocation save and unlocks after re-entry reset", async () => {
+    const preallocatedTask = {
+      ...task,
+      sample_count: 2,
+      transfer_status: "未入库",
+      tray_codes: [`${task.code}-TP-001`],
+    };
+    const preallocatedSamples = [1, 2].map((index) => ({
+      id: `sample-${index}`,
+      code: `${task.code}-SP-${String(index).padStart(3, "0")}`,
+      task_code: task.code,
+      status: "运输中",
+      trays: [{ tray_code: `${task.code}-TP-001`, status: "未入库" }],
+    }));
+    mocks.readTasks.mockResolvedValue([preallocatedTask]);
+    mocks.loadSnapshot.mockResolvedValue({
+      ...buildSnapshot(),
+      [STORAGE_KEYS.samples]: preallocatedSamples,
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    try {
+      wrapper.vm.openTaskDrawer(wrapper.vm.taskRows[0]);
+      await settle(wrapper);
+      expect(wrapper.vm.isTaskSampleCountLocked).toBe(true);
+
+      wrapper.vm.editForm.sample_count = "3";
+      await wrapper.vm.updateTask();
+      await settle(wrapper);
+
+      expect(mocks.updateTask).not.toHaveBeenCalled();
+      expect(wrapper.vm.editWarning).toBe("该任务已保存预接驳托盘或已确认到货，请先重新入库后再修改样品数量");
+
+      mocks.readTasks.mockResolvedValue([{ ...preallocatedTask, tray_codes: [] }]);
+      mocks.loadSnapshot.mockResolvedValue({
+        ...buildSnapshot(),
+        [STORAGE_KEYS.samples]: preallocatedSamples.map((sample) => ({
+          ...sample,
+          status: "运输中",
+          flow_status: "运输中",
+          trays: [],
+        })),
+      });
+      wrapper.vm.editForm.sample_count = "2";
+      window.dispatchEvent(new CustomEvent("mes:samples-updated"));
+      await settle(wrapper);
+
+      expect(wrapper.vm.isTaskSampleCountLocked).toBe(false);
     } finally {
       wrapper.unmount();
     }

@@ -9,18 +9,21 @@ const createEditor = (overrides = {}) => {
   const persistSnapshot = overrides.persistSnapshot || vi.fn(() => Promise.resolve());
   const replaceOverview = overrides.replaceOverview || vi.fn();
   const deleteTask = overrides.deleteTask || vi.fn(() => Promise.resolve());
+  const updateTask = overrides.updateTask || vi.fn((taskCode, task) => Promise.resolve({ ...task, code: taskCode }));
 
   const editor = useTaskOverviewEditor({
     loadSnapshot,
     persistSnapshot,
     replaceOverview,
     deleteTask,
+    updateTask,
     experimentTypeOptions: overrides.experimentTypeOptions,
   });
 
   return {
     ...editor,
     deleteTask,
+    updateTask,
     loadSnapshot,
     persistSnapshot,
     replaceOverview,
@@ -57,7 +60,7 @@ describe("useTaskOverviewEditor", () => {
       [STORAGE_KEYS.schedules]: [],
       [STORAGE_KEYS.streams]: [],
     };
-    const { openEdit, editForm, saveEdit, persistSnapshot } = createEditor({
+    const { openEdit, editForm, saveEdit, persistSnapshot, updateTask } = createEditor({
       loadSnapshot: vi.fn(async () => snapshot),
     });
 
@@ -73,15 +76,14 @@ describe("useTaskOverviewEditor", () => {
 
     await saveEdit("TASK-001");
 
-    expect(persistSnapshot).toHaveBeenCalledWith(
+    expect(updateTask).toHaveBeenCalledWith(
+      "TASK-001",
       expect.objectContaining({
-        [STORAGE_KEYS.samples]: expect.arrayContaining([
-          expect.objectContaining({ code: "TASK-001-SP-020", task_code: "TASK-001" }),
-          expect.objectContaining({ code: "TASK-001-SP-021", task_code: "TASK-001" }),
-          expect.objectContaining({ code: "TASK-001-SP-022", task_code: "TASK-001" }),
-        ]),
-      })
+        sample_count: 3,
+        sample_codes: ["TASK-001-SP-020", "TASK-001-SP-021", "TASK-001-SP-022"],
+      }),
     );
+    expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
   test("saveEdit updates task and sample data, then refreshes the overview", async () => {
@@ -93,7 +95,7 @@ describe("useTaskOverviewEditor", () => {
       [STORAGE_KEYS.schedules]: [{ id: "schedule-1", task_code: "TASK-001" }],
       [STORAGE_KEYS.streams]: [],
     };
-    const { openEdit, editForm, saveEdit, persistSnapshot, replaceOverview, loadSnapshot } = createEditor({
+    const { openEdit, editForm, saveEdit, persistSnapshot, replaceOverview, loadSnapshot, updateTask } = createEditor({
       loadSnapshot: vi.fn(async () => snapshot),
     });
 
@@ -110,22 +112,16 @@ describe("useTaskOverviewEditor", () => {
     await saveEdit("TASK-001");
 
     expect(loadSnapshot).toHaveBeenCalledTimes(1);
-    expect(persistSnapshot).toHaveBeenCalledTimes(1);
-    expect(persistSnapshot).toHaveBeenCalledWith(
+    expect(updateTask).toHaveBeenCalledTimes(1);
+    expect(updateTask).toHaveBeenCalledWith(
+      "TASK-001",
       expect.objectContaining({
-        [STORAGE_KEYS.tasks]: [
-          expect.objectContaining({
-            code: "TASK-001",
-            test_type: "新类型",
-            sample_count: 2,
-          }),
-        ],
-        [STORAGE_KEYS.samples]: expect.arrayContaining([
-          expect.objectContaining({ code: "TASK-001-SP-010", task_code: "TASK-001" }),
-          expect.objectContaining({ code: "TASK-001-SP-011", task_code: "TASK-001" }),
-        ]),
-      })
+        test_type: "新类型",
+        sample_count: 2,
+        sample_codes: ["TASK-001-SP-010", "TASK-001-SP-011"],
+      }),
     );
+    expect(persistSnapshot).not.toHaveBeenCalled();
     expect(replaceOverview).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ code: "TASK-001", test_type: "新类型" })]),
       expect.arrayContaining([expect.objectContaining({ task_code: "TASK-001" })]),
@@ -136,6 +132,41 @@ describe("useTaskOverviewEditor", () => {
       [],
       []
     );
+  });
+
+  test("saveEdit sends a task-scoped 99-to-15 sample reduction without writing a full snapshot", async () => {
+    const taskCode = "SYLU-2026-07-034";
+    const sampleCodes = Array.from({ length: 99 }, (_, index) => `${taskCode}-SP-${String(index + 1).padStart(3, "0")}`);
+    const snapshot = {
+      [STORAGE_KEYS.tasks]: [{ code: taskCode, test_type: "冲击试验", sample_count: 99, status: "待排程" }],
+      [STORAGE_KEYS.experiments]: [{ task_code: taskCode, experiment_code: `${taskCode}-A`, experiment_name: "冲击试验", required_device: "冲击试验" }],
+      [STORAGE_KEYS.samples]: sampleCodes.map((code, index) => ({ id: `sample-${index + 1}`, code, task_code: taskCode, trays: [] })),
+      [STORAGE_KEYS.schedules]: [],
+    };
+    const { openEdit, editForm, saveEdit, persistSnapshot, updateTask } = createEditor({
+      loadSnapshot: vi.fn(async () => snapshot),
+    });
+
+    openEdit({
+      taskCode,
+      taskType: "冲击试验",
+      sampleCount: 99,
+      sampleCodes,
+      experiments: [{ experimentCode: `${taskCode}-A`, experimentName: "冲击试验", requiredDevice: "冲击试验" }],
+    });
+    editForm.value.sampleCount = 15;
+
+    await saveEdit(taskCode);
+
+    expect(updateTask).toHaveBeenCalledTimes(1);
+    expect(updateTask).toHaveBeenCalledWith(
+      taskCode,
+      expect.objectContaining({
+        sample_count: 15,
+        sample_codes: sampleCodes.slice(0, 15),
+      }),
+    );
+    expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
   test("saveEdit rejects more than 99 pasted sample codes", async () => {
@@ -166,7 +197,7 @@ describe("useTaskOverviewEditor", () => {
     expect(editError.value).toBe("样品编号最多为 99 个");
   });
 
-  test("saveEdit rejects sample count changes after storage is confirmed with experiments", async () => {
+  test("saveEdit rejects sample count changes after handover confirms arrival", async () => {
     const snapshot = {
       [STORAGE_KEYS.tasks]: [
         { code: "TASK-001", test_type: "冲击试验", name: "冲击试验", required_device: "冲击试验", sample_count: 2, transfer_status: "到货" },
@@ -198,7 +229,42 @@ describe("useTaskOverviewEditor", () => {
     await saveEdit("TASK-001");
 
     expect(persistSnapshot).not.toHaveBeenCalled();
-    expect(editError.value).toBe("该任务样品已在接驳区确认到货，不允许更改样品数量");
+    expect(editError.value).toBe("该任务已保存预接驳托盘或已确认到货，请先重新入库后再修改样品数量");
+  });
+
+  test("saveEdit rejects sample count changes after pre-allocation trays are saved", async () => {
+    const taskCode = "TASK-PREALLOCATED";
+    const snapshot = {
+      [STORAGE_KEYS.tasks]: [
+        { code: taskCode, test_type: "冲击试验", sample_count: 2, transfer_status: "未入库", tray_codes: [`${taskCode}-TP-001`] },
+      ],
+      [STORAGE_KEYS.experiments]: [],
+      [STORAGE_KEYS.samples]: [1, 2].map((index) => ({
+        id: `sample-${index}`,
+        code: `${taskCode}-SP-${String(index).padStart(3, "0")}`,
+        task_code: taskCode,
+        status: "运输中",
+        trays: [{ tray_code: `${taskCode}-TP-001`, status: "未入库" }],
+      })),
+      [STORAGE_KEYS.schedules]: [],
+      [STORAGE_KEYS.streams]: [],
+    };
+    const { openEdit, editForm, saveEdit, updateTask, editError } = createEditor({
+      loadSnapshot: vi.fn(async () => snapshot),
+    });
+
+    openEdit({
+      taskCode,
+      taskType: "冲击试验",
+      sampleCount: 2,
+      sampleCodes: [`${taskCode}-SP-001`, `${taskCode}-SP-002`],
+    });
+    editForm.value.sampleCount = 3;
+
+    await saveEdit(taskCode);
+
+    expect(updateTask).not.toHaveBeenCalled();
+    expect(editError.value).toBe("该任务已保存预接驳托盘或已确认到货，请先重新入库后再修改样品数量");
   });
 
   test("saveEdit persists task experiments and updates task experiment summary fields", async () => {
@@ -212,7 +278,7 @@ describe("useTaskOverviewEditor", () => {
       [STORAGE_KEYS.schedules]: [],
       [STORAGE_KEYS.streams]: [],
     };
-    const { openEdit, editForm, saveEdit, persistSnapshot } = createEditor({
+    const { openEdit, editForm, saveEdit, persistSnapshot, updateTask } = createEditor({
       loadSnapshot: vi.fn(async () => snapshot),
     });
 
@@ -230,21 +296,18 @@ describe("useTaskOverviewEditor", () => {
 
     await saveEdit("SYLU-2026-03-006");
 
-    expect(persistSnapshot).toHaveBeenCalledWith(
+    expect(updateTask).toHaveBeenCalledWith(
+      "SYLU-2026-03-006",
       expect.objectContaining({
-        [STORAGE_KEYS.tasks]: [
-          expect.objectContaining({
-            code: "SYLU-2026-03-006",
-            experiment_count: 2,
-            experiment_codes: ["SYLU-2026-03-006-A", "SYLU-2026-03-006-B"],
-          }),
+        experiment_count: 2,
+        experiment_codes: ["SYLU-2026-03-006-A", "SYLU-2026-03-006-B"],
+        experiments: [
+          expect.objectContaining({ experiment_code: "SYLU-2026-03-006-A", experiment_name: "A实验" }),
+          expect.objectContaining({ experiment_code: "SYLU-2026-03-006-B", experiment_name: "B实验" }),
         ],
-        [STORAGE_KEYS.experiments]: [
-          expect.objectContaining({ task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-A", experiment_name: "A实验" }),
-          expect.objectContaining({ task_code: "SYLU-2026-03-006", experiment_code: "SYLU-2026-03-006-B", experiment_name: "B实验" }),
-        ],
-      })
+      }),
     );
+    expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
   test("confirmDeleteTask removes task-linked tasks, samples, schedules, and streams after confirmation", async () => {

@@ -266,9 +266,36 @@
             </div>
           </section>
 
-          <section class="transfer-tray-panel">
+          <section class="transfer-tray-panel" aria-label="托盘分装操作区">
             <div class="transfer-panel-title transfer-panel-title--tray">
-              <h3>托盘栏位</h3>
+              <div class="form-actions transfer-tray-actions transfer-tray-actions--top">
+                <button class="action-btn transfer-print-all-btn" data-testid="transfer-print-barcodes" type="button" :disabled="!canPrint || printingAllBarcodes || storageOperationPending" @click="printAllTrayBarcodes">
+                  {{ printingAllBarcodes ? "生成中..." : `打印二维码（${loadedTrayCount}）` }}
+                </button>
+                <button class="action-btn secondary" data-testid="transfer-save-trays" type="button" :disabled="!canSaveAllocation || storageOperationPending" @click="persistAllocation()">保存托盘</button>
+                <button v-if="modeConfig.allowConfirm" class="action-btn" data-testid="transfer-confirm-storage" type="button" :disabled="!canConfirm || storageOperationPending" @click="confirmStorage">
+                  {{ storageOperationPending ? "处理中..." : "确认入库" }}
+                </button>
+                <button
+                  v-if="modeConfig.allowReset"
+                  class="action-btn secondary"
+                  data-testid="transfer-reset-workspace"
+                  :disabled="!canResetWorkspace || storageOperationPending"
+                  @click="reloadWorkspace"
+                >
+                  {{ modeConfig.resetActionLabel }}
+                </button>
+                <button
+                  v-if="experiments.length"
+                  class="action-btn secondary"
+                  data-testid="transfer-assign-all-experiments"
+                  type="button"
+                  :disabled="allocationReadOnly || assignedTrays.length === 0"
+                  @click.stop="assignAllExperimentsToAllTrays"
+                >
+                  全部托盘应用全部试验
+                </button>
+              </div>
 
               <div class="transfer-tray-toolbar">
                 <div class="transfer-tray-limit-toolbar">
@@ -292,35 +319,6 @@
                   <button class="action-btn secondary transfer-use-tray-btn" type="button" :disabled="taskEditingLocked || remainingTrayCount <= 0 || trayCapacityExceeded" @click="addInventoryTray">新增托盘</button>
                 </div>
               </div>
-            </div>
-
-            <div class="form-actions transfer-tray-actions transfer-tray-actions--top">
-              <button class="action-btn transfer-print-all-btn" data-testid="transfer-print-barcodes" type="button" :disabled="!canPrint || printingAllBarcodes || storageOperationPending" @click="printAllTrayBarcodes">
-                {{ printingAllBarcodes ? "生成中..." : `打印二维码（${loadedTrayCount}）` }}
-              </button>
-              <button class="action-btn secondary" data-testid="transfer-save-trays" type="button" :disabled="!canSaveAllocation || storageOperationPending" @click="persistAllocation()">保存托盘</button>
-              <button v-if="modeConfig.allowConfirm" class="action-btn" data-testid="transfer-confirm-storage" type="button" :disabled="!canConfirm || storageOperationPending" @click="confirmStorage">
-                {{ storageOperationPending ? "处理中..." : "确认入库" }}
-              </button>
-              <button
-                v-if="modeConfig.allowReset"
-                class="action-btn secondary"
-                data-testid="transfer-reset-workspace"
-                :disabled="!canResetWorkspace || storageOperationPending"
-                @click="reloadWorkspace"
-              >
-                {{ modeConfig.resetActionLabel }}
-              </button>
-              <button
-                v-if="experiments.length"
-                class="action-btn secondary"
-                data-testid="transfer-assign-all-experiments"
-                type="button"
-                :disabled="allocationReadOnly || assignedTrays.length === 0"
-                @click.stop="assignAllExperimentsToAllTrays"
-              >
-                全部托盘应用全部试验
-              </button>
             </div>
 
             <div

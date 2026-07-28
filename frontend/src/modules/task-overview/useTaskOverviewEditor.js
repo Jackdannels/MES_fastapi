@@ -4,7 +4,7 @@ import { ref, unref } from "vue";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { deleteTask as deleteTaskByApi } from "@/lib/tasksApi";
+import { deleteTask as deleteTaskByApi, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import { useFeedback } from "@/composables/useFeedback";
 
 // 删除确认弹窗需要独立维护一份快照统计，避免实时值抖动。
@@ -26,7 +26,7 @@ const createEmptyEditForm = () => ({
 
 const MAX_SAMPLE_COUNT = 99;
 const SAMPLE_CODE_LIMIT_MESSAGE = `样品编号最多为 ${MAX_SAMPLE_COUNT} 个`;
-const SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量";
+const SAMPLE_COUNT_LOCKED_MESSAGE = "该任务已保存预接驳托盘或已确认到货，请先重新入库后再修改样品数量";
 
 // 样品数、托盘数等编辑输入统一归一化为非负整数。
 const normalizeCount = (value) => {
@@ -54,16 +54,18 @@ const taskStorageConfirmed = (task, samples) => {
     );
   });
 };
-const taskHasSelectedExperiments = (task, experiments) => {
+const taskHasSavedAllocation = (task, samples) => {
+  if ((Array.isArray(task?.tray_codes) ? task.tray_codes : []).some((trayCode) => normalizeText(trayCode))) {
+    return true;
+  }
   const code = taskCodeOf(task);
-  if ((Array.isArray(experiments) ? experiments : []).some((experiment) => taskCodeOf(experiment) === code)) {
-    return true;
-  }
-  if (Array.isArray(task?.test_types) && task.test_types.some((type) => normalizeText(type))) {
-    return true;
-  }
-  return Boolean(normalizeText(task?.test_type || task?.required_device));
+  const taskSamples = (Array.isArray(samples) ? samples : []).filter((sample) => taskCodeOf(sample) === code);
+  return taskSamples.length > 0
+    && taskSamples.every((sample) => Array.isArray(sample?.trays) && sample.trays.length > 0);
 };
+const taskSampleCountLocked = (task, samples) => (
+  taskStorageConfirmed(task, samples) || taskHasSavedAllocation(task, samples)
+);
 
 const compareText = (left, right) => String(left || "").localeCompare(String(right || ""), "zh-Hans-CN");
 const EXPERIMENT_TYPE_OPTIONS = Object.freeze(Object.keys(TEST_PREFIX_MAP));
@@ -180,7 +182,14 @@ const buildGeneratedSampleCodes = (taskCode, count, occupiedCodes = new Set()) =
 };
 
 // 跟踪当前选中卡片，并将任务和样品编辑结果写回存储。
-function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview, deleteTask = deleteTaskByApi, experimentTypeOptions = EXPERIMENT_TYPE_OPTIONS }) {
+function useTaskOverviewEditor({
+  loadSnapshot,
+  persistSnapshot,
+  replaceOverview,
+  deleteTask = deleteTaskByApi,
+  updateTask = updateTaskByApi,
+  experimentTypeOptions = EXPERIMENT_TYPE_OPTIONS,
+}) {
   const selectedTaskCode = ref("");
   const editingTaskCode = ref("");
   const savingTaskCode = ref("");
@@ -406,8 +415,7 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
       const originalSampleCount = normalizeCount(currentTask?.sample_count) || taskSamples.length;
       if (
         finalCodes.length !== originalSampleCount
-        && taskStorageConfirmed(currentTask, samples)
-        && taskHasSelectedExperiments(currentTask, experiments)
+        && taskSampleCountLocked(currentTask, samples)
       ) {
         showEditError(SAMPLE_COUNT_LOCKED_MESSAGE);
         return;
@@ -496,11 +504,19 @@ function useTaskOverviewEditor({ loadSnapshot, persistSnapshot, replaceOverview,
           }))
         );
 
-      // 保存成功后立即刷新总览卡片，避免页面还停留在旧聚合结果上。
-      await persistSnapshot({
-        [STORAGE_KEYS.tasks]: nextTasks,
-        [STORAGE_KEYS.experiments]: nextExperiments,
-        [STORAGE_KEYS.samples]: nextSamples,
+      // 任务编辑必须走任务级原子接口，避免通用快照合并保留已裁掉的样品，
+      // 也避免一次编辑重写全系统样品和实验数据。
+      await updateTask(code, {
+        ...nextTasks[taskIndex],
+        sample_codes: finalCodes,
+        test_types: normalizedExperiments.map((experiment) => experiment.requiredDevice).filter(Boolean),
+        experiments: normalizedExperiments.map((experiment) => ({
+          experiment_code: experiment.experimentCode,
+          experiment_name: experiment.experimentName,
+          required_device: experiment.requiredDevice,
+          priority: experiment.priority,
+          planned_hours: experiment.plannedHours,
+        })),
       });
 
       replaceOverview(nextTasks, nextSamples, schedules, nextExperiments, experimentTrays, experimentRuns, experimentRunTrays, experimentRunSteps);

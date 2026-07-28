@@ -446,6 +446,55 @@ def replace_sample_patch(cursor, samples: list[dict[str, Any]]) -> None:
     )
 
 
+def replace_task_samples(cursor, samples: list[dict[str, Any]], task_codes: set[str]) -> None:
+    normalized_task_codes = sorted({normalize_text(code) for code in task_codes if normalize_text(code)})
+    if not normalized_task_codes:
+        return
+    incoming_sample_codes = {
+        normalize_text(sample.get("code"))
+        for sample in samples
+        if normalize_text(sample.get("code"))
+    }
+    placeholders = ", ".join(["%s"] * len(normalized_task_codes))
+    cursor.execute(
+        f"""
+        SELECT sample.sample_id, sample.sample_no
+        FROM biz_sample AS sample
+        INNER JOIN biz_task AS task ON task.task_id = sample.task_id
+        WHERE task.task_no IN ({placeholders})
+          AND sample.remark LIKE %s
+        """,
+        [*normalized_task_codes, f"{SAMPLE_META_PREFIX}%"],
+    )
+    surplus_sample_ids = [
+        row["sample_id"]
+        for row in cursor.fetchall()
+        if normalize_text(row.get("sample_no")) not in incoming_sample_codes
+    ]
+    if surplus_sample_ids:
+        clear_existing_sample_patch_links(cursor, surplus_sample_ids)
+        sample_placeholders = ", ".join(["%s"] * len(surplus_sample_ids))
+        cursor.execute(
+            f"DELETE FROM biz_sample WHERE sample_id IN ({sample_placeholders})",
+            surplus_sample_ids,
+        )
+
+    replace_sample_patch(cursor, samples)
+
+    cursor.execute(
+        f"""
+        DELETE tray
+        FROM biz_tray AS tray
+        INNER JOIN biz_task AS task ON task.task_id = tray.task_id
+        LEFT JOIN biz_tray_item AS tray_item ON tray_item.tray_id = tray.tray_id
+        WHERE task.task_no IN ({placeholders})
+          AND tray.remark = %s
+          AND tray_item.tray_id IS NULL
+        """,
+        [*normalized_task_codes, TRAY_META_PREFIX],
+    )
+
+
 def build_sample_history_event_rows(
     managed_samples: list[dict[str, Any]],
     sample_id_map: dict[str, int],

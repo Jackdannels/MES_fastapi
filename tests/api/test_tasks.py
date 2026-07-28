@@ -44,6 +44,8 @@ class FakeTaskStorage:
             "mes.devices": list(devices or []),
             "mes.meta": dict(meta or {}),
         }
+        self.write_many_calls = []
+        self.write_task_scope_calls = []
 
     @staticmethod
     def _clone_value(value):
@@ -63,8 +65,26 @@ class FakeTaskStorage:
         self.payloads[key] = self._clone_value(value)
 
     def write_many(self, updates):
+        self.write_many_calls.append(deepcopy(updates))
         for key, value in updates.items():
             self.payloads[key] = self._clone_value(value)
+
+    def write_task_scope(self, updates, *, task_codes):
+        normalized_task_codes = {str(code or "").strip() for code in task_codes if str(code or "").strip()}
+        self.write_task_scope_calls.append({
+            "task_codes": normalized_task_codes,
+            "updates": deepcopy(updates),
+        })
+        for key, rows in updates.items():
+            current_rows = self.payloads.get(key, [])
+
+            def row_task_code(row):
+                if key == "mes.tasks":
+                    return str(row.get("code") or row.get("id") or "").strip()
+                return str(row.get("task_code") or row.get("taskCode") or "").strip()
+
+            retained = [row for row in current_rows if row_task_code(row) not in normalized_task_codes]
+            self.payloads[key] = retained + list(rows or [])
 
 
 def build_client(
@@ -1932,7 +1952,83 @@ def test_update_task_sample_count_shrinks_related_samples(monkeypatch):
     ]
 
 
-def test_update_task_rejects_sample_count_change_after_storage_confirmed_with_experiments(monkeypatch):
+def test_update_task_sample_count_99_to_15_uses_task_scoped_write(monkeypatch):
+    task_code = "SYLU-2026-07-034"
+    sample_codes = [f"{task_code}-SP-{index:03d}" for index in range(1, 100)]
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": task_code,
+                "code": task_code,
+                "name": "大样品任务",
+                "sample_count": "99",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "status": "待排程",
+            },
+            {
+                "id": "TASK-OTHER",
+                "code": "TASK-OTHER",
+                "name": "其他任务",
+                "sample_count": "1",
+                "test_type": "盐雾试验",
+                "test_types": ["盐雾试验"],
+                "status": "待排程",
+            },
+        ],
+        samples=[
+            *[
+                {
+                    "id": f"sample-{index}",
+                    "code": code,
+                    "task_code": task_code,
+                    "status": "运输中",
+                    "updated_at": "2026-07-28 10:00:00",
+                }
+                for index, code in enumerate(sample_codes, start=1)
+            ],
+            {"id": "sample-other", "code": "TASK-OTHER-SP-001", "task_code": "TASK-OTHER", "status": "运输中"},
+        ],
+        experiments=[
+            {
+                "id": f"{task_code}-A",
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-A",
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+                "status": "待排程",
+            }
+        ],
+    )
+
+    response = client.put(
+        f"/api/tasks/{task_code}",
+        json={
+            "id": task_code,
+            "code": task_code,
+            "name": "大样品任务",
+            "sample_count": 15,
+            "sample_codes": sample_codes[:15],
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "status": "待排程",
+        },
+    )
+
+    storage = client.app.state.storage
+    task_samples = [sample for sample in storage.read("mes.samples") if sample.get("task_code") == task_code]
+
+    assert response.status_code == 200
+    assert response.json()["sample_count"] == "15"
+    assert [sample["code"] for sample in task_samples] == sample_codes[:15]
+    assert any(sample.get("code") == "TASK-OTHER-SP-001" for sample in storage.read("mes.samples"))
+    assert len(storage.write_task_scope_calls) == 1
+    assert len(storage.write_task_scope_calls[0]["updates"]["mes.samples"]) == 15
+    assert storage.write_many_calls == []
+
+
+def test_update_task_rejects_sample_count_change_after_handover_confirms_arrival(monkeypatch):
     client = build_client(
         monkeypatch,
         tasks=[
@@ -1986,9 +2082,109 @@ def test_update_task_rejects_sample_count_change_after_storage_confirmed_with_ex
     )
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "该任务样品已在接驳区确认到货，不允许更改样品数量"}
+    assert response.json() == {"detail": "该任务已保存预接驳托盘或已确认到货，请先重新入库后再修改样品数量"}
     assert client.app.state.storage.read("mes.tasks")[0]["sample_count"] == "2"
     assert len(client.app.state.storage.read("mes.samples")) == 2
+
+
+def test_update_task_rejects_sample_count_change_after_preallocation_save(monkeypatch):
+    task_code_value = "SYLU-2026-07-035"
+    tray_code = f"{task_code_value}-TP-001"
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": task_code_value,
+                "code": task_code_value,
+                "name": "预接驳样品数锁定",
+                "sample_count": "2",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "transfer_status": "未入库",
+                "tray_codes": [tray_code],
+                "status": "待排程",
+            }
+        ],
+        samples=[
+            {
+                "id": f"sample-{index}",
+                "code": f"{task_code_value}-SP-{index:03d}",
+                "task_code": task_code_value,
+                "status": "运输中",
+                "flow_status": "运输中",
+                "trays": [{"tray_code": tray_code, "status": "未入库"}],
+            }
+            for index in range(1, 3)
+        ],
+    )
+
+    response = client.put(
+        f"/api/tasks/{task_code_value}",
+        json={
+            "id": task_code_value,
+            "code": task_code_value,
+            "name": "预接驳样品数锁定",
+            "sample_count": "3",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "transfer_status": "未入库",
+            "status": "待排程",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "该任务已保存预接驳托盘或已确认到货，请先重新入库后再修改样品数量"}
+    assert client.app.state.storage.read("mes.tasks")[0]["sample_count"] == "2"
+
+
+def test_update_task_allows_sample_count_change_after_reentry_reset(monkeypatch):
+    task_code_value = "SYLU-2026-07-036"
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": task_code_value,
+                "code": task_code_value,
+                "name": "重新入库后解锁",
+                "sample_count": "2",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "transfer_status": "未入库",
+                "tray_codes": [],
+                "status": "待排程",
+            }
+        ],
+        samples=[
+            {
+                "id": f"sample-{index}",
+                "code": f"{task_code_value}-SP-{index:03d}",
+                "task_code": task_code_value,
+                "status": "运输中",
+                "flow_status": "运输中",
+                "trays": [],
+                "history": [{"action": "任务重新入库", "target": task_code_value}],
+            }
+            for index in range(1, 3)
+        ],
+    )
+
+    response = client.put(
+        f"/api/tasks/{task_code_value}",
+        json={
+            "id": task_code_value,
+            "code": task_code_value,
+            "name": "重新入库后解锁",
+            "sample_count": "3",
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "transfer_status": "未入库",
+            "status": "待排程",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["sample_count"] == "3"
+    assert len(client.app.state.storage.read("mes.samples")) == 3
 
 
 def test_update_completed_task_allows_name_only(monkeypatch):

@@ -37,6 +37,23 @@ describe("handover system styles", () => {
     expect(styleSource).toMatch(/\.transfer-system-actions\s+\.action-btn\s*\{[^}]*min-height:\s*64px/i);
   });
 
+  test("keeps tray actions and capacity controls on one fixed-height row with larger buttons", () => {
+    const componentPath = resolve(process.cwd(), "src/modules/transfer-workbench/TransferWorkbench.vue");
+    const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
+    const componentSource = readFileSync(componentPath, "utf8");
+    const styleSource = readFileSync(stylesPath, "utf8");
+
+    expect(componentSource).not.toContain("<h3>托盘栏位</h3>");
+    expect(componentSource).toContain('<section class="transfer-tray-panel" aria-label="托盘分装操作区">');
+    expect(componentSource).toMatch(/class="transfer-panel-title transfer-panel-title--tray"[\s\S]*class="form-actions transfer-tray-actions transfer-tray-actions--top"[\s\S]*class="transfer-tray-toolbar"/);
+    expect(styleSource).toMatch(/\.transfer-panel-title--tray\s*\{[^}]*height:\s*106px/i);
+    expect(styleSource).toMatch(/\.transfer-panel-title--tray\s*\{[^}]*flex-wrap:\s*nowrap/i);
+    expect(styleSource).toMatch(/\.transfer-tray-actions--top\s*\{[^}]*margin:\s*0/i);
+    expect(styleSource).toMatch(/\.transfer-tray-actions--top\s*>\s*\.action-btn\s*\{[^}]*flex:\s*1\s+1\s+0/i);
+    expect(styleSource).toMatch(/\.transfer-tray-actions--top\s*>\s*\.action-btn\s*\{[^}]*height:\s*80px/i);
+    expect(styleSource).toMatch(/\.transfer-tray-actions--top\s*>\s*\.action-btn\s*\{[^}]*font-size:\s*clamp\(14px,\s*1vw,\s*18px\)/i);
+  });
+
   test("handover terminal uses the viewport as its layout boundary", () => {
     const componentPath = resolve(process.cwd(), "src/modules/transfer-workbench/TransferWorkbench.vue");
     const pagePath = resolve(process.cwd(), "src/modules/handover-system/page.vue");

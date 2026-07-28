@@ -15,7 +15,7 @@ import {
   validateTaskTextFields,
 } from "./model";
 
-const SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量";
+const SAMPLE_COUNT_LOCKED_MESSAGE = "该任务已保存预接驳托盘或已确认到货，请先重新入库后再修改样品数量";
 
 function useTaskMutationWorkflow({
   arraysEqual,
@@ -48,7 +48,7 @@ function useTaskMutationWorkflow({
   scheduledExperimentRemovalModal,
   taskCodeOf,
   taskDetailSampleCodes,
-  taskHasSelectedExperiments,
+  taskSampleCountLocked,
   taskStorageConfirmed,
 }) {
   const closeScheduledExperimentRemovalConfirm = () => {
@@ -165,8 +165,7 @@ function useTaskMutationWorkflow({
     const nextTypes = collectExperimentTypes(updatedTask?.test_types, updatedTask?.test_type);
     const experimentTypesChanged = !arraysEqual(originalTypes, nextTypes);
     if (sampleCountChanged(originalTask, updatedTask)
-      && taskStorageConfirmed(originalTask, rawSamples.value)
-      && taskHasSelectedExperiments(originalTask)) {
+      && taskSampleCountLocked(originalTask, rawSamples.value)) {
       editWarning.value = SAMPLE_COUNT_LOCKED_MESSAGE;
       return;
     }
@@ -225,8 +224,7 @@ function useTaskMutationWorkflow({
     }
     const originalCount = normalizeTaskSampleCount(originalTask?.sample_count, taskDetailSampleCodes.value.length);
     if (codes.length !== originalCount
-      && taskStorageConfirmed(originalTask, rawSamples.value)
-      && taskHasSelectedExperiments(originalTask)) {
+      && taskSampleCountLocked(originalTask, rawSamples.value)) {
       sampleCodesWarning.value = SAMPLE_COUNT_LOCKED_MESSAGE;
       return;
     }

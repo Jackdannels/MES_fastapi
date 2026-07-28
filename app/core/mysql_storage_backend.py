@@ -55,6 +55,7 @@ from app.core.mysql_storage_loaders import (
 from app.core.mysql_storage_replacers import (
     replace_devices,
     replace_experiments,
+    replace_task_experiments,
     replace_experiment_runs,
     replace_experiment_run_trays,
     replace_experiment_run_steps,
@@ -80,6 +81,7 @@ from app.core.mysql_storage_sample_write import (
     load_tray_id_map,
     replace_samples,
     replace_sample_patch,
+    replace_task_samples,
     update_sample_primary_tray_ids,
     upsert_tray_rows,
     upsert_sample_rows,
@@ -270,6 +272,12 @@ class MySQLMesStorageBackend(StorageBackend):
 
     def _replace_sample_patch(self, cursor, samples: list[dict[str, Any]]) -> None:
         replace_sample_patch(cursor, samples)
+
+    def _replace_task_samples(self, cursor, samples: list[dict[str, Any]], task_codes: set[str]) -> None:
+        replace_task_samples(cursor, samples, task_codes)
+
+    def _replace_task_experiments(self, cursor, experiments: list[dict[str, Any]], task_codes: set[str]) -> None:
+        replace_task_experiments(cursor, experiments, task_codes)
 
     def _load_tasks(self, cursor) -> list[dict[str, Any]]:
         return load_tasks(cursor)
@@ -508,3 +516,28 @@ class MySQLMesStorageBackend(StorageBackend):
             if not normalized_updates:
                 return
             self._write_many_internal(normalized_updates, patch_samples=True)
+
+    def write_task_scope(self, updates: Dict[str, Any], *, task_codes: set[str]) -> None:
+        normalized_task_codes = {normalize_text(code) for code in task_codes if normalize_text(code)}
+        if not normalized_task_codes:
+            return
+        with self._write_lock:
+            normalized_updates = {
+                key: _normalize_value(key, value if isinstance(value, list) else [])
+                for key, value in updates.items()
+                if key in {"mes.tasks", "mes.samples", "mes.experiments"}
+            }
+            if not normalized_updates:
+                return
+            self._ensure_schema_extensions()
+            with self._connect() as connection:
+                with connection.cursor() as cursor:
+                    if "mes.tasks" in normalized_updates:
+                        self._replace_tasks(cursor, normalized_updates["mes.tasks"], prune=False)
+                    if "mes.samples" in normalized_updates:
+                        self._replace_task_samples(cursor, normalized_updates["mes.samples"], normalized_task_codes)
+                    if "mes.experiments" in normalized_updates:
+                        self._replace_task_experiments(cursor, normalized_updates["mes.experiments"], normalized_task_codes)
+                    self._backfill_schedule_task_ids(cursor)
+                    self._sync_progress_statuses(cursor)
+                connection.commit()

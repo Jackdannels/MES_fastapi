@@ -90,7 +90,6 @@ from app.api.routes.transfer_area_read_views import (
 from app.api.routes.transfer_area_snapshot import (
     TRANSFER_BOOTSTRAP_READ_FIELDS,
     TRANSFER_WORKSPACE_READ_FIELDS,
-    hydrate_transfer_snapshot_for_write,
     read_transfer_snapshot,
 )
 
@@ -438,20 +437,10 @@ def build_bootstrap_response(snapshot: dict[str, list[dict[str, Any]]]) -> tuple
 
 @router.get("/bootstrap")
 def read_bootstrap() -> dict[str, Any]:
-    storage = get_storage_backend()
-    response, snapshot_changed = build_bootstrap_response(
-        read_snapshot(TRANSFER_BOOTSTRAP_READ_FIELDS, storage=storage),
+    response, _snapshot_changed = build_bootstrap_response(
+        read_snapshot(TRANSFER_BOOTSTRAP_READ_FIELDS),
     )
-    if not snapshot_changed:
-        return response
-    with acquire_laboratory_storage_commit_lock():
-        storage = get_storage_backend()
-        snapshot = read_snapshot(TRANSFER_BOOTSTRAP_READ_FIELDS, storage=storage)
-        response, snapshot_changed = build_bootstrap_response(snapshot)
-        if snapshot_changed:
-            snapshot = hydrate_transfer_snapshot_for_write(storage, snapshot)
-            write_snapshot(snapshot)
-        return response
+    return response
 
 
 def build_task_workspace_response(
@@ -480,21 +469,11 @@ def build_task_workspace_response(
 
 @router.get("/tasks/{task_id}/workspace")
 def read_task_workspace(task_id: str) -> dict[str, Any]:
-    storage = get_storage_backend()
-    response, snapshot_changed = build_task_workspace_response(
-        read_snapshot(TRANSFER_WORKSPACE_READ_FIELDS, storage=storage),
+    response, _snapshot_changed = build_task_workspace_response(
+        read_snapshot(TRANSFER_WORKSPACE_READ_FIELDS),
         task_id,
     )
-    if not snapshot_changed:
-        return response
-    with acquire_laboratory_storage_commit_lock():
-        storage = get_storage_backend()
-        snapshot = read_snapshot(TRANSFER_WORKSPACE_READ_FIELDS, storage=storage)
-        response, snapshot_changed = build_task_workspace_response(snapshot, task_id)
-        if snapshot_changed:
-            snapshot = hydrate_transfer_snapshot_for_write(storage, snapshot)
-            write_snapshot(snapshot)
-        return response
+    return response
 
 
 @router.get("/trays/{tray_code}/dispatch")

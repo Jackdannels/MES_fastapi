@@ -4364,6 +4364,88 @@ def test_write_many_internal_uses_scoped_sample_patch_without_full_sample_replac
     assert calls == [("scoped", sample_patch)]
 
 
+def test_write_task_scope_updates_only_target_task_collections(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    connection = _TrackingConnection()
+    calls = []
+
+    monkeypatch.setattr(backend, "_ensure_schema_extensions", lambda: None)
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+    monkeypatch.setattr(backend, "_replace_tasks", lambda cursor, rows, prune=True: calls.append(("tasks", prune, rows)))
+    monkeypatch.setattr(backend, "_replace_task_samples", lambda cursor, rows, task_codes: calls.append(("samples", task_codes, rows)))
+    monkeypatch.setattr(backend, "_replace_task_experiments", lambda cursor, rows, task_codes: calls.append(("experiments", task_codes, rows)))
+    monkeypatch.setattr(backend, "_backfill_schedule_task_ids", lambda cursor: calls.append(("backfill",)))
+    monkeypatch.setattr(backend, "_sync_progress_statuses", lambda cursor: calls.append(("statuses",)))
+
+    backend.write_task_scope(
+        {
+            "mes.tasks": [{"code": "TASK-1", "sample_count": 15}],
+            "mes.samples": [{"code": "TASK-1-SP-001", "task_code": "TASK-1"}],
+            "mes.experiments": [{"experiment_code": "TASK-1-A", "task_code": "TASK-1"}],
+        },
+        task_codes={"TASK-1"},
+    )
+
+    assert calls == [
+        ("tasks", False, [{"code": "TASK-1", "sample_count": 15}]),
+        ("samples", {"TASK-1"}, [{"code": "TASK-1-SP-001", "task_code": "TASK-1"}]),
+        ("experiments", {"TASK-1"}, [{"experiment_code": "TASK-1-A", "task_code": "TASK-1"}]),
+        ("backfill",),
+        ("statuses",),
+    ]
+    assert connection.commit_count == 1
+
+
+def test_replace_task_samples_deletes_only_surplus_rows_for_target_task(monkeypatch) -> None:
+    class TrackingCursor:
+        def __init__(self):
+            self.executed = []
+
+        def execute(self, sql, params=None):
+            self.executed.append((" ".join(str(sql).split()), list(params or [])))
+
+        def fetchall(self):
+            return [
+                {"sample_id": 101, "sample_no": "TASK-1-SP-001"},
+                {"sample_id": 102, "sample_no": "TASK-1-SP-002"},
+                {"sample_id": 103, "sample_no": "TASK-1-SP-003"},
+            ]
+
+    cursor = TrackingCursor()
+    cleared_ids = []
+    patched_rows = []
+    monkeypatch.setattr(
+        mysql_storage_sample_write_module,
+        "clear_existing_sample_patch_links",
+        lambda _cursor, sample_ids: cleared_ids.extend(sample_ids),
+    )
+    monkeypatch.setattr(
+        mysql_storage_sample_write_module,
+        "replace_sample_patch",
+        lambda _cursor, rows: patched_rows.extend(rows),
+    )
+
+    mysql_storage_sample_write_module.replace_task_samples(
+        cursor,
+        [
+            {"code": "TASK-1-SP-001", "task_code": "TASK-1"},
+            {"code": "TASK-1-SP-002", "task_code": "TASK-1"},
+        ],
+        {"TASK-1"},
+    )
+
+    assert cleared_ids == [103]
+    assert patched_rows == [
+        {"code": "TASK-1-SP-001", "task_code": "TASK-1"},
+        {"code": "TASK-1-SP-002", "task_code": "TASK-1"},
+    ]
+    assert any(sql.startswith("DELETE FROM biz_sample WHERE sample_id IN") and params == [103] for sql, params in cursor.executed)
+    assert all("TASK-1" in params for sql, params in cursor.executed if "biz_task AS task" in sql)
+
+
 def test_scoped_sample_patch_clears_only_affected_sample_tray_items() -> None:
     class TrackingCursor:
         def __init__(self):

@@ -425,7 +425,19 @@
       </div>
       <div class="form-field">
         <label>样品数量</label>
-        <AppNumberInput v-model="editForm.sample_count" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" :readonly="isTaskDetailLocked" />
+        <AppNumberInput
+          v-model="editForm.sample_count"
+          name="sample_count"
+          min="1"
+          max="99"
+          step="1"
+          required
+          placeholder="例如：12"
+          :readonly="isTaskDetailLocked || isTaskSampleCountLocked"
+        />
+        <div v-if="isTaskSampleCountLocked" class="helper" data-testid="task-sample-count-locked-hint">
+          已保存预接驳托盘或已确认到货，需重新入库后才能修改样品数量。
+        </div>
       </div>
       <div class="form-field tasks-sample-preview">
         <label>样品编号</label>
@@ -667,6 +679,7 @@ const {
   intakeExperimentTypeOptions,
   intakeDueAtMin,
   isTaskDetailLocked,
+  isTaskSampleCountLocked,
   intakeModalOpen,
   intakeSampleCodePreview,
   intakeWarning,

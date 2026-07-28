@@ -35,6 +35,15 @@ describe("laboratory workbench layout", () => {
     expect(stylesSource).toMatch(/\.laboratory-task-confirm-button\s*\{[^}]*min-height:\s*72px[^}]*min-width:\s*240px/i);
   });
 
+  test("renders every running-experiment modal state as a large touch-friendly surface", () => {
+    expect(pageSource).toContain('data-testid="laboratory-running-modal"');
+    expect(pageSource).toContain('data-testid="laboratory-complete-experiment"');
+    expect(pageSource).toContain('data-testid="laboratory-complete-experiment-confirm"');
+    expect(stylesSource).toMatch(/\.laboratory-running-overlay__content\s*\{[^}]*width:\s*min\(1240px,\s*calc\(100vw\s*-\s*32px\)\)[^}]*min-height:\s*min\(640px,\s*calc\(100dvh\s*-\s*32px\)\)/i);
+    expect(stylesSource).toMatch(/\.laboratory-running-actions \.action-btn,\s*\.laboratory-running-complete-prompt__actions \.action-btn\s*\{[^}]*min-width:\s*200px[^}]*min-height:\s*72px[^}]*font-size:\s*18px/i);
+    expect(stylesSource).toMatch(/\.laboratory-running-complete-button\s*\{[^}]*min-width:\s*280px[^}]*min-height:\s*80px[^}]*font-size:\s*20px/i);
+  });
+
   test("renders reset confirmation as a large warning dialog", () => {
     expect(pageSource).toContain('class="laboratory-reset-modal"');
     expect(pageSource).toContain('class="laboratory-reset-warning-panel" role="alert"');

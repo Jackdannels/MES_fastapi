@@ -55,7 +55,7 @@ SAMPLE_TRANSPORT_STATUS = "运输中"
 SCHEDULED_EXPERIMENT_REMOVAL_CODE = "SCHEDULED_EXPERIMENT_REMOVAL_REQUIRES_CONFIRMATION"
 SCHEDULED_EXPERIMENT_REMOVAL_MESSAGE = "删除已排程实验类型需要确认"
 EXPERIMENT_TYPE_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改实验类型"
-SAMPLE_COUNT_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改样品数量"
+SAMPLE_COUNT_LOCKED_MESSAGE = "该任务已保存预接驳托盘或已确认到货，请先重新入库后再修改样品数量"
 COMPLETED_TASK_EDIT_LOCKED_MESSAGE = "任务已完成，仅允许修改任务名称"
 RUNNING_TASK_EDIT_LOCKED_MESSAGE = "任务进行中，仅允许修改任务名称"
 RUNNING_TASK_DELETE_MESSAGE = "任务存在进行中的实验，不能删除任务"
@@ -220,6 +220,18 @@ def task_storage_confirmed(task: dict[str, Any], samples: list[dict[str, Any]]) 
     return False
 
 
+def task_has_saved_allocation(task: dict[str, Any], samples: list[dict[str, Any]]) -> bool:
+    if any(normalize_text(tray_code_value) for tray_code_value in as_list(task.get("tray_codes"))):
+        return True
+    code = task_code(task)
+    task_samples = [sample for sample in samples if sample_task_code(sample) == code]
+    return bool(task_samples) and all(as_list(sample.get("trays")) for sample in task_samples)
+
+
+def task_sample_count_locked(task: dict[str, Any], samples: list[dict[str, Any]]) -> bool:
+    return task_storage_confirmed(task, samples) or task_has_saved_allocation(task, samples)
+
+
 def affected_experiment_codes(
     previous_experiments: list[dict[str, Any]],
     next_experiments: list[dict[str, Any]],
@@ -239,6 +251,20 @@ def affected_experiment_codes(
         if experiment_label(previous_by_code[code]) != experiment_label(next_by_code[code]):
             affected.add(code)
     return affected
+
+
+def experiment_write_signature(experiments: list[dict[str, Any]]) -> list[tuple[str, str, str, str, str, tuple[str, ...]]]:
+    return sorted(
+        (
+            normalize_text(experiment.get("experiment_code")),
+            normalize_text(experiment.get("experiment_name")),
+            normalize_text(experiment.get("required_device")),
+            normalize_text(experiment.get("priority")),
+            normalize_text(experiment.get("planned_hours")),
+            tuple(normalize_axis_codes(experiment.get("axis_codes"))),
+        )
+        for experiment in experiments
+    )
 
 
 def schedule_requires_experiment_removal_confirmation(schedule: dict[str, Any], task_code_value: str, experiment_codes: set[str]) -> bool:
@@ -384,7 +410,25 @@ def migrate_task_sample_code(sample: dict[str, Any], previous_task_code: str, ne
             sample["id"] = sample["code"]
 
 
-def sync_task_samples(samples: list[dict[str, Any]], task: dict[str, Any], previous_task_code: str = "") -> list[dict[str, Any]]:
+def validate_explicit_sample_codes(value: Any, planned_count: int) -> list[str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise HTTPException(status_code=400, detail="sample_codes must be a list")
+    codes = [normalize_text(code) for code in value if normalize_text(code)]
+    if len(codes) != len(set(codes)):
+        raise HTTPException(status_code=400, detail="样品编号不能重复")
+    if len(codes) != planned_count:
+        raise HTTPException(status_code=400, detail="样品编号数量必须与样品数量一致")
+    return codes
+
+
+def sync_task_samples(
+    samples: list[dict[str, Any]],
+    task: dict[str, Any],
+    previous_task_code: str = "",
+    desired_sample_codes: list[str] | None = None,
+) -> list[dict[str, Any]]:
     next_task_code = task_code(task)
     if not next_task_code:
         return [dict(sample) for sample in samples]
@@ -403,6 +447,35 @@ def sync_task_samples(samples: list[dict[str, Any]], task: dict[str, Any], previ
         key=sample_sort_key,
     )
     other_samples = [sample for sample in normalized_samples if sample_task_code(sample) != next_task_code]
+    if desired_sample_codes is not None:
+        existing_by_code = {
+            normalize_text(sample.get("code")): sample
+            for sample in related_samples
+            if normalize_text(sample.get("code"))
+        }
+        unused_samples = [sample for sample in related_samples if normalize_text(sample.get("code")) not in desired_sample_codes]
+        next_related_samples: list[dict[str, Any]] = []
+        now = now_business_text()
+        for code in desired_sample_codes:
+            existing = existing_by_code.get(code)
+            if existing is None and unused_samples:
+                existing = unused_samples.pop(0)
+            if existing is None:
+                next_related_samples.append(build_task_sample(task, code))
+                continue
+            updated = dict(existing)
+            updated["code"] = code
+            updated["task_code"] = next_task_code
+            updated["updated_at"] = now
+            if isinstance(existing.get("trays"), list):
+                updated["trays"] = [
+                    {**dict(tray), "sample_code": code, "updated_at": now}
+                    for tray in existing.get("trays", [])
+                    if isinstance(tray, dict)
+                ]
+            next_related_samples.append(updated)
+        return other_samples + next_related_samples
+
     next_samples = other_samples + related_samples[:planned_count]
     existing_codes = {normalize_text(sample.get("code")) for sample in next_samples if normalize_text(sample.get("code"))}
 
@@ -468,12 +541,6 @@ def extract_task_test_types(task: dict[str, Any], existing_experiments: list[dic
         *(experiment.get("experiment_name") for experiment in existing_list),
         *split_experiment_summary(task.get("required_device")),
     )
-
-
-def task_has_selected_experiments(task: dict[str, Any], existing_experiments: list[dict[str, Any]] | None = None) -> bool:
-    if existing_experiments:
-        return True
-    return bool(extract_task_test_types(task, existing_experiments))
 
 
 def build_experiment_types(task: dict[str, Any], count: int, existing_experiments: list[dict[str, Any]] | None = None) -> list[str]:
@@ -577,6 +644,65 @@ def persist_task_experiments(task: dict[str, Any], existing_experiments: list[di
     return experiments
 
 
+def build_explicit_task_experiments(
+    task: dict[str, Any],
+    value: Any,
+    existing_experiments: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value:
+        raise HTTPException(status_code=400, detail="实验列表至少需要一项")
+    task_code_value = task_code(task)
+    existing_by_code = {
+        normalize_text(experiment.get("experiment_code")): dict(experiment)
+        for experiment in existing_experiments or []
+        if normalize_text(experiment.get("experiment_code"))
+    }
+    now = now_business_text()
+    experiments: list[dict[str, Any]] = []
+    seen_codes: set[str] = set()
+    for index, raw_experiment in enumerate(value):
+        if not isinstance(raw_experiment, dict):
+            raise HTTPException(status_code=400, detail="实验数据格式不正确")
+        experiment_code = normalize_text(
+            raw_experiment.get("experiment_code")
+            or raw_experiment.get("experimentCode")
+        ) or f"{task_code_value}-{chr(65 + index)}"
+        if experiment_code in seen_codes:
+            raise HTTPException(status_code=400, detail="实验编号不能重复")
+        seen_codes.add(experiment_code)
+        source = existing_by_code.get(experiment_code, {})
+        required_device = normalize_text(
+            raw_experiment.get("required_device")
+            or raw_experiment.get("requiredDevice")
+        )
+        experiment_name = normalize_text(
+            raw_experiment.get("experiment_name")
+            or raw_experiment.get("experimentName")
+        ) or required_device
+        if not experiment_name or not required_device:
+            raise HTTPException(status_code=400, detail="请填写实验名称并选择实验类型")
+        experiments.append(
+            {
+                **source,
+                "id": normalize_text(source.get("id")) or experiment_code,
+                "task_code": task_code_value,
+                "experiment_code": experiment_code,
+                "experiment_name": experiment_name,
+                "required_device": required_device,
+                "priority": normalize_text(raw_experiment.get("priority")) or normalize_text(source.get("priority")),
+                "planned_hours": raw_experiment.get("planned_hours", raw_experiment.get("plannedHours", source.get("planned_hours", 0))),
+                "status": normalize_text(source.get("status")) or "待排程",
+                "created_at": normalize_text(source.get("created_at")) or now,
+                "updated_at": now,
+            }
+        )
+    task["experiment_codes"] = [experiment["experiment_code"] for experiment in experiments]
+    task["experiment_count"] = len(experiments)
+    return experiments
+
+
 def add_task_to_snapshot(
     snapshot: dict[str, Any],
     payload: dict[str, Any],
@@ -671,6 +797,42 @@ def _accept_external_task_intake(intake_id: str) -> dict[str, Any]:
     )
 
 
+def persist_task_scoped_update(
+    storage: Any,
+    snapshot: dict[str, Any],
+    *,
+    previous_task_code: str,
+    next_task_code: str,
+    include_samples: bool,
+    include_experiments: bool,
+) -> bool:
+    writer = getattr(storage, "write_task_scope", None)
+    if not callable(writer) or not previous_task_code or previous_task_code != next_task_code:
+        return False
+    task_codes = {previous_task_code, next_task_code}
+    updates = {
+        "mes.tasks": [
+            dict(task)
+            for task in snapshot.get("mes.tasks", [])
+            if task_code(task) in task_codes
+        ],
+    }
+    if include_samples:
+        updates["mes.samples"] = [
+            dict(sample)
+            for sample in snapshot.get("mes.samples", [])
+            if sample_task_code(sample) in task_codes
+        ]
+    if include_experiments:
+        updates["mes.experiments"] = [
+            dict(experiment)
+            for experiment in snapshot.get("mes.experiments", [])
+            if row_task_code(experiment) in task_codes
+        ]
+    writer(updates, task_codes=task_codes)
+    return True
+
+
 @router.post("/reset")
 @with_laboratory_storage_commit_lock
 def reset_tasks() -> dict[str, int]:
@@ -695,6 +857,8 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
     previous_task = dict(tasks[task_index])
     payload_dict = dict(payload)
     confirm_remove_scheduled_experiments = parse_bool_flag(payload_dict.pop("confirm_remove_scheduled_experiments", False))
+    explicit_sample_codes_value = payload_dict.pop("sample_codes", None)
+    explicit_experiments_value = payload_dict.pop("experiments", None)
     updated_task = {**tasks[task_index], **payload_dict}
     all_experiments = [dict(experiment) for experiment in snapshot.get("mes.experiments", [])]
     samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
@@ -740,15 +904,31 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         updated_task["name"] = build_default_task_name(task_code(updated_task), tasks)
     validate_task_text_fields(updated_task)
     next_sample_count = validate_sample_count(updated_task.get("sample_count"))
+    explicit_sample_codes = validate_explicit_sample_codes(explicit_sample_codes_value, parse_int(next_sample_count))
+    if explicit_sample_codes is not None:
+        other_sample_codes = {
+            normalize_text(sample.get("code"))
+            for sample in samples
+            if sample_task_code(sample) != previous_task_code and normalize_text(sample.get("code"))
+        }
+        duplicate_codes = [code for code in explicit_sample_codes if code in other_sample_codes]
+        if duplicate_codes:
+            raise HTTPException(status_code=400, detail=f"样品编号已被其他任务使用：{', '.join(duplicate_codes)}")
     sample_count_changed = parse_int(previous_task.get("sample_count")) != parse_int(next_sample_count)
     if (
         sample_count_changed
-        and task_storage_confirmed(previous_task, samples)
-        and task_has_selected_experiments(previous_task, existing_experiments)
+        and task_sample_count_locked(previous_task, samples)
     ):
         raise HTTPException(status_code=400, detail=SAMPLE_COUNT_LOCKED_MESSAGE)
     updated_task["sample_count"] = next_sample_count
-    next_experiments = persist_task_experiments(updated_task, existing_experiments)
+    next_experiments = build_explicit_task_experiments(
+        updated_task,
+        explicit_experiments_value,
+        existing_experiments,
+    )
+    if next_experiments is None:
+        next_experiments = persist_task_experiments(updated_task, existing_experiments)
+    experiment_records_changed = experiment_write_signature(existing_experiments) != experiment_write_signature(next_experiments)
     removed_or_changed_codes = affected_experiment_codes(existing_experiments, next_experiments)
     schedules = [dict(schedule) for schedule in snapshot.get("mes.schedules", [])]
     current_samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
@@ -776,6 +956,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         [dict(sample) for sample in snapshot.get("mes.samples", [])],
         updated_task,
         previous_task_code,
+        explicit_sample_codes,
     )
     if experiment_types_changed:
         reset_task_preallocation(updated_task, snapshot["mes.samples"], task_code(updated_task))
@@ -842,7 +1023,16 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         current_experiment_trays,
         current_experiment_run_steps,
     )
-    storage.write_many(snapshot)
+    can_use_task_scope = not experiment_types_changed and not removed_or_changed_codes
+    if not can_use_task_scope or not persist_task_scoped_update(
+        storage,
+        snapshot,
+        previous_task_code=previous_task_code,
+        next_task_code=task_code(updated_task),
+        include_samples=sample_count_changed or explicit_sample_codes is not None,
+        include_experiments=experiment_records_changed,
+    ):
+        storage.write_many(snapshot)
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
     return updated_task
 
