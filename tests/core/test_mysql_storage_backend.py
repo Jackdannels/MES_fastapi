@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 
+import pytest
+
 from app.core import mysql_storage_backend as mysql_storage_backend_module
 from app.core import mysql_storage_codecs as mysql_storage_codecs_module
 from app.core import mysql_storage_loaders as mysql_storage_loaders_module
@@ -4397,6 +4399,170 @@ def test_write_task_scope_updates_only_target_task_collections(monkeypatch) -> N
         ("statuses",),
     ]
     assert connection.commit_count == 1
+
+
+def test_write_task_allocation_scope_filters_every_collection_to_target_task(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    connection = _TrackingConnection()
+    calls = []
+
+    monkeypatch.setattr(backend, "_ensure_schema_extensions", lambda: None)
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+    monkeypatch.setattr(backend, "_replace_tasks", lambda cursor, rows, prune=True: calls.append(("tasks", rows, prune)))
+    monkeypatch.setattr(
+        backend,
+        "_replace_task_samples",
+        lambda cursor, rows, task_codes: calls.append(("samples", rows, task_codes)),
+    )
+    monkeypatch.setattr(
+        backend,
+        "_replace_task_allocation_relations",
+        lambda cursor, **kwargs: calls.append(("relations", kwargs)),
+    )
+    monkeypatch.setattr(backend, "_backfill_schedule_task_ids", lambda cursor: calls.append(("backfill",)))
+    monkeypatch.setattr(backend, "_sync_progress_statuses", lambda cursor: calls.append(("statuses",)))
+
+    target = "TASK-1"
+    other = "TASK-2"
+    backend.write_task_allocation_scope(
+        target,
+        {
+            "mes.tasks": [{"code": target}, {"code": other}],
+            "mes.samples": [
+                {"code": "TASK-1-SP-001", "task_code": target},
+                {"code": "TASK-2-SP-001", "task_code": other},
+            ],
+            "mes.experiment_runs": [
+                {"run_no": "RUN-1", "task_code": target},
+                {"run_no": "RUN-2", "task_code": other},
+            ],
+            "mes.experiment_run_trays": [
+                {"run_no": "RUN-1", "tray_code": "TP-1", "task_code": target},
+                {"run_no": "RUN-2", "tray_code": "TP-2", "task_code": other},
+            ],
+            "mes.experiment_trays": [
+                {"experiment_code": "EXP-1", "tray_code": "TP-1", "task_code": target},
+                {"experiment_code": "EXP-2", "tray_code": "TP-2", "task_code": other},
+            ],
+            "mes.experiment_samples": [
+                {"experiment_code": "EXP-1", "sample_code": "SP-1", "task_code": target},
+                {"experiment_code": "EXP-2", "sample_code": "SP-2", "task_code": other},
+            ],
+            "mes.schedules": [{"id": "MUST-NOT-BE-WRITTEN", "task_code": target}],
+        },
+    )
+
+    assert calls == [
+        ("tasks", [{"code": target}], False),
+        ("samples", [{"code": "TASK-1-SP-001", "task_code": target}], {target}),
+        (
+            "relations",
+            {
+                "task_code": target,
+                "experiment_runs": [{"run_no": "RUN-1", "task_code": target}],
+                "experiment_run_trays": [{"run_no": "RUN-1", "tray_code": "TP-1", "task_code": target}],
+                "experiment_trays": [{"experiment_code": "EXP-1", "tray_code": "TP-1", "task_code": target}],
+                "experiment_samples": [{"experiment_code": "EXP-1", "sample_code": "SP-1", "task_code": target}],
+            },
+        ),
+        ("backfill",),
+        ("statuses",),
+    ]
+    assert connection.commit_count == 1
+
+
+def test_write_task_allocation_scope_rejects_empty_task_code(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    monkeypatch.setattr(backend, "_connect", lambda: pytest.fail("empty task code must not open a connection"))
+
+    with pytest.raises(ValueError, match="task_code must not be empty"):
+        backend.write_task_allocation_scope("  ", {"mes.tasks": []})
+
+
+def test_write_task_allocation_scope_rolls_back_on_failure(monkeypatch) -> None:
+    class RollbackTrackingConnection(_TrackingConnection):
+        def __init__(self) -> None:
+            super().__init__()
+            self.rollback_count = 0
+
+        def rollback(self):
+            self.rollback_count += 1
+
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    connection = RollbackTrackingConnection()
+    monkeypatch.setattr(backend, "_ensure_schema_extensions", lambda: None)
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+    monkeypatch.setattr(backend, "_replace_tasks", lambda cursor, rows, prune=True: None)
+    monkeypatch.setattr(backend, "_replace_task_samples", lambda cursor, rows, task_codes: None)
+    monkeypatch.setattr(
+        backend,
+        "_replace_task_allocation_relations",
+        lambda cursor, **kwargs: (_ for _ in ()).throw(RuntimeError("write failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="write failed"):
+        backend.write_task_allocation_scope("TASK-1", {"mes.tasks": [{"code": "TASK-1"}]})
+
+    assert connection.commit_count == 0
+    assert connection.rollback_count == 1
+
+
+def test_replace_task_allocation_relations_is_task_scoped_and_dependency_ordered() -> None:
+    class TrackingCursor:
+        def __init__(self) -> None:
+            self.executed = []
+            self.inserted = []
+
+        def execute(self, sql, params=None):
+            self.executed.append((" ".join(str(sql).split()), tuple(params or ())))
+
+        def executemany(self, sql, rows):
+            self.inserted.append((" ".join(str(sql).split()), list(rows)))
+
+    cursor = TrackingCursor()
+    mysql_storage_replacers_module.replace_task_allocation_relations(
+        cursor,
+        task_code="TASK-1",
+        experiment_runs=[
+            {"run_no": "RUN-1", "task_code": "TASK-1", "experiment_code": "EXP-1"},
+            {"run_no": "RUN-2", "task_code": "TASK-2", "experiment_code": "EXP-2"},
+        ],
+        experiment_run_trays=[
+            {"run_no": "RUN-1", "task_code": "TASK-1", "experiment_code": "EXP-1", "tray_code": "TP-1"},
+            {"run_no": "RUN-2", "task_code": "TASK-2", "experiment_code": "EXP-2", "tray_code": "TP-2"},
+        ],
+        experiment_trays=[
+            {"task_code": "TASK-1", "experiment_code": "EXP-1", "tray_code": "TP-1"},
+            {"task_code": "TASK-2", "experiment_code": "EXP-2", "tray_code": "TP-2"},
+        ],
+        experiment_samples=[
+            {"task_code": "TASK-1", "experiment_code": "EXP-1", "sample_code": "SP-1"},
+            {"task_code": "TASK-2", "experiment_code": "EXP-2", "sample_code": "SP-2"},
+        ],
+    )
+
+    assert cursor.executed == [
+        ("DELETE FROM biz_experiment_run_tray WHERE task_no = %s", ("TASK-1",)),
+        ("DELETE FROM biz_experiment_sample WHERE task_no = %s", ("TASK-1",)),
+        ("DELETE FROM biz_experiment_tray WHERE task_no = %s", ("TASK-1",)),
+        ("DELETE FROM biz_experiment_run WHERE task_no = %s", ("TASK-1",)),
+    ]
+    assert [sql.split(" (")[0] for sql, _rows in cursor.inserted] == [
+        "INSERT INTO biz_experiment_run",
+        "INSERT INTO biz_experiment_run_tray",
+        "INSERT INTO biz_experiment_tray",
+        "INSERT INTO biz_experiment_sample",
+    ]
+    assert all([row["task_no"] for row in rows] == ["TASK-1"] for _sql, rows in cursor.inserted)
 
 
 def test_replace_task_samples_deletes_only_surplus_rows_for_target_task(monkeypatch) -> None:

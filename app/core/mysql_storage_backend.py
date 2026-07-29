@@ -63,6 +63,7 @@ from app.core.mysql_storage_replacers import (
     replace_experiment_trays,
     replace_schedules,
     replace_streams,
+    replace_task_allocation_relations,
     replace_tasks,
 )
 from app.core.mysql_storage_sample_write import (
@@ -278,6 +279,25 @@ class MySQLMesStorageBackend(StorageBackend):
 
     def _replace_task_experiments(self, cursor, experiments: list[dict[str, Any]], task_codes: set[str]) -> None:
         replace_task_experiments(cursor, experiments, task_codes)
+
+    def _replace_task_allocation_relations(
+        self,
+        cursor,
+        *,
+        task_code: str,
+        experiment_runs: list[dict[str, Any]],
+        experiment_run_trays: list[dict[str, Any]],
+        experiment_trays: list[dict[str, Any]],
+        experiment_samples: list[dict[str, Any]],
+    ) -> None:
+        replace_task_allocation_relations(
+            cursor,
+            task_code=task_code,
+            experiment_runs=experiment_runs,
+            experiment_run_trays=experiment_run_trays,
+            experiment_trays=experiment_trays,
+            experiment_samples=experiment_samples,
+        )
 
     def _load_tasks(self, cursor) -> list[dict[str, Any]]:
         return load_tasks(cursor)
@@ -541,3 +561,61 @@ class MySQLMesStorageBackend(StorageBackend):
                     self._backfill_schedule_task_ids(cursor)
                     self._sync_progress_statuses(cursor)
                 connection.commit()
+
+    def write_task_allocation_scope(self, task_code: str, updates: Dict[str, Any]) -> None:
+        """Atomically persist only the allocation-owned rows for one task."""
+        normalized_task_code = normalize_text(task_code)
+        if not normalized_task_code:
+            raise ValueError("task_code must not be empty")
+
+        allocation_keys = {
+            "mes.tasks",
+            "mes.samples",
+            "mes.experiment_runs",
+            "mes.experiment_run_trays",
+            "mes.experiment_trays",
+            "mes.experiment_samples",
+        }
+        with self._write_lock:
+            normalized_updates = {
+                key: _normalize_value(key, value if isinstance(value, list) else [])
+                for key, value in updates.items()
+                if key in allocation_keys
+            }
+            scoped_updates = {
+                key: [
+                    row
+                    for row in normalized_updates.get(key, [])
+                    if normalize_text(row.get("code") if key == "mes.tasks" else row.get("task_code"))
+                    == normalized_task_code
+                ]
+                for key in allocation_keys
+            }
+            task_rows = scoped_updates["mes.tasks"]
+            if len(task_rows) != 1:
+                raise ValueError(f"allocation update must contain exactly one task row for {normalized_task_code}")
+
+            self._ensure_schema_extensions()
+            with self._connect() as connection:
+                try:
+                    with connection.cursor() as cursor:
+                        self._replace_tasks(cursor, task_rows, prune=False)
+                        self._replace_task_samples(
+                            cursor,
+                            scoped_updates["mes.samples"],
+                            {normalized_task_code},
+                        )
+                        self._replace_task_allocation_relations(
+                            cursor,
+                            task_code=normalized_task_code,
+                            experiment_runs=scoped_updates["mes.experiment_runs"],
+                            experiment_run_trays=scoped_updates["mes.experiment_run_trays"],
+                            experiment_trays=scoped_updates["mes.experiment_trays"],
+                            experiment_samples=scoped_updates["mes.experiment_samples"],
+                        )
+                        self._backfill_schedule_task_ids(cursor)
+                        self._sync_progress_statuses(cursor)
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise

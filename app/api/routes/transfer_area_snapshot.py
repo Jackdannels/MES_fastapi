@@ -38,6 +38,16 @@ TRANSFER_WORKSPACE_READ_FIELDS = (
     "experiment_samples",
     "staging_events",
 )
+TRANSFER_ALLOCATION_READ_FIELDS = (
+    "tasks",
+    "samples",
+    "schedules",
+    "experiments",
+    "experiment_runs",
+    "experiment_run_trays",
+    "experiment_trays",
+    "experiment_samples",
+)
 
 
 def read_transfer_snapshot(
@@ -71,6 +81,7 @@ def hydrate_transfer_snapshot_for_write(
 
 
 __all__ = [
+    "TRANSFER_ALLOCATION_READ_FIELDS",
     "TRANSFER_BOOTSTRAP_READ_FIELDS",
     "TRANSFER_SNAPSHOT_STORAGE_KEYS",
     "TRANSFER_WORKSPACE_READ_FIELDS",

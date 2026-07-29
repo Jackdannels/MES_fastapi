@@ -88,8 +88,10 @@ from app.api.routes.transfer_area_read_views import (
     tray_serial_from_code,
 )
 from app.api.routes.transfer_area_snapshot import (
+    TRANSFER_ALLOCATION_READ_FIELDS,
     TRANSFER_BOOTSTRAP_READ_FIELDS,
     TRANSFER_WORKSPACE_READ_FIELDS,
+    hydrate_transfer_snapshot_for_write,
     read_transfer_snapshot,
 )
 
@@ -107,6 +109,16 @@ TRANSFER_STORAGE_UPDATE_KEYS = (
     "mes.experiment_trays",
     "mes.experiment_samples",
     "mes.staging_events",
+)
+TRANSFER_ALLOCATION_UPDATE_KEYS = (
+    "mes.tasks",
+    "mes.samples",
+    "mes.schedules",
+    "mes.experiments",
+    "mes.experiment_runs",
+    "mes.experiment_run_trays",
+    "mes.experiment_trays",
+    "mes.experiment_samples",
 )
 CONFIRM_STORAGE_READ_FIELDS = (
     "tasks",
@@ -195,6 +207,48 @@ def write_confirm_storage_changes(
         publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS), source=source, request_id=request_id)
     else:
         publish_storage_update(list(TRANSFER_STORAGE_UPDATE_KEYS))
+
+
+def write_task_allocation_changes(
+    snapshot: dict[str, list[dict[str, Any]]],
+    task_code_value: str,
+    *,
+    update_source: str = "",
+    update_request_id: str = "",
+) -> None:
+    normalized_task_code = normalize_text(task_code_value)
+    if not normalized_task_code:
+        raise ValueError("task_code is required for task-scoped allocation writes")
+
+    storage = get_storage_backend()
+    updates = {
+        "mes.tasks": snapshot["tasks"],
+        "mes.samples": snapshot["samples"],
+        "mes.experiment_runs": snapshot["experiment_runs"],
+        "mes.experiment_run_trays": snapshot["experiment_run_trays"],
+        "mes.experiment_trays": snapshot["experiment_trays"],
+        "mes.experiment_samples": snapshot["experiment_samples"],
+    }
+    scoped_writer = getattr(storage, "write_task_allocation_scope", None)
+    if callable(scoped_writer):
+        scoped_writer(normalized_task_code, updates)
+    else:
+        # Compatibility fallback for non-MySQL test/development backends. The
+        # production MySQL backend always uses the task-scoped transaction.
+        write_snapshot(
+            hydrate_transfer_snapshot_for_write(storage, snapshot),
+            replace_task_codes={normalized_task_code},
+            update_source=update_source,
+            update_request_id=update_request_id,
+        )
+        return
+
+    source = normalize_text(update_source)
+    request_id = normalize_text(update_request_id)
+    if source or request_id:
+        publish_storage_update(list(TRANSFER_ALLOCATION_UPDATE_KEYS), source=source, request_id=request_id)
+    else:
+        publish_storage_update(list(TRANSFER_ALLOCATION_UPDATE_KEYS))
 
 
 
@@ -571,7 +625,7 @@ def save_task_allocation(
     update_source: str = Header(default="", alias="X-MES-Update-Source"),
     update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
 ) -> dict[str, Any]:
-    snapshot = read_snapshot()
+    snapshot = read_snapshot(TRANSFER_ALLOCATION_READ_FIELDS)
     task = find_task(snapshot, task_id)
     task_samples, _changed = ensure_task_samples(snapshot, task)
     ensure_task_not_returned(task, task_samples)
@@ -588,9 +642,9 @@ def save_task_allocation(
         request,
         max_assignable_count=max_assignable_tray_count(snapshot["samples"], task_samples),
     )
-    write_snapshot(
+    write_task_allocation_changes(
         snapshot,
-        replace_task_codes={task_code(task)},
+        task_code(task),
         update_source=update_source,
         update_request_id=update_request_id,
     )

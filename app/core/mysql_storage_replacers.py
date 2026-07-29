@@ -18,15 +18,31 @@ from app.core.mysql_storage_mappers import (
 from app.core.mysql_storage_snapshot import delete_missing_rows
 
 
-def replace_experiment_trays(cursor, experiment_trays: list[dict[str, Any]]) -> None:
-    rows = [build_experiment_tray_insert_row(relation) for relation in experiment_trays if normalize_text(relation.get("experiment_code"))]
-    cursor.execute("DELETE FROM biz_experiment_tray")
+def _insert_experiment_tray_rows(cursor, rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
     cursor.executemany(
         """
         INSERT INTO biz_experiment_tray (experiment_no, task_no, tray_no, created_at, updated_at)
         VALUES (%(experiment_no)s, %(task_no)s, %(tray_no)s, %(created_at)s, %(updated_at)s)
+        """,
+        rows,
+    )
+
+
+def replace_experiment_trays(cursor, experiment_trays: list[dict[str, Any]]) -> None:
+    rows = [build_experiment_tray_insert_row(relation) for relation in experiment_trays if normalize_text(relation.get("experiment_code"))]
+    cursor.execute("DELETE FROM biz_experiment_tray")
+    _insert_experiment_tray_rows(cursor, rows)
+
+
+def _insert_experiment_sample_rows(cursor, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    cursor.executemany(
+        """
+        INSERT INTO biz_experiment_sample (experiment_no, task_no, sample_no, created_at, updated_at)
+        VALUES (%(experiment_no)s, %(task_no)s, %(sample_no)s, %(created_at)s, %(updated_at)s)
         """,
         rows,
     )
@@ -39,25 +55,10 @@ def replace_experiment_samples(cursor, experiment_samples: list[dict[str, Any]])
         if normalize_text(relation.get("experiment_code")) and normalize_text(relation.get("sample_code"))
     ]
     cursor.execute("DELETE FROM biz_experiment_sample")
-    if not rows:
-        return
-    cursor.executemany(
-        """
-        INSERT INTO biz_experiment_sample (experiment_no, task_no, sample_no, created_at, updated_at)
-        VALUES (%(experiment_no)s, %(task_no)s, %(sample_no)s, %(created_at)s, %(updated_at)s)
-        """,
-        rows,
-    )
+    _insert_experiment_sample_rows(cursor, rows)
 
 
-def replace_experiment_run_trays(cursor, experiment_run_trays: list[dict[str, Any]]) -> None:
-    rows = [
-        build_experiment_run_tray_insert_row(relation)
-        for relation in experiment_run_trays
-        if normalize_text(relation.get("run_no") or relation.get("runNo"))
-        and normalize_text(relation.get("tray_code") or relation.get("tray_no"))
-    ]
-    cursor.execute("DELETE FROM biz_experiment_run_tray")
+def _insert_experiment_run_tray_rows(cursor, rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
     cursor.executemany(
@@ -80,6 +81,17 @@ def replace_experiment_run_trays(cursor, experiment_run_trays: list[dict[str, An
         """,
         rows,
     )
+
+
+def replace_experiment_run_trays(cursor, experiment_run_trays: list[dict[str, Any]]) -> None:
+    rows = [
+        build_experiment_run_tray_insert_row(relation)
+        for relation in experiment_run_trays
+        if normalize_text(relation.get("run_no") or relation.get("runNo"))
+        and normalize_text(relation.get("tray_code") or relation.get("tray_no"))
+    ]
+    cursor.execute("DELETE FROM biz_experiment_run_tray")
+    _insert_experiment_run_tray_rows(cursor, rows)
 
 
 def replace_experiment_run_steps(cursor, experiment_run_steps: list[dict[str, Any]]) -> None:
@@ -314,6 +326,37 @@ def replace_schedules(cursor, schedules: list[dict[str, Any]]) -> None:
     )
 
 
+def _insert_experiment_run_rows(cursor, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        return
+    cursor.executemany(
+        """
+        INSERT INTO biz_experiment_run (
+          run_no, schedule_no, task_no, experiment_no, sub_experiment_code, device_name, axis_codes_json, axis_batch_no, planned_hours,
+          run_status, started_at, planned_end_at, ended_at, created_at, updated_at
+        ) VALUES (
+          %(run_no)s, %(schedule_no)s, %(task_no)s, %(experiment_no)s, %(sub_experiment_code)s, %(device_name)s, %(axis_codes_json)s, %(axis_batch_no)s, %(planned_hours)s,
+          %(run_status)s, %(started_at)s, %(planned_end_at)s, %(ended_at)s, %(created_at)s, %(updated_at)s
+        )
+        ON DUPLICATE KEY UPDATE
+          schedule_no = VALUES(schedule_no),
+          task_no = VALUES(task_no),
+          experiment_no = VALUES(experiment_no),
+          sub_experiment_code = VALUES(sub_experiment_code),
+          device_name = VALUES(device_name),
+          axis_codes_json = VALUES(axis_codes_json),
+          axis_batch_no = VALUES(axis_batch_no),
+          planned_hours = VALUES(planned_hours),
+          run_status = VALUES(run_status),
+          started_at = VALUES(started_at),
+          planned_end_at = VALUES(planned_end_at),
+          ended_at = VALUES(ended_at),
+          updated_at = VALUES(updated_at)
+        """,
+        rows,
+    )
+
+
 def replace_experiment_runs(cursor, experiment_runs: list[dict[str, Any]], *, replace_trays: bool = True) -> None:
     rows = [
         build_experiment_run_insert_row(run)
@@ -321,33 +364,64 @@ def replace_experiment_runs(cursor, experiment_runs: list[dict[str, Any]], *, re
         if normalize_text(run.get("run_no")) or normalize_text(run.get("id"))
     ]
     cursor.execute("DELETE FROM biz_experiment_run")
-    if rows:
-        cursor.executemany(
-            """
-            INSERT INTO biz_experiment_run (
-              run_no, schedule_no, task_no, experiment_no, sub_experiment_code, device_name, axis_codes_json, axis_batch_no, planned_hours,
-              run_status, started_at, planned_end_at, ended_at, created_at, updated_at
-            ) VALUES (
-              %(run_no)s, %(schedule_no)s, %(task_no)s, %(experiment_no)s, %(sub_experiment_code)s, %(device_name)s, %(axis_codes_json)s, %(axis_batch_no)s, %(planned_hours)s,
-              %(run_status)s, %(started_at)s, %(planned_end_at)s, %(ended_at)s, %(created_at)s, %(updated_at)s
-            )
-            ON DUPLICATE KEY UPDATE
-              schedule_no = VALUES(schedule_no),
-              task_no = VALUES(task_no),
-              experiment_no = VALUES(experiment_no),
-              sub_experiment_code = VALUES(sub_experiment_code),
-              device_name = VALUES(device_name),
-              axis_codes_json = VALUES(axis_codes_json),
-              axis_batch_no = VALUES(axis_batch_no),
-              planned_hours = VALUES(planned_hours),
-              run_status = VALUES(run_status),
-              started_at = VALUES(started_at),
-              planned_end_at = VALUES(planned_end_at),
-              ended_at = VALUES(ended_at),
-              updated_at = VALUES(updated_at)
-            """,
-            rows,
-        )
+    _insert_experiment_run_rows(cursor, rows)
+
+
+def replace_task_allocation_relations(
+    cursor,
+    *,
+    task_code: str,
+    experiment_runs: list[dict[str, Any]],
+    experiment_run_trays: list[dict[str, Any]],
+    experiment_trays: list[dict[str, Any]],
+    experiment_samples: list[dict[str, Any]],
+) -> None:
+    """Replace only one task's allocation-owned experiment relations.
+
+    Deletions are child-first and inserts are parent-first so the order remains
+    valid if foreign keys are added to these tables later.
+    """
+    normalized_task_code = normalize_text(task_code)
+    if not normalized_task_code:
+        raise ValueError("task_code must not be empty")
+
+    run_rows = [
+        build_experiment_run_insert_row(run)
+        for run in experiment_runs
+        if normalize_text(run.get("task_code")) == normalized_task_code
+        and (normalize_text(run.get("run_no")) or normalize_text(run.get("id")))
+    ]
+    run_tray_rows = [
+        build_experiment_run_tray_insert_row(relation)
+        for relation in experiment_run_trays
+        if normalize_text(relation.get("task_code") or relation.get("task_no")) == normalized_task_code
+        and normalize_text(relation.get("run_no") or relation.get("runNo"))
+        and normalize_text(relation.get("tray_code") or relation.get("tray_no"))
+    ]
+    tray_rows = [
+        build_experiment_tray_insert_row(relation)
+        for relation in experiment_trays
+        if normalize_text(relation.get("task_code")) == normalized_task_code
+        and normalize_text(relation.get("experiment_code"))
+        and normalize_text(relation.get("tray_code"))
+    ]
+    sample_rows = [
+        build_experiment_sample_insert_row(relation)
+        for relation in experiment_samples
+        if normalize_text(relation.get("task_code")) == normalized_task_code
+        and normalize_text(relation.get("experiment_code"))
+        and normalize_text(relation.get("sample_code"))
+    ]
+
+    cursor.execute("DELETE FROM biz_experiment_run_tray WHERE task_no = %s", (normalized_task_code,))
+    cursor.execute("DELETE FROM biz_experiment_sample WHERE task_no = %s", (normalized_task_code,))
+    cursor.execute("DELETE FROM biz_experiment_tray WHERE task_no = %s", (normalized_task_code,))
+    cursor.execute("DELETE FROM biz_experiment_run WHERE task_no = %s", (normalized_task_code,))
+
+    _insert_experiment_run_rows(cursor, run_rows)
+    _insert_experiment_run_tray_rows(cursor, run_tray_rows)
+    _insert_experiment_tray_rows(cursor, tray_rows)
+    _insert_experiment_sample_rows(cursor, sample_rows)
 
 
 def replace_devices(cursor, devices: list[dict[str, Any]]) -> None:

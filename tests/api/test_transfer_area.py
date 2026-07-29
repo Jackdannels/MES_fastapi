@@ -5,6 +5,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.api.routes.transfer_area_read_views import SYSTEM_TRAY_TOTAL
+
 
 class FakeTransferStorage:
     def __init__(self, payloads=None):
@@ -87,6 +89,39 @@ class ScopedTrackingTransferStorage(TrackingReadManyTransferStorage):
             for sample in value:
                 samples_by_code[sample.get("code")] = sample
             self.payloads[key] = list(samples_by_code.values())
+
+
+class AllocationScopedTrackingTransferStorage(TrackingReadManyTransferStorage):
+    def __init__(self, payloads=None):
+        super().__init__(payloads)
+        self.write_many_calls = []
+        self.allocation_scope_writes = []
+
+    def write_many(self, updates):
+        self.write_many_calls.append(deepcopy(dict(updates)))
+        super().write_many(updates)
+
+    def write_task_allocation_scope(self, task_code, updates):
+        copied_updates = {key: deepcopy(value) for key, value in dict(updates).items()}
+        self.allocation_scope_writes.append((task_code, copied_updates))
+
+        def row_task_code(key, row):
+            if key == "mes.tasks":
+                return row.get("code") or row.get("task_code")
+            return row.get("task_code") or row.get("task_no")
+
+        for key, rows in copied_updates.items():
+            retained = [
+                deepcopy(row)
+                for row in self.payloads.get(key, [])
+                if row_task_code(key, row) != task_code
+            ]
+            replacements = [
+                deepcopy(row)
+                for row in rows
+                if row_task_code(key, row) == task_code
+            ]
+            self.payloads[key] = [*retained, *replacements]
 
 
 def create_payloads():
@@ -528,7 +563,7 @@ def test_transfer_area_workspace_builds_editable_trays_for_pending_task(monkeypa
     assert len(payload["assignedTrays"]) == 1
     assert len(payload["assignedTrays"]) > 0
     assert payload["assignedTrays"][0]["samples"][0]["sampleNo"] == "SYLU-2026-03-101-SP-001"
-    assert len(payload["trayInventory"]) == 8
+    assert len(payload["trayInventory"]) == SYSTEM_TRAY_TOTAL - 2
 
 
 def test_transfer_area_workspace_reads_only_contract_required_storage_keys(monkeypatch):
@@ -2895,6 +2930,162 @@ def test_transfer_area_limits_unassigned_samples_to_task_sample_count(monkeypatc
     ]
 
 
+def test_transfer_area_allocate_uses_task_scoped_io_and_is_idempotent(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    payloads = create_payloads()
+    payloads["mes.experiment_runs"] = [
+        {
+            "run_no": "RUN-STALE",
+            "task_code": "SYLU-2026-03-101",
+            "experiment_code": "SYLU-2026-03-101-A",
+            "status": "实验进行中",
+        },
+        {
+            "run_no": "RUN-OTHER",
+            "task_code": "SYLU-2026-03-102",
+            "experiment_code": "SYLU-2026-03-102-A",
+            "status": "实验进行中",
+        },
+    ]
+    payloads["mes.experiment_run_trays"] = [
+        {
+            "run_no": "RUN-STALE",
+            "task_code": "SYLU-2026-03-101",
+            "experiment_code": "SYLU-2026-03-101-A",
+            "tray_code": "SYLU-2026-03-101-TP-009",
+        },
+        {
+            "run_no": "RUN-OTHER",
+            "task_code": "SYLU-2026-03-102",
+            "experiment_code": "SYLU-2026-03-102-A",
+            "tray_code": "SYLU-2026-03-102-TP-001",
+        },
+    ]
+    payloads["mes.experiment_trays"] = [
+        {
+            "task_code": "SYLU-2026-03-102",
+            "experiment_code": "SYLU-2026-03-102-A",
+            "tray_code": "SYLU-2026-03-102-TP-001",
+        }
+    ]
+    payloads["mes.experiment_samples"] = [
+        {
+            "task_code": "SYLU-2026-03-102",
+            "experiment_code": "SYLU-2026-03-102-A",
+            "sample_code": "SYLU-2026-03-102-SP-001",
+        }
+    ]
+    storage = AllocationScopedTrackingTransferStorage(payloads)
+    monkeypatch.setattr(transfer_area_route, "get_storage_backend", lambda: storage)
+    published_updates = []
+    monkeypatch.setattr(
+        transfer_area_route,
+        "publish_storage_update",
+        lambda keys, **metadata: published_updates.append((list(keys), dict(metadata))),
+    )
+    app = FastAPI()
+    app.include_router(transfer_area_route.router)
+    client = TestClient(app)
+    allocation = {
+        "trayLimit": 2,
+        "trays": [
+            {"trayId": 1001, "sampleIds": ["sample-1", "sample-2"]},
+            {"trayId": 1002, "sampleIds": ["sample-3", "sample-4"]},
+        ],
+        "experimentTrays": valid_task_101_experiment_trays(),
+    }
+    scoped_keys = {
+        "mes.tasks",
+        "mes.samples",
+        "mes.experiment_runs",
+        "mes.experiment_run_trays",
+        "mes.experiment_trays",
+        "mes.experiment_samples",
+    }
+    other_before = {
+        key: deepcopy([
+            row
+            for row in storage.read(key)
+            if (row.get("code") if key == "mes.tasks" else row.get("task_code")) == "SYLU-2026-03-102"
+        ])
+        for key in scoped_keys
+    }
+
+    first = client.post(
+        "/api/transfer-area/tasks/task-101/allocate",
+        json=allocation,
+        headers={"X-MES-Update-Source": "transfer-workbench", "X-MES-Update-Request-Id": "allocate-1"},
+    )
+    first_target_relations = {
+        key: deepcopy([
+            row
+            for row in storage.read(key)
+            if row.get("task_code") == "SYLU-2026-03-101"
+        ])
+        for key in {
+            "mes.experiment_runs",
+            "mes.experiment_run_trays",
+            "mes.experiment_trays",
+            "mes.experiment_samples",
+        }
+    }
+    second = client.post("/api/transfer-area/tasks/task-101/allocate", json=allocation)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert storage.read_all_calls == 0
+    assert storage.write_many_calls == []
+    assert storage.read_many_calls == [[
+        "mes.tasks",
+        "mes.samples",
+        "mes.schedules",
+        "mes.experiments",
+        "mes.experiment_runs",
+        "mes.experiment_run_trays",
+        "mes.experiment_trays",
+        "mes.experiment_samples",
+    ]] * 2
+    assert [task_code for task_code, _updates in storage.allocation_scope_writes] == [
+        "SYLU-2026-03-101",
+        "SYLU-2026-03-101",
+    ]
+    assert all(set(updates) == scoped_keys for _task_code, updates in storage.allocation_scope_writes)
+    assert published_updates == [
+        (list(transfer_area_route.TRANSFER_ALLOCATION_UPDATE_KEYS), {"source": "transfer-workbench", "request_id": "allocate-1"}),
+        (list(transfer_area_route.TRANSFER_ALLOCATION_UPDATE_KEYS), {}),
+    ]
+
+    for key in scoped_keys:
+        other_after = [
+            row
+            for row in storage.read(key)
+            if (row.get("code") if key == "mes.tasks" else row.get("task_code")) == "SYLU-2026-03-102"
+        ]
+        assert other_after == other_before[key]
+    assert all(row.get("run_no") != "RUN-STALE" for row in storage.read("mes.experiment_runs"))
+    assert all(row.get("run_no") != "RUN-STALE" for row in storage.read("mes.experiment_run_trays"))
+    assert len([
+        row for row in storage.read("mes.experiment_trays") if row.get("task_code") == "SYLU-2026-03-101"
+    ]) == 4
+    assert len([
+        row for row in storage.read("mes.experiment_samples") if row.get("task_code") == "SYLU-2026-03-101"
+    ]) == 8
+    for sample in storage.read("mes.samples"):
+        if sample.get("task_code") != "SYLU-2026-03-101":
+            continue
+        assert sum(event.get("action") == "样品分装托盘" for event in sample.get("history", [])) == 1
+    second_target_relations = {
+        key: [
+            row
+            for row in storage.read(key)
+            if row.get("task_code") == "SYLU-2026-03-101"
+        ]
+        for key in first_target_relations
+    }
+    assert second_target_relations == first_target_relations
+
+
 def test_transfer_area_allocate_print_confirm_and_reload_round_trip(monkeypatch):
     client, storage = build_client(monkeypatch)
 
@@ -3295,8 +3486,8 @@ def test_transfer_area_workspace_remaining_trays_counts_current_preallocation(mo
     assert allocated.status_code == 200
     assert workspace.status_code == 200
     assert len(workspace.json()["assignedTrays"]) == 3
-    assert workspace.json()["task"]["remainingTrayCount"] == 6
-    assert len(workspace.json()["trayInventory"]) == 6
+    assert workspace.json()["task"]["remainingTrayCount"] == SYSTEM_TRAY_TOTAL - 4
+    assert len(workspace.json()["trayInventory"]) == SYSTEM_TRAY_TOTAL - 4
 
 
 def test_transfer_area_prints_preallocated_qrcodes_before_arrival(monkeypatch):
@@ -4049,8 +4240,8 @@ def test_transfer_area_returned_trays_do_not_occupy_system_inventory(monkeypatch
     workspace = client.get("/api/transfer-area/tasks/task-101/workspace")
 
     assert workspace.status_code == 200
-    assert workspace.json()["task"]["remainingTrayCount"] == 9
-    assert len(workspace.json()["trayInventory"]) == 9
+    assert workspace.json()["task"]["remainingTrayCount"] == SYSTEM_TRAY_TOTAL - 1
+    assert len(workspace.json()["trayInventory"]) == SYSTEM_TRAY_TOTAL - 1
 
 
 def test_transfer_area_reallocate_clears_old_transfer_history_and_rewrites_tray_codes(monkeypatch):
@@ -4231,7 +4422,9 @@ def test_transfer_area_allocate_rejects_when_system_trays_are_insufficient(monke
     client, storage = build_client(monkeypatch)
 
     samples = storage.read("mes.samples")
-    for index in range(1, 11):
+    # Task 102 already occupies one tray; fill the other 49 slots in the
+    # 50-tray system so allocation must fail before experiment mapping checks.
+    for index in range(1, 50):
       samples.append(
           {
               "id": f"occupied-sample-{index}",
