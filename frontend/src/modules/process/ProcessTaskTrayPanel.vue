@@ -21,6 +21,11 @@
           :data-testid="`process-tray-chip-${trayCode}`"
           @click="$emit('select-tray', trayCode)"
         >
+          <span
+            v-if="isCurrentExperimentTray(trayCode)"
+            aria-hidden="true"
+            class="process-task-tray-chip__status process-task-tray-chip__status--spacer"
+          >当前实验</span>
           <span class="process-task-tray-chip__code">{{ trayCode }}</span>
           <span v-if="isCurrentExperimentTray(trayCode)" class="process-task-tray-chip__status">当前实验</span>
         </button>
@@ -95,6 +100,7 @@ const isCurrentExperimentTray = (trayCode) => currentExperimentTrayCodes.value.h
 }
 .process-task-tray-chip__code { flex: 1 1 auto; min-width: 0; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .process-task-tray-chip__status { flex: 0 0 auto; padding: 3px 8px; border: 1px solid rgba(255, 237, 213, 0.56); border-radius: 999px; color: #fff7ed; font-size: 12px; font-weight: 800; letter-spacing: 0; line-height: 1.25; }
+.process-task-tray-chip__status--spacer { visibility: hidden; }
 .process-task-tray-chip:hover { border-color: rgba(var(--industrial-accent-rgb), 0.55); background: rgba(var(--industrial-accent-rgb), 0.16); color: var(--accent); }
 .process-task-tray-chip-emphasis { box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.12); }
 .process-task-tray-chip-list.is-dense .process-task-tray-chip { min-height: 44px; padding: 8px 14px; font-size: 14px; }

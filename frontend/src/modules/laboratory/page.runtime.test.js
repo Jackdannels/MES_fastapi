@@ -1440,8 +1440,10 @@ describe("LaboratoryPage runtime", () => {
           }
         : sample,
     );
+    const expectedStorageGetCalls = storageGetCalls().length + 1;
     window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
-    await flushPageUpdates();
+    await waitForStorageGetCount(expectedStorageGetCalls, { advanceStorageDebounce: true });
+    await flushPageUpdates(12);
     vi.advanceTimersByTime(1000);
     await flushPageUpdates();
     await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
@@ -4246,7 +4248,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-install"]').text()).toContain("重新下发");
   });
 
-  test("keeps the latest fixture-ready snapshot when an older refresh resolves last", async () => {
+  test("queues the latest fixture-ready refresh behind an older in-flight refresh", async () => {
     useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.samples] = [
@@ -4277,13 +4279,12 @@ describe("LaboratoryPage runtime", () => {
       detail: { keys: [STORAGE_KEYS.samples], updatedAt: "2026-04-02 18:00:00" },
     }));
     vi.advanceTimersByTime(100);
-    await waitForQueueLength(pendingSnapshots, 2);
-
-    pendingSnapshots[1](readySnapshot);
-    await flushPageUpdates(12);
-    expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
+    await flushPageUpdates();
+    expect(pendingSnapshots).toHaveLength(1);
 
     pendingSnapshots[0](staleSnapshot);
+    await waitForQueueLength(pendingSnapshots, 2);
+    pendingSnapshots[1](readySnapshot);
     await flushPageUpdates(12);
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
   });

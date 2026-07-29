@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>员工工作日志筛选弹窗方案评审</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #061012;
+      --panel: #0d191d;
+      --panel-2: #111f24;
+      --panel-3: #16282d;
+      --line: #24454a;
+      --line-strong: #397078;
+      --text: #f2fbfa;
+      --muted: #8eb1b3;
+      --accent: #55dbc5;
+      --accent-strong: #78f3da;
+      --accent-soft: rgba(85, 219, 197, 0.13);
+      --warning: #f4c168;
+      --danger: #ff8b8b;
+      --shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100dvh;
+      background:
+        linear-gradient(rgba(62, 115, 119, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(62, 115, 119, 0.06) 1px, transparent 1px),
+        radial-gradient(circle at 50% -20%, rgba(62, 211, 191, 0.13), transparent 48%),
+        var(--bg);
+      background-size: 32px 32px, 32px 32px, auto, auto;
+      color: var(--text);
+      font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
+      line-height: 1.5;
+    }
+
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible {
+      outline: 2px solid var(--accent-strong);
+      outline-offset: 2px;
+    }
+
+    .page-shell { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 32px 0 56px; }
+    .eyebrow { color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    h1 { margin: 8px 0 10px; font-size: clamp(26px, 4vw, 42px); line-height: 1.15; }
+    .lead { max-width: 860px; margin: 0; color: var(--muted); }
+
+    .review-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 24px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(13, 25, 29, .92);
+    }
+    .review-status { color: var(--muted); }
+    .review-status strong { color: var(--accent-strong); }
+
+    .scheme-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 24px 0;
+    }
+    .scheme-tab {
+      min-height: 72px;
+      padding: 12px 16px;
+      text-align: left;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--panel);
+      transition: border-color .18s ease, background .18s ease, transform .18s ease;
+    }
+    .scheme-tab:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+    .scheme-tab.is-active { border-color: var(--accent); background: var(--accent-soft); }
+    .scheme-tab span { display: block; margin-top: 2px; color: var(--muted); font-size: 13px; font-weight: 500; }
+
+    .scheme-panel { display: none; }
+    .scheme-panel.is-active { display: block; }
+    .scheme-intro {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 16px;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(13, 25, 29, .88);
+    }
+    .scheme-intro h2 { margin: 0 0 4px; font-size: 20px; }
+    .scheme-intro p { margin: 0; color: var(--muted); }
+
+    .btn {
+      min-height: 44px;
+      padding: 9px 16px;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      color: var(--text);
+      background: var(--panel-2);
+      transition: background .18s ease, border-color .18s ease;
+    }
+    .btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .btn.primary { border-color: #55dbc5; color: #041513; background: var(--accent); font-weight: 800; }
+    .btn.primary:hover { background: var(--accent-strong); }
+    .btn.ghost { border-color: transparent; color: var(--muted); background: transparent; }
+    .btn.danger { color: var(--danger); }
+    .btn.small { min-height: 36px; padding: 6px 10px; font-size: 13px; }
+
+    .modal-frame {
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 16px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .modal-header, .modal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 22px;
+      border-color: var(--line);
+      background: rgba(8, 18, 21, .92);
+    }
+    .modal-header { border-bottom: 1px solid var(--line); }
+    .modal-footer { border-top: 1px solid var(--line); }
+    .modal-title { margin: 0; font-size: 18px; }
+    .modal-subtitle { color: var(--muted); font-size: 13px; }
+    .footer-actions, .toolbar-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+
+    .search {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 13px;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #091519;
+    }
+    .search::placeholder { color: #668a8d; }
+    .count-badge {
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      padding: 3px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--accent-strong);
+      background: var(--accent-soft);
+      font: 700 12px/1 ui-monospace, Consolas, monospace;
+    }
+
+    .section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .section-title { font-weight: 800; }
+    .section-note { color: var(--muted); font-size: 12px; }
+    .option-list { display: grid; gap: 8px; }
+    .option-list.two-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .option {
+      display: flex;
+      min-height: 52px;
+      align-items: center;
+      gap: 11px;
+      width: 100%;
+      padding: 9px 11px;
+      text-align: left;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel-2);
+      transition: border-color .18s ease, background .18s ease;
+    }
+    .option:hover { border-color: var(--line-strong); }
+    .option.is-selected { border-color: var(--accent); background: var(--accent-soft); }
+    .check {
+      display: grid;
+      flex: 0 0 22px;
+      width: 22px;
+      height: 22px;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      color: #061310;
+      background: transparent;
+      font-size: 14px;
+      font-weight: 900;
+    }
+    .option.is-selected .check { border-color: var(--accent); background: var(--accent); }
+    .option-copy { min-width: 0; }
+    .option-copy strong, .option-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .option-copy span { color: var(--muted); font-size: 12px; }
+
+    /* 方案 A */
+    .split-body { display: grid; grid-template-columns: 1fr 1fr; min-height: 480px; }
+    .split-section { padding: 20px; }
+    .split-section + .split-section { border-left: 1px solid var(--line); }
+    .split-section .search { margin-bottom: 14px; }
+
+    /* 方案 B */
+    .wizard-progress { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 16px 22px 0; }
+    .wizard-step {
+      min-height: 54px;
+      padding: 8px 14px;
+      text-align: left;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      background: var(--panel-2);
+    }
+    .wizard-step.is-active { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+    .wizard-step strong { display: block; }
+    .wizard-body { min-height: 430px; padding: 20px 22px; }
+    .wizard-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; margin-bottom: 16px; }
+    .wizard-pane { display: none; }
+    .wizard-pane.is-active { display: block; }
+
+    /* 方案 C */
+    .workspace-body { display: grid; grid-template-columns: 190px minmax(0, 1fr) 280px; min-height: 520px; }
+    .workspace-nav, .workspace-summary { padding: 18px; background: #0a161a; }
+    .workspace-nav { border-right: 1px solid var(--line); }
+    .workspace-summary { border-left: 1px solid var(--line); }
+    .workspace-main { padding: 20px; }
+    .workspace-tab { width: 100%; margin-bottom: 8px; text-align: left; }
+    .workspace-pane { display: none; }
+    .workspace-pane.is-active { display: block; }
+    .summary-heading { margin: 0 0 12px; font-size: 15px; }
+    .chip-group { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 18px; }
+    .chip { padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; color: var(--accent-strong); background: var(--accent-soft); font-size: 12px; }
+    .empty { padding: 24px 12px; color: var(--muted); text-align: center; border: 1px dashed var(--line); border-radius: 10px; }
+
+    .toast {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      z-index: 50;
+      max-width: min(420px, calc(100vw - 32px));
+      padding: 13px 16px;
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      color: var(--text);
+      background: #102923;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transform: translateY(12px);
+      pointer-events: none;
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    .toast.is-visible { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 920px) {
+      .page-shell { width: min(100% - 24px, 760px); padding-top: 20px; }
+      .scheme-tabs { grid-template-columns: 1fr; }
+      .split-body, .workspace-body { grid-template-columns: 1fr; }
+      .split-section + .split-section, .workspace-summary { border-left: 0; border-top: 1px solid var(--line); }
+      .workspace-nav { display: flex; gap: 8px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .workspace-tab { margin: 0; }
+    }
+    @media (max-width: 620px) {
+      .page-shell { width: calc(100% - 16px); }
+      .scheme-intro, .review-bar, .modal-header, .modal-footer { align-items: stretch; grid-template-columns: 1fr; flex-direction: column; }
+      .option-list.two-columns { grid-template-columns: 1fr; }
+      .wizard-toolbar { grid-template-columns: 1fr; }
+      .footer-actions .btn, .scheme-intro .btn { width: 100%; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page-shell">
+    <div class="eyebrow">MES / UI review laboratory</div>
+    <h1>员工工作日志筛选弹窗 · 三方案评审</h1>
+    <p class="lead">三个方案均支持员工和试验间多选、全选、清空、搜索、选中计数与键盘操作。点击下方方案标签切换，体验后点击“选择此方案”。</p>
+
+    <div class="review-bar">
+      <div class="review-status">本机评审选择：<strong id="chosenScheme">尚未选择</strong></div>
+      <button class="btn ghost" id="resetChoice" type="button">重置评审选择</button>
+    </div>
+
+    <nav class="scheme-tabs" aria-label="弹窗方案">
+      <button class="scheme-tab is-active" data-scheme-tab="a" type="button"><strong>方案 A · 双列同屏</strong><span>员工与试验间同时可见，操作路径最短</span></button>
+      <button class="scheme-tab" data-scheme-tab="b" type="button"><strong>方案 B · 两步向导</strong><span>一次只处理一类选项，结构最清晰</span></button>
+      <button class="scheme-tab" data-scheme-tab="c" type="button"><strong>方案 C · 选择工作台</strong><span>左侧分类、中央选择、右侧结果总览</span></button>
+    </nav>
+
+    <section class="scheme-panel is-active" data-scheme-panel="a">
+      <div class="scheme-intro">
+        <div><h2>方案 A：双列同屏</h2><p>最适合桌面中控。员工与试验间无需切换，效率最高；小屏自动改为上下布局。</p></div>
+        <button class="btn primary choose-scheme" data-scheme-name="方案 A · 双列同屏" type="button">选择此方案</button>
+      </div>
+      <div class="modal-frame" data-scheme="a">
+        <header class="modal-header"><div><h3 class="modal-title">选择查询范围</h3><div class="modal-subtitle">选择需要检索工作日志的员工和试验间</div></div><span class="count-badge total-count">已选 0 项</span></header>
+        <div class="split-body">
+          <section class="split-section" data-section="employee">
+            <div class="section-head"><div><div class="section-title">员工</div><div class="section-note employee-count">已选 0 / 0</div></div><div class="toolbar-actions"><button class="btn small" data-action="all" type="button">全选</button><button class="btn small danger" data-action="clear" type="button">清空</button></div></div>
+            <input class="search" data-search="employee" aria-label="搜索员工" placeholder="搜索姓名或账号" />
+            <div class="option-list" data-options="employee"></div>
+          </section>
+          <section class="split-section" data-section="lab">
+            <div class="section-head"><div><div class="section-title">试验间</div><div class="section-note lab-count">已选 0 / 0</div></div><div class="toolbar-actions"><button class="btn small" data-action="all" type="button">全选</button><button class="btn small danger" data-action="clear" type="button">清空</button></div></div>
+            <input class="search" data-search="lab" aria-label="搜索试验间" placeholder="搜索试验间" />
+            <div class="option-list" data-options="lab"></div>
+          </section>
+        </div>
+        <footer class="modal-footer"><span class="modal-subtitle">关闭前确认，避免误改查询条件</span><div class="footer-actions"><button class="btn" type="button">取消</button><button class="btn primary confirm-selection" type="button">确定选择</button></div></footer>
+      </div>
+    </section>
+
+    <section class="scheme-panel" data-scheme-panel="b">
+      <div class="scheme-intro">
+        <div><h2>方案 B：两步向导</h2><p>员工多、试验间多时认知负担最低；需要一次步骤切换，操作比方案 A 多一步。</p></div>
+        <button class="btn primary choose-scheme" data-scheme-name="方案 B · 两步向导" type="button">选择此方案</button>
+      </div>
+      <div class="modal-frame" data-scheme="b">
+        <header class="modal-header"><div><h3 class="modal-title">设置工作日志查询范围</h3><div class="modal-subtitle">按步骤完成，可随时返回修改</div></div><span class="count-badge total-count">已选 0 项</span></header>
+        <div class="wizard-progress"><button class="wizard-step is-active" data-wizard-step="employee" type="button"><strong>1. 选择员工</strong><span class="employee-count">已选 0 / 0</span></button><button class="wizard-step" data-wizard-step="lab" type="button"><strong>2. 选择试验间</strong><span class="lab-count">已选 0 / 0</span></button></div>
+        <div class="wizard-body">
+          <section class="wizard-pane is-active" data-wizard-pane="employee" data-section="employee">
+            <div class="wizard-toolbar"><input class="search" data-search="employee" aria-label="搜索员工" placeholder="搜索员工姓名或账号" /><div class="toolbar-actions"><button class="btn small" data-action="all" type="button">全选</button><button class="btn small danger" data-action="clear" type="button">清空</button></div></div>
+            <div class="option-list two-columns" data-options="employee"></div>
+          </section>
+          <section class="wizard-pane" data-wizard-pane="lab" data-section="lab">
+            <div class="wizard-toolbar"><input class="search" data-search="lab" aria-label="搜索试验间" placeholder="搜索试验间" /><div class="toolbar-actions"><button class="btn small" data-action="all" type="button">全选</button><button class="btn small danger" data-action="clear" type="button">清空</button></div></div>
+            <div class="option-list two-columns" data-options="lab"></div>
+          </section>
+        </div>
+        <footer class="modal-footer"><button class="btn wizard-back" type="button">上一步</button><div class="footer-actions"><button class="btn" type="button">取消</button><button class="btn primary wizard-next" type="button">下一步</button></div></footer>
+      </div>
+    </section>
+
+    <section class="scheme-panel" data-scheme-panel="c">
+      <div class="scheme-intro">
+        <div><h2>方案 C：选择工作台</h2><p>右侧持续展示已选结果，最适合复杂筛选；信息密度最高，占用空间也最大。</p></div>
+        <button class="btn primary choose-scheme" data-scheme-name="方案 C · 选择工作台" type="button">选择此方案</button>
+      </div>
+      <div class="modal-frame" data-scheme="c">
+        <header class="modal-header"><div><h3 class="modal-title">工作日志筛选工作台</h3><div class="modal-subtitle">选择范围并在右侧核对结果</div></div><span class="count-badge total-count">已选 0 项</span></header>
+        <div class="workspace-body">
+          <aside class="workspace-nav"><button class="btn workspace-tab is-active" data-workspace-tab="employee" type="button">员工 <span class="employee-count">0 / 0</span></button><button class="btn workspace-tab" data-workspace-tab="lab" type="button">试验间 <span class="lab-count">0 / 0</span></button></aside>
+          <div class="workspace-main">
+            <section class="workspace-pane is-active" data-workspace-pane="employee" data-section="employee"><div class="wizard-toolbar"><input class="search" data-search="employee" aria-label="搜索员工" placeholder="搜索员工姓名或账号" /><div class="toolbar-actions"><button class="btn small" data-action="all" type="button">全选</button><button class="btn small danger" data-action="clear" type="button">清空</button></div></div><div class="option-list two-columns" data-options="employee"></div></section>
+            <section class="workspace-pane" data-workspace-pane="lab" data-section="lab"><div class="wizard-toolbar"><input class="search" data-search="lab" aria-label="搜索试验间" placeholder="搜索试验间" /><div class="toolbar-actions"><button class="btn small" data-action="all" type="button">全选</button><button class="btn small danger" data-action="clear" type="button">清空</button></div></div><div class="option-list two-columns" data-options="lab"></div></section>
+          </div>
+          <aside class="workspace-summary"><div class="section-head"><h4 class="summary-heading">已选员工</h4><button class="btn small danger" data-summary-clear="employee" type="button">清空</button></div><div class="chip-group" data-chips="employee"></div><div class="section-head"><h4 class="summary-heading">已选试验间</h4><button class="btn small danger" data-summary-clear="lab" type="button">清空</button></div><div class="chip-group" data-chips="lab"></div></aside>
+        </div>
+        <footer class="modal-footer"><span class="modal-subtitle">右侧结果会随选择实时更新</span><div class="footer-actions"><button class="btn" type="button">取消</button><button class="btn primary confirm-selection" type="button">应用筛选范围</button></div></footer>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const employees = [
+      { id: "张三", title: "张三", note: "zhangsan · 试验员" },
+      { id: "李四", title: "李四", note: "lisi · 试验员" },
+      { id: "心意", title: "心意", note: "xinyi · 质量员" },
+      { id: "321", title: "321", note: "employee321 · 试验员" },
+      { id: "王二", title: "王二", note: "wanger · 班组长" },
+      { id: "123", title: "123", note: "employee123 · 试验员" },
+      { id: "111", title: "111", note: "employee111 · 试验员" },
+      { id: "222", title: "222", note: "employee222 · 试验员" }
+    ];
+    const labs = ["冲击一室", "冲击二室", "振动一室", "振动二室", "盐雾试验室", "高低温湿热一室", "高低温湿热二室", "四综合试验室"].map((name) => ({ id: name, title: name, note: "试验间" }));
+    const optionData = { employee: employees, lab: labs };
+    const states = new Map();
+    document.querySelectorAll("[data-scheme]").forEach((root) => states.set(root.dataset.scheme, { employee: new Set(), lab: new Set(), wizard: "employee", workspace: "employee" }));
+
+    const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+    const currentState = (root) => states.get(root.dataset.scheme);
+    const optionMarkup = (item, selected) => `<button class="option${selected ? " is-selected" : ""}" data-option-id="${escapeHtml(item.id)}" type="button" role="option" aria-selected="${selected}"><span class="check" aria-hidden="true">${selected ? "✓" : ""}</span><span class="option-copy"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.note)}</span></span></button>`;
+
+    function filteredOptions(root, type) {
+      const input = root.querySelector(`[data-search="${type}"]`);
+      const query = String(input?.value || "").trim().toLowerCase();
+      return optionData[type].filter((item) => !query || `${item.title} ${item.note}`.toLowerCase().includes(query));
+    }
+
+    function render(root) {
+      const state = currentState(root);
+      ["employee", "lab"].forEach((type) => {
+        root.querySelectorAll(`[data-options="${type}"]`).forEach((container) => {
+          const visible = filteredOptions(root, type);
+          container.innerHTML = visible.length
+            ? visible.map((item) => optionMarkup(item, state[type].has(item.id))).join("")
+            : '<div class="empty">没有匹配项，请尝试其他关键词</div>';
+        });
+        const countText = `已选 ${state[type].size} / ${optionData[type].length}`;
+        root.querySelectorAll(`.${type}-count`).forEach((node) => { node.textContent = countText; });
+        root.querySelectorAll(`[data-chips="${type}"]`).forEach((container) => {
+          container.innerHTML = state[type].size
+            ? Array.from(state[type]).map((name) => `<span class="chip">${escapeHtml(name)}</span>`).join("")
+            : '<span class="section-note">尚未选择</span>';
+        });
+      });
+      root.querySelectorAll(".total-count").forEach((node) => { node.textContent = `已选 ${state.employee.size + state.lab.size} 项`; });
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      toast.textContent = message;
+      toast.classList.add("is-visible");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => toast.classList.remove("is-visible"), 2600);
+    }
+
+    document.querySelectorAll("[data-scheme]").forEach((root) => {
+      render(root);
+      root.addEventListener("click", (event) => {
+        const option = event.target.closest("[data-option-id]");
+        if (option) {
+          const section = option.closest("[data-section]");
+          const type = section.dataset.section;
+          const selected = currentState(root)[type];
+          selected.has(option.dataset.optionId) ? selected.delete(option.dataset.optionId) : selected.add(option.dataset.optionId);
+          render(root);
+          return;
+        }
+        const action = event.target.closest("[data-action]");
+        if (action) {
+          const type = action.closest("[data-section]").dataset.section;
+          const selected = currentState(root)[type];
+          if (action.dataset.action === "clear") selected.clear();
+          if (action.dataset.action === "all") filteredOptions(root, type).forEach((item) => selected.add(item.id));
+          render(root);
+        }
+        const summaryClear = event.target.closest("[data-summary-clear]");
+        if (summaryClear) { currentState(root)[summaryClear.dataset.summaryClear].clear(); render(root); }
+        if (event.target.closest(".confirm-selection")) showToast(`已确认：${currentState(root).employee.size} 名员工，${currentState(root).lab.size} 个试验间`);
+      });
+      root.querySelectorAll("[data-search]").forEach((input) => input.addEventListener("input", () => render(root)));
+    });
+
+    document.querySelectorAll("[data-scheme-tab]").forEach((tab) => tab.addEventListener("click", () => {
+      document.querySelectorAll("[data-scheme-tab]").forEach((item) => item.classList.toggle("is-active", item === tab));
+      document.querySelectorAll("[data-scheme-panel]").forEach((panel) => panel.classList.toggle("is-active", panel.dataset.schemePanel === tab.dataset.schemeTab));
+    }));
+
+    document.querySelectorAll("[data-scheme='b']").forEach((root) => {
+      const setStep = (step) => {
+        const state = currentState(root); state.wizard = step;
+        root.querySelectorAll("[data-wizard-step]").forEach((node) => node.classList.toggle("is-active", node.dataset.wizardStep === step));
+        root.querySelectorAll("[data-wizard-pane]").forEach((node) => node.classList.toggle("is-active", node.dataset.wizardPane === step));
+        root.querySelector(".wizard-back").style.visibility = step === "employee" ? "hidden" : "visible";
+        root.querySelector(".wizard-next").textContent = step === "employee" ? "下一步" : "确定选择";
+      };
+      root.querySelectorAll("[data-wizard-step]").forEach((node) => node.addEventListener("click", () => setStep(node.dataset.wizardStep)));
+      root.querySelector(".wizard-back").addEventListener("click", () => setStep("employee"));
+      root.querySelector(".wizard-next").addEventListener("click", () => currentState(root).wizard === "employee" ? setStep("lab") : showToast(`已确认：${currentState(root).employee.size} 名员工，${currentState(root).lab.size} 个试验间`));
+      setStep("employee");
+    });
+
+    document.querySelectorAll("[data-scheme='c']").forEach((root) => {
+      const setWorkspace = (type) => {
+        root.querySelectorAll("[data-workspace-tab]").forEach((node) => node.classList.toggle("is-active", node.dataset.workspaceTab === type));
+        root.querySelectorAll("[data-workspace-pane]").forEach((node) => node.classList.toggle("is-active", node.dataset.workspacePane === type));
+      };
+      root.querySelectorAll("[data-workspace-tab]").forEach((node) => node.addEventListener("click", () => setWorkspace(node.dataset.workspaceTab)));
+    });
+
+    const chosenScheme = document.getElementById("chosenScheme");
+    const savedChoice = localStorage.getItem("mes-operation-log-selector-choice");
+    if (savedChoice) chosenScheme.textContent = savedChoice;
+    document.querySelectorAll(".choose-scheme").forEach((button) => button.addEventListener("click", () => {
+      localStorage.setItem("mes-operation-log-selector-choice", button.dataset.schemeName);
+      chosenScheme.textContent = button.dataset.schemeName;
+      showToast(`已选择 ${button.dataset.schemeName}，请将方案名称告诉 Codex`);
+    }));
+    document.getElementById("resetChoice").addEventListener("click", () => {
+      localStorage.removeItem("mes-operation-log-selector-choice");
+      chosenScheme.textContent = "尚未选择";
+      showToast("已重置评审选择");
+    });
+  </script>
+</body>
+</html>

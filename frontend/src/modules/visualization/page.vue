@@ -365,8 +365,16 @@ const rawSnapshot = ref({});
 const attendanceSessions = ref([]);
 const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
 
-const readRawStorageSnapshot = () =>
-  readStorageSnapshot(VISUALIZATION_SNAPSHOT_KEYS, { normalizeMissing: false });
+const normalizeVisualizationRefreshKeys = (keys) => {
+  if (!Array.isArray(keys) || keys.length === 0) {
+    return VISUALIZATION_SNAPSHOT_KEYS;
+  }
+  const watchedKeys = new Set(VISUALIZATION_SNAPSHOT_KEYS);
+  return Array.from(new Set(keys.filter((key) => watchedKeys.has(key))));
+};
+
+const readRawStorageSnapshot = (keys = VISUALIZATION_SNAPSHOT_KEYS) =>
+  readStorageSnapshot(keys, { normalizeMissing: false });
 
 const mergeArraySnapshot = (previousSnapshot, nextSnapshot, keys) => {
   const source = nextSnapshot && typeof nextSnapshot === "object" ? nextSnapshot : {};
@@ -669,9 +677,10 @@ const resolveScreenComponent = (screen) => {
   return PlaceholderScreen;
 };
 
-const refreshSnapshot = async () => {
-  const snapshot = await readRawStorageSnapshot();
-  rawSnapshot.value = mergeArraySnapshot(rawSnapshot.value, snapshot, VISUALIZATION_SNAPSHOT_KEYS);
+const refreshSnapshot = async (changedKeys) => {
+  const refreshKeys = normalizeVisualizationRefreshKeys(changedKeys);
+  const snapshot = await readRawStorageSnapshot(refreshKeys);
+  rawSnapshot.value = mergeArraySnapshot(rawSnapshot.value, snapshot, refreshKeys);
 };
 const initializeSnapshot = async () => {
   const snapshot = loadInitialSnapshot();

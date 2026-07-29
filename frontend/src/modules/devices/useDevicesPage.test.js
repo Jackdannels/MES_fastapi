@@ -4,12 +4,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   loadSnapshot: vi.fn(),
+  persistRunningRepair: vi.fn(),
   persistSnapshot: vi.fn(),
 }));
 
 vi.mock("@/composables/useStorageSnapshot", () => ({
   useStorageSnapshot: () => ({
     loadSnapshot: mocks.loadSnapshot,
+    persistRunningRepair: mocks.persistRunningRepair,
     persistSnapshot: mocks.persistSnapshot,
   }),
 }));
@@ -92,6 +94,7 @@ describe("useDevicesPage", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2099-03-20T07:30:00"));
+    mocks.persistRunningRepair.mockResolvedValue(undefined);
     mocks.persistSnapshot.mockResolvedValue(undefined);
     mocks.loadSnapshot.mockResolvedValue({
       "mes.devices": [
@@ -129,6 +132,7 @@ describe("useDevicesPage", () => {
   afterEach(() => {
     vi.useRealTimers();
     mocks.loadSnapshot.mockReset();
+    mocks.persistRunningRepair.mockReset();
     mocks.persistSnapshot.mockReset();
   });
 
@@ -607,41 +611,34 @@ describe("useDevicesPage", () => {
     await wrapper.vm.confirmRunningRepairComplete();
     await settle(wrapper);
 
-    expect(mocks.persistSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({
-        "mes.devices": [
-          expect.objectContaining({
-            code: "冲击一室",
-            maintenance_start_at: "2099-03-20 07:30:00",
-            maintenance_type: "维修",
-            status: "维修",
-          }),
-        ],
-        "mes.experiments": [
-          expect.objectContaining({
-            actual_end_time: "2099-03-20 07:30:00",
-            experiment_code: "TASK-001-A",
-            status: "实验已完成",
-          }),
-        ],
-        "mes.samples": [
-          expect.objectContaining({
-            flow_status: "实验已完成",
-            location: "冲击一室",
-            status: "实验已完成",
-            trays: [expect.objectContaining({ status: "实验已完成", tray_code: "TASK-001-TP-001" })],
-          }),
-        ],
-        "mes.experiment_runs": [
-          expect.objectContaining({
-            ended_at: "2099-03-20 07:30:00",
-            run_no: "RUN-001",
-            status: "实验已完成",
-          }),
-        ],
-        "mes.schedules": [],
-      }),
-    );
+    expect(mocks.persistRunningRepair).toHaveBeenCalledWith({
+      deviceCode: "冲击一室",
+      maintenanceNote: "",
+      targets: [expect.objectContaining({
+        experiment_code: "TASK-001-A",
+        id: "schedule-1",
+        run_no: "RUN-001",
+        task_code: "TASK-001",
+      })],
+    });
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+  });
+
+  test("keeps the running repair confirmation open and shows an actionable error when the command fails", async () => {
+    mocks.loadSnapshot.mockResolvedValueOnce(buildRunningExperimentSnapshot());
+    mocks.persistRunningRepair.mockRejectedValueOnce(new Error("当前实验状态已变化，请刷新后重试"));
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+    wrapper.vm.maintenancePlanForm.type = "维修";
+    await wrapper.vm.saveMaintenancePlan();
+    await wrapper.vm.confirmRunningRepairComplete();
+    await settle(wrapper);
+
+    expect(wrapper.vm.runningRepairChoiceOpen).toBe(true);
+    expect(wrapper.vm.runningRepairChoiceWarning).toBe("当前实验状态已变化，请刷新后重试");
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
   });
 
   test("detects a running repair conflict from experiment runs before sample refreshes", async () => {

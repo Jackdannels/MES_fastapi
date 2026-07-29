@@ -105,6 +105,110 @@ def test_storage_persists_device_maintenance_records(monkeypatch):
     assert storage.read("mes.maintenance_records") == records
 
 
+def test_running_device_repair_atomically_completes_experiment_before_entering_repair(monkeypatch):
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.devices": [
+                {"code": "冲击一室", "name": "冲击试验系统-1", "status": "可用"},
+            ],
+            "mes.experiments": [
+                {
+                    "experiment_code": "TASK-001-A",
+                    "experiment_name": "冲击试验",
+                    "status": "实验进行中",
+                    "task_code": "TASK-001",
+                },
+            ],
+            "mes.experiment_runs": [
+                {
+                    "device": "冲击一室",
+                    "experiment_code": "TASK-001-A",
+                    "run_no": "RUN-001",
+                    "status": "实验进行中",
+                    "task_code": "TASK-001",
+                },
+            ],
+            "mes.experiment_run_trays": [
+                {
+                    "experiment_code": "TASK-001-A",
+                    "run_no": "RUN-001",
+                    "run_tray_status": "实验进行中",
+                    "status": "实验进行中",
+                    "task_code": "TASK-001",
+                    "tray_code": "TASK-001-TP-001",
+                },
+            ],
+            "mes.experiment_trays": [
+                {
+                    "experiment_code": "TASK-001-A",
+                    "task_code": "TASK-001",
+                    "tray_code": "TASK-001-TP-001",
+                },
+            ],
+            "mes.experiment_samples": [
+                {
+                    "experiment_code": "TASK-001-A",
+                    "sample_code": "TASK-001-SP-001",
+                    "task_code": "TASK-001",
+                },
+            ],
+            "mes.samples": [
+                {
+                    "code": "TASK-001-SP-001",
+                    "flow_status": "实验进行中",
+                    "location": "冲击一室",
+                    "status": "实验进行中",
+                    "task_code": "TASK-001",
+                    "trays": [{"status": "实验进行中", "tray_code": "TASK-001-TP-001"}],
+                },
+            ],
+            "mes.schedules": [
+                {
+                    "device": "冲击一室",
+                    "end_at": "2099-03-20 10:00:00",
+                    "experiment_code": "TASK-001-A",
+                    "id": "schedule-1",
+                    "start_at": "2026-03-20 07:00:00",
+                    "status": "实验进行中",
+                    "task_code": "TASK-001",
+                },
+            ],
+        },
+    )
+
+    response = client.post(
+        "/api/storage/devices/冲击一室/running-repair",
+        json={
+            "maintenanceNote": "运行异常，立即维修",
+            "maintenanceType": "维修",
+            "targets": [
+                {
+                    "experiment_code": "TASK-001-A",
+                    "id": "schedule-1",
+                    "run_no": "RUN-001",
+                    "task_code": "TASK-001",
+                    "tray_codes": ["TASK-001-TP-001"],
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    device = storage.read("mes.devices")[0]
+    assert device["status"] == "维修"
+    assert device["maintenance_type"] == "维修"
+    assert device["maintenance_note"] == "运行异常，立即维修"
+    assert device["maintenance_start_at"]
+    assert storage.read("mes.experiments")[0]["status"] == "实验已完成"
+    assert storage.read("mes.experiment_runs")[0]["status"] == "实验已完成"
+    assert storage.read("mes.experiment_run_trays")[0]["run_tray_status"] == "实验已完成"
+    assert storage.read("mes.schedules")[0]["status"] == "实验已完成"
+    sample = storage.read("mes.samples")[0]
+    assert sample["status"] == "实验已完成"
+    assert sample["trays"][0]["status"] == "实验已完成"
+
+
 def test_future_planned_maintenance_does_not_make_device_unavailable_early():
     from app.api.routes import storage as storage_route
 
@@ -154,6 +258,29 @@ def test_storage_reads_only_requested_snapshot_keys(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"mes.tasks": [{"code": "TASK-001"}]}
+
+
+def test_storage_read_cache_hits_and_invalidates_after_published_update(monkeypatch):
+    from app.api.routes import storage as storage_route
+    from app.services.read_through_cache import read_snapshot_cache
+
+    read_snapshot_cache.invalidate()
+    storage = CountingStorage({"mes.tasks": [{"code": "TASK-CACHED"}]})
+    client, _storage = build_client_with_storage(monkeypatch, storage)
+
+    first = client.get("/api/storage?keys=mes.tasks")
+    second = client.get("/api/storage?keys=mes.tasks")
+    storage.payloads["mes.tasks"] = [{"code": "TASK-UPDATED"}]
+    storage_route.publish_storage_update(["mes.tasks"])
+    third = client.get("/api/storage?keys=mes.tasks")
+
+    assert [first.status_code, second.status_code, third.status_code] == [200, 200, 200]
+    assert first.headers["X-MES-Read-Cache"] == "miss"
+    assert second.headers["X-MES-Read-Cache"] == "hit"
+    assert third.headers["X-MES-Read-Cache"] == "miss"
+    assert first.json() == second.json() == {"mes.tasks": [{"code": "TASK-CACHED"}]}
+    assert third.json() == {"mes.tasks": [{"code": "TASK-UPDATED"}]}
+    assert storage.read_calls == ["mes.tasks", "mes.tasks"]
 
 
 def test_storage_invalid_requested_keys_do_not_fall_back_to_full_snapshot(monkeypatch):
@@ -3396,6 +3523,7 @@ def test_storage_update_event_stream_yields_published_keys():
     assert '"source": "staging-management"' in event
     assert '"requestId": "write-1"' in event
     assert '"updatedAt":' in event
+    assert '"version":' in event
 
 
 def test_storage_rejects_staging_stock_in_after_laboratory_progress(monkeypatch):

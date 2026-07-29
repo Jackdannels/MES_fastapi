@@ -4,6 +4,8 @@ import { describe, expect, test } from "vitest";
 import TaskOverviewCard from "./TaskOverviewCard.vue";
 
 const baseRow = {
+  contact: "张三",
+  contactInfo: "13800001234",
   currentStatus: "进行中",
   plannedCount: 2,
   sampleCodes: ["TASK-001-SP-001", "TASK-001-SP-002"],
@@ -85,6 +87,10 @@ describe("TaskOverviewCard", () => {
     expect(wrapper.find('input[readonly]').exists()).toBe(true);
     expect(wrapper.find("textarea").element.readOnly).toBe(true);
     expect(wrapper.text()).toContain("任务编号");
+    const readonlyValues = wrapper.findAll("input[readonly]").map((input) => input.element.value);
+    expect(readonlyValues).toContain("张三");
+    expect(readonlyValues).toContain("13800001234");
+    expect(wrapper.find(".task-overview-codes").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("字段错误");
     expect(wrapper.text()).not.toContain("已保存");
   });

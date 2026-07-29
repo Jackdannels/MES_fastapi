@@ -23,6 +23,8 @@ const baseProps = {
   },
   editMessage: "",
   row: {
+    contact: "张三",
+    contactInfo: "13800001234",
     taskCode: "TASK-001",
   },
   saving: false,
@@ -67,6 +69,31 @@ describe("TaskOverviewEditorPanel", () => {
     expect(cancelButtons).toHaveLength(1);
     expect(cancelButtons[0].text()).toBe("收起详情");
     expect(wrapper.text()).not.toContain("取消");
+  });
+
+  test("renders readonly contact details and uses dashes for missing values", () => {
+    const wrapper = mount(TaskOverviewEditorPanel, {
+      props: {
+        ...baseProps,
+        readonly: true,
+      },
+    });
+
+    expect(wrapper.text()).toContain("联系人");
+    expect(wrapper.text()).toContain("联系方式");
+    expect(wrapper.find('input[value="张三"][readonly]').exists()).toBe(true);
+    expect(wrapper.find('input[value="13800001234"][readonly]').exists()).toBe(true);
+
+    const emptyWrapper = mount(TaskOverviewEditorPanel, {
+      props: {
+        ...baseProps,
+        readonly: true,
+        row: { taskCode: "TASK-002" },
+      },
+    });
+    const readonlyValues = emptyWrapper.findAll("input[readonly]").map((input) => input.element.value);
+
+    expect(readonlyValues.filter((value) => value === "-")).toHaveLength(2);
   });
 
   test("renders delete confirmation and emits confirmation actions", async () => {

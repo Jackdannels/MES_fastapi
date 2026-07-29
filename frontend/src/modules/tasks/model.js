@@ -600,6 +600,8 @@ function createTaskEditForm() {
   return {
     arrival_at: "",
     code: "",
+    contact: "",
+    contact_info: "",
     due_at: "",
     id: "",
     name: "",
@@ -626,6 +628,8 @@ function buildTaskEditForm(row = {}) {
   return {
     arrival_at: toDateTimeLocalValue(row?.arrivalAt ?? row?.arrival_at),
     code: normalizeText(row?.code),
+    contact: normalizeText(row?.contact),
+    contact_info: normalizeText(row?.contactInfo ?? row?.contact_info),
     due_at: toDateTimeLocalValue(row?.dueAt ?? row?.due_at),
     id: normalizeText(row?.id),
     name: normalizeText(row?.name),
@@ -712,6 +716,8 @@ function updateTaskRecord(tasks, editForm) {
   const nextTask = {
     ...taskList[targetIndex],
     code: normalizeText(editForm?.code) || taskList[targetIndex].code,
+    contact: normalizeText(editForm?.contact),
+    contact_info: normalizeText(editForm?.contact_info),
     due_at: fromDateTimeLocalValue(editForm?.due_at),
     name: normalizeText(editForm?.name),
     priority: normalizeText(editForm?.priority),

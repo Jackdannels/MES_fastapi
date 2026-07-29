@@ -4,6 +4,33 @@ import queue
 import threading
 from typing import Any
 
+from app.core.performance import increment_performance_count, performance_span
+
+
+class _ObservedCursor:
+    def __init__(self, cursor: Any) -> None:
+        self._cursor = cursor
+
+    def __enter__(self):
+        self._cursor.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return self._cursor.__exit__(exc_type, exc, traceback)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cursor, name)
+
+    def execute(self, *args: Any, **kwargs: Any) -> Any:
+        increment_performance_count("db.query.count")
+        with performance_span("db.query"):
+            return self._cursor.execute(*args, **kwargs)
+
+    def executemany(self, *args: Any, **kwargs: Any) -> Any:
+        increment_performance_count("db.query.count")
+        with performance_span("db.query"):
+            return self._cursor.executemany(*args, **kwargs)
+
 
 class _ConnectionLease:
     def __init__(self, pool: "MySQLConnectionPool", connection: Any) -> None:
@@ -20,6 +47,9 @@ class _ConnectionLease:
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._connection, name)
+
+    def cursor(self, *args: Any, **kwargs: Any) -> _ObservedCursor:
+        return _ObservedCursor(self._connection.cursor(*args, **kwargs))
 
     def close(self, *, discard: bool = False) -> None:
         if self._released:
@@ -58,7 +88,8 @@ class MySQLConnectionPool:
             from pymysql.cursors import DictCursor
 
             connect_options["cursorclass"] = DictCursor
-        return pymysql.connect(**connect_options)
+        with performance_span("db.connect"):
+            return pymysql.connect(**connect_options)
 
     def acquire(self) -> _ConnectionLease:
         try:
@@ -70,7 +101,9 @@ class MySQLConnectionPool:
                     self._created += 1
                     return _ConnectionLease(self, connection)
             try:
-                connection = self._available.get(timeout=self._timeout)
+                increment_performance_count("db.pool.wait.count")
+                with performance_span("db.pool.wait"):
+                    connection = self._available.get(timeout=self._timeout)
             except queue.Empty as exc:
                 raise TimeoutError(f"MySQL connection pool exhausted after {self._timeout:.1f}s") from exc
 

@@ -470,4 +470,28 @@ describe("useTasksPage", () => {
       wrapper.unmount();
     }
   });
+
+  test("rejects a changed edit due time earlier than the frozen business time", async () => {
+    vi.setSystemTime(new Date("2026-07-23T01:00:00.000Z"));
+    const editableTask = {
+      ...task,
+      due_at: "2026-07-23 10:00",
+    };
+    mocks.readTasks.mockResolvedValue([editableTask]);
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    try {
+      wrapper.vm.openTaskDrawer(wrapper.vm.taskRows[0]);
+      expect(wrapper.vm.editDueAtMin).toBe("2026-07-23T09:00");
+      wrapper.vm.editForm.due_at = "2026-07-23T08:59";
+
+      await wrapper.vm.updateTask();
+
+      expect(wrapper.vm.editWarning).toBe("期望完成时间不能早于当前时间");
+      expect(mocks.updateTask).not.toHaveBeenCalled();
+    } finally {
+      wrapper.unmount();
+    }
+  });
 });

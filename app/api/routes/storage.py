@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Any, Dict
 
-from fastapi import APIRouter, Body, Header, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Body, Header, HTTPException, Query, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core.axis_codes import sort_axis_codes
 from app.core.storage_backend import STORAGE_KEYS, get_storage_backend
@@ -33,6 +34,11 @@ from app.services.storage_schedule_patch import (
     validate_schedule_maintenance_conflicts,
 )
 from app.services.storage_update_bus import publish_storage_update, storage_update_event_stream as _storage_update_event_stream
+from app.services.read_through_cache import read_snapshot_cache, storage_cache_identity
+from app.services.device_running_repair import (
+    DeviceRunningRepairError,
+    build_completed_running_repair_updates,
+)
 from app.services.storage_read_helpers import (
     _as_list,
     _experiment_code,
@@ -706,18 +712,35 @@ def _validate_storage_update(
 
 
 @router.get("")
-def read_all(keys: str = Query(default="")) -> Dict[str, Any]:
+def read_all(keys: str = Query(default="")) -> Response:
     storage = get_storage_backend()
     requested_keys = list(dict.fromkeys(
         key.strip() for key in keys.split(",") if key.strip() in STORAGE_KEYS
     ))
     if requested_keys:
-        if hasattr(storage, "read_many"):
-            return storage.read_many(requested_keys)
-        return {key: storage.read(key) for key in requested_keys}
+        def load_requested() -> bytes:
+            if hasattr(storage, "read_many"):
+                payload = storage.read_many(requested_keys)
+            else:
+                payload = {key: storage.read(key) for key in requested_keys}
+            return JSONResponse(content=jsonable_encoder(payload)).body
+
+        body, cache_status = read_snapshot_cache.get_or_load(
+            ("storage", storage_cache_identity(storage), tuple(requested_keys)),
+            load_requested,
+        )
+        return Response(content=body, media_type="application/json", headers={"X-MES-Read-Cache": cache_status})
     if keys.strip():
-        return {}
-    return storage.read_all()
+        return Response(content=b"{}", media_type="application/json")
+
+    def load_all() -> bytes:
+        return JSONResponse(content=jsonable_encoder(storage.read_all())).body
+
+    body, cache_status = read_snapshot_cache.get_or_load(
+        ("storage", storage_cache_identity(storage), "all"),
+        load_all,
+    )
+    return Response(content=body, media_type="application/json", headers={"X-MES-Read-Cache": cache_status})
 
 
 @router.get("/events")
@@ -857,6 +880,39 @@ def patch_storage_schedules(
         source=str(update_source or "").strip(),
         request_id=str(update_request_id or "").strip(),
     )
+
+
+@router.post("/devices/{device_code}/running-repair")
+def complete_running_experiment_for_device_repair(
+    device_code: str,
+    payload: Dict[str, Any] = Body(default_factory=dict),
+    update_source: str = Header(default="", alias="X-MES-Update-Source"),
+    update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
+) -> dict[str, Any]:
+    storage = get_storage_backend()
+    completed_at = now_business_text()
+    try:
+        with acquire_laboratory_storage_commit_lock():
+            snapshot = storage.read_all()
+            updates = build_completed_running_repair_updates(
+                snapshot,
+                device_code=device_code,
+                payload=payload if isinstance(payload, dict) else {},
+                completed_at=completed_at,
+            )
+            _validate_storage_update(storage, updates, snapshot)
+            storage.write_many(updates)
+    except DeviceRunningRepairError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+    source = str(update_source or "").strip()
+    request_id = str(update_request_id or "").strip()
+    _publish_tray_action_update(updates, source=source, request_id=request_id)
+    return {
+        "ok": True,
+        "completedAt": completed_at,
+        "updatedKeys": list(updates.keys()),
+    }
 
 
 @router.get("/{key}")

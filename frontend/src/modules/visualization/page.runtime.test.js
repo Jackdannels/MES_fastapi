@@ -237,6 +237,23 @@ describe("VisualizationPage runtime", () => {
     ]));
   });
 
+  test("reads only changed visualization keys during a regular realtime refresh", async () => {
+    mountPage();
+    await Promise.resolve();
+
+    await snapshotState.refreshRegistrations[0].refresh(["mes.samples", "mes.schedules"]);
+    await Promise.resolve();
+
+    const storageReadUrl = fetch.mock.calls
+      .map(([input]) => String(input))
+      .find((url) => url.includes("/api/storage?keys="));
+    const requestedKeys = new URL(storageReadUrl, "http://localhost")
+      .searchParams.get("keys")
+      .split(",")
+      .sort();
+    expect(requestedKeys).toEqual(["mes.samples", "mes.schedules"]);
+  });
+
   test("keeps the visible board data when a background refresh omits array snapshot keys", async () => {
     snapshotState.snapshot = buildSingleRunningLabSnapshot();
     const wrapper = mountPage();

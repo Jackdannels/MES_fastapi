@@ -5,6 +5,7 @@ import { SNAPSHOT_UPDATED_STORAGE_KEY, writeStorageSchedulePatch, writeStorageUp
 
 const storageApiMocks = vi.hoisted(() => ({
   readStorageSnapshot: vi.fn(),
+  writeStorageRunningRepair: vi.fn(),
   writeStorageSchedulePatch: vi.fn(),
   writeStorageUpdates: vi.fn(),
 }));
@@ -14,6 +15,7 @@ vi.mock("@/lib/storageApi", () => {
   return {
     SNAPSHOT_UPDATED_STORAGE_KEY,
     readStorageSnapshot: storageApiMocks.readStorageSnapshot,
+    writeStorageRunningRepair: storageApiMocks.writeStorageRunningRepair,
     writeStorageSchedulePatch: storageApiMocks.writeStorageSchedulePatch,
     writeStorageUpdates: storageApiMocks.writeStorageUpdates,
   };

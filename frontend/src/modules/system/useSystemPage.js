@@ -131,8 +131,8 @@ function useSystemPage() {
   const operationLogError = ref("");
   const operationLogSubmitting = ref(false);
   const operationLogFilters = ref(createOperationLogFilters());
-  const operationLogEmployeeMenuOpen = ref(false);
-  const operationLogLabSelectorOpen = ref(false);
+  const operationLogScopeSelectorOpen = ref(false);
+  const operationLogScopeInitialStep = ref("employee");
   const operationLogLabOptions = ref([...TEST_LABS]);
   const operationLogEmployeeOptions = computed(() => {
     const seenEmployeeNames = new Set();
@@ -147,11 +147,17 @@ function useSystemPage() {
   });
   const operationLogEmployeeLabel = computed(() => {
     const selected = operationLogFilters.value.employeeNames || [];
-    return selected.length ? selected.join("、") : "选择员工";
+    if (selected.length === 0) {
+      return "选择员工";
+    }
+    return selected.length === 1 ? selected[0] : `已选 ${selected.length} 名员工`;
   });
   const operationLogLabLabel = computed(() => {
     const selected = operationLogFilters.value.labNames || [];
-    return selected.length ? selected.join("、") : "选择试验间";
+    if (selected.length === 0) {
+      return "选择试验间";
+    }
+    return selected.length === 1 ? selected[0] : `已选 ${selected.length} 个试验间`;
   });
 
   // 编辑弹窗始终从当前 payload 重新派生表单，避免残留上一次编辑状态。
@@ -332,61 +338,30 @@ function useSystemPage() {
     operationLogError.value = "";
     operationLogRows.value = [];
     operationLogFilters.value = createOperationLogFilters();
-    operationLogEmployeeMenuOpen.value = false;
+    operationLogScopeSelectorOpen.value = false;
     operationLogDialog.openWith({ id: "employee-operation-logs" });
   };
 
   const closeEmployeeOperationLogs = () => {
     operationLogError.value = "";
-    operationLogEmployeeMenuOpen.value = false;
-    operationLogLabSelectorOpen.value = false;
+    operationLogScopeSelectorOpen.value = false;
     operationLogDialog.close();
   };
 
-  const toggleOperationLogEmployeeMenu = () => {
-    operationLogEmployeeMenuOpen.value = !operationLogEmployeeMenuOpen.value;
-  };
-
-  const isOperationLogEmployeeSelected = (employeeName) =>
-    operationLogFilters.value.employeeNames.includes(String(employeeName || "").trim());
-
-  const toggleOperationLogEmployee = (employeeName) => {
-    const normalizedEmployeeName = String(employeeName || "").trim();
-    if (!normalizedEmployeeName) {
-      return;
-    }
-    const selected = operationLogFilters.value.employeeNames;
-    operationLogFilters.value.employeeNames = selected.includes(normalizedEmployeeName)
-      ? selected.filter((name) => name !== normalizedEmployeeName)
-      : [...selected, normalizedEmployeeName];
-  };
-
-  const openOperationLogLabSelector = () => {
-    operationLogEmployeeMenuOpen.value = false;
-    operationLogLabSelectorOpen.value = true;
+  const openOperationLogScopeSelector = (initialStep = "employee") => {
+    operationLogScopeInitialStep.value = initialStep === "lab" ? "lab" : "employee";
     operationLogLabOptions.value = [...TEST_LABS];
+    operationLogScopeSelectorOpen.value = true;
   };
 
-  const closeOperationLogLabSelector = () => {
-    operationLogLabSelectorOpen.value = false;
+  const closeOperationLogScopeSelector = () => {
+    operationLogScopeSelectorOpen.value = false;
   };
 
-  const isOperationLogLabSelected = (labName) =>
-    operationLogFilters.value.labNames.includes(String(labName || "").trim());
-
-  const toggleOperationLogLab = (labName) => {
-    const normalizedLabName = String(labName || "").trim();
-    if (!normalizedLabName) {
-      return;
-    }
-    const selected = operationLogFilters.value.labNames;
-    operationLogFilters.value.labNames = selected.includes(normalizedLabName)
-      ? selected.filter((name) => name !== normalizedLabName)
-      : [...selected, normalizedLabName];
-  };
-
-  const clearOperationLogLabs = () => {
-    operationLogFilters.value.labNames = [];
+  const confirmOperationLogScope = ({ employeeNames = [], labNames = [] } = {}) => {
+    operationLogFilters.value.employeeNames = Array.isArray(employeeNames) ? [...employeeNames] : [];
+    operationLogFilters.value.labNames = Array.isArray(labNames) ? [...labNames] : [];
+    operationLogScopeSelectorOpen.value = false;
   };
 
   const loadEmployeeOperationLogs = async () => {
@@ -532,20 +507,18 @@ function useSystemPage() {
     qrSvg,
     operationLogError,
     operationLogEmployeeLabel,
-    operationLogEmployeeMenuOpen,
     operationLogEmployeeOptions,
     operationLogFilters,
     operationLogLabLabel,
     operationLogLabOptions,
-    operationLogLabSelectorOpen,
+    operationLogScopeInitialStep,
+    operationLogScopeSelectorOpen,
     operationLogRows,
     operationLogSubmitting,
-    clearOperationLogLabs,
-    closeOperationLogLabSelector,
-    isOperationLogEmployeeSelected,
-    isOperationLogLabSelected,
+    closeOperationLogScopeSelector,
+    confirmOperationLogScope,
     loadEmployeeOperationLogs,
-    openOperationLogLabSelector,
+    openOperationLogScopeSelector,
     resetEmployeeQrToken,
     resetEmployeePassword,
     settings,
@@ -560,9 +533,6 @@ function useSystemPage() {
     sortDirection,
     sortKey,
     toggleSort,
-    toggleOperationLogEmployee,
-    toggleOperationLogEmployeeMenu,
-    toggleOperationLogLab,
     visibleEmployeeRows,
     visibleWorkTimeRows,
     workTimeCurrentPage,

@@ -28,6 +28,22 @@ function shouldRefreshForKeys(watchedKeys, incomingKeys) {
   return incomingKeys.some((key) => watchedKeys.has(key));
 }
 
+function normalizeUpdateVersion(payload) {
+  const rawVersion = payload?.version ?? payload?.revision ?? payload?.sequence;
+  if (rawVersion === undefined || rawVersion === null || rawVersion === "") {
+    return null;
+  }
+  const version = Number(rawVersion);
+  return Number.isSafeInteger(version) && version >= 0 ? version : null;
+}
+
+function requestsFullRefresh(payload) {
+  if (payload?.fullRefresh === true || payload?.reset === true || payload?.reconnected === true) {
+    return true;
+  }
+  return /(?:reconnect|resync|version[-_ ]?gap)/i.test(String(payload?.reason || ""));
+}
+
 function resolvePaused(paused) {
   if (typeof paused === "function") {
     return Boolean(paused());
@@ -79,6 +95,10 @@ function useStorageSnapshotRefresh(options = {}) {
   let debounceTimer = null;
   let refreshInFlight = false;
   let refreshQueued = false;
+  let pendingRefreshRequested = false;
+  let pendingFullRefresh = false;
+  let lastUpdateVersion = null;
+  const pendingRefreshKeys = new Set();
   const recentRequestTimes = new Map();
 
   const clearDebounceTimer = () => {
@@ -86,6 +106,22 @@ function useStorageSnapshotRefresh(options = {}) {
       window.clearTimeout(debounceTimer);
       debounceTimer = null;
     }
+  };
+
+  const queueRefreshKeys = (keys, fullRefresh = false) => {
+    pendingRefreshRequested = true;
+    pendingFullRefresh = pendingFullRefresh || fullRefresh;
+    normalizeKeys(keys).forEach((key) => pendingRefreshKeys.add(key));
+  };
+
+  const consumeRefreshKeys = () => {
+    const keys = pendingFullRefresh && watchedKeys.size
+      ? Array.from(watchedKeys)
+      : Array.from(pendingRefreshKeys);
+    pendingRefreshRequested = false;
+    pendingFullRefresh = false;
+    pendingRefreshKeys.clear();
+    return keys;
   };
 
   const executeRefresh = () => {
@@ -96,10 +132,14 @@ function useStorageSnapshotRefresh(options = {}) {
       refreshQueued = true;
       return;
     }
+    if (!pendingRefreshRequested) {
+      return;
+    }
+    const refreshKeys = consumeRefreshKeys();
     refreshInFlight = true;
     const settleRefresh = () => {
       refreshInFlight = false;
-      if (!refreshQueued || stopped) {
+      if ((!refreshQueued && !pendingRefreshRequested) || stopped) {
         refreshQueued = false;
         return;
       }
@@ -111,7 +151,7 @@ function useStorageSnapshotRefresh(options = {}) {
       executeRefresh();
     };
     try {
-      Promise.resolve(refresh()).then(settleRefresh, settleRefresh);
+      Promise.resolve(refresh(refreshKeys)).then(settleRefresh, settleRefresh);
     } catch {
       settleRefresh();
     }
@@ -129,6 +169,7 @@ function useStorageSnapshotRefresh(options = {}) {
       }, debounceMs);
       return;
     }
+    clearDebounceTimer();
     executeRefresh();
   };
 
@@ -137,7 +178,15 @@ function useStorageSnapshotRefresh(options = {}) {
       return;
     }
     const incomingKeys = normalizeKeys(payload?.keys);
-    if (!shouldRefreshForKeys(watchedKeys, incomingKeys)) {
+    const updateVersion = normalizeUpdateVersion(payload);
+    let fullRefresh = requestsFullRefresh(payload);
+    if (updateVersion !== null) {
+      if (lastUpdateVersion !== null && updateVersion !== lastUpdateVersion && updateVersion !== lastUpdateVersion + 1) {
+        fullRefresh = true;
+      }
+      lastUpdateVersion = updateVersion;
+    }
+    if (!fullRefresh && !shouldRefreshForKeys(watchedKeys, incomingKeys)) {
       return;
     }
     const now = Date.now();
@@ -154,22 +203,19 @@ function useStorageSnapshotRefresh(options = {}) {
         }
       });
     }
+    const refreshKeys = fullRefresh || incomingKeys.length === 0
+      ? Array.from(watchedKeys)
+      : watchedKeys.size
+        ? incomingKeys.filter((key) => watchedKeys.has(key))
+        : incomingKeys;
+    queueRefreshKeys(refreshKeys, fullRefresh || incomingKeys.length === 0);
     if (resolvePaused(paused)) {
       hasPendingRefresh.value = true;
       return;
     }
     hasPendingRefresh.value = false;
-    // Legacy sample bridge events have no request identity. Keep their former
-    // immediate/concurrent semantics; identified writes still use the shared
-    // scheduler so duplicate local/SSE/storage notifications collapse safely.
-    if (payload?.immediate && !requestKey) {
-      try {
-        Promise.resolve(refresh()).catch(() => {});
-      } catch {
-        // Refresh failures are surfaced by each page's own load state.
-      }
-      return;
-    }
+    // Immediate bridge events skip debounce but still share the in-flight
+    // scheduler, so an event burst can queue at most one follow-up refresh.
     runRefresh({ immediate: Boolean(payload?.immediate) });
   };
 

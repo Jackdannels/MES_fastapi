@@ -8,7 +8,6 @@
     <div class="card">
       <div class="muted">已排程</div>
       <div class="kpi" id="dashboard-scheduled-count">{{ summaryCards.scheduledCount }}</div>
-      <div class="muted">未来 48 小时</div>
     </div>
     <div class="card">
       <div class="muted">待排程</div>

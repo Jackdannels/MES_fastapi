@@ -449,6 +449,8 @@ function buildTaskRows({
     taskMap.set(code, {
       taskCode: code,
       taskType: normalizeText(task?.test_type || task?.name),
+      contact: normalizeText(task?.contact),
+      contactInfo: normalizeText(task?.contact_info),
       taskStatus: normalizeTaskStatus(task?.status),
       transfer_status: normalizeText(task?.transfer_status),
       plannedCount: Number.isFinite(Number(task?.sample_count)) ? Number(task.sample_count) : "",

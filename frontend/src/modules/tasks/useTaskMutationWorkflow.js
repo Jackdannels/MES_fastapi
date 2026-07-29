@@ -1,5 +1,6 @@
 import { collectExperimentTypes, buildExperimentTypeSummary } from "@/lib/experimentTypes";
-import { formatLocalDateTime } from "@/lib/dateTime";
+import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
+import { serverNowMs } from "@/lib/serverClock";
 import { deleteTask as deleteTaskByApi, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
@@ -146,6 +147,13 @@ function useTaskMutationWorkflow({
       await updateCompletedTaskName(originalTask);
       return;
     }
+    const dueAtTime = parseBusinessDateTimeToMs(editForm.value.due_at);
+    const originalDueAtTime = parseBusinessDateTimeToMs(originalTask?.due_at);
+    const dueAtChanged = dueAtTime !== originalDueAtTime;
+    if (dueAtChanged && Number.isFinite(dueAtTime) && dueAtTime < serverNowMs()) {
+      editWarning.value = "期望完成时间不能早于当前时间";
+      return;
+    }
     if (Array.isArray(editForm.value.test_types)) {
       editForm.value.test_type = buildExperimentTypeSummary(editForm.value.test_types);
     }
@@ -161,6 +169,11 @@ function useTaskMutationWorkflow({
     const { previousCode, tasks } = updateTaskRecord(rawTasks.value, editForm.value);
     const updatedTask = tasks.find((task) => normalizeText(task?.id) === normalizeText(editForm.value.id));
     if (!updatedTask) return;
+    const textWarning = validateTaskTextFields(updatedTask);
+    if (textWarning) {
+      editWarning.value = textWarning;
+      return;
+    }
     const originalTypes = collectExperimentTypes(originalTask?.test_types, originalTask?.test_type);
     const nextTypes = collectExperimentTypes(updatedTask?.test_types, updatedTask?.test_type);
     const experimentTypesChanged = !arraysEqual(originalTypes, nextTypes);

@@ -1,4 +1,10 @@
-import { SNAPSHOT_UPDATED_STORAGE_KEY, readStorageSnapshot, writeStorageSchedulePatch, writeStorageUpdates } from "@/lib/storageApi";
+import {
+  SNAPSHOT_UPDATED_STORAGE_KEY,
+  readStorageSnapshot,
+  writeStorageRunningRepair,
+  writeStorageSchedulePatch,
+  writeStorageUpdates,
+} from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { reconcileScheduleExceptions } from "@/lib/scheduleExceptions";
 
@@ -117,6 +123,7 @@ function useStorageSnapshot(keys) {
         requestedKeys.map((key) => [key, Array.isArray(reconciled.snapshot?.[key]) ? reconciled.snapshot[key] : []]),
       );
     },
+    persistRunningRepair: (command) => writeStorageRunningRepair(command),
     persistSnapshot: (updates) => writeStorageUpdates(updates),
   };
 }

@@ -4,6 +4,7 @@ import threading
 from typing import Any
 
 from app.core.time_utils import now_business_text
+from app.services.read_through_cache import read_snapshot_cache
 
 
 _SUBSCRIBERS: set[tuple[asyncio.AbstractEventLoop, asyncio.Queue[dict[str, Any]]]] = set()
@@ -11,7 +12,8 @@ _SUBSCRIBERS_LOCK = threading.Lock()
 
 
 def publish_storage_update(keys: list[str], *, source: str = "", request_id: str = "") -> None:
-    payload = {"keys": list(keys), "updatedAt": now_business_text()}
+    version = read_snapshot_cache.invalidate()
+    payload = {"keys": list(keys), "updatedAt": now_business_text(), "version": version}
     if source:
         payload["source"] = source
     if request_id:

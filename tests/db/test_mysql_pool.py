@@ -1,6 +1,10 @@
 import sys
 from types import ModuleType, SimpleNamespace
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.core.performance import PerformanceMiddleware
 from app.db.mysql_pool import MySQLConnectionPool
 
 
@@ -19,6 +23,30 @@ class FakeConnection:
 
     def rollback(self) -> None:
         self.rollback_count += 1
+
+
+class FakeCursor:
+    def __init__(self) -> None:
+        self.executions = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def execute(self, statement, params=None):
+        self.executions.append((statement, params))
+        return 1
+
+
+class FakeCursorConnection(FakeConnection):
+    def __init__(self) -> None:
+        super().__init__()
+        self.test_cursor = FakeCursor()
+
+    def cursor(self):
+        return self.test_cursor
 
 
 def test_mysql_pool_reuses_released_connections(monkeypatch) -> None:
@@ -91,3 +119,25 @@ def test_mysql_pool_keeps_tuple_and_dict_cursor_modes_separate(monkeypatch) -> N
     assert connect_calls[1]["cursorclass"] is DictCursor
     tuple_lease.close()
     dict_lease.close()
+
+
+def test_mysql_pool_records_query_duration_in_request_trace(monkeypatch) -> None:
+    pool = MySQLConnectionPool(SimpleNamespace(pool_size=1, pool_timeout_seconds=0.1))
+    connection = FakeCursorConnection()
+    monkeypatch.setattr(pool, "_create_connection", lambda: connection)
+    app = FastAPI()
+    app.add_middleware(PerformanceMiddleware, enabled=True)
+
+    @app.get("/query")
+    def query():
+        with pool.acquire() as lease:
+            with lease.cursor() as cursor:
+                cursor.execute("SELECT 1")
+        return {"ok": True}
+
+    response = TestClient(app).get("/query")
+
+    assert response.status_code == 200
+    assert "db.query;dur=" in response.headers["Server-Timing"]
+    assert response.headers["X-MES-DB-Queries"] == "1"
+    assert connection.test_cursor.executions == [("SELECT 1", None)]

@@ -81,3 +81,21 @@ def test_load_samples_builds_global_dispatch_indexes_once(monkeypatch) -> None:
 
     assert [sample["code"] for sample in samples] == mapped_rows
     assert calls == {"staging": 1, "scheduled": 1, "appearance": 1}
+
+
+def test_sample_mapper_does_not_consume_staging_rows_when_indexes_are_prebuilt() -> None:
+    from app.core.mysql_storage_mappers import build_storage_sample_item
+
+    class FailingIterable:
+        def __iter__(self):
+            raise AssertionError("prebuilt indexes must avoid per-sample staging row copies")
+
+    sample = build_storage_sample_item(
+        {"sample_no": "TASK-001-SP-001", "task_no": "TASK-001", "remark": ""},
+        staging_event_rows=FailingIterable(),
+        staging_target_by_tray_code={},
+        scheduled_target_by_key={},
+        appearance_stock_in_keys=set(),
+    )
+
+    assert sample["code"] == "TASK-001-SP-001"

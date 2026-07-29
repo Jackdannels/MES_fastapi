@@ -29,6 +29,20 @@ def test_settings_default_to_backend_api_only_without_web_app_hosting(monkeypatc
     assert settings.SERVE_WEB_APP is False
 
 
+def test_settings_enable_slow_request_observability_without_logging_every_request(monkeypatch):
+    monkeypatch.delenv("PERFORMANCE_MONITOR_ENABLED", raising=False)
+    monkeypatch.delenv("PERFORMANCE_LOG_ALL_REQUESTS", raising=False)
+    monkeypatch.delenv("PERFORMANCE_SLOW_REQUEST_MS", raising=False)
+    monkeypatch.delenv("READ_SNAPSHOT_CACHE_TTL_SECONDS", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.PERFORMANCE_MONITOR_ENABLED is True
+    assert settings.PERFORMANCE_LOG_ALL_REQUESTS is False
+    assert settings.PERFORMANCE_SLOW_REQUEST_MS == 500.0
+    assert settings.READ_SNAPSHOT_CACHE_TTL_SECONDS == 5.0
+
+
 def test_settings_disable_auth_session_timeouts_by_default(monkeypatch):
     monkeypatch.delenv("SESSION_IDLE_TIMEOUT_MINUTES", raising=False)
     monkeypatch.delenv("SESSION_MAX_AGE_HOURS", raising=False)

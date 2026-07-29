@@ -173,6 +173,9 @@
           {{ schedule.task_code }} / {{ schedule.experiment_code || "-" }}
         </li>
       </ul>
+      <div v-if="runningRepairChoiceWarning" class="form-alert" data-testid="running-repair-choice-warning">
+        {{ runningRepairChoiceWarning }}
+      </div>
     </div>
     <template #footer>
       <button class="action-btn secondary" type="button" @click="closeRunningRepairChoice">取消</button>
@@ -286,6 +289,7 @@ const {
   query,
   runningRepairChoiceDetail,
   runningRepairChoiceOpen,
+  runningRepairChoiceWarning,
   saveEditedDevice,
   saveMaintenancePlan,
   selectedDevice,

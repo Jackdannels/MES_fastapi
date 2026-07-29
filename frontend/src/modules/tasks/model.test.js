@@ -454,6 +454,44 @@ describe("tasks model", () => {
     expect(validateTaskTextFields({ name: "" })).toBe("");
   });
 
+  test("buildTaskEditForm and updateTaskRecord preserve edited contact details", () => {
+    const editForm = buildTaskEditForm({
+      id: "task-contact",
+      code: "SYLU-2026-07-001",
+      contact: "张三",
+      contactInfo: "13800001234",
+      testTypes: ["盐雾试验"],
+      testType: "盐雾试验",
+    });
+
+    expect(editForm).toEqual(expect.objectContaining({
+      contact: "张三",
+      contact_info: "13800001234",
+    }));
+
+    const result = updateTaskRecord(
+      [{
+        id: "task-contact",
+        code: "SYLU-2026-07-001",
+        contact: "张三",
+        contact_info: "13800001234",
+        status: "待排程",
+        test_type: "盐雾试验",
+        test_types: ["盐雾试验"],
+      }],
+      {
+        ...editForm,
+        contact: "李四",
+        contact_info: "13900005678",
+      },
+    );
+
+    expect(result.tasks[0]).toEqual(expect.objectContaining({
+      contact: "李四",
+      contact_info: "13900005678",
+    }));
+  });
+
   test("createTaskRecord defaults blank task names from the task code suffix without duplicating existing names", () => {
     const task = createTaskRecord(
       {

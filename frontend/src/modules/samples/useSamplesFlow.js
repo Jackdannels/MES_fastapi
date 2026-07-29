@@ -61,17 +61,28 @@ const parseCodeList = (value) =>
     ),
   );
 
+const SAMPLES_SNAPSHOT_KEYS = [
+  STORAGE_KEYS.samples,
+  STORAGE_KEYS.experiments,
+  STORAGE_KEYS.experiment_runs,
+  STORAGE_KEYS.experiment_run_steps,
+  STORAGE_KEYS.experiment_run_trays,
+  STORAGE_KEYS.experiment_trays,
+  STORAGE_KEYS.schedules,
+];
+const SAMPLES_REFRESH_KEYS = [STORAGE_KEYS.tasks, ...SAMPLES_SNAPSHOT_KEYS];
+
+const normalizeSamplesRefreshKeys = (keys) => {
+  if (!Array.isArray(keys) || keys.length === 0) {
+    return SAMPLES_REFRESH_KEYS;
+  }
+  const watchedKeys = new Set(SAMPLES_REFRESH_KEYS);
+  return Array.from(new Set(keys.filter((key) => watchedKeys.has(key))));
+};
+
 // 输出样品流转表格和暂存派发动作所需的响应式状态。
 function useSamplesFlow() {
-  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
-    STORAGE_KEYS.samples,
-    STORAGE_KEYS.experiments,
-    STORAGE_KEYS.experiment_runs,
-    STORAGE_KEYS.experiment_run_steps,
-    STORAGE_KEYS.experiment_run_trays,
-    STORAGE_KEYS.experiment_trays,
-    STORAGE_KEYS.schedules,
-  ]);
+  const { loadSnapshot, persistSnapshot } = useStorageSnapshot(SAMPLES_SNAPSHOT_KEYS);
 
   const rawTasks = ref([]);
   const rawSamples = ref([]);
@@ -235,40 +246,65 @@ function useSamplesFlow() {
     return preserveExisting ? currentValue : [];
   };
 
-  const load = async ({ silent = false } = {}) => {
+  const load = async ({ silent = false, keys } = {}) => {
     // 托盘流程需要同时读取实验、排程和运行记录，保持中控与试验间/可视化口径一致。
     const showBlockingLoading = !silent || (rawTasks.value.length === 0 && rawSamples.value.length === 0);
+    const refreshKeys = normalizeSamplesRefreshKeys(keys);
+    const refreshKeySet = new Set(refreshKeys);
+    const snapshotKeys = refreshKeys.filter((key) => key !== STORAGE_KEYS.tasks);
     if (showBlockingLoading) {
       loading.value = true;
     }
     try {
-      const [tasks, snapshot] = await Promise.all([readTasks(), loadSnapshot()]);
+      const snapshotLoader = snapshotKeys.length === SAMPLES_SNAPSHOT_KEYS.length
+        ? loadSnapshot
+        : useStorageSnapshot(snapshotKeys).loadSnapshot;
+      const [tasks, snapshot] = await Promise.all([
+        refreshKeySet.has(STORAGE_KEYS.tasks) ? readTasks() : Promise.resolve(rawTasks.value),
+        snapshotKeys.length ? snapshotLoader() : Promise.resolve({}),
+      ]);
       const preserveExisting = Boolean(silent);
-      rawTasks.value = selectArraySnapshot(tasks, rawTasks.value, preserveExisting);
-      rawSamples.value = selectArraySnapshot(
-        snapshot?.[STORAGE_KEYS.samples],
-        rawSamples.value,
-        preserveExisting,
-        (items) => normalizeSamplesSnapshot(items, DEFAULT_LABELS),
-      );
-      rawExperiments.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.experiments], rawExperiments.value, preserveExisting);
-      rawExperimentRuns.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.experiment_runs], rawExperimentRuns.value, preserveExisting);
-      rawExperimentRunSteps.value = selectArraySnapshot(
-        snapshot?.[STORAGE_KEYS.experiment_run_steps],
-        rawExperimentRunSteps.value,
-        preserveExisting,
-      );
-      rawExperimentRunTrays.value = selectArraySnapshot(
-        snapshot?.[STORAGE_KEYS.experiment_run_trays],
-        rawExperimentRunTrays.value,
-        preserveExisting,
-      );
-      rawExperimentTrays.value = selectArraySnapshot(
-        snapshot?.[STORAGE_KEYS.experiment_trays],
-        rawExperimentTrays.value,
-        preserveExisting,
-      );
-      rawSchedules.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.schedules], rawSchedules.value, preserveExisting);
+      if (refreshKeySet.has(STORAGE_KEYS.tasks)) {
+        rawTasks.value = selectArraySnapshot(tasks, rawTasks.value, preserveExisting);
+      }
+      if (refreshKeySet.has(STORAGE_KEYS.samples)) {
+        rawSamples.value = selectArraySnapshot(
+          snapshot?.[STORAGE_KEYS.samples],
+          rawSamples.value,
+          preserveExisting,
+          (items) => normalizeSamplesSnapshot(items, DEFAULT_LABELS),
+        );
+      }
+      if (refreshKeySet.has(STORAGE_KEYS.experiments)) {
+        rawExperiments.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.experiments], rawExperiments.value, preserveExisting);
+      }
+      if (refreshKeySet.has(STORAGE_KEYS.experiment_runs)) {
+        rawExperimentRuns.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.experiment_runs], rawExperimentRuns.value, preserveExisting);
+      }
+      if (refreshKeySet.has(STORAGE_KEYS.experiment_run_steps)) {
+        rawExperimentRunSteps.value = selectArraySnapshot(
+          snapshot?.[STORAGE_KEYS.experiment_run_steps],
+          rawExperimentRunSteps.value,
+          preserveExisting,
+        );
+      }
+      if (refreshKeySet.has(STORAGE_KEYS.experiment_run_trays)) {
+        rawExperimentRunTrays.value = selectArraySnapshot(
+          snapshot?.[STORAGE_KEYS.experiment_run_trays],
+          rawExperimentRunTrays.value,
+          preserveExisting,
+        );
+      }
+      if (refreshKeySet.has(STORAGE_KEYS.experiment_trays)) {
+        rawExperimentTrays.value = selectArraySnapshot(
+          snapshot?.[STORAGE_KEYS.experiment_trays],
+          rawExperimentTrays.value,
+          preserveExisting,
+        );
+      }
+      if (refreshKeySet.has(STORAGE_KEYS.schedules)) {
+        rawSchedules.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.schedules], rawSchedules.value, preserveExisting);
+      }
       warning.value = "";
     } catch (error) {
       warning.value = buildFailureMessage("样品数据加载失败，请稍后重试", error);
@@ -279,7 +315,7 @@ function useSamplesFlow() {
     }
   };
 
-  const refreshRealtime = () => load({ silent: true });
+  const refreshRealtime = (changedKeys) => load({ silent: true, keys: changedKeys });
 
   const resetPage = () => {
     currentPage.value = 1;
@@ -565,7 +601,7 @@ function useSamplesFlow() {
     }
     hasPendingSamplesRefresh = false;
     if (!flushedStorage) {
-      void refreshRealtime();
+      void refreshRealtime([STORAGE_KEYS.samples]);
     }
     return true;
   };
@@ -584,16 +620,7 @@ function useSamplesFlow() {
   };
 
   const storageRefresh = useStorageSnapshotRefresh({
-    keys: [
-      STORAGE_KEYS.tasks,
-      STORAGE_KEYS.samples,
-      STORAGE_KEYS.experiments,
-      STORAGE_KEYS.experiment_runs,
-      STORAGE_KEYS.experiment_run_steps,
-      STORAGE_KEYS.experiment_run_trays,
-      STORAGE_KEYS.experiment_trays,
-      STORAGE_KEYS.schedules,
-    ],
+    keys: SAMPLES_REFRESH_KEYS,
     refresh: refreshRealtime,
     paused: isRealtimeRefreshPaused,
   });

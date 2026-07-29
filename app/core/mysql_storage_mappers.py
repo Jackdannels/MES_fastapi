@@ -755,7 +755,8 @@ def build_storage_sample_item(
     meta = decode_sample_meta(row.get("remark"))
     resolved_task_code = normalize_text(row.get("task_no")) or derive_task_code_from_sample_code(row.get("sample_no"))
     event_row_list = list(event_rows or [])
-    staging_event_row_list = list(staging_event_rows or [])
+    needs_staging_rows = staging_target_by_tray_code is None or appearance_stock_in_keys is None
+    staging_event_row_list = list(staging_event_rows or []) if needs_staging_rows else []
     target_lab_by_tray_code = build_tray_dispatch_target_map(event_row_list)
     if staging_target_by_tray_code is None:
         staging_target_by_tray_code = build_staging_dispatch_target_map(staging_event_row_list)

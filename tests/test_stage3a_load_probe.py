@@ -57,3 +57,44 @@ def test_report_fails_on_errors_or_an_endpoint_over_the_p95_limit() -> None:
     assert report["passed"] is False
     assert report["overall"]["errors"] == 1
     assert len(report["failures"]) == 2
+
+
+def test_report_summarizes_server_timing_phases_and_response_size() -> None:
+    samples = [
+        stage3a_load_probe.RequestSample(
+            endpoint="samples", elapsed_ms=100, ok=True, response_bytes=1000, status=200,
+            request_id="request-1", read_cache_status="miss", server_timings_ms={"app": 90, "db.query": 40},
+        ),
+        stage3a_load_probe.RequestSample(
+            endpoint="samples", elapsed_ms=200, ok=True, response_bytes=3000, status=200,
+            request_id="request-2", read_cache_status="hit", server_timings_ms={"app": 180, "db.query": 80},
+        ),
+    ]
+
+    summary = stage3a_load_probe.summarize_samples(samples)
+
+    assert summary["averageResponseBytes"] == 2000
+    assert summary["serverTimings"]["db.query"]["p95Ms"] == 80
+    assert summary["readCache"] == {"hit": 1, "miss": 1}
+
+
+def test_parse_server_timing_ignores_unknown_parameters() -> None:
+    assert stage3a_load_probe.parse_server_timing("app;dur=12.5, db.query;dur=4.25;desc=query") == {
+        "app": 12.5,
+        "db.query": 4.25,
+    }
+
+
+def test_data_profile_content_signature_is_stable_across_row_order_but_changes_with_status() -> None:
+    first = stage3a_load_probe.build_data_profile({
+        "mes.tasks": [{"code": "T-2", "status": "待排程"}, {"code": "T-1", "status": "已排程"}],
+    })
+    reordered = stage3a_load_probe.build_data_profile({
+        "mes.tasks": [{"code": "T-1", "status": "已排程"}, {"code": "T-2", "status": "待排程"}],
+    })
+    changed = stage3a_load_probe.build_data_profile({
+        "mes.tasks": [{"code": "T-1", "status": "实验进行中"}, {"code": "T-2", "status": "待排程"}],
+    })
+
+    assert first["contentSha256"] == reordered["contentSha256"]
+    assert first["contentSha256"] != changed["contentSha256"]

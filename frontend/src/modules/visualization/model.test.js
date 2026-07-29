@@ -679,6 +679,51 @@ describe("visualization model", () => {
     ]);
   });
 
+  test("buildLabProcessPanels traverses shared projection inputs once for multiple laboratories", () => {
+    const traversalCounts = { experimentTrays: 0, samples: 0, stagingEvents: 0 };
+    const trackForEach = (values, key) => new Proxy(values, {
+      get(target, property, receiver) {
+        if (property === "forEach") {
+          traversalCounts[key] += 1;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const samples = trackForEach([
+      {
+        code: "SAMPLE-SHARED-001",
+        task_code: "TASK-SHARED",
+        location: "振动一室",
+        status: "送至实验室",
+        trays: [{ tray_code: "TRAY-SHARED-001", status: "送至实验室", quantity: 1 }],
+      },
+    ], "samples");
+    const experimentTrays = trackForEach([
+      { task_code: "TASK-SHARED", experiment_code: "EXP-VIB", tray_code: "TRAY-SHARED-001" },
+      { task_code: "TASK-SHARED", experiment_code: "EXP-SALT", tray_code: "TRAY-SHARED-001" },
+    ], "experimentTrays");
+    const stagingEvents = trackForEach([], "stagingEvents");
+
+    const panels = buildLabProcessPanels({
+      buildTrayFlow: () => ({ status: "送至实验室", steps: [] }),
+      labNames: ["振动一室", "盐雾试验室", "霉菌试验室"],
+      experiments: [
+        { task_code: "TASK-SHARED", experiment_code: "EXP-VIB", required_device: "振动一室" },
+        { task_code: "TASK-SHARED", experiment_code: "EXP-SALT", required_device: "盐雾试验室" },
+      ],
+      experimentTrays,
+      samples,
+      schedules: [
+        { task_code: "TASK-SHARED", experiment_code: "EXP-VIB", device: "振动一室" },
+        { task_code: "TASK-SHARED", experiment_code: "EXP-SALT", device: "盐雾试验室" },
+      ],
+      stagingEvents,
+    });
+
+    expect(panels.map((panel) => panel.trayCount)).toEqual([1, 1, 0]);
+    expect(traversalCounts).toEqual({ experimentTrays: 1, samples: 1, stagingEvents: 1 });
+  });
+
   test("buildLabProcessPanels matches tray relations by schedule lab code before display device text", () => {
     const panels = buildLabProcessPanels({
       labNames: [{ code: "LAB_SALT", name: "Salt Spray Lab" }],

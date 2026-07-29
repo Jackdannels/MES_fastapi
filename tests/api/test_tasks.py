@@ -326,6 +326,33 @@ def test_manual_task_creation_rejects_due_time_before_current_business_time(monk
     assert response.json()["detail"] == "期望完成时间不能早于当前时间"
 
 
+def test_task_update_rejects_changed_due_time_before_current_business_time(monkeypatch):
+    from app.api.routes import tasks as tasks_route
+
+    monkeypatch.setattr(tasks_route, "now_business_datetime", lambda: datetime(2026, 7, 22, 10, 30, 0))
+    task = {
+        "id": "TASK-DUE-EDIT",
+        "code": "TASK-DUE-EDIT",
+        "name": "编辑期望时间任务",
+        "source": "内部新增",
+        "sample_count": "1",
+        "test_type": "盐雾试验",
+        "test_types": ["盐雾试验"],
+        "due_at": "2026-07-22 18:00",
+        "status": "待排程",
+    }
+    client = build_client(monkeypatch, tasks=[task])
+
+    response = client.put(
+        "/api/tasks/TASK-DUE-EDIT",
+        json={**task, "due_at": "2026-07-22 10:29"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "期望完成时间不能早于当前时间"
+    assert client.app.state.storage.read("mes.tasks")[0]["due_at"] == "2026-07-22 18:00"
+
+
 def test_lims_external_intake_stays_out_of_tasks_until_accepted(monkeypatch):
     from app.api.routes import tasks as tasks_route
 

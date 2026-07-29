@@ -204,9 +204,8 @@ const shouldReplaceVisualizationTrayEntry = (current, candidate) => {
   return candidateRank > currentRank;
 };
 
-const buildTrayRowsForLab = ({
-  lab,
-  labName,
+const buildTrayRowsByLab = ({
+  labs,
   samples,
   experiments,
   experimentRuns,
@@ -219,7 +218,7 @@ const buildTrayRowsForLab = ({
 }) => {
   const { relationsByTaskAndTrayCode } = buildRelationIndexes({ experimentTrays, experiments, schedules });
   const latestStockOutTargetByTaskAndTray = buildLatestStockOutTargetByTaskAndTray(stagingEvents);
-  const trayAggregates = new Map();
+  const trayAggregatesByLab = asArray(labs).map(() => new Map());
 
   asArray(samples).forEach((sample) => {
     const sampleCode = normalizeText(sample?.code || sample?.sample_code);
@@ -236,40 +235,7 @@ const buildTrayRowsForLab = ({
         resolveTrayTargetExperimentCode(tray)
         || normalizeText(latestStockOutTarget?.target_experiment_code || latestStockOutTarget?.targetExperimentCode);
       const targetLab = resolveTrayTargetLab(tray) || normalizeText(latestStockOutTarget?.target_lab || latestStockOutTarget?.targetLab);
-      const targetExperimentRelations = targetExperimentCode
-        ? relations.filter((relation) => relation.experimentCode === targetExperimentCode)
-        : [];
-      const activeTargetExperimentCode =
-        targetExperimentCode
-        && targetExperimentRelations.some((relation) => !relationIsCompletedForSample({
-          experimentRuns,
-          experimentRunSteps,
-          experimentRunTrays,
-          experiments,
-          sample,
-          relation,
-          schedules,
-        }))
-          ? targetExperimentCode
-          : "";
-      const targetLabRelations = !activeTargetExperimentCode && targetLab
-        ? relations.filter((relation) => resolveRelationLabName(relation) === targetLab)
-        : [];
-      const activeTargetLab =
-        targetLab
-        && targetLabRelations.some((relation) => !relationIsCompletedForSample({
-          experimentRuns,
-          experimentRunSteps,
-          experimentRunTrays,
-          experiments,
-          sample,
-          relation,
-          schedules,
-        }))
-          ? targetLab
-          : "";
-      const labRelations = relations.filter((relation) => relationMatchesLab(relation, lab || labName));
-      const incompleteLabRelations = labRelations.filter((relation) =>
+      const incompleteRelations = relations.filter((relation) =>
         !relationIsCompletedForSample({
           experimentRuns,
           experimentRunSteps,
@@ -280,9 +246,17 @@ const buildTrayRowsForLab = ({
           schedules,
         }),
       );
-      if (labRelations.length > 0 && incompleteLabRelations.length === 0) {
-        return;
-      }
+      const activeTargetExperimentCode =
+        targetExperimentCode
+        && incompleteRelations.some((relation) => relation.experimentCode === targetExperimentCode)
+          ? targetExperimentCode
+          : "";
+      const activeTargetLab =
+        targetLab
+        && !activeTargetExperimentCode
+        && incompleteRelations.some((relation) => resolveRelationLabName(relation) === targetLab)
+          ? targetLab
+          : "";
       const trayStatus = normalizeText(tray?.status);
       const lifecycleStatus = trayStatus
         ? isAxisPartialProgressStatus(trayStatus)
@@ -291,81 +265,86 @@ const buildTrayRowsForLab = ({
         : normalizeLifecycleStatus(sample?.location, normalizeText(sample?.status));
       const lifecycleLocation = trayStatus ? "" : sample?.location;
       const statusHasOwnFlowContext = isCompletedOrPartialAxisStatus(lifecycleStatus);
-      const scheduledLabMatches = incompleteLabRelations.length > 0;
-      if (!scheduledLabMatches) {
-        return;
-      }
-      const sampleLocationMatchesLab = textMatchesLab(sample?.location, lab || labName);
-      const targetLabMatchesLab = textMatchesLab(targetLab, lab || labName);
-      const currentLabExperimentCode =
-        !activeTargetExperimentCode
-        && incompleteLabRelations.length === 1
-        && lifecycleStatusBelongsToLabFlow(lifecycleStatus, lifecycleLocation)
-        && (sampleLocationMatchesLab || targetLabMatchesLab)
-          ? incompleteLabRelations[0].experimentCode
-          : "";
-
-      const entry = {
-        currentExperimentCode: statusHasOwnFlowContext ? "" : activeTargetExperimentCode || currentLabExperimentCode,
-        dispatchTargetLab: statusHasOwnFlowContext ? "" : activeTargetLab,
-        ignoreTrayDispatchTarget: isAxisPartialProgressStatus(lifecycleStatus),
-        lifecycleLocation,
-        lifecycleStatus,
-        sample,
-        status: lifecycleStatus,
-        tray,
-        trayCode,
-      };
-      if (!trayAggregates.has(trayMapKey)) {
-        trayAggregates.set(trayMapKey, {
-          quantity: 0,
-          representativeEntry: null,
-          sampleCodeSet: new Set(),
-          taskCode,
+      asArray(labs).forEach((lab, labIndex) => {
+        const labIdentity = lab || lab?.name || lab?.code;
+        const incompleteLabRelations = incompleteRelations.filter((relation) => relationMatchesLab(relation, labIdentity));
+        if (incompleteLabRelations.length === 0) {
+          return;
+        }
+        const sampleLocationMatchesLab = textMatchesLab(sample?.location, labIdentity);
+        const targetLabMatchesLab = textMatchesLab(targetLab, labIdentity);
+        const currentLabExperimentCode =
+          !activeTargetExperimentCode
+          && incompleteLabRelations.length === 1
+          && lifecycleStatusBelongsToLabFlow(lifecycleStatus, lifecycleLocation)
+          && (sampleLocationMatchesLab || targetLabMatchesLab)
+            ? incompleteLabRelations[0].experimentCode
+            : "";
+        const entry = {
+          currentExperimentCode: statusHasOwnFlowContext ? "" : activeTargetExperimentCode || currentLabExperimentCode,
+          dispatchTargetLab: statusHasOwnFlowContext ? "" : activeTargetLab,
+          ignoreTrayDispatchTarget: isAxisPartialProgressStatus(lifecycleStatus),
+          lifecycleLocation,
+          lifecycleStatus,
+          sample,
+          status: lifecycleStatus,
+          tray,
           trayCode,
-        });
-      }
-      const aggregate = trayAggregates.get(trayMapKey);
-      aggregate.quantity += normalizeQuantity(tray?.quantity);
-      if (sampleCode) {
-        aggregate.sampleCodeSet.add(sampleCode);
-      }
-      if (shouldReplaceVisualizationTrayEntry(aggregate.representativeEntry, entry)) {
-        aggregate.representativeEntry = entry;
-      }
+        };
+        const trayAggregates = trayAggregatesByLab[labIndex];
+        if (!trayAggregates.has(trayMapKey)) {
+          trayAggregates.set(trayMapKey, {
+            quantity: 0,
+            representativeEntry: null,
+            sampleCodeSet: new Set(),
+            taskCode,
+            trayCode,
+          });
+        }
+        const aggregate = trayAggregates.get(trayMapKey);
+        aggregate.quantity += normalizeQuantity(tray?.quantity);
+        if (sampleCode) {
+          aggregate.sampleCodeSet.add(sampleCode);
+        }
+        if (shouldReplaceVisualizationTrayEntry(aggregate.representativeEntry, entry)) {
+          aggregate.representativeEntry = entry;
+        }
+      });
     });
   });
 
-  return Array.from(trayAggregates.values())
-    .map((aggregate) => {
-      const entry = aggregate.representativeEntry || {};
-      const flow = buildTrayFlow({
-        currentExperimentCode: entry.currentExperimentCode,
-        dispatchTargetLab: entry.dispatchTargetLab,
-        experimentRuns,
-        experimentRunTrays,
-        experimentTrays,
-        experiments,
-        ignoreTrayDispatchTarget: Boolean(entry.ignoreTrayDispatchTarget),
-        location: entry.lifecycleLocation,
-        preferCurrentExperimentCode: Boolean(entry.currentExperimentCode),
-        samples,
-        schedules,
-        status: entry.lifecycleStatus,
-        taskCode: aggregate.taskCode,
-        trayCode: aggregate.trayCode,
-      });
-      return {
-        canonicalStatus: flow.canonicalStatus || flow.status || "-",
-        quantity: aggregate.quantity,
-        sampleCodes: Array.from(aggregate.sampleCodeSet).sort(compareText),
-        status: flow.status || "-",
-        steps: asArray(flow.steps),
-        taskCode: aggregate.taskCode,
-        trayCode: aggregate.trayCode,
-      };
-    })
-    .sort((left, right) => compareText(left.trayCode, right.trayCode));
+  return trayAggregatesByLab.map((trayAggregates) =>
+    Array.from(trayAggregates.values())
+      .map((aggregate) => {
+        const entry = aggregate.representativeEntry || {};
+        const flow = buildTrayFlow({
+          currentExperimentCode: entry.currentExperimentCode,
+          dispatchTargetLab: entry.dispatchTargetLab,
+          experimentRuns,
+          experimentRunTrays,
+          experimentTrays,
+          experiments,
+          ignoreTrayDispatchTarget: Boolean(entry.ignoreTrayDispatchTarget),
+          location: entry.lifecycleLocation,
+          preferCurrentExperimentCode: Boolean(entry.currentExperimentCode),
+          samples,
+          schedules,
+          status: entry.lifecycleStatus,
+          taskCode: aggregate.taskCode,
+          trayCode: aggregate.trayCode,
+        });
+        return {
+          canonicalStatus: flow.canonicalStatus || flow.status || "-",
+          quantity: aggregate.quantity,
+          sampleCodes: Array.from(aggregate.sampleCodeSet).sort(compareText),
+          status: flow.status || "-",
+          steps: asArray(flow.steps),
+          taskCode: aggregate.taskCode,
+          trayCode: aggregate.trayCode,
+        };
+      })
+      .sort((left, right) => compareText(left.trayCode, right.trayCode)),
+  );
 };
 
 function buildLabProcessPanels(input = {}) {
@@ -375,7 +354,6 @@ function buildLabProcessPanels(input = {}) {
       return { ...ref, name: ref.name || ref.code };
     })
     .filter((lab) => lab.name || lab.code);
-  const labNames = labRefs.map((lab) => lab.name || lab.code).filter(Boolean);
   const devices = asArray(input.devices);
   const samples = asArray(input.samples);
   const experiments = asArray(input.experiments);
@@ -384,23 +362,22 @@ function buildLabProcessPanels(input = {}) {
   const experimentRunTrays = firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays);
   const experimentTrays = asArray(input.experimentTrays || input.experiment_trays);
   const schedules = asArray(input.schedules);
+  const trayRowsByLab = buildTrayRowsByLab({
+    labs: labRefs,
+    samples,
+    experiments,
+    experimentRuns,
+    experimentRunSteps,
+    experimentRunTrays,
+    experimentTrays,
+    buildTrayFlow: input.buildTrayFlow,
+    stagingEvents: input.stagingEvents || input.staging_events,
+    schedules,
+  });
 
-  return labRefs.map((lab) => {
+  return labRefs.map((lab, labIndex) => {
     const labName = lab.name || lab.code;
-    const trays = buildTrayRowsForLab({
-      lab,
-      labName,
-      labNames,
-      samples,
-      experiments,
-      experimentRuns,
-      experimentRunSteps,
-      experimentRunTrays,
-      experimentTrays,
-      buildTrayFlow: input.buildTrayFlow,
-      stagingEvents: input.stagingEvents || input.staging_events,
-      schedules,
-    });
+    const trays = trayRowsByLab[labIndex] || [];
     const sampleCodes = new Set(trays.flatMap((tray) => tray.sampleCodes));
     const taskCodes = new Set(trays.map((tray) => tray.taskCode).filter(Boolean));
     const activeTray = trays.find((tray) => tray.steps.some((step) => step.active)) || trays[0] || null;

@@ -5,6 +5,7 @@ from contextlib import ExitStack, contextmanager
 from functools import wraps
 from typing import Any, Callable, Iterable
 
+from app.core.performance import observed_lock
 from app.core.storage_backend import normalize_storage_payload
 from app.core.time_utils import format_business_datetime, now_business_text
 from app.services.appearance_inspection import (
@@ -74,7 +75,7 @@ def acquire_laboratory_operation_locks(resource_keys: Iterable[str]):
 
 @contextmanager
 def acquire_laboratory_storage_commit_lock():
-    with _STORAGE_COMMIT_LOCK:
+    with observed_lock(_STORAGE_COMMIT_LOCK, "laboratory.commit_lock"):
         yield
 
 

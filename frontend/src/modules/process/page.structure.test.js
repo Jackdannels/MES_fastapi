@@ -113,6 +113,15 @@ describe("ProcessPage structure", () => {
     expect(currentTray).toContain("rgba(194, 65, 12, 0.52)");
   });
 
+  test("keeps tray codes centered when the current experiment badge is present", () => {
+    const source = readProcessPage();
+    const currentTrayStatusSpacer = cssBlock(source, ".process-task-tray-chip__status--spacer");
+
+    expect(source).toContain('aria-hidden="true"');
+    expect(source).toContain("process-task-tray-chip__status process-task-tray-chip__status--spacer");
+    expect(currentTrayStatusSpacer).toContain("visibility: hidden");
+  });
+
   test("spans the sample number card across the removed waiting-tray space", () => {
     const source = readProcessPage();
     const sampleCodeCard = cssBlock(source, ".process-task-selected-samples");

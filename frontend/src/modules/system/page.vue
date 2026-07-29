@@ -273,39 +273,13 @@
       <div class="form-field"><label>日期</label><PickerOnlyInput v-model="operationLogFilters.date" display-slash-date data-testid="operation-log-date" type="date" /></div>
       <div class="form-field">
         <label>员工</label>
-        <div class="system-multi-select">
-          <button
-            class="system-multi-select__trigger"
-            data-testid="operation-log-employee"
-            type="button"
-            :aria-expanded="operationLogEmployeeMenuOpen"
-            aria-haspopup="listbox"
-            @click="toggleOperationLogEmployeeMenu"
-          >
-            {{ operationLogEmployeeLabel }}
-          </button>
-          <div v-if="operationLogEmployeeMenuOpen" class="system-multi-select__menu" role="listbox" aria-label="选择员工" aria-multiselectable="true">
-            <button
-              v-for="employee in operationLogEmployeeOptions"
-              :key="employee.id"
-              class="system-multi-select__option"
-              :class="{ 'is-selected': isOperationLogEmployeeSelected(employee.employeeName) }"
-              :data-testid="`operation-log-employee-option-${employee.id}`"
-              type="button"
-              role="option"
-              :aria-selected="isOperationLogEmployeeSelected(employee.employeeName)"
-              @click="toggleOperationLogEmployee(employee.employeeName)"
-            >
-              <span>{{ employee.employeeName }}</span>
-              <span class="system-multi-select__check" aria-hidden="true">✓</span>
-            </button>
-            <div v-if="!operationLogEmployeeOptions.length" class="system-multi-select__empty">暂无可选员工</div>
-          </div>
-        </div>
+        <button class="system-multi-select__trigger" data-testid="operation-log-employee" type="button" aria-haspopup="dialog" @click="openOperationLogScopeSelector('employee')">
+          {{ operationLogEmployeeLabel }}
+        </button>
       </div>
       <div class="form-field">
         <label>试验间</label>
-        <button class="system-multi-select__trigger" data-testid="operation-log-lab" type="button" @click="openOperationLogLabSelector">
+        <button class="system-multi-select__trigger" data-testid="operation-log-lab" type="button" aria-haspopup="dialog" @click="openOperationLogScopeSelector('lab')">
           {{ operationLogLabLabel }}
         </button>
       </div>
@@ -328,34 +302,16 @@
     </template>
   </AppModal>
 
-  <AppModal
-    :open="operationLogLabSelectorOpen"
-    content-class="system-operation-lab-selector-modal"
-    data-testid="operation-log-lab-selector"
-    title="选择试验间"
-    @close="closeOperationLogLabSelector"
-  >
-    <div class="system-operation-lab-options" role="listbox" aria-label="选择试验间" aria-multiselectable="true">
-      <button
-        v-for="labName in operationLogLabOptions"
-        :key="labName"
-        class="system-operation-lab-option"
-        :class="{ 'is-selected': isOperationLogLabSelected(labName) }"
-        :data-testid="`operation-log-lab-option-${labName}`"
-        type="button"
-        role="option"
-        :aria-selected="isOperationLogLabSelected(labName)"
-        @click="toggleOperationLogLab(labName)"
-      >
-        <span>{{ labName }}</span>
-        <span class="system-multi-select__check" aria-hidden="true">✓</span>
-      </button>
-    </div>
-    <template #footer>
-      <button class="action-btn secondary" type="button" @click="clearOperationLogLabs">清空</button>
-      <button class="action-btn" data-testid="confirm-operation-log-labs" type="button" @click="closeOperationLogLabSelector">确定</button>
-    </template>
-  </AppModal>
+  <SystemOperationLogScopeWizard
+    :open="operationLogScopeSelectorOpen"
+    :initial-step="operationLogScopeInitialStep"
+    :employee-names="operationLogFilters.employeeNames"
+    :employee-options="operationLogEmployeeOptions"
+    :lab-names="operationLogFilters.labNames"
+    :lab-options="operationLogLabOptions"
+    @close="closeOperationLogScopeSelector"
+    @confirm="confirmOperationLogScope"
+  />
   </div>
 </template>
 
@@ -369,6 +325,7 @@ import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { formatLocalDateTime } from "@/lib/dateTime";
+import SystemOperationLogScopeWizard from "./SystemOperationLogScopeWizard.vue";
 import { useSystemPage } from "./useSystemPage";
 
 const {
@@ -413,24 +370,19 @@ const {
   qrSvg,
   operationLogError,
   operationLogEmployeeLabel,
-  operationLogEmployeeMenuOpen,
   operationLogEmployeeOptions,
   operationLogFilters,
   operationLogLabLabel,
   operationLogLabOptions,
-  operationLogLabSelectorOpen,
+  operationLogScopeInitialStep,
+  operationLogScopeSelectorOpen,
   operationLogRows,
   operationLogSubmitting,
-  clearOperationLogLabs,
-  closeOperationLogLabSelector,
-  isOperationLogEmployeeSelected,
-  isOperationLogLabSelected,
+  closeOperationLogScopeSelector,
+  confirmOperationLogScope,
   loadEmployeeOperationLogs,
-  openOperationLogLabSelector,
+  openOperationLogScopeSelector,
   resetEmployeeQrToken,
-  toggleOperationLogEmployee,
-  toggleOperationLogEmployeeMenu,
-  toggleOperationLogLab,
   toggleSort,
   visibleEmployeeRows,
   visibleWorkTimeRows,

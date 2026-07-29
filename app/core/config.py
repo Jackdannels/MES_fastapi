@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     MYSQL_POOL_SIZE: int = 20
     MYSQL_POOL_TIMEOUT_SECONDS: float = 5.0
 
+    PERFORMANCE_MONITOR_ENABLED: bool = True
+    PERFORMANCE_LOG_ALL_REQUESTS: bool = False
+    PERFORMANCE_SLOW_REQUEST_MS: float = 500.0
+    READ_SNAPSHOT_CACHE_TTL_SECONDS: float = 5.0
+
     MQTT_ENABLED: bool = False
     MQTT_HOST: str = "127.0.0.1"
     MQTT_PORT: int = 1883

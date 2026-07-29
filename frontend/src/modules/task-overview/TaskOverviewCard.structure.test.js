@@ -24,10 +24,10 @@ describe("TaskOverviewCard structure", () => {
     expect(source).not.toContain('class="table task-overview-summary-table"');
   });
 
-  test("delegates sample code markup to TaskOverviewSampleCodes", () => {
+  test("does not render sample codes below the task card", () => {
     const source = readFileSync(cardPath, "utf8");
 
-    expect(source).toContain("TaskOverviewSampleCodes");
+    expect(source).not.toContain("TaskOverviewSampleCodes");
     expect(source).not.toContain('class="task-overview-codes"');
     expect(source).not.toContain('class="task-overview-chip"');
   });

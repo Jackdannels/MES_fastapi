@@ -1,6 +1,7 @@
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
 import { formatLocalDateTime } from "./dateTime.js";
 import { normalizeTrayScanCode } from "./trayQrCode.js";
+import { performanceNow, recordPerformanceMetric } from "./performanceMonitor.js";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 const SNAPSHOT_UPDATED_STORAGE_KEY = "mes:snapshot-updated-at";
@@ -11,6 +12,7 @@ const queuedSnapshotReads = [];
 let snapshotReadBatchScheduled = false;
 const storageUpdateListeners = new Set();
 let storageEventSource = null;
+let storageEventSourceOpened = false;
 
 function dispatchRemoteStorageUpdate(payload) {
   storageUpdateListeners.forEach((listener) => {
@@ -27,6 +29,13 @@ function ensureStorageEventSource() {
     return;
   }
   storageEventSource = new window.EventSource(STORAGE_EVENTS_ENDPOINT, { withCredentials: true });
+  storageEventSourceOpened = false;
+  storageEventSource.addEventListener("open", () => {
+    if (storageEventSourceOpened) {
+      dispatchRemoteStorageUpdate({ keys: [], reason: "reconnect", reconnected: true });
+    }
+    storageEventSourceOpened = true;
+  });
   storageEventSource.addEventListener("message", (event) => {
     try {
       dispatchRemoteStorageUpdate(JSON.parse(String(event?.data || "{}")));
@@ -39,18 +48,47 @@ function ensureStorageEventSource() {
   });
 }
 
-function fetchStorageSnapshot(keys = []) {
+async function fetchStorageSnapshot(keys = []) {
   const requestedKeys = Array.from(new Set((Array.isArray(keys) ? keys : []).filter(Boolean))).sort();
   const query = requestedKeys.length ? `?keys=${encodeURIComponent(requestedKeys.join(","))}` : "";
-  return fetch(buildApiUrl(`/api/storage${query}`, API_BASE_URL), {
-    headers: { Accept: "application/json" },
-    credentials: "include",
-  }).then((response) => {
+  const requestStartedAt = performanceNow();
+  let response;
+  try {
+    response = await fetch(buildApiUrl(`/api/storage${query}`, API_BASE_URL), {
+      headers: { Accept: "application/json" },
+      credentials: "include",
+    });
+    recordPerformanceMetric("storage.snapshot-fetch", performanceNow() - requestStartedAt, {
+      category: "network",
+      dbQueryCount: Number(response.headers?.get?.("X-MES-DB-Queries")) || 0,
+      keyCount: requestedKeys.length,
+      readCacheStatus: response.headers?.get?.("X-MES-Read-Cache") || "",
+      requestId: response.headers?.get?.("X-Request-ID") || "",
+      responseBytes: Number(response.headers?.get?.("X-MES-Response-Bytes")) || 0,
+      serverTiming: response.headers?.get?.("Server-Timing") || "",
+      status: Number(response.status) || 0,
+    });
     if (!response.ok) {
       throw new Error(`Failed to read storage snapshot: ${response.status} ${response.statusText}`);
     }
-    return response.json();
-  });
+    const parseStartedAt = performanceNow();
+    const payload = await response.json();
+    recordPerformanceMetric("storage.snapshot-json-parse", performanceNow() - parseStartedAt, {
+      category: "json",
+      keyCount: requestedKeys.length,
+      requestId: response.headers?.get?.("X-Request-ID") || "",
+    });
+    return payload;
+  } catch (error) {
+    if (!response) {
+      recordPerformanceMetric("storage.snapshot-fetch", performanceNow() - requestStartedAt, {
+        category: "network",
+        failed: true,
+        keyCount: requestedKeys.length,
+      });
+    }
+    throw error;
+  }
 }
 
 function projectSnapshot(payload, requestedKeys, normalizeMissing) {
@@ -245,6 +283,51 @@ async function writeStorageSchedulePatch(patch, options = {}) {
   return payload;
 }
 
+async function writeStorageRunningRepair(command, options = {}) {
+  const deviceCode = String(command?.deviceCode || command?.device_code || "").trim();
+  const source = String(options?.source || "").trim();
+  const requestId = String(options?.requestId || "").trim();
+  const headers = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  };
+  if (source) {
+    headers["X-MES-Update-Source"] = source;
+  }
+  if (requestId) {
+    headers["X-MES-Update-Request-Id"] = requestId;
+  }
+  const response = await fetch(buildApiUrl(`/api/storage/devices/${encodeURIComponent(deviceCode)}/running-repair`, API_BASE_URL), {
+    method: "POST",
+    headers,
+    credentials: "include",
+    body: JSON.stringify({
+      maintenanceNote: String(command?.maintenanceNote || command?.maintenance_note || "").trim(),
+      maintenanceType: "维修",
+      targets: Array.isArray(command?.targets) ? command.targets : [],
+    }),
+  });
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = await response.json();
+      detail = String(payload?.detail || payload?.message || "").trim();
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || `维修操作失败，请刷新后重试（${response.status || "网络异常"}）`);
+  }
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    payload = {};
+  }
+  const updatedKeys = Array.isArray(payload?.updatedKeys) ? payload.updatedKeys : [];
+  notifyStorageSnapshotUpdated(Object.fromEntries(updatedKeys.map((key) => [key, true])), { source, requestId });
+  return payload;
+}
+
 function notifyStorageSnapshotUpdated(updates = {}, options = {}) {
   if (typeof window === "undefined" || !window.localStorage) {
     return;
@@ -296,6 +379,7 @@ function subscribeStorageSnapshotUpdates(listener) {
     if (storageUpdateListeners.size === 0 && storageEventSource) {
       storageEventSource.close();
       storageEventSource = null;
+      storageEventSourceOpened = false;
     }
   };
 }
@@ -306,6 +390,7 @@ export {
   notifyStorageSnapshotUpdated,
   readStorageSnapshot,
   subscribeStorageSnapshotUpdates,
+  writeStorageRunningRepair,
   writeStorageSchedulePatch,
   writeStorageTrayAction,
   writeStorageUpdates,

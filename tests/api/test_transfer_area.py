@@ -506,6 +506,30 @@ def test_transfer_area_bootstrap_reads_only_contract_required_storage_keys(monke
     assert storage.read_all_calls == 0
 
 
+def test_transfer_area_bootstrap_cache_hits_and_invalidates_after_published_update(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+    from app.services.read_through_cache import read_snapshot_cache
+    from app.services.storage_update_bus import publish_storage_update
+
+    read_snapshot_cache.invalidate()
+    storage = TrackingReadManyTransferStorage(create_payloads())
+    monkeypatch.setattr(transfer_area_route, "get_storage_backend", lambda: storage)
+    app = FastAPI()
+    app.include_router(transfer_area_route.router)
+    client = TestClient(app)
+
+    first = client.get("/api/transfer-area/bootstrap")
+    second = client.get("/api/transfer-area/bootstrap")
+    publish_storage_update(["mes.samples"])
+    third = client.get("/api/transfer-area/bootstrap")
+
+    assert [first.status_code, second.status_code, third.status_code] == [200, 200, 200]
+    assert first.headers["X-MES-Read-Cache"] == "miss"
+    assert second.headers["X-MES-Read-Cache"] == "hit"
+    assert third.headers["X-MES-Read-Cache"] == "miss"
+    assert len(storage.read_many_calls) == 2
+
+
 def test_transfer_area_bootstrap_is_read_only_when_planned_and_stored_sample_counts_differ(monkeypatch):
     from app.api.routes import transfer_area as transfer_area_route
 

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Header, HTTPException
+from fastapi import APIRouter, Body, Header, HTTPException, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from app.api.routes.storage import publish_storage_update, tray_has_scoped_partial_axis_batch_completion
 from app.core.storage_backend import get_storage_backend
 from app.core.time_utils import now_business_text
@@ -11,6 +13,7 @@ from app.services.laboratory_operations import (
     with_laboratory_storage_commit_lock,
 )
 from app.services.storage_atomic import merge_concurrent_storage_updates
+from app.services.read_through_cache import read_snapshot_cache, storage_cache_identity
 from app.api.routes.transfer_area_commands import (
     TASK_STATUS_PENDING,
     TASK_STATUS_STORED,
@@ -490,11 +493,20 @@ def build_bootstrap_response(snapshot: dict[str, list[dict[str, Any]]]) -> tuple
 
 
 @router.get("/bootstrap")
-def read_bootstrap() -> dict[str, Any]:
-    response, _snapshot_changed = build_bootstrap_response(
-        read_snapshot(TRANSFER_BOOTSTRAP_READ_FIELDS),
+def read_bootstrap() -> Response:
+    storage = get_storage_backend()
+
+    def load_bootstrap() -> bytes:
+        response, _snapshot_changed = build_bootstrap_response(
+            read_snapshot(TRANSFER_BOOTSTRAP_READ_FIELDS, storage=storage),
+        )
+        return JSONResponse(content=jsonable_encoder(response)).body
+
+    body, cache_status = read_snapshot_cache.get_or_load(
+        ("transfer-bootstrap", storage_cache_identity(storage), TRANSFER_BOOTSTRAP_READ_FIELDS),
+        load_bootstrap,
     )
-    return response
+    return Response(content=body, media_type="application/json", headers={"X-MES-Read-Cache": cache_status})
 
 
 def build_task_workspace_response(

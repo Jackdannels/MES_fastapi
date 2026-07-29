@@ -5,6 +5,7 @@ from datetime import datetime
 from threading import Lock
 from typing import Any, Dict, Iterable
 
+from app.core.performance import observed_lock, performance_span
 from app.core.storage_backend import (
     CANONICAL_COMPLETED_STATUS,
     CURRENT_SCHEMA_VERSION,
@@ -372,7 +373,8 @@ class MySQLMesStorageBackend(StorageBackend):
         )
 
     def _write_many_internal(self, updates: Dict[str, Any], *, patch_samples: bool = False) -> None:
-        self._ensure_schema_extensions()
+        with performance_span("storage.schema"):
+            self._ensure_schema_extensions()
         relational_updates = {key: updates.get(key) for key in RELATIONAL_STORAGE_KEYS if key in updates}
         snapshot_updates = self._serialize_snapshot_updates(updates)
 
@@ -424,7 +426,8 @@ class MySQLMesStorageBackend(StorageBackend):
         if not requested_keys:
             return {}
 
-        self._ensure_schema_extensions()
+        with performance_span("storage.schema"):
+            self._ensure_schema_extensions()
         requested_set = set(requested_keys)
         snapshot_keys = [
             key
@@ -434,17 +437,18 @@ class MySQLMesStorageBackend(StorageBackend):
         if "mes.samples" in requested_set and "mes.staging_events" not in snapshot_keys:
             snapshot_keys.append("mes.staging_events")
         if snapshot_keys:
-            read_snapshot_many = getattr(self._snapshot_repository, "read_many", None)
-            if callable(read_snapshot_many):
-                raw_snapshot_values = read_snapshot_many(snapshot_keys)
-            else:
-                all_snapshot_values = self._snapshot_repository.read_all()
-                raw_snapshot_values = {
-                    key: all_snapshot_values[key]
-                    for key in snapshot_keys
-                    if key in all_snapshot_values
-                }
-            snapshot_values = self._deserialize_snapshot_payloads(raw_snapshot_values)
+            with performance_span("storage.snapshot"):
+                read_snapshot_many = getattr(self._snapshot_repository, "read_many", None)
+                if callable(read_snapshot_many):
+                    raw_snapshot_values = read_snapshot_many(snapshot_keys)
+                else:
+                    all_snapshot_values = self._snapshot_repository.read_all()
+                    raw_snapshot_values = {
+                        key: all_snapshot_values[key]
+                        for key in snapshot_keys
+                        if key in all_snapshot_values
+                    }
+                snapshot_values = self._deserialize_snapshot_payloads(raw_snapshot_values)
         else:
             snapshot_values = {}
         data: Dict[str, Any] = {
@@ -458,7 +462,7 @@ class MySQLMesStorageBackend(StorageBackend):
 
         relational_keys = requested_set.intersection(RELATIONAL_STORAGE_KEYS)
         if relational_keys:
-            with self._connect() as connection:
+            with performance_span("storage.relational"), self._connect() as connection:
                 with connection.cursor() as cursor:
                     loaded: Dict[str, Any] = {}
 
@@ -508,7 +512,7 @@ class MySQLMesStorageBackend(StorageBackend):
         self.write_many({key: value})
 
     def write_many(self, updates: Dict[str, Any]) -> None:
-        with self._write_lock:
+        with observed_lock(self._write_lock, "storage.write_lock"):
             normalized_updates = {
                 key: (
                     _normalize_value(key, value if isinstance(value, dict) else {})
@@ -523,7 +527,7 @@ class MySQLMesStorageBackend(StorageBackend):
             self._write_many_internal(normalized_updates)
 
     def write_many_scoped(self, updates: Dict[str, Any]) -> None:
-        with self._write_lock:
+        with observed_lock(self._write_lock, "storage.write_lock"):
             normalized_updates = {
                 key: (
                     _normalize_value(key, value if isinstance(value, dict) else {})
@@ -541,7 +545,7 @@ class MySQLMesStorageBackend(StorageBackend):
         normalized_task_codes = {normalize_text(code) for code in task_codes if normalize_text(code)}
         if not normalized_task_codes:
             return
-        with self._write_lock:
+        with observed_lock(self._write_lock, "storage.write_lock"):
             normalized_updates = {
                 key: _normalize_value(key, value if isinstance(value, list) else [])
                 for key, value in updates.items()
@@ -576,7 +580,7 @@ class MySQLMesStorageBackend(StorageBackend):
             "mes.experiment_trays",
             "mes.experiment_samples",
         }
-        with self._write_lock:
+        with observed_lock(self._write_lock, "storage.write_lock"):
             normalized_updates = {
                 key: _normalize_value(key, value if isinstance(value, list) else [])
                 for key, value in updates.items()

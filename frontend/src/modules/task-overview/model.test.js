@@ -9,6 +9,8 @@ describe("taskOverviewModel", () => {
         {
           code: "TASK-2",
           test_type: "Shock",
+          contact: "张三",
+          contact_info: "13800001234",
           status: "Queued",
           sample_count: 2,
           created_at: "2026-03-10T08:00:00Z",
@@ -41,6 +43,8 @@ describe("taskOverviewModel", () => {
     expect(rows[0]).toMatchObject({
       taskCode: "TASK-2",
       taskType: "Shock",
+      contact: "张三",
+      contactInfo: "13800001234",
       currentStatus: "Queued",
       scheduleLabel: "Scheduled",
       sampleCount: 2,

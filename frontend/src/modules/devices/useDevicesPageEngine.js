@@ -44,7 +44,7 @@ import { createDeviceMaintenanceSchedule } from "./deviceMaintenanceSchedule";
 
 // 将设备存储记录转换为页面所需的表格、表单、抽屉和弹窗状态。
 function useDevicesPageEngine() {
-  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
+  const { loadSnapshot, persistRunningRepair, persistSnapshot } = useStorageSnapshot([
     STORAGE_KEYS.conflicts,
     STORAGE_KEYS.devices,
     STORAGE_KEYS.experiments,
@@ -79,6 +79,7 @@ function useDevicesPageEngine() {
   const maintenanceConflictModal = useDialogState();
   const runningRepairChoiceModal = useDialogState();
   const runningRepairChoiceDetail = ref(null);
+  const runningRepairChoiceWarning = ref("");
   const now = ref(serverNowDate());
   let flushPendingStorageRefresh = () => false;
 
@@ -313,6 +314,7 @@ function useDevicesPageEngine() {
         form,
         runningSchedules,
       };
+      runningRepairChoiceWarning.value = "";
       runningRepairChoiceModal.openWith(runningRepairChoiceDetail.value);
       return;
     }
@@ -357,6 +359,7 @@ function useDevicesPageEngine() {
 
   const closeRunningRepairChoice = () => {
     runningRepairChoiceDetail.value = null;
+    runningRepairChoiceWarning.value = "";
     runningRepairChoiceModal.close();
     flushPendingStorageRefresh();
   };
@@ -368,6 +371,23 @@ function useDevicesPageEngine() {
       return;
     }
     const timestamp = toBusinessDateTimeValue(serverNowDate());
+    runningRepairChoiceWarning.value = "";
+    if (mode === "complete") {
+      try {
+        await persistRunningRepair({
+          deviceCode: detail.deviceCode,
+          maintenanceNote: detail.form?.note,
+          targets: detail.runningSchedules,
+        });
+        await loadDevicesPage();
+      } catch (error) {
+        runningRepairChoiceWarning.value = normalizeText(error?.message) || "维修操作失败，请刷新后重试";
+        return;
+      }
+      closeRunningRepairChoice();
+      closeMaintenancePlan();
+      return;
+    }
     const updates = buildRunningRepairUpdates({
       form: {
         ...detail.form,
@@ -377,6 +397,12 @@ function useDevicesPageEngine() {
       runningSchedules: detail.runningSchedules,
       timestamp,
     });
+    try {
+      await persistSnapshot(updates);
+    } catch (error) {
+      runningRepairChoiceWarning.value = normalizeText(error?.message) || "维修操作失败，请刷新后重试";
+      return;
+    }
     rawDevices.value = updates[STORAGE_KEYS.devices];
     rawExperiments.value = updates[STORAGE_KEYS.experiments];
     rawExperimentRuns.value = updates[STORAGE_KEYS.experiment_runs];
@@ -384,7 +410,6 @@ function useDevicesPageEngine() {
     rawSamples.value = updates[STORAGE_KEYS.samples];
     rawSchedules.value = updates[STORAGE_KEYS.schedules];
     rawTasks.value = updates[STORAGE_KEYS.tasks];
-    await persistSnapshot(updates);
     closeRunningRepairChoice();
     closeMaintenancePlan();
   };
@@ -578,6 +603,7 @@ function useDevicesPageEngine() {
     query,
     runningRepairChoiceDetail,
     runningRepairChoiceOpen: runningRepairChoiceModal.open,
+    runningRepairChoiceWarning,
     saveCurrentDevice,
     saveEditedDevice,
     saveMaintenancePlan,

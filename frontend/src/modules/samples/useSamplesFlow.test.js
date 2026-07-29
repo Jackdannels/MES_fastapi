@@ -6,14 +6,18 @@ const mocks = vi.hoisted(() => ({
   loadSnapshot: vi.fn(),
   persistSnapshot: vi.fn(),
   readTasks: vi.fn(),
+  requestedSnapshotKeys: [],
   updateTask: vi.fn(),
 }));
 
 vi.mock("@/composables/useStorageSnapshot", () => ({
-  useStorageSnapshot: () => ({
-    loadSnapshot: mocks.loadSnapshot,
-    persistSnapshot: mocks.persistSnapshot,
-  }),
+  useStorageSnapshot: (keys) => {
+    mocks.requestedSnapshotKeys.push(keys);
+    return {
+      loadSnapshot: mocks.loadSnapshot,
+      persistSnapshot: mocks.persistSnapshot,
+    };
+  },
 }));
 
 vi.mock("@/lib/tasksApi", () => ({
@@ -41,6 +45,7 @@ const settle = async (wrapper) => {
 
 describe("useSamplesFlow", () => {
   beforeEach(() => {
+    mocks.requestedSnapshotKeys.length = 0;
     mocks.readTasks.mockResolvedValue([]);
     mocks.loadSnapshot.mockResolvedValue({
       "mes.samples": [],
@@ -431,6 +436,50 @@ describe("useSamplesFlow", () => {
     await settle(wrapper);
   });
 
+  test("reads only changed storage collections during a regular realtime refresh", async () => {
+    vi.useFakeTimers();
+    mocks.readTasks.mockResolvedValue([{ code: "TASK-INCREMENTAL", name: "增量任务" }]);
+    mocks.loadSnapshot
+      .mockResolvedValueOnce({
+        "mes.samples": [],
+        "mes.experiments": [],
+        "mes.experiment_runs": [],
+        "mes.experiment_run_steps": [],
+        "mes.experiment_run_trays": [],
+        "mes.experiment_trays": [],
+        "mes.schedules": [],
+      })
+      .mockResolvedValueOnce({
+        "mes.experiments": [{ task_code: "TASK-INCREMENTAL", experiment_code: "EXP-NEW" }],
+      });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    window.dispatchEvent(new CustomEvent("mes:snapshot-updated", {
+      detail: { keys: ["mes.experiments"] },
+    }));
+    vi.advanceTimersByTime(100);
+    await settle(wrapper);
+
+    expect(mocks.readTasks).toHaveBeenCalledTimes(1);
+    expect(mocks.requestedSnapshotKeys).toEqual(expect.arrayContaining([
+      [
+        "mes.samples",
+        "mes.experiments",
+        "mes.experiment_runs",
+        "mes.experiment_run_steps",
+        "mes.experiment_run_trays",
+        "mes.experiment_trays",
+        "mes.schedules",
+      ],
+      ["mes.experiments"],
+    ]));
+    expect(wrapper.vm.rawExperiments).toEqual([
+      { task_code: "TASK-INCREMENTAL", experiment_code: "EXP-NEW" },
+    ]);
+  });
+
   test("preserves current raw data when a background refresh omits keys or returns non-arrays", async () => {
     mocks.readTasks
       .mockResolvedValueOnce([{ code: "TASK-KEEP", name: "保留任务" }])
@@ -465,6 +514,7 @@ describe("useSamplesFlow", () => {
   });
 
   test("allows a background refresh to replace existing raw data with real empty arrays", async () => {
+    vi.useFakeTimers();
     mocks.readTasks
       .mockResolvedValueOnce([{ code: "TASK-CLEAR", name: "清空任务" }])
       .mockResolvedValueOnce([]);
@@ -489,7 +539,8 @@ describe("useSamplesFlow", () => {
     const wrapper = mount(TestHarness);
     await settle(wrapper);
 
-    window.dispatchEvent(new CustomEvent("mes:samples-updated"));
+    window.dispatchEvent(new CustomEvent("mes:snapshot-updated", { detail: {} }));
+    vi.advanceTimersByTime(100);
     await settle(wrapper);
 
     expect(wrapper.vm.rawTasks).toEqual([]);

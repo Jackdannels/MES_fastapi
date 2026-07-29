@@ -556,6 +556,46 @@ describe("TasksPage runtime", () => {
     expect(wrapper.get('[data-testid="task-detail-sample-code-preview"]').text()).toContain("SYLU-2026-03-001-SP-005");
   });
 
+  test("shows, sanitizes, and saves contact details in the task detail modal", async () => {
+    const { fetchMock, state } = installApiFetchMock({
+      tasks: [
+        createTask({
+          id: "task-contact-edit",
+          contact: "张三",
+          contact_info: "13800001234",
+          test_types: ["冲击试验"],
+        }),
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+
+    const contactInput = wrapper.get('[data-testid="task-edit-contact"]');
+    const contactInfoInput = wrapper.get('[data-testid="task-edit-contact-info"]');
+    expect(contactInput.element.value).toBe("张三");
+    expect(contactInfoInput.element.value).toBe("13800001234");
+
+    await contactInput.setValue("李四");
+    await contactInfoInput.setValue("139-0000-5678abc");
+    expect(contactInfoInput.element.value).toBe("13900005678");
+    await wrapper.get('[data-testid="task-update"]').trigger("click");
+    await settle(wrapper);
+
+    const updateCall = fetchMock.mock.calls.find(
+      ([url, options]) => url === buildTaskEndpoint("task-contact-edit") && options?.method === "PUT",
+    );
+    expect(JSON.parse(updateCall[1].body)).toEqual(expect.objectContaining({
+      contact: "李四",
+      contact_info: "13900005678",
+    }));
+    expect(state.tasks[0]).toEqual(expect.objectContaining({
+      contact: "李四",
+      contact_info: "13900005678",
+    }));
+  });
+
   test("renders task sample count as read-only after pre-allocation trays are saved", async () => {
     const taskCode = "SYLU-2026-03-001";
     installApiFetchMock({
@@ -1386,6 +1426,8 @@ describe("TasksPage runtime", () => {
           id: "task-running-lock",
           code: "SYLU-2026-06-310",
           name: "进行中任务",
+          contact: "王五",
+          contact_info: "13700001234",
           source: "外部委托",
           priority: "中",
           sample_type: "金属件",
@@ -1405,6 +1447,8 @@ describe("TasksPage runtime", () => {
 
     const detailModal = wrapper.get('[data-testid="task-detail-modal"]');
     expect(detailModal.get('input[name="name"]').attributes("readonly")).toBeUndefined();
+    expect(detailModal.get('[data-testid="task-edit-contact"]').attributes("readonly")).toBeDefined();
+    expect(detailModal.get('[data-testid="task-edit-contact-info"]').attributes("readonly")).toBeDefined();
     expect(detailModal.get('select[name="source"]').attributes("disabled")).toBeDefined();
     expect(detailModal.get('select[name="priority"]').attributes("disabled")).toBeDefined();
     expect(detailModal.get('input[name="sample_type"]').attributes("readonly")).toBeDefined();

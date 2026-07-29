@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
-import { SNAPSHOT_UPDATED_EVENT, readStorageSnapshot, subscribeStorageSnapshotUpdates, writeStorageSchedulePatch, writeStorageTrayAction, writeStorageUpdates } from "./storageApi";
+import {
+  SNAPSHOT_UPDATED_EVENT,
+  readStorageSnapshot,
+  subscribeStorageSnapshotUpdates,
+  writeStorageRunningRepair,
+  writeStorageSchedulePatch,
+  writeStorageTrayAction,
+  writeStorageUpdates,
+} from "./storageApi";
 import { STORAGE_KEYS } from "./storageKeys";
 
 const STORAGE_ENDPOINT = buildApiUrl("/api/storage", getFrontendApiBaseUrl());
@@ -445,6 +453,49 @@ describe("storageApi", () => {
     ).rejects.toThrow("Failed to write storage schedule patch: 409 Conflict，排程冲突，请调整时间或实验室");
   });
 
+  test("sends running repair completion through the atomic device command", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        updatedKeys: [STORAGE_KEYS.devices, STORAGE_KEYS.experiments, STORAGE_KEYS.schedules],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await writeStorageRunningRepair({
+      deviceCode: "冲击一室",
+      maintenanceNote: "运行异常",
+      targets: [{ experiment_code: "TASK-001-A", run_no: "RUN-001", task_code: "TASK-001" }],
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      buildApiUrl("/api/storage/devices/%E5%86%B2%E5%87%BB%E4%B8%80%E5%AE%A4/running-repair", getFrontendApiBaseUrl()),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          maintenanceNote: "运行异常",
+          maintenanceType: "维修",
+          targets: [{ experiment_code: "TASK-001-A", run_no: "RUN-001", task_code: "TASK-001" }],
+        }),
+      }),
+    );
+  });
+
+  test("shows the backend running-repair guidance without an English request prefix", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      statusText: "Conflict",
+      json: async () => ({ detail: "当前实验状态已变化，请刷新后重试" }),
+    }));
+
+    await expect(writeStorageRunningRepair({
+      deviceCode: "冲击一室",
+      targets: [{ experiment_code: "TASK-001-A", task_code: "TASK-001" }],
+    })).rejects.toThrow("当前实验状态已变化，请刷新后重试");
+  });
+
   test("subscribes to remote storage update events with EventSource", () => {
     const instances = [];
     class MockEventSource {
@@ -470,12 +521,16 @@ describe("storageApi", () => {
       url: buildApiUrl("/api/storage/events", getFrontendApiBaseUrl()),
     }));
 
+    instances[0].listeners.open();
     instances[0].listeners.message({ data: JSON.stringify({ keys: [STORAGE_KEYS.samples], updatedAt: "2026-04-02T10:00:00.000Z" }) });
 
     expect(listener).toHaveBeenCalledWith({
       keys: [STORAGE_KEYS.samples],
       updatedAt: "2026-04-02T10:00:00.000Z",
     });
+
+    instances[0].listeners.open();
+    expect(listener).toHaveBeenLastCalledWith({ keys: [], reason: "reconnect", reconnected: true });
 
     unsubscribe();
     expect(instances[0].close).toHaveBeenCalledTimes(1);

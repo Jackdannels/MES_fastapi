@@ -424,6 +424,32 @@
         </select>
       </div>
       <div class="form-field">
+        <label>联系人</label>
+        <input
+          v-model="editForm.contact"
+          data-testid="task-edit-contact"
+          type="text"
+          name="contact"
+          maxlength="15"
+          placeholder="姓名"
+          :readonly="isTaskDetailLocked"
+        />
+      </div>
+      <div class="form-field">
+        <label>联系方式</label>
+        <input
+          v-model="editForm.contact_info"
+          data-testid="task-edit-contact-info"
+          type="text"
+          name="contact_info"
+          inputmode="numeric"
+          maxlength="15"
+          placeholder="请输入 1-15 位数字"
+          :readonly="isTaskDetailLocked"
+          @input="sanitizeEditContactInfo"
+        />
+      </div>
+      <div class="form-field">
         <label>样品数量</label>
         <AppNumberInput
           v-model="editForm.sample_count"
@@ -474,7 +500,7 @@
       </div>
       <div class="form-field">
         <label>期望完成时间</label>
-        <PickerOnlyInput v-model="editForm.due_at" type="datetime-local" name="due_at" :disabled="isTaskDetailLocked" :readonly="isTaskDetailLocked" />
+        <PickerOnlyInput v-model="editForm.due_at" type="datetime-local" name="due_at" :min="editDueAtMin" :disabled="isTaskDetailLocked" :readonly="isTaskDetailLocked" />
       </div>
       <div class="form-field">
         <label>到样时间</label>
@@ -660,6 +686,7 @@ const {
   editAxisPickerCodes,
   editAxisPickerType,
   editForm,
+  editDueAtMin,
   editWarning,
   externalAcceptanceError,
   externalAcceptanceModalOpen,
@@ -698,6 +725,7 @@ const {
   sampleCodesDraft,
   sampleCodesModalOpen,
   sampleCodesWarning,
+  sanitizeEditContactInfo,
   saveDraft,
   saveSampleCodes,
   selectedExternalSampleCodePreview,

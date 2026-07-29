@@ -892,6 +892,11 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         storage.write_many(snapshot)
         publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
         return running_task
+    if (
+        "due_at" in payload_dict
+        and normalize_text(updated_task.get("due_at")) != normalize_text(previous_task.get("due_at"))
+    ):
+        validate_internal_due_at(updated_task.get("due_at"))
     previous_test_types = extract_task_test_types(previous_task, existing_experiments)
     experiment_types_changed = False
     if "test_types" in payload_dict:

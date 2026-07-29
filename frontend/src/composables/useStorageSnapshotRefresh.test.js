@@ -28,6 +28,46 @@ describe("useStorageSnapshotRefresh", () => {
     window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, { detail: { keys: ["mes.devices"] } }));
 
     expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledWith(["mes.samples"]);
+  });
+
+  test("coalesces changed keys and passes only watched keys to the refresh callback", () => {
+    vi.useFakeTimers();
+    const refresh = vi.fn();
+    useStorageSnapshotRefresh({
+      keys: ["mes.samples", "mes.tasks", "mes.devices"],
+      refresh,
+    });
+
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
+      detail: { keys: ["mes.samples", "mes.unwatched"] },
+    }));
+    storageSubscribers[0]({ keys: ["mes.tasks"] });
+    vi.advanceTimersByTime(100);
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalledWith(["mes.samples", "mes.tasks"]);
+  });
+
+  test.each([
+    [{ keys: ["mes.samples"], version: 7 }, { keys: ["mes.samples"], version: 9 }],
+    [{ keys: ["mes.samples"] }, { keys: ["mes.samples"], reason: "reconnect" }],
+  ])("uses all watched keys to calibrate after a version gap or reconnect", async (firstUpdate, calibrationUpdate) => {
+    const refresh = vi.fn();
+    const storageRefresh = useStorageSnapshotRefresh({
+      keys: ["mes.samples", "mes.tasks"],
+      refresh,
+      debounceMs: 0,
+    });
+
+    storageRefresh.requestRefresh(firstUpdate);
+    await Promise.resolve();
+    await Promise.resolve();
+    storageRefresh.requestRefresh(calibrationUpdate);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(refresh).toHaveBeenLastCalledWith(["mes.samples", "mes.tasks"]);
   });
 
   test("ignores snapshot updates from the same source request", async () => {
@@ -104,6 +144,27 @@ describe("useStorageSnapshotRefresh", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
+  test("serializes immediate bridge refreshes without request identities", async () => {
+    let finishFirstRefresh;
+    const refresh = vi
+      .fn()
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        finishFirstRefresh = resolve;
+      }))
+      .mockResolvedValue(undefined);
+    const storageRefresh = useStorageSnapshotRefresh({ keys: ["mes.samples"], refresh });
+
+    storageRefresh.requestRefresh({ keys: ["mes.samples"], immediate: true });
+    storageRefresh.requestRefresh({ keys: ["mes.samples"], immediate: true });
+    storageRefresh.requestRefresh({ keys: ["mes.samples"], immediate: true });
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    finishFirstRefresh();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
   test("does not let an unrelated key claim a sourced request deduplication slot", async () => {
     const refresh = vi.fn();
     const storageRefresh = useStorageSnapshotRefresh({ keys: ["mes.samples"], refresh, debounceMs: 0 });
@@ -144,10 +205,10 @@ describe("useStorageSnapshotRefresh", () => {
         finishFirstRefresh = resolve;
       }))
       .mockResolvedValue(undefined);
-    useStorageSnapshotRefresh({ keys: ["mes.tasks"], refresh, debounceMs: 0 });
+    useStorageSnapshotRefresh({ keys: ["mes.tasks", "mes.samples"], refresh, debounceMs: 0 });
 
     window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, { detail: { keys: ["mes.tasks"] } }));
-    storageSubscribers[0]({ keys: ["mes.tasks"] });
+    storageSubscribers[0]({ keys: ["mes.samples"] });
     window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, { detail: { keys: ["mes.tasks"] } }));
 
     expect(refresh).toHaveBeenCalledTimes(1);
@@ -157,6 +218,7 @@ describe("useStorageSnapshotRefresh", () => {
     await Promise.resolve();
 
     expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenLastCalledWith(["mes.samples", "mes.tasks"]);
   });
 
   test("defers refresh while paused and flushes after editing ends", () => {

@@ -120,6 +120,7 @@ function useTasksPage() {
   const editForm = ref(createTaskEditForm());
   const intakeWarning = ref("");
   const intakeDueAtMin = ref("");
+  const editDueAtMin = ref("");
   const editWarning = ref("");
   const sampleCodesDraft = ref("");
   const sampleCodesWarning = ref("");
@@ -303,6 +304,11 @@ function useTasksPage() {
     intakeDueAtMin.value = formatLocalDateTime(nextSelectableMinute, { includeSeconds: false }).replace(" ", "T");
   };
 
+  const refreshEditDueAtMin = () => {
+    const nextSelectableMinute = new Date(Math.ceil(serverNowMs() / 60_000) * 60_000);
+    editDueAtMin.value = formatLocalDateTime(nextSelectableMinute, { includeSeconds: false }).replace(" ", "T");
+  };
+
   const openIntakeModal = () => {
     refreshIntakeDueAtMin();
     restoreIntakeDraft();
@@ -324,6 +330,14 @@ function useTasksPage() {
   const sanitizeIntakeContactInfo = (event) => {
     const digits = normalizeText(event?.target?.value).replace(/\D/g, "").slice(0, 15);
     intakeForm.value.contact_info = digits;
+    if (event?.target) {
+      event.target.value = digits;
+    }
+  };
+
+  const sanitizeEditContactInfo = (event) => {
+    const digits = normalizeText(event?.target?.value).replace(/\D/g, "").slice(0, 15);
+    editForm.value.contact_info = digits;
     if (event?.target) {
       event.target.value = digits;
     }
@@ -381,6 +395,7 @@ function useTasksPage() {
   };
 
   const openTaskDrawer = (row) => {
+    refreshEditDueAtMin();
     editForm.value = buildTaskEditForm(row);
     editWarning.value = "";
     sampleCodesWarning.value = "";
@@ -895,6 +910,7 @@ function useTasksPage() {
     confirmScheduledExperimentRemoval,
     currentPage,
     deleteTask,
+    editDueAtMin,
     editForm,
     editWarning,
     externalAcceptanceError,
@@ -936,6 +952,7 @@ function useTasksPage() {
     sampleCodesDraft,
     sampleCodesModalOpen: sampleCodesModal.open,
     sampleCodesWarning,
+    sanitizeEditContactInfo,
     sanitizeIntakeContactInfo,
     saveDraft,
     saveSampleCodes,

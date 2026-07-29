@@ -6,6 +6,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core.config import Settings, settings
+from app.core.performance import PerformanceMiddleware
 from app.modules.registry import API_ROUTERS
 from app.api.routes.tasks import store_external_task_intake
 from app.services.mq_runtime import MqttRuntimeController
@@ -40,11 +41,19 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     app.state.lims_rabbit_runtime = lims_rabbit_runtime
 
     app.add_middleware(
+        PerformanceMiddleware,
+        enabled=configured_settings.PERFORMANCE_MONITOR_ENABLED,
+        log_all_requests=configured_settings.PERFORMANCE_LOG_ALL_REQUESTS,
+        slow_request_ms=configured_settings.PERFORMANCE_SLOW_REQUEST_MS,
+    )
+
+    app.add_middleware(
         CORSMiddleware,
         allow_origins=[origin.strip() for origin in configured_settings.FRONTEND_ORIGINS.split(",") if origin.strip()],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID", "Server-Timing", "X-MES-Response-Bytes", "X-MES-DB-Queries", "X-MES-Read-Cache"],
     )
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 

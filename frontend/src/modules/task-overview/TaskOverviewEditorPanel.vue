@@ -32,6 +32,24 @@
           @update:model-value="updateEditForm('sampleCount', Number.parseInt(String($event || '0'), 10) || 0)"
         />
       </label>
+      <label v-if="readonly" class="task-overview-editor-field">
+        <span>联系人</span>
+        <input
+          :value="row.contact || '-'"
+          class="search-input"
+          readonly
+          type="text"
+        />
+      </label>
+      <label v-if="readonly" class="task-overview-editor-field">
+        <span>联系方式</span>
+        <input
+          :value="row.contactInfo || '-'"
+          class="search-input"
+          readonly
+          type="text"
+        />
+      </label>
       <label class="task-overview-editor-field task-overview-editor-field-full">
         <span>样品编号（换行、逗号分隔）</span>
         <textarea

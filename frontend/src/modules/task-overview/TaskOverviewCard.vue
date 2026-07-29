@@ -47,19 +47,15 @@
         :task-type-edit-options="taskTypeEditOptions"
         @cancel-edit="emit('cancel-edit')"
       />
-
-      <TaskOverviewSampleCodes :sample-codes="displaySampleCodes" />
     </div>
   </article>
 </template>
 
 <script setup>
-import { computed } from "vue";
 import TaskOverviewEditorPanel from "./TaskOverviewEditorPanel.vue";
-import TaskOverviewSampleCodes from "./TaskOverviewSampleCodes.vue";
 import TaskOverviewSummaryTable from "./TaskOverviewSummaryTable.vue";
 
-const props = defineProps({
+defineProps({
   deleteConfirm: {
     type: Object,
     default: () => ({}),
@@ -119,10 +115,6 @@ const props = defineProps({
     default: () => [],
   },
 });
-
-const displaySampleCodes = computed(() =>
-  Array.isArray(props.row?.sampleCodePreview) ? props.row.sampleCodePreview : props.row?.sampleCodes || []
-);
 
 const emit = defineEmits([
   "cancel-edit",
