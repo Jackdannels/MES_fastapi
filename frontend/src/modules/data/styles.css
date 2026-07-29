@@ -170,6 +170,11 @@
   padding-inline: 12px;
 }
 
+.data-task-search input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .data-task-search .action-btn {
   min-height: 44px;
 }

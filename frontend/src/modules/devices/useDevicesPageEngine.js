@@ -102,11 +102,12 @@ function useDevicesPageEngine() {
     return toBusinessDateTimeValue(nextSelectableTime).replace(" ", "T").slice(0, 16);
   });
   const maintenancePlanEndMin = computed(() => {
+    const currentMinimum = parseTime(maintenancePlanStartMin.value);
     const startAt = parseTime(maintenancePlanForm.value.startAt);
-    if (startAt === null) {
-      return "";
-    }
-    return toBusinessDateTimeValue(new Date(startAt + 60 * 1000)).replace(" ", "T").slice(0, 16);
+    const endMinimum = startAt === null
+      ? currentMinimum
+      : Math.max(currentMinimum, startAt + 60 * 1000);
+    return toBusinessDateTimeValue(new Date(endMinimum)).replace(" ", "T").slice(0, 16);
   });
   const testTypeOptions = computed(() => buildTestTypeOptions(rawDevices.value));
   const editDeviceStatusClass = computed(() => resolveStatusClass(deviceForm.value.status));

@@ -92,6 +92,7 @@ describe("DataPage runtime", () => {
     const wrapper = mount(DataPage);
 
     expect(wrapper.text()).toContain("试验数据保存设置");
+    expect(wrapper.get('[data-testid="data-task-query"]').classes()).toContain("search-input");
     expect(wrapper.get('[data-testid="data-save-path"]').element.value).toBe("C:\\Users\\tester\\Desktop\\MES试验数据");
     expect(wrapper.get('[data-testid="data-path-status"]').text()).toContain("目录可写");
     expect(wrapper.text()).not.toContain("采集监控");

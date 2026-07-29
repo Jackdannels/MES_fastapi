@@ -101,4 +101,16 @@ describe("TaskHistoryPage structure", () => {
     expect(source).toContain("color: var(--success);");
     expect(source).not.toContain("color: #fff;");
   });
+
+  test("uses a fixed three-column tray selector grid", () => {
+    const source = readFileSync(pagePath, "utf8");
+    const trayTabs = source.match(/\.history-tray-tabs\s*\{(?<body>[^}]+)\}/)?.groups?.body || "";
+    const trayTab = source.match(/\.history-tray-tab\s*\{(?<body>[^}]+)\}/)?.groups?.body || "";
+
+    expect(trayTabs).toContain("display: grid;");
+    expect(trayTabs).toContain("grid-template-columns: repeat(3, minmax(0, 1fr));");
+    expect(trayTabs).not.toContain("flex-wrap");
+    expect(trayTab).toContain("width: 100%;");
+    expect(trayTab).toContain("min-width: 0;");
+  });
 });

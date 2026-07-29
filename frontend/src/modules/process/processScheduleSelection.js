@@ -1,6 +1,12 @@
 import { scheduleMatchesLab } from "@/lib/labIdentity";
 import { scheduleExperimentIsCompleted } from "./model";
-import { normalizeText, parseScheduleTime, toText } from "./processLabCatalog";
+import {
+  normalizeText,
+  parseScheduleTime,
+  sanitizeTaskDisplayName,
+  toCount,
+  toText,
+} from "./processLabCatalog";
 
 function createProcessScheduleSelection({ nowValue, processLabs, state }) {
   const findTaskByCode = (taskCode) => state.tasks.value.find((item) => normalizeText(item?.code) === taskCode) || null;
@@ -75,12 +81,17 @@ function createProcessScheduleSelection({ nowValue, processLabs, state }) {
         return;
       }
       seen.add(selectionKey);
+      const task = findTaskByCode(taskCode);
+      const sampleCount = getTaskSamples(taskCode).length || toCount(task?.sample_count);
       rows.push({
         experimentCode,
         experimentName: getScheduledExperimentName(taskCode, experimentCode),
         scheduleTime: `${toText(schedule?.start_at)} - ${toText(schedule?.end_at)}`,
         selectionKey,
+        sampleCount,
+        status: toText(task?.status),
         taskCode,
+        taskName: sanitizeTaskDisplayName(task?.name, toText(task?.test_type, "")),
       });
     });
     return rows;

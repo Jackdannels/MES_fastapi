@@ -15,12 +15,18 @@ const mocks = vi.hoisted(() => ({
         {
           experimentName: "冲击试验",
           scheduleTime: "03/10 09:30 - 03/10 10:30",
+          sampleCount: 12,
+          status: "实验进行中",
           taskCode: "SYLU-2026-03-001",
+          taskName: "冲击试验任务",
         },
         {
           experimentName: "冲击试验",
           scheduleTime: "03/11 09:30 - 03/11 10:30",
+          sampleCount: 8,
+          status: "已排程",
           taskCode: "SYLU-2026-03-002",
+          taskName: "冲击试验任务二",
         },
       ],
       canStartExperiment: false,
@@ -261,7 +267,7 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.get(".process-task-tray-chip-list").classes()).toContain("is-dense");
     expect(wrapper.get("[data-testid='process-tray-chip-TRAY-001']").classes()).toContain("process-task-tray-chip-emphasis");
     expect(wrapper.find("[data-testid='process-selected-tray-summary']").exists()).toBe(false);
-    expect(wrapper.text()).toContain("当前实验托盘");
+    expect(wrapper.text()).not.toContain("当前实验托盘");
     expect(wrapper.text()).not.toContain("待下一轮托盘");
     expect(wrapper.text()).toContain("统一托盘流程图");
     expect(wrapper.text()).toContain("样品编号");
@@ -281,7 +287,18 @@ describe("ProcessPage runtime", () => {
     expect(sampleCodeCard.text()).not.toContain("待下一轮托盘");
     expect(sampleCodeCard.element.parentElement.classList.contains("process-task-detail-grid")).toBe(true);
     expect(wrapper.get(".process-task-overview-panel").find("[data-testid='process-selected-tray-sample-list']").exists()).toBe(false);
+    expect(wrapper.get(".process-task-overview-panel").text()).not.toContain("实验概览");
+    expect(wrapper.get(".process-task-overview-panel").text()).not.toContain("试验类型");
+    expect(wrapper.get(".process-task-overview-panel").text()).not.toContain("实验室");
+    expect(wrapper.get(".process-task-overview-panel").text()).toContain("排程时间");
+    expect(wrapper.get(".process-task-overview-panel").text()).toContain("样品数量");
+    expect(wrapper.get(".process-task-overview-panel").text()).toContain("托盘数量");
     expect(wrapper.get("[data-testid='process-tray-chip-TRAY-001']").classes()).toContain("is-selected");
+    expect(wrapper.get("[data-testid='process-tray-chip-TRAY-001']").classes()).toContain("is-current-experiment");
+    expect(wrapper.get("[data-testid='process-tray-chip-TRAY-001']").text()).toContain("当前实验");
+    expect(wrapper.get("[data-testid='process-tray-chip-TRAY-002']").classes()).toContain("is-current-experiment");
+    expect(wrapper.get("[data-testid='process-tray-chip-TRAY-003']").classes()).not.toContain("is-current-experiment");
+    expect(wrapper.find(".process-task-tray-row").exists()).toBe(false);
 
     await wrapper.get("[data-testid='process-tray-chip-TRAY-002']").trigger("click");
 
@@ -334,7 +351,7 @@ describe("ProcessPage runtime", () => {
     expect(wrapper.find("[data-testid='process-start-button-盐雾试验室']").exists()).toBe(false);
   });
 
-  test("shows up to nine samples and opens the full detail modal from the ellipsis", async () => {
+  test("shows all trays and samples inside the fixed scrollable cards", () => {
     mocks.reset();
     const trayRows = Array.from({ length: 8 }, (_, index) => {
       const number = String(index + 1).padStart(3, "0");
@@ -365,39 +382,24 @@ describe("ProcessPage runtime", () => {
 
     const wrapper = mount(ProcessPage);
 
-    expect(wrapper.findAll(".process-task-tray-chip")).toHaveLength(5);
-    expect(wrapper.find("[data-testid='process-tray-chip-TRAY-006']").exists()).toBe(false);
-    expect(wrapper.findAll("[data-testid^='process-selected-tray-sample-item-']")).toHaveLength(9);
-    expect(wrapper.findAll(".process-task-tray-row")).toHaveLength(4);
-    expect(wrapper.find("[data-testid='process-tray-button-TRAY-008']").exists()).toBe(false);
-    expect(wrapper.get("[data-testid='process-tray-button-TRAY-001']").text()).not.toContain("SP-001-B");
+    expect(wrapper.findAll(".process-task-tray-chip")).toHaveLength(8);
+    expect(wrapper.find("[data-testid='process-tray-chip-TRAY-008']").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='process-show-all-trays-count']").exists()).toBe(false);
+    expect(wrapper.find("[data-testid='process-show-all-trays']").exists()).toBe(false);
+    expect(wrapper.findAll("[data-testid^='process-selected-tray-sample-item-']")).toHaveLength(16);
+    expect(wrapper.get("[data-testid='process-tray-chip-TRAY-001']").classes()).toContain("is-current-experiment");
+    expect(wrapper.get("[data-testid='process-tray-chip-TRAY-004']").classes()).toContain("is-current-experiment");
+    expect(wrapper.get("[data-testid='process-tray-chip-TRAY-005']").classes()).not.toContain("is-current-experiment");
     const sampleCard = wrapper.get("[data-testid='process-sample-code-card']");
-    const sampleOverflowButton = sampleCard.get("[data-testid='process-show-all-samples']");
     expect(sampleCard.text()).toContain("SP-LONG-9");
-    expect(sampleCard.text()).not.toContain("SP-LONG-10");
+    expect(sampleCard.text()).toContain("SP-LONG-10");
+    expect(sampleCard.text()).toContain("SP-LONG-16");
     expect(sampleCard.text()).not.toContain("+7");
     expect(sampleCard.text()).not.toContain("查看全部");
-    expect(sampleOverflowButton.text()).toBe("…");
-    expect(sampleOverflowButton.attributes("aria-label")).toContain("另有 7 个样品未显示");
-
-    await sampleOverflowButton.trigger("click");
-
-    expect(wrapper.find('[data-testid="process-task-full-list-modal"].is-open').exists()).toBe(true);
-    await wrapper.get('[data-testid="process-task-full-list-modal"] .modal-close').trigger("click");
-
-    await wrapper.get("[data-testid='process-show-all-trays']").trigger("click");
-
-    expect(wrapper.find('[data-testid="process-task-full-list-modal"].is-open').exists()).toBe(true);
-    expect(wrapper.findAll("[data-testid^='process-full-tray-row-']")).toHaveLength(8);
-    expect(wrapper.text()).toContain("TRAY-008");
-    expect(wrapper.text()).toContain("SP-008-B");
-
-    await wrapper.get("[data-testid='process-full-tray-row-TRAY-006']").trigger("click");
-
-    expect(mocks.selectTaskTray).toHaveBeenCalledWith("TRAY-006");
+    expect(sampleCard.find("[data-testid='process-show-all-samples']").exists()).toBe(false);
   });
 
-  test("opens the full tray list when clicking the overflowing tray count", async () => {
+  test("renders every tray in the scrollable overview without overflow controls", () => {
     mocks.reset();
     const trayRows = Array.from({ length: 6 }, (_, index) => {
       const number = String(index + 1).padStart(3, "0");
@@ -416,23 +418,37 @@ describe("ProcessPage runtime", () => {
 
     const wrapper = mount(ProcessPage);
 
-    await wrapper.get("[data-testid='process-show-all-trays-count']").trigger("click");
-
-    expect(wrapper.find('[data-testid="process-task-full-list-modal"].is-open').exists()).toBe(true);
-    expect(wrapper.findAll("[data-testid^='process-full-tray-row-']")).toHaveLength(6);
+    expect(wrapper.findAll(".process-task-tray-chip")).toHaveLength(6);
+    expect(wrapper.get("[data-testid='process-tray-chip-TRAY-006']").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='process-show-all-trays-count']").exists()).toBe(false);
+    expect(wrapper.find("[data-testid='process-show-all-trays']").exists()).toBe(false);
   });
 
   test("supports selecting the current lab task from a selector modal without a manual start modal", async () => {
     mocks.reset();
     const wrapper = mount(ProcessPage);
 
+    const switchEntry = wrapper.get("[data-testid='process-open-task-selector']");
+    expect(switchEntry.text()).toContain("任务切换");
+    expect(switchEntry.text()).toContain("当前任务");
+    expect(switchEntry.text()).toContain("SYLU-2026-03-001");
+    expect(switchEntry.text()).toContain("冲击试验");
     expect(wrapper.find("[data-testid='process-start-button-冲击一室']").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("开始实验确认");
     expect(wrapper.find("#process-start-modal").exists()).toBe(false);
 
-    await wrapper.get("[data-testid='process-open-task-selector']").trigger("click");
+    await switchEntry.trigger("click");
 
-    expect(wrapper.find('[data-testid="process-task-selection-modal"].is-open').exists()).toBe(true);
+    const selectionModal = wrapper.get('[data-testid="process-task-selection-modal"].is-open');
+    expect(selectionModal.text()).toContain("任务切换");
+    expect(selectionModal.text()).toContain("选择任务后，详情内容将同步切换");
+    expect(selectionModal.text()).not.toContain("任务选择");
+    const currentOption = wrapper.get("[data-testid='process-select-task-SYLU-2026-03-001']");
+    expect(currentOption.attributes("aria-current")).toBe("true");
+    expect(currentOption.text()).toContain("当前任务");
+    expect(currentOption.text()).toContain("冲击试验任务");
+    expect(currentOption.text()).toContain("实验进行中");
+    expect(currentOption.text()).toContain("样品 12 个");
 
     await wrapper.get("[data-testid='process-select-task-SYLU-2026-03-002']").trigger("click");
 

@@ -91,6 +91,7 @@
           <input
             id="test-data-task-query"
             v-model="tasksQuery"
+            class="search-input"
             aria-label="搜索任务编号"
             data-testid="data-task-query"
             type="search"

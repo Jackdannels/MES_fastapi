@@ -863,6 +863,22 @@ describe("useDevicesPage", () => {
     expect(wrapper.vm.maintenancePlanForm.endAt).toBe("");
   });
 
+  test("keeps elapsed dates disabled for the maintenance end time before a start is selected", async () => {
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+
+    expect(wrapper.vm.maintenancePlanForm.startAt).toBe("");
+    expect(wrapper.vm.maintenancePlanStartMin).toBe("2099-03-20T07:30");
+    expect(wrapper.vm.maintenancePlanEndMin).toBe("2099-03-20T07:30");
+
+    wrapper.vm.maintenancePlanForm.startAt = "2099-03-19T08:00";
+    await settle(wrapper);
+
+    expect(wrapper.vm.maintenancePlanEndMin).toBe("2099-03-20T07:30");
+  });
+
   test.each(["维修", "保养"])("clears planned times for immediate %s and saves the confirmation time", async (type) => {
     mocks.loadSnapshot.mockResolvedValueOnce({
       "mes.devices": [{ code: "冲击一室", name: "冲击试验系统-1", status: "可用" }],

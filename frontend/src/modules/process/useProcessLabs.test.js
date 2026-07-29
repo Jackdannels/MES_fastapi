@@ -2046,7 +2046,16 @@ describe("useProcessLabs", () => {
     await loadLabStatus();
     await openTaskOverview(labCards.value[0]);
 
-    expect(selectedTaskDetail.value.availableTasks.map((task) => task.taskCode)).toEqual(["SYLU-2026-05-006"]);
+    expect(selectedTaskDetail.value.availableTasks).toEqual([
+      expect.objectContaining({
+        experimentCode: "SYLU-2026-05-006-A",
+        experimentName: "盐雾试验",
+        sampleCount: 1,
+        status: "已排程",
+        taskCode: "SYLU-2026-05-006",
+        taskName: "任务006",
+      }),
+    ]);
   });
 
   test("defaults the process card to a ready experiment when the current schedule is not startable", async () => {

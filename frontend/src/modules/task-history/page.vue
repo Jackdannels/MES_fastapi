@@ -755,12 +755,15 @@ onBeforeUnmount(() => {
 }
 
 .history-tray-tabs {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  min-width: 0;
 }
 
 .history-tray-tab {
+  width: 100%;
+  min-width: 0;
   min-height: 44px;
   padding: 8px 12px;
   border: 1px solid var(--border);
@@ -768,6 +771,7 @@ onBeforeUnmount(() => {
   background: var(--bg-panel-strong);
   color: var(--text);
   cursor: pointer;
+  overflow-wrap: anywhere;
 }
 
 .history-tray-tab.active {
