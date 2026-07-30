@@ -12,6 +12,7 @@ from app.services.fixed_terminal_auth import FixedTerminalAuthService, get_fixed
 
 VALID_TERMINAL_ACTIONS = {"reload", "shutdown", "restart"}
 ONLINE_WINDOW = timedelta(seconds=30)
+PAGE_ACTIVE_WINDOW = timedelta(seconds=45)
 
 
 def utc_now() -> datetime:
@@ -45,7 +46,7 @@ def normalize_ip(value: Any) -> str:
 
 
 class TerminalControlRepository(Protocol):
-    def record_heartbeat(self, runtime: dict[str, Any]) -> None: ...
+    def record_heartbeat(self, runtime: dict[str, Any]) -> datetime | None: ...
 
     def record_page(self, terminal_id: str, ip_address: str, path: str, title: str, seen_at: datetime) -> None: ...
 
@@ -67,11 +68,12 @@ class InMemoryTerminalControlRepository:
         self._commands: list[dict[str, Any]] = []
         self._next_command_id = 1
 
-    def record_heartbeat(self, runtime: dict[str, Any]) -> None:
+    def record_heartbeat(self, runtime: dict[str, Any]) -> datetime | None:
         with self._lock:
             terminal_id = normalize_text(runtime.get("terminal_id"))
             previous = self._runtime.get(terminal_id, {})
             self._runtime[terminal_id] = {**previous, **deepcopy(runtime)}
+            return normalize_datetime(previous.get("last_page_seen_at"))
 
     def record_page(self, terminal_id: str, ip_address: str, path: str, title: str, seen_at: datetime) -> None:
         with self._lock:
@@ -183,7 +185,7 @@ class MySQLTerminalControlRepository:
                 connection.commit()
             self._schema_ready = True
 
-    def record_heartbeat(self, runtime: dict[str, Any]) -> None:
+    def record_heartbeat(self, runtime: dict[str, Any]) -> datetime | None:
         self._ensure_schema()
         with get_connection() as connection:
             with connection.cursor() as cursor:
@@ -206,7 +208,17 @@ class MySQLTerminalControlRepository:
                         int(runtime["allow_reload"]), int(runtime["allow_power"]), runtime["last_seen_at"],
                     ),
                 )
+                cursor.execute(
+                    "SELECT last_page_seen_at FROM sys_terminal_runtime WHERE terminal_id = %s",
+                    (runtime["terminal_id"],),
+                )
+                row = cursor.fetchone()
             connection.commit()
+        if not row:
+            return None
+        if isinstance(row, dict):
+            return normalize_datetime(row.get("last_page_seen_at"))
+        return normalize_datetime(row[0])
 
     def record_page(self, terminal_id: str, ip_address: str, path: str, title: str, seen_at: datetime) -> None:
         self._ensure_schema()
@@ -324,10 +336,10 @@ class TerminalControlService:
         return self._auth().authenticate_terminal(terminal_id=terminal_id, terminal_secret=terminal_secret)
 
     def heartbeat(self, *, terminal_id: str, terminal_secret: str, ip_address: str, reported_ip: str, machine_name: str,
-                  configured_path: str, agent_version: str, allow_reload: bool, allow_power: bool) -> dict[str, Any] | None:
+                  configured_path: str, agent_version: str, allow_reload: bool, allow_power: bool) -> dict[str, Any]:
         terminal = self.authenticate(terminal_id, terminal_secret)
         now = self.clock()
-        self.repository.record_heartbeat({
+        last_page_seen_at = self.repository.record_heartbeat({
             "terminal_id": terminal["terminal_id"],
             "machine_name": normalize_text(machine_name),
             "ip_address": normalize_ip(reported_ip) or normalize_text(ip_address),
@@ -337,7 +349,11 @@ class TerminalControlService:
             "allow_power": bool(allow_power),
             "last_seen_at": now,
         })
-        return self.repository.claim_command(terminal["terminal_id"], bool(allow_reload), bool(allow_power), now)
+        return {
+            "command": self.repository.claim_command(terminal["terminal_id"], bool(allow_reload), bool(allow_power), now),
+            "last_page_seen_at": last_page_seen_at,
+            "page_active": bool(last_page_seen_at and now - last_page_seen_at <= PAGE_ACTIVE_WINDOW),
+        }
 
     def record_page(self, terminal_id: str, ip_address: str, path: str, title: str) -> None:
         self._auth().get_active_terminal(terminal_id)

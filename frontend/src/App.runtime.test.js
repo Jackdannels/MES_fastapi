@@ -529,7 +529,7 @@ describe("App runtime boundary", () => {
     expect(switchSessionModuleMock).toHaveBeenCalledWith("laboratory");
     expect(routerPush).toHaveBeenCalledWith({
       path: "/laboratory",
-      query: { lab: "冲击一室" },
+      query: { lab: "LAB_IMPACT_1" },
     });
   });
 

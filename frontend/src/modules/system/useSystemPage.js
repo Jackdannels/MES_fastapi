@@ -73,7 +73,6 @@ function useSystemPage() {
   const systemState = buildSystemPageState();
   const employeeRows = ref(systemState.employeeRows);
   const summaryCards = ref(systemState.summaryCards);
-  const settings = ref(systemState.settings);
   const workTimeTickMs = ref(serverNowMs());
   let workTimeTickTimer = null;
   let workTimeRefreshTimer = null;
@@ -521,7 +520,6 @@ function useSystemPage() {
     openOperationLogScopeSelector,
     resetEmployeeQrToken,
     resetEmployeePassword,
-    settings,
     setEmployeePage: (page) => {
       employeeCurrentPage.value = page;
     },

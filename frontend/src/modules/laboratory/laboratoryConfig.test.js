@@ -27,6 +27,16 @@ describe("laboratory config helpers", () => {
     });
   });
 
+  test("accepts the stable English laboratory code from the URL", () => {
+    expect(resolveLaboratoryConfig([
+      { code: "LAB_SALT", name: "盐雾试验室", status: 1 },
+      { code: "LAB_IMPACT_2", name: "冲击二室", status: 1 },
+    ], "LAB_IMPACT_2")).toMatchObject({
+      labCode: "LAB_IMPACT_2",
+      labName: "冲击二室",
+    });
+  });
+
   test("counts sample codes before falling back to a positive quantity", () => {
     expect(countTrayRowSamples([
       { sampleCodes: ["S-1", "S-2"], quantity: 8 },

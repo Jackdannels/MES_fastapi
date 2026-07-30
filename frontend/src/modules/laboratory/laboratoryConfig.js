@@ -1,4 +1,5 @@
 import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
+import { resolveLaboratoryDisplayName } from "@/lib/labs";
 import { SALT_SPRAY_LAB } from "./laboratoryConstants";
 
 const SALT_SPRAY_LAB_ID = "salt-spray-lab-01";
@@ -34,7 +35,7 @@ export const createDefaultLaboratoryConfig = (labName = SALT_SPRAY_LAB) => ({
 
 export const normalizeSelectedLabName = (value) => {
   const rawValue = Array.isArray(value) ? value[0] : value;
-  return normalizeText(rawValue);
+  return resolveLaboratoryDisplayName(normalizeText(rawValue));
 };
 
 export const readStoredLabName = () => {

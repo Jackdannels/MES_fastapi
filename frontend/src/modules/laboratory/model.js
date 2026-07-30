@@ -446,6 +446,7 @@ function buildLaboratoryWorkflowFromTask(task) {
   const activeOtherExperimentRows = workflowTrayRows.filter((row) => asArray(row?.activeOtherExperimentRuns).length > 0);
   const comparableTrayRows = workflowTrayRows.filter((row) =>
     asArray(row?.activeOtherExperimentRuns).length === 0
+    && !trayLifecycleIsBeforeLaboratoryDispatch(row)
     && resolveTrayExperimentOperationState(row, task).rank < 1
   );
   const trayRanks = workflowRowsWithState.map(({ state }) => state.rank);

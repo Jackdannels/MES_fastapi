@@ -69,7 +69,7 @@ def heartbeat(client, terminal, **overrides):
         "machineName": "STAGING-PC-01",
         "ipAddress": "192.168.110.21",
         "configuredPath": "/staging-management",
-        "agentVersion": "v1.6",
+        "agentVersion": "v2.0",
         "allowReload": True,
         "allowPower": True,
     }
@@ -83,7 +83,12 @@ def test_heartbeat_exposes_online_ip_page_and_capabilities_to_central(client):
     response = heartbeat(client, terminal)
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "command": None}
+    assert response.json() == {
+        "ok": True,
+        "command": None,
+        "pageActive": False,
+        "lastPageSeenAt": "",
+    }
 
     central_login(client)
     listing = client.get("/api/terminal-control/terminals")
@@ -100,7 +105,7 @@ def test_heartbeat_exposes_online_ip_page_and_capabilities_to_central(client):
                 "labName": "",
                 "currentPath": "/staging-management",
                 "currentTitle": "",
-                "agentVersion": "v1.6",
+                "agentVersion": "v2.0",
                 "allowReload": True,
                 "allowPower": True,
                 "online": True,
@@ -132,6 +137,10 @@ def test_fixed_terminal_browser_reports_the_exact_current_page(client):
     assert item["ipAddress"] == "192.168.110.21"
     assert item["currentPath"] == "/staging-management?room=after"
     assert item["currentTitle"] == "实验后暂存间"
+
+    browser_status = heartbeat(client, terminal).json()
+    assert browser_status["pageActive"] is True
+    assert browser_status["lastPageSeenAt"] == "2026-07-22T08:00:00Z"
 
 
 def test_central_can_queue_reload_and_terminal_completes_it(client):

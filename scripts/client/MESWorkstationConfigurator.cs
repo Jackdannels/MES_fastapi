@@ -6,6 +6,7 @@ using System.IO;
 using System.Management;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -13,6 +14,13 @@ using System.Windows.Forms;
 using System.Web.Script.Serialization;
 using System.Xml.Serialization;
 using Microsoft.Win32;
+
+[assembly: AssemblyTitle("MES 工作台设置")]
+[assembly: AssemblyDescription("MES 固定工作台配置、启动与自我检查客户端")]
+[assembly: AssemblyCompany("MES")]
+[assembly: AssemblyProduct("MES Workstation Configurator")]
+[assembly: AssemblyVersion("2.0.0.0")]
+[assembly: AssemblyFileVersion("2.0.0.0")]
 
 namespace MESWorkstationConfigurator
 {
@@ -50,10 +58,81 @@ namespace MESWorkstationConfigurator
         }
     }
 
+    internal enum WorkstationRecoveryReason
+    {
+        None,
+        EdgeMissing,
+        PageInactive
+    }
+
+    internal sealed class WorkstationWatchdog
+    {
+        private DateTime processGraceUntilUtc;
+        private DateTime pageGraceUntilUtc;
+        private DateTime nextAutomaticRestartUtc = DateTime.MinValue;
+        private int automaticRestartCount;
+
+        internal WorkstationWatchdog(DateTime launchedAtUtc)
+        {
+            MarkLaunch(launchedAtUtc);
+        }
+
+        internal void MarkLaunch(DateTime launchedAtUtc)
+        {
+            processGraceUntilUtc = launchedAtUtc.AddMilliseconds(LauncherRuntime.ProcessStartupGraceMilliseconds);
+            pageGraceUntilUtc = launchedAtUtc.AddMilliseconds(LauncherRuntime.PageStartupGraceMilliseconds);
+        }
+
+        internal WorkstationRecoveryReason Evaluate(DateTime nowUtc, bool edgeRunning, bool pageActive)
+        {
+            if (edgeRunning && pageActive)
+            {
+                automaticRestartCount = 0;
+                nextAutomaticRestartUtc = DateTime.MinValue;
+                return WorkstationRecoveryReason.None;
+            }
+            if (!edgeRunning)
+            {
+                return nowUtc < processGraceUntilUtc
+                    ? WorkstationRecoveryReason.None
+                    : WorkstationRecoveryReason.EdgeMissing;
+            }
+            return nowUtc < pageGraceUntilUtc
+                ? WorkstationRecoveryReason.None
+                : WorkstationRecoveryReason.PageInactive;
+        }
+
+        internal bool CanAttemptAutomaticRestart(DateTime nowUtc)
+        {
+            if (nowUtc < nextAutomaticRestartUtc) return false;
+            if (automaticRestartCount >= LauncherRuntime.AutomaticRestartLimit)
+            {
+                automaticRestartCount = 0;
+            }
+            return true;
+        }
+
+        internal void RecordAutomaticRestart(DateTime attemptedAtUtc, bool launched)
+        {
+            automaticRestartCount++;
+            int delay = automaticRestartCount >= LauncherRuntime.AutomaticRestartLimit
+                ? LauncherRuntime.AutomaticRestartPauseMilliseconds
+                : LauncherRuntime.AutomaticRestartRetryMilliseconds;
+            nextAutomaticRestartUtc = attemptedAtUtc.AddMilliseconds(delay);
+            if (launched) MarkLaunch(attemptedAtUtc);
+        }
+    }
+
     internal static class LauncherRuntime
     {
-        internal const string Version = "v1.6";
+        internal const string Version = "v2.0";
         internal const int HeartbeatIntervalMilliseconds = 5000;
+        internal const int WatchdogCheckIntervalMilliseconds = 15000;
+        internal const int ProcessStartupGraceMilliseconds = 15000;
+        internal const int PageStartupGraceMilliseconds = 60000;
+        internal const int AutomaticRestartRetryMilliseconds = 30000;
+        internal const int AutomaticRestartLimit = 3;
+        internal const int AutomaticRestartPauseMilliseconds = 5 * 60 * 1000;
         internal const int WorkstationZoomPercent = 100;
         internal const string DefaultServerUrl = "http://192.168.110.15:5173";
         internal const string RunValueName = "MESWorkstationLauncher";
@@ -75,22 +154,22 @@ namespace MESWorkstationConfigurator
             new StationOption("appearance", "外观检测间系统", "/appearance-inspection"),
             new StationOption("central", "中控管理", "/"),
             new StationOption("visual", "可视化管理", "/visualization"),
-            Laboratory("冲击二室"),
-            Laboratory("冲击一室"),
-            Laboratory("高低温湿热一室"),
-            Laboratory("高低温湿热二室"),
-            Laboratory("霉菌试验室"),
-            Laboratory("四综合实验室"),
-            Laboratory("温度冲击二室"),
-            Laboratory("温度冲击一室"),
-            Laboratory("盐雾试验室"),
-            Laboratory("振动二室"),
-            Laboratory("振动一室")
+            Laboratory("冲击二室", "LAB_IMPACT_2"),
+            Laboratory("冲击一室", "LAB_IMPACT_1"),
+            Laboratory("高低温湿热一室", "LAB_HOT_HUMID"),
+            Laboratory("高低温湿热二室", "LAB_HOT_HUMID_2"),
+            Laboratory("霉菌试验室", "LAB_MOLD"),
+            Laboratory("四综合实验室", "LAB_COMPREHENSIVE"),
+            Laboratory("温度冲击二室", "LAB_TEMP_SHOCK_2"),
+            Laboratory("温度冲击一室", "LAB_TEMP_SHOCK_1"),
+            Laboratory("盐雾试验室", "LAB_SALT"),
+            Laboratory("振动二室", "LAB_VIBRATION_2"),
+            Laboratory("振动一室", "LAB_VIBRATION_1")
         };
 
-        private static StationOption Laboratory(string name)
+        private static StationOption Laboratory(string name, string labCode)
         {
-            return new StationOption("laboratory:" + name, name + "操作台", "/laboratory?lab=" + Uri.EscapeDataString(name));
+            return new StationOption("laboratory:" + name, name + "操作台", "/laboratory?lab=" + labCode);
         }
 
         internal static LauncherConfig LoadConfig()
@@ -464,6 +543,8 @@ namespace MESWorkstationConfigurator
                 {
                     LauncherConfig config = LoadConfig();
                     LaunchConfiguredWorkstation(true);
+                    WorkstationWatchdog watchdog = new WorkstationWatchdog(DateTime.UtcNow);
+                    DateTime nextWatchdogCheckUtc = DateTime.UtcNow.AddMilliseconds(WatchdogCheckIntervalMilliseconds);
                     if (!config.EnableStatusMonitoring)
                     {
                         Log("终端状态监听未启用，启动器在打开工作台后退出。");
@@ -486,7 +567,15 @@ namespace MESWorkstationConfigurator
                             if (heartbeat.TryGetValue("command", out commandValue) && commandValue != null)
                             {
                                 Dictionary<string, object> command = commandValue as Dictionary<string, object>;
-                                if (command != null) ExecuteRemoteCommand(config, command);
+                                if (command != null && ExecuteRemoteCommand(config, command))
+                                {
+                                    watchdog.MarkLaunch(DateTime.UtcNow);
+                                }
+                            }
+                            if (DateTime.UtcNow >= nextWatchdogCheckUtc)
+                            {
+                                RecoverWorkstationIfNeeded(config, heartbeat, watchdog);
+                                nextWatchdogCheckUtc = DateTime.UtcNow.AddMilliseconds(WatchdogCheckIntervalMilliseconds);
                             }
                         }
                         catch (Exception exception)
@@ -577,7 +666,7 @@ namespace MESWorkstationConfigurator
             );
         }
 
-        private static void ExecuteRemoteCommand(LauncherConfig config, Dictionary<string, object> command)
+        private static bool ExecuteRemoteCommand(LauncherConfig config, Dictionary<string, object> command)
         {
             int commandId = Convert.ToInt32(command["commandId"]);
             string action = Convert.ToString(command["action"] ?? String.Empty).Trim().ToLowerInvariant();
@@ -588,7 +677,7 @@ namespace MESWorkstationConfigurator
                     if (!config.AllowRemoteReload) throw new InvalidOperationException("终端未允许远程刷新。");
                     LaunchConfiguredWorkstation(false);
                     CompleteRemoteCommand(config, commandId, true, "Edge 已重新载入");
-                    return;
+                    return true;
                 }
                 if (action == "shutdown" || action == "restart")
                 {
@@ -602,7 +691,7 @@ namespace MESWorkstationConfigurator
                     shutdown.CreateNoWindow = true;
                     Process.Start(shutdown);
                     Log("已执行远程" + label + "命令，commandId=" + commandId);
-                    return;
+                    return false;
                 }
                 throw new InvalidOperationException("未知远程命令：" + action);
             }
@@ -610,7 +699,100 @@ namespace MESWorkstationConfigurator
             {
                 Log("远程命令执行失败，commandId=" + commandId + "：" + exception);
                 try { CompleteRemoteCommand(config, commandId, false, exception.Message); } catch { }
+                return false;
             }
+        }
+
+        private static void RecoverWorkstationIfNeeded(
+            LauncherConfig config,
+            Dictionary<string, object> heartbeat,
+            WorkstationWatchdog watchdog
+        )
+        {
+            DateTime nowUtc = DateTime.UtcNow;
+            bool pageActive = false;
+            object pageActiveValue;
+            if (heartbeat.TryGetValue("pageActive", out pageActiveValue) && pageActiveValue != null)
+            {
+                try { pageActive = Convert.ToBoolean(pageActiveValue); } catch { }
+            }
+            bool edgeRunning = IsDedicatedEdgeRunning();
+            WorkstationRecoveryReason reason = watchdog.Evaluate(nowUtc, edgeRunning, pageActive);
+            if (reason == WorkstationRecoveryReason.None || !watchdog.CanAttemptAutomaticRestart(nowUtc)) return;
+
+            string reasonLabel = reason == WorkstationRecoveryReason.EdgeMissing
+                ? "专用 Edge 未运行"
+                : "网页心跳已超时";
+            if (!TestMes(config, 4000))
+            {
+                watchdog.RecordAutomaticRestart(nowUtc, false);
+                Log("自我检查发现" + reasonLabel + "，但 MES 服务当前不可访问，稍后重试。");
+                return;
+            }
+
+            try
+            {
+                Log("自我检查发现" + reasonLabel + "，正在自动重新启动工作台。");
+                LaunchConfiguredWorkstation(false);
+                watchdog.RecordAutomaticRestart(nowUtc, true);
+                Log("工作台已由自我检查自动重新启动。");
+            }
+            catch (Exception exception)
+            {
+                watchdog.RecordAutomaticRestart(nowUtc, false);
+                Log("工作台自动恢复失败：" + exception.Message);
+            }
+        }
+
+        private static bool IsDedicatedEdgeRunning()
+        {
+            try
+            {
+                using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(
+                    "SELECT CommandLine FROM Win32_Process WHERE Name='msedge.exe'"
+                ))
+                {
+                    foreach (ManagementObject process in searcher.Get())
+                    {
+                        string commandLine = Convert.ToString(process["CommandLine"]);
+                        if (!String.IsNullOrWhiteSpace(commandLine)
+                            && commandLine.IndexOf(EdgeProfilePath, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                Log("检查专用 Edge 进程失败：" + exception.Message);
+                // 无法读取进程命令行时交由网页心跳继续判断，避免把权限问题误判成 Edge 已退出。
+                return true;
+            }
+            return false;
+        }
+
+        internal static bool RunWatchdogSelfTest()
+        {
+            DateTime start = new DateTime(2026, 7, 30, 0, 0, 0, DateTimeKind.Utc);
+            WorkstationWatchdog watchdog = new WorkstationWatchdog(start);
+            if (watchdog.Evaluate(start.AddSeconds(10), false, false) != WorkstationRecoveryReason.None) return false;
+            if (watchdog.Evaluate(start.AddSeconds(16), false, false) != WorkstationRecoveryReason.EdgeMissing) return false;
+            if (!watchdog.CanAttemptAutomaticRestart(start.AddSeconds(16))) return false;
+            watchdog.RecordAutomaticRestart(start.AddSeconds(16), false);
+            if (watchdog.CanAttemptAutomaticRestart(start.AddSeconds(20))) return false;
+            if (!watchdog.CanAttemptAutomaticRestart(start.AddSeconds(47))) return false;
+            watchdog.RecordAutomaticRestart(start.AddSeconds(47), false);
+            if (!watchdog.CanAttemptAutomaticRestart(start.AddSeconds(78))) return false;
+            watchdog.RecordAutomaticRestart(start.AddSeconds(78), false);
+            if (watchdog.CanAttemptAutomaticRestart(start.AddSeconds(300))) return false;
+            if (!watchdog.CanAttemptAutomaticRestart(start.AddSeconds(379))) return false;
+
+            WorkstationWatchdog pageWatchdog = new WorkstationWatchdog(start);
+            if (pageWatchdog.Evaluate(start.AddSeconds(30), true, false) != WorkstationRecoveryReason.None) return false;
+            if (pageWatchdog.Evaluate(start.AddSeconds(61), true, false) != WorkstationRecoveryReason.PageInactive) return false;
+            if (pageWatchdog.Evaluate(start.AddSeconds(62), true, true) != WorkstationRecoveryReason.None) return false;
+            return true;
         }
 
         private static void StopDedicatedEdge()
@@ -932,6 +1114,11 @@ namespace MESWorkstationConfigurator
         [STAThread]
         private static int Main(string[] args)
         {
+            if (args.Length > 0 && String.Equals(args[0], "--watchdog-self-test", StringComparison.OrdinalIgnoreCase))
+            {
+                return LauncherRuntime.RunWatchdogSelfTest() ? 0 : 4;
+            }
+
             if (args.Length > 0 && String.Equals(args[0], "--self-test", StringComparison.OrdinalIgnoreCase))
             {
                 try

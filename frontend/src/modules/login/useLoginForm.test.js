@@ -156,7 +156,7 @@ describe("useLoginForm", () => {
     expect(login).toHaveBeenCalledWith("admin", "123", "laboratory");
     expect(navigate).toHaveBeenCalledWith({
       path: "/laboratory",
-      query: { lab: "冲击一室" },
+      query: { lab: "LAB_IMPACT_1" },
     });
   });
 });

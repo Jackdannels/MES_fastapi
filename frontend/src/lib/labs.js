@@ -53,6 +53,12 @@ function resolveLaboratoryDisplayName(value) {
   return LAB_NAME_BY_CODE[normalizedValue] || normalizedValue;
 }
 
+function resolveLaboratoryRouteKey(value) {
+  const normalizedValue = String(value ?? "").trim();
+  const displayName = resolveLaboratoryDisplayName(normalizedValue);
+  return LAB_CODE_BY_NAME[displayName] || normalizedValue;
+}
+
 const TEST_PREFIX_MAP = Object.freeze({
   冲击试验: "CJ",
   振动试验: "ZD",
@@ -84,4 +90,5 @@ export {
   TEST_PREFIX_MAP,
   getLabsForTestType,
   resolveLaboratoryDisplayName,
+  resolveLaboratoryRouteKey,
 };

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.auth_session import refresh_auth_session, require_auth_session
-from app.services.terminal_control import get_terminal_control_service
+from app.services.terminal_control import format_utc, get_terminal_control_service
 
 
 router = APIRouter(prefix="/api/terminal-control", tags=["terminal-control"])
@@ -50,7 +50,7 @@ def require_central_manager(request: Request) -> dict:
 @router.post("/heartbeat")
 def terminal_heartbeat(payload: TerminalHeartbeatRequest, request: Request):
     try:
-        command = get_terminal_control_service().heartbeat(
+        heartbeat = get_terminal_control_service().heartbeat(
             terminal_id=payload.terminalId,
             terminal_secret=payload.terminalSecret,
             ip_address=client_ip(request),
@@ -63,12 +63,15 @@ def terminal_heartbeat(payload: TerminalHeartbeatRequest, request: Request):
         )
     except ValueError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    command = heartbeat["command"]
     return {
         "ok": True,
         "command": None if not command else {
             "commandId": int(command["command_id"]),
             "action": str(command["action"]),
         },
+        "pageActive": bool(heartbeat["page_active"]),
+        "lastPageSeenAt": format_utc(heartbeat["last_page_seen_at"]),
     }
 
 

@@ -390,6 +390,23 @@ const createSnapshot = () => ({
   ],
 });
 
+const dispatchDefaultComparisonTrays = () => {
+  const sample = snapshotState[STORAGE_KEYS.samples]
+    .find((item) => item.task_code === "SYLU-2026-04-101");
+  if (!sample) {
+    return;
+  }
+  sample.flow_status = "送至实验室";
+  sample.location = "盐雾试验室";
+  sample.status = "送至实验室";
+  sample.trays = sample.trays.map((tray) => ({
+    ...tray,
+    status: "送至实验室",
+    target_experiment_code: "SYLU-2026-04-101-A",
+    target_lab: "盐雾试验室",
+  }));
+};
+
 const addActiveExperimentRun = ({
   device = "盐雾试验室",
   endedAt = "",
@@ -872,6 +889,7 @@ describe("LaboratoryPage runtime", () => {
       username: "zhangsan",
       workStartedAt: null,
     };
+    dispatchDefaultComparisonTrays();
     await mountPage();
 
     expect(attendanceWorkStartCalls()).toHaveLength(0);
@@ -891,6 +909,7 @@ describe("LaboratoryPage runtime", () => {
       loggedInAt: "2026-04-02T09:00:00Z",
       username: "zhangsan",
     };
+    dispatchDefaultComparisonTrays();
     await mountPage();
 
     await wrapper.get('[data-testid="laboratory-compare"]').trigger("click");
@@ -1943,6 +1962,17 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
 
     expect(mounted.get('[data-testid="laboratory-task-list-modal"]').text()).toContain("当前实验室暂无任务");
+  });
+
+  test("disables comparison when every scheduled tray is still before laboratory dispatch", async () => {
+    const mounted = await mountPage();
+
+    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
+
+    await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
+    await nextTick();
+
+    expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
   });
 
   test("reloads flow state when sample progress changes are broadcast", async () => {
@@ -3459,6 +3489,7 @@ describe("LaboratoryPage runtime", () => {
   });
 
   test("auto focuses the compare scan input when the compare modal opens", async () => {
+    dispatchDefaultComparisonTrays();
     const mounted = await mountPage();
 
     await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
@@ -3468,6 +3499,7 @@ describe("LaboratoryPage runtime", () => {
   });
 
   test("compare feedback lists all allowed laboratories when another tray belongs to multiple experiments", async () => {
+    dispatchDefaultComparisonTrays();
     const mounted = await mountPage();
 
     await mounted.get('[data-testid="laboratory-compare"]').trigger("click");
@@ -3717,7 +3749,7 @@ describe("LaboratoryPage runtime", () => {
       subExperimentCode: "SYLU-2026-04-301-B-AXIS-002",
       trayCodes: ["TP-301-B"],
     });
-    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeUndefined();
+    expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeDefined();
     expect(dispatchEventSpy.mock.calls.filter(([event]) => event?.type === SAMPLES_UPDATED_EVENT)).toHaveLength(1);

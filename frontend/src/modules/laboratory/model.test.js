@@ -6923,6 +6923,99 @@ describe("laboratory model", () => {
     });
   });
 
+  test.each([
+    ["到货", "接驳区"],
+    ["已到达暂存间", "恒温恒湿间（暂存间）"],
+    ["实验前外观检测间存放", "外观检测间"],
+  ])("buildLaboratoryWorkflowFromTask disables compare when every tray is still before laboratory dispatch: %s", (trayStatus, currentLocation) => {
+    const experimentCode = "EXP-PRE-DISPATCH";
+    const task = {
+      device: "盐雾试验室",
+      experimentCode,
+      trayRows: [{
+        currentLocation,
+        displayStatus: trayStatus,
+        experimentCodes: [experimentCode],
+        lifecycleLocation: currentLocation,
+        lifecycleStatus: trayStatus,
+        trayCode: "TP-PRE-DISPATCH",
+        trayStatus,
+      }],
+    };
+
+    const workflow = buildLaboratoryWorkflowFromTask(task);
+
+    expect(workflow.hasComparableTrayWithoutActiveOtherExperiment).toBe(false);
+    expect(getLaboratoryActionState(workflow).canCompare).toBe(false);
+  });
+
+  test("buildLaboratoryWorkflowFromTask keeps compare available when at least one tray reached the current laboratory", () => {
+    const experimentCode = "EXP-MIXED-DISPATCH";
+    const task = {
+      device: "盐雾试验室",
+      experimentCode,
+      trayRows: [
+        {
+          currentLocation: "盐雾试验室",
+          experimentCodes: [experimentCode],
+          lifecycleLocation: "盐雾试验室",
+          lifecycleStatus: "送至实验室",
+          targetExperimentCode: experimentCode,
+          targetLab: "盐雾试验室",
+          trayCode: "TP-DISPATCHED",
+          trayStatus: "送至实验室",
+        },
+        {
+          currentLocation: "恒温恒湿间（暂存间）",
+          experimentCodes: [experimentCode],
+          lifecycleLocation: "恒温恒湿间（暂存间）",
+          lifecycleStatus: "已到达暂存间",
+          trayCode: "TP-STAGING",
+          trayStatus: "已到达暂存间",
+        },
+      ],
+    };
+
+    const workflow = buildLaboratoryWorkflowFromTask(task);
+
+    expect(workflow.hasComparableTrayWithoutActiveOtherExperiment).toBe(true);
+    expect(getLaboratoryActionState(workflow).canCompare).toBe(true);
+  });
+
+  test("buildLaboratoryWorkflowFromTask disables compare when only the unprocessed tray is still before dispatch", () => {
+    const experimentCode = "EXP-PARTIAL-COMPARE";
+    const task = {
+      device: "盐雾试验室",
+      experimentCode,
+      trayRows: [
+        {
+          currentLocation: "盐雾试验室",
+          experimentCodes: [experimentCode],
+          lifecycleLocation: "盐雾试验室",
+          lifecycleStatus: "已到达实验室",
+          targetExperimentCode: experimentCode,
+          targetLab: "盐雾试验室",
+          trayCode: "TP-COMPARED",
+          trayStatus: "已到达实验室",
+        },
+        {
+          currentLocation: "外观检测间",
+          experimentCodes: [experimentCode],
+          lifecycleLocation: "外观检测间",
+          lifecycleStatus: "实验前外观检测间存放",
+          trayCode: "TP-APPEARANCE",
+          trayStatus: "实验前外观检测间存放",
+        },
+      ],
+    };
+
+    const workflow = buildLaboratoryWorkflowFromTask(task);
+
+    expect(workflow.comparisonDone).toBe(false);
+    expect(workflow.hasComparableTrayWithoutActiveOtherExperiment).toBe(false);
+    expect(getLaboratoryActionState(workflow).canCompare).toBe(false);
+  });
+
   test("buildLaboratoryWorkflowFromTask locks compare and install once any tray has entered installation", () => {
     const workflow = buildLaboratoryWorkflowFromTask({
       trayRows: [

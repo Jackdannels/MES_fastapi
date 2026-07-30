@@ -153,6 +153,7 @@ import { findFirstOverdueWaitingTaskCode, hasOverdueWaitingExperiment } from "@/
 import { serverNowMs } from "@/lib/serverClock";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { MODULE_LABELS } from "@/lib/moduleCatalog";
+import { resolveLaboratoryDisplayName, resolveLaboratoryRouteKey } from "@/lib/labs";
 import { getNavigationModules } from "@/modules";
 import { logoutSession, readAuthSession, resolveModuleHome, switchSessionModule } from "@/auth";
 
@@ -199,7 +200,7 @@ const currentLabName = computed(() => {
     return "";
   }
   if (typeof route.query?.lab === "string" && route.query.lab.trim()) {
-    return route.query.lab.trim();
+    return resolveLaboratoryDisplayName(route.query.lab);
   }
   if (typeof window === "undefined" || typeof window.localStorage?.getItem !== "function") {
     return "";
@@ -327,7 +328,7 @@ const switchModule = async (targetModule) => {
   }
 
   if (module === "laboratory" && labName) {
-    await router.push({ path: "/laboratory", query: { lab: labName } });
+    await router.push({ path: "/laboratory", query: { lab: resolveLaboratoryRouteKey(labName) } });
     return;
   }
 

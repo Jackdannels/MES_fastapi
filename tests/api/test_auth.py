@@ -167,7 +167,7 @@ def test_fixed_terminal_laboratory_ticket_redirects_to_bound_lab(client):
     )
 
     assert consume.status_code == 302
-    assert consume.headers["location"] == "/laboratory?lab=%E5%86%B2%E5%87%BB%E4%BA%8C%E5%AE%A4"
+    assert consume.headers["location"] == "/laboratory?lab=LAB_IMPACT_2"
     assert client.get("/auth/session").json()["lab_name"] == "冲击二室"
 
 

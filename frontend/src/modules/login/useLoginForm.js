@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { syncHostInterfaceMode } from "@/lib/hostInterfaceModeApi";
 import { HOST_INTERFACE_MODES } from "@/lib/hostInterfaceMode";
 import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
+import { resolveLaboratoryRouteKey } from "@/lib/labs";
 
 // 将认证输入和提交流程集中到一个可复用的组合函数中。
 function useLoginForm({ login, navigate, redirectPath, resolveModuleHome }) {
@@ -44,7 +45,7 @@ function useLoginForm({ login, navigate, redirectPath, resolveModuleHome }) {
 
       // 明确 redirectPath 时优先使用，否则按模块类型回到对应首页。
       const target = redirectPath || (result.module === "laboratory" && selectedLabName.value
-        ? { path: resolveModuleHome(result.module), query: { lab: selectedLabName.value } }
+        ? { path: resolveModuleHome(result.module), query: { lab: resolveLaboratoryRouteKey(selectedLabName.value) } }
         : resolveModuleHome(result.module));
       navigate(target);
     } finally {

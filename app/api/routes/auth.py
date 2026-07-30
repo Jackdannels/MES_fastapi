@@ -13,6 +13,7 @@ from app.api.auth_session import (
     set_auth_cookie,
 )
 from app.core.config import settings
+from app.core.master_data import DEFAULT_LABS
 from app.services.fixed_terminal_auth import get_fixed_terminal_auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -25,19 +26,12 @@ AUTH_MODULE_ROUTES = {
     "appearance": "/appearance-inspection",
     "laboratory": "/laboratory",
 }
-VALID_LAB_NAMES = {
-    "冲击二室",
-    "冲击一室",
-    "高低温湿热一室",
-    "高低温湿热二室",
-    "霉菌试验室",
-    "四综合实验室",
-    "温度冲击二室",
-    "温度冲击一室",
-    "盐雾试验室",
-    "振动二室",
-    "振动一室",
+LAB_CODE_BY_NAME = {
+    str(lab["lab_name"]): str(lab["lab_code"])
+    for lab in DEFAULT_LABS
+    if lab.get("lab_type") == "实验室"
 }
+VALID_LAB_NAMES = set(LAB_CODE_BY_NAME)
 
 
 class LoginRequest(BaseModel):
@@ -72,9 +66,7 @@ def fixed_terminal_target(module: str, lab_name: str = "") -> str:
         normalized_lab_name = str(lab_name or "").strip()
         if normalized_lab_name not in VALID_LAB_NAMES:
             raise HTTPException(status_code=400, detail="Invalid laboratory")
-        from urllib.parse import quote
-
-        return f"/laboratory?lab={quote(normalized_lab_name)}"
+        return f"/laboratory?lab={LAB_CODE_BY_NAME[normalized_lab_name]}"
     return AUTH_MODULE_ROUTES[normalized_module]
 
 

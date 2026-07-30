@@ -1,6 +1,7 @@
 import { ref } from "vue";
 
 import { logoutSession, resolveModuleHome, switchSessionModule } from "@/auth";
+import { resolveLaboratoryRouteKey } from "@/lib/labs";
 
 function useTransferWorkbenchExit(router) {
   const exitDialogOpen = ref(false);
@@ -28,7 +29,7 @@ function useTransferWorkbenchExit(router) {
       return;
     }
     if (module === "laboratory" && labName) {
-      await router.push({ path: "/laboratory", query: { lab: labName } });
+      await router.push({ path: "/laboratory", query: { lab: resolveLaboratoryRouteKey(labName) } });
       return;
     }
     await router.push(resolveModuleHome(module));

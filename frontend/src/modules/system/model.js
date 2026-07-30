@@ -1,4 +1,4 @@
-// 定义人员信息页渲染使用的静态卡片、员工账号行和设置数据。
+// 定义人员信息页渲染使用的静态卡片和员工账号行。
 const SYSTEM_SUMMARY_CARDS = Object.freeze([
   { label: "员工账号", note: "全部试验间可登录", value: 0 },
   { label: "班次", note: "白班/中班/夜班", value: 3 },
@@ -35,12 +35,6 @@ const EMPLOYEE_ROWS = Object.freeze([
     username: "lisi",
   },
 ]);
-
-const BASE_SETTINGS = Object.freeze({
-  notificationChannel: "站内通知",
-  retentionPeriod: "36 个月",
-  shiftConfig: "白班 08:00-16:00",
-});
 
 const EMPTY_EMPLOYEE_FORM = Object.freeze({
   active: true,
@@ -97,7 +91,7 @@ function createEmployeeForm(employee = EMPTY_EMPLOYEE_FORM) {
   };
 }
 
-// 将系统页的静态卡片、员工行和设置打包为统一对象。
+// 将系统页的静态卡片和员工行打包为统一对象。
 function buildSystemPageState() {
   const employeeRows = EMPLOYEE_ROWS.map(createEmployeeRow);
   return {
@@ -105,7 +99,6 @@ function buildSystemPageState() {
       ...employee,
       form: createEmployeeForm(employee),
     })),
-    settings: { ...BASE_SETTINGS },
     summaryCards: SYSTEM_SUMMARY_CARDS.map((card) => ({
       ...card,
       value: card.label === "员工账号" ? employeeRows.length : card.label === "在线员工" ? employeeRows.filter((row) => row.online).length : card.value,

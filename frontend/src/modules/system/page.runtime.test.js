@@ -59,7 +59,7 @@ describe("SystemPage runtime", () => {
     await nextTick();
   };
 
-  test("renders personnel maintenance with a work-time overview before base settings", async () => {
+  test("renders personnel maintenance and work-time overview without base settings", async () => {
     stubAttendanceFetch();
     const wrapper = mount(SystemPage);
     await flushPromises();
@@ -67,7 +67,11 @@ describe("SystemPage runtime", () => {
 
     expect(pageText).toContain("人员信息维护");
     expect(pageText).toContain("人员工作时间一览表");
-    expect(pageText.indexOf("人员工作时间一览表")).toBeLessThan(pageText.indexOf("基础配置"));
+    expect(wrapper.find(".system-settings-card").exists()).toBe(false);
+    expect(pageText).not.toContain("基础配置");
+    expect(pageText).not.toContain("班次配置");
+    expect(pageText).not.toContain("数据保留周期");
+    expect(pageText).not.toContain("通知方式");
     expect(pageText).not.toContain("角色权限矩阵");
     expect(pageText).toContain("张三");
     expect(pageText).toContain("zhangsan");

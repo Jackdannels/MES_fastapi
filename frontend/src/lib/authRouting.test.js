@@ -87,14 +87,21 @@ describe("authRouting", () => {
         session,
         to: { meta: { layout: "auth" } },
       }),
-    ).resolves.toEqual({ path: "/laboratory", query: { lab: "冲击二室" } });
+    ).resolves.toEqual({ path: "/laboratory", query: { lab: "LAB_IMPACT_2" } });
 
     await expect(
       buildRouteAccessDecision({
         session,
-        to: { meta: { module: "laboratory" }, query: { lab: "冲击一室" } },
+        to: { meta: { module: "laboratory" }, query: { lab: "LAB_IMPACT_1" } },
       }),
-    ).resolves.toEqual({ path: "/laboratory", query: { lab: "冲击二室" } });
+    ).resolves.toEqual({ path: "/laboratory", query: { lab: "LAB_IMPACT_2" } });
+
+    await expect(
+      buildRouteAccessDecision({
+        session,
+        to: { meta: { module: "laboratory" }, query: { lab: "LAB_IMPACT_2" } },
+      }),
+    ).resolves.toBe(true);
   });
 
   test("hydrates session through the provided getter when session is omitted", async () => {

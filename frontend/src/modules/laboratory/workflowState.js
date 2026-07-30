@@ -38,7 +38,7 @@ const getLaboratoryActionState = (workflow = createLaboratoryWorkflow()) => {
     "hasComparableTrayWithoutActiveOtherExperiment",
   )
     ? workflow.hasComparableTrayWithoutActiveOtherExperiment
-    : false;
+    : !hasActiveOtherExperimentRun;
   if (hasActiveOtherExperimentRun && !hasComparableTrayWithoutActiveOtherExperiment) {
     return {
       canCompare: false,
@@ -51,6 +51,7 @@ const getLaboratoryActionState = (workflow = createLaboratoryWorkflow()) => {
   return {
     canCompare:
       hasCurrentLaboratoryDispatch
+      && hasComparableTrayWithoutActiveOtherExperiment
       && !workflow.comparisonDone
       && (!hasInProgressPreparation || canContinueComparingAvailableTrays),
     canInstallSample: Boolean(hasComparedWaitingInstall),
