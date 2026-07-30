@@ -316,6 +316,15 @@
   text-align: center;
 }
 
+.system-operation-scope-pagination {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 13px;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
 @media (max-width: 640px) {
   .modal-content.system-operation-log-modal,
   .modal-content.system-operation-scope-wizard-modal {
@@ -330,6 +339,12 @@
   .system-operation-scope-toolbar {
     align-items: stretch;
     grid-template-columns: 1fr;
+  }
+
+  .system-operation-scope-pagination {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
   }
 
   .system-operation-scope-actions .action-btn {

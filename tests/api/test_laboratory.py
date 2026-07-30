@@ -532,6 +532,75 @@ def test_hostless_fixture_ready_operation_still_calls_shared_service(monkeypatch
 
 
 @pytest.mark.parametrize("lab_name", ["冲击一室", "高低温湿热二室"])
+def test_successful_laboratory_operation_records_active_employee_for_all_interfaces(monkeypatch, lab_name):
+    from app.api.routes import laboratory as laboratory_route
+    from app.services.attendance_service import get_attendance_service
+
+    service = get_attendance_service()
+    service.login_lab(lab_name, username="zhangsan", password="123")
+    monkeypatch.setattr(
+        laboratory_route,
+        "apply_laboratory_task_operation",
+        lambda snapshot, **_kwargs: {
+            "affectedTrayCodes": ["TP-LOG-501"],
+            "samples": snapshot.get("samples", []),
+        },
+    )
+    monkeypatch.setattr(
+        laboratory_route,
+        "run_atomic_laboratory_operation",
+        lambda operation, **_kwargs: operation({"tasks": [{"code": "TASK-LOG-501"}], "samples": []}),
+    )
+    client, _storage = build_client(monkeypatch, base_payloads([]))
+
+    response = client.post(
+        "/api/laboratory/operations",
+        json={
+            "operationType": "compare",
+            "taskCode": "TASK-LOG-501",
+            "experimentCode": "EXP-LOG-501",
+            "labName": lab_name,
+            "trayCodes": ["TP-LOG-501"],
+        },
+    )
+
+    assert response.status_code == 200
+    workflow_logs = [log for log in service.list_operation_logs() if log["taskCode"] == "TASK-LOG-501"]
+    assert len(workflow_logs) == 1
+    assert workflow_logs[0]["action"] == "任务比对"
+    assert workflow_logs[0]["labName"] == lab_name
+    assert workflow_logs[0]["trayNo"] == "TP-LOG-501"
+
+
+def test_failed_laboratory_operation_does_not_record_employee_log(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+    from app.services.attendance_service import get_attendance_service
+
+    service = get_attendance_service()
+    service.login_lab("冲击一室", username="zhangsan", password="123")
+    monkeypatch.setattr(
+        laboratory_route,
+        "run_atomic_laboratory_operation",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("storage failed")),
+    )
+    client, _storage = build_client(monkeypatch, base_payloads([]))
+
+    with pytest.raises(RuntimeError, match="storage failed"):
+        client.post(
+            "/api/laboratory/operations",
+            json={
+                "operationType": "compare",
+                "taskCode": "TASK-FAILED-LOG",
+                "experimentCode": "EXP-FAILED-LOG",
+                "labName": "冲击一室",
+                "trayCodes": ["TP-FAILED-LOG"],
+            },
+        )
+
+    assert not [log for log in service.list_operation_logs() if log["taskCode"] == "TASK-FAILED-LOG"]
+
+
+@pytest.mark.parametrize("lab_name", ["冲击一室", "高低温湿热二室"])
 def test_task_comparison_locks_the_exact_axis_schedule_for_all_laboratory_interfaces(monkeypatch, lab_name):
     from app.api.routes import laboratory as laboratory_route
     from app.api.routes import storage as storage_route

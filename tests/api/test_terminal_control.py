@@ -69,7 +69,7 @@ def heartbeat(client, terminal, **overrides):
         "machineName": "STAGING-PC-01",
         "ipAddress": "192.168.110.21",
         "configuredPath": "/staging-management",
-        "agentVersion": "v2.0",
+        "agentVersion": "v2.1",
         "allowReload": True,
         "allowPower": True,
     }
@@ -105,7 +105,7 @@ def test_heartbeat_exposes_online_ip_page_and_capabilities_to_central(client):
                 "labName": "",
                 "currentPath": "/staging-management",
                 "currentTitle": "",
-                "agentVersion": "v2.0",
+                "agentVersion": "v2.1",
                 "allowReload": True,
                 "allowPower": True,
                 "online": True,

@@ -471,9 +471,12 @@
           <span class="muted">
             共 {{ taskDetailSampleCodes.length }} 个<span v-if="taskDetailSampleCodes.length > taskDetailSampleCodePreview.length">，显示前 5 个</span>
           </span>
-          <button class="action-link" data-testid="open-sample-codes-editor" type="button" :disabled="isTaskDetailLocked" @click="openSampleCodesEditor">
+          <button class="action-link" data-testid="open-sample-codes-editor" type="button" :disabled="isTaskDetailLocked || isTaskSampleCodesLocked" @click="openSampleCodesEditor">
             编辑样品编号
           </button>
+        </div>
+        <div v-if="isTaskSampleCodesLocked" class="helper" data-testid="task-sample-codes-locked-hint">
+          接驳间已确认收货，不允许修改样品编号；重新入库后可再次修改。
         </div>
         <div class="tasks-sample-preview__list" data-testid="task-detail-sample-code-preview">
           <span v-for="code in taskDetailSampleCodePreview" :key="code">{{ code }}</span>
@@ -710,6 +713,7 @@ const {
   intakeDueAtMin,
   isTaskDetailLocked,
   isTaskSampleCountLocked,
+  isTaskSampleCodesLocked,
   intakeModalOpen,
   intakeSampleCodePreview,
   intakeWarning,

@@ -7,37 +7,6 @@
     @close="cancel"
   >
     <div class="system-operation-scope-wizard">
-      <div class="system-operation-scope-progress" aria-label="查询范围选择步骤">
-        <button
-          class="system-operation-scope-step"
-          :class="{ 'is-active': step === 'employee', 'is-complete': employeeDraft.length > 0 }"
-          data-testid="operation-log-scope-step-employee"
-          type="button"
-          :aria-current="step === 'employee' ? 'step' : undefined"
-          @click="step = 'employee'"
-        >
-          <span class="system-operation-scope-step__index">1</span>
-          <span>
-            <strong>选择员工</strong>
-            <small>已选 {{ employeeDraft.length }} / {{ employeeOptions.length }}</small>
-          </span>
-        </button>
-        <button
-          class="system-operation-scope-step"
-          :class="{ 'is-active': step === 'lab', 'is-complete': labDraft.length > 0 }"
-          data-testid="operation-log-scope-step-lab"
-          type="button"
-          :aria-current="step === 'lab' ? 'step' : undefined"
-          @click="step = 'lab'"
-        >
-          <span class="system-operation-scope-step__index">2</span>
-          <span>
-            <strong>选择试验间</strong>
-            <small>已选 {{ labDraft.length }} / {{ labOptions.length }}</small>
-          </span>
-        </button>
-      </div>
-
       <section v-if="step === 'employee'" class="system-operation-scope-pane" data-testid="operation-log-employee-step">
         <div class="system-operation-scope-toolbar">
           <label class="system-operation-scope-search">
@@ -53,7 +22,7 @@
         </div>
         <div class="system-operation-scope-options" role="listbox" aria-label="选择员工" aria-multiselectable="true">
           <button
-            v-for="employee in filteredEmployeeOptions"
+            v-for="employee in paginatedEmployeeOptions"
             :key="employee.id"
             class="system-operation-scope-option"
             :class="{ 'is-selected': employeeDraft.includes(employee.employeeName) }"
@@ -70,6 +39,18 @@
             </span>
           </button>
           <div v-if="filteredEmployeeOptions.length === 0" class="system-operation-scope-empty">没有匹配的员工，请更换关键词。</div>
+        </div>
+        <div v-if="filteredEmployeeOptions.length" class="system-operation-scope-pagination">
+          <span data-testid="operation-log-employee-pagination-range">
+            显示第 {{ employeePageStart }}–{{ employeePageEnd }} 名，共 {{ filteredEmployeeOptions.length }} 名
+          </span>
+          <AppPagination
+            :current-page="employeePage"
+            :page-count="employeePageCount"
+            :show-jump-controls="false"
+            data-testid="operation-log-employee-pagination"
+            @change="employeePage = $event"
+          />
         </div>
       </section>
 
@@ -111,9 +92,7 @@
 
     <template #footer>
       <button class="action-btn secondary" data-testid="cancel-operation-log-scope" type="button" @click="cancel">取消</button>
-      <button v-if="step === 'lab'" class="action-btn secondary" data-testid="operation-log-scope-previous" type="button" @click="step = 'employee'">上一步</button>
-      <button v-if="step === 'employee'" class="action-btn" data-testid="operation-log-scope-next" type="button" @click="step = 'lab'">下一步</button>
-      <button v-else class="action-btn" data-testid="confirm-operation-log-scope" type="button" @click="confirm">确定选择</button>
+      <button class="action-btn" data-testid="confirm-operation-log-scope" type="button" @click="confirm">确认</button>
     </template>
   </AppModal>
 </template>
@@ -121,6 +100,9 @@
 <script setup>
 import { computed, ref, watch } from "vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import AppPagination from "@/components/shared/AppPagination.vue";
+
+const EMPLOYEE_PAGE_SIZE = 10;
 
 const props = defineProps({
   employeeNames: {
@@ -151,6 +133,7 @@ const props = defineProps({
 
 const emit = defineEmits(["close", "confirm"]);
 const employeeDraft = ref([]);
+const employeePage = ref(1);
 const employeeQuery = ref("");
 const labDraft = ref([]);
 const labQuery = ref("");
@@ -175,10 +158,21 @@ const filteredLabOptions = computed(() => {
   return props.labOptions.filter((labName) => !query || normalizeText(labName).toLocaleLowerCase("zh-Hans-CN").includes(query));
 });
 
+const employeePageCount = computed(() => Math.max(Math.ceil(filteredEmployeeOptions.value.length / EMPLOYEE_PAGE_SIZE), 1));
+const employeePageStart = computed(() => filteredEmployeeOptions.value.length
+  ? (employeePage.value - 1) * EMPLOYEE_PAGE_SIZE + 1
+  : 0);
+const employeePageEnd = computed(() => Math.min(employeePageStart.value + EMPLOYEE_PAGE_SIZE - 1, filteredEmployeeOptions.value.length));
+const paginatedEmployeeOptions = computed(() => {
+  const start = (employeePage.value - 1) * EMPLOYEE_PAGE_SIZE;
+  return filteredEmployeeOptions.value.slice(start, start + EMPLOYEE_PAGE_SIZE);
+});
+
 const resetDraft = () => {
   employeeDraft.value = uniqueTexts(props.employeeNames);
   labDraft.value = uniqueTexts(props.labNames);
   employeeQuery.value = "";
+  employeePage.value = 1;
   labQuery.value = "";
   step.value = props.initialStep === "lab" ? "lab" : "employee";
 };
@@ -191,6 +185,14 @@ watch(
     }
   },
 );
+
+watch(employeeQuery, () => {
+  employeePage.value = 1;
+});
+
+watch(employeePageCount, (pageCount) => {
+  employeePage.value = Math.min(employeePage.value, pageCount);
+});
 
 const toggleText = (draft, value) => {
   const normalized = normalizeText(value);
@@ -216,6 +218,7 @@ const selectAllLabs = () => {
 
 const cancel = () => emit("close");
 const confirm = () => emit("confirm", {
+  scope: step.value,
   employeeNames: uniqueTexts(employeeDraft.value),
   labNames: uniqueTexts(labDraft.value),
 });

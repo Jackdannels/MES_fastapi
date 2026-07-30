@@ -7,6 +7,7 @@ using System.Management;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -19,8 +20,8 @@ using Microsoft.Win32;
 [assembly: AssemblyDescription("MES 固定工作台配置、启动与自我检查客户端")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Workstation Configurator")]
-[assembly: AssemblyVersion("2.0.0.0")]
-[assembly: AssemblyFileVersion("2.0.0.0")]
+[assembly: AssemblyVersion("2.1.0.0")]
+[assembly: AssemblyFileVersion("2.1.0.0")]
 
 namespace MESWorkstationConfigurator
 {
@@ -125,14 +126,16 @@ namespace MESWorkstationConfigurator
 
     internal static class LauncherRuntime
     {
-        internal const string Version = "v2.0";
+        internal const string Version = "v2.1";
         internal const int HeartbeatIntervalMilliseconds = 5000;
         internal const int WatchdogCheckIntervalMilliseconds = 15000;
+        internal const int StartupDesktopSettleMilliseconds = 8000;
         internal const int ProcessStartupGraceMilliseconds = 15000;
         internal const int PageStartupGraceMilliseconds = 60000;
         internal const int AutomaticRestartRetryMilliseconds = 30000;
         internal const int AutomaticRestartLimit = 3;
         internal const int AutomaticRestartPauseMilliseconds = 5 * 60 * 1000;
+        internal static readonly int[] FocusRetryDelaysMilliseconds = new int[] { 500, 1500, 3000 };
         internal const int WorkstationZoomPercent = 100;
         internal const string DefaultServerUrl = "http://192.168.110.15:5173";
         internal const string RunValueName = "MESWorkstationLauncher";
@@ -146,6 +149,48 @@ namespace MESWorkstationConfigurator
         internal static readonly string LogPath = Path.Combine(InstallDirectory, "launcher.log");
         internal static readonly string EdgeProfilePath = Path.Combine(InstallDirectory, "EdgeProfile");
         private static string lastKnownLocalIpAddress = String.Empty;
+        private static readonly IntPtr WindowTopMost = new IntPtr(-1);
+        private static readonly IntPtr WindowNotTopMost = new IntPtr(-2);
+        private const uint ShowWindow = 5;
+        private const uint SetWindowPositionNoMove = 0x0002;
+        private const uint SetWindowPositionNoSize = 0x0001;
+        private const uint SetWindowPositionShow = 0x0040;
+        private const uint GetAncestorRoot = 2;
+
+        [DllImport("user32.dll")]
+        private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
+
+        [DllImport("user32.dll")]
+        private static extern bool BringWindowToTop(IntPtr windowHandle);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetAncestor(IntPtr windowHandle, uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr windowHandle, IntPtr processId);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr windowHandle);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetWindowPos(
+            IntPtr windowHandle,
+            IntPtr insertAfter,
+            int x,
+            int y,
+            int width,
+            int height,
+            uint flags
+        );
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindowAsync(IntPtr windowHandle, uint command);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
 
         internal static readonly List<StationOption> Stations = new List<StationOption>
         {
@@ -499,6 +544,8 @@ namespace MESWorkstationConfigurator
                     {
                         Thread.Sleep(3000);
                     }
+                    Log("等待 Windows 桌面稳定后启动工作台。");
+                    Thread.Sleep(StartupDesktopSettleMilliseconds);
                 }
                 string edgePath = ResolveEdgePath();
                 string targetUrl = BuildTerminalBootstrapUrl(config);
@@ -520,6 +567,7 @@ namespace MESWorkstationConfigurator
                     + " --force-device-scale-factor=1.0";
                 Process.Start(startInfo);
                 Log("Edge 已启动，固定终端目标=" + businessTargetUrl);
+                StabilizeDedicatedEdgeForeground();
             }
             catch (Exception exception)
             {
@@ -772,6 +820,103 @@ namespace MESWorkstationConfigurator
             return false;
         }
 
+        private static void StabilizeDedicatedEdgeForeground()
+        {
+            bool foundWindow = false;
+            for (int index = 0; index < FocusRetryDelaysMilliseconds.Length; index++)
+            {
+                Thread.Sleep(FocusRetryDelaysMilliseconds[index]);
+                IntPtr windowHandle = FindDedicatedEdgeMainWindow();
+                if (windowHandle == IntPtr.Zero) continue;
+                foundWindow = true;
+                bool foreground = ActivateDedicatedEdgeWindow(windowHandle);
+                Log(
+                    "专用 Edge 前台激活第" + (index + 1)
+                    + "次：" + (foreground ? "成功" : "已请求，等待下一次确认")
+                );
+            }
+            if (!foundWindow)
+            {
+                Log("专用 Edge 已启动，但在窗口聚焦周期内尚未发现主窗口；后续由自我检查继续处理。");
+            }
+        }
+
+        private static IntPtr FindDedicatedEdgeMainWindow()
+        {
+            try
+            {
+                using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(
+                    "SELECT ProcessId, CommandLine FROM Win32_Process WHERE Name='msedge.exe'"
+                ))
+                {
+                    foreach (ManagementObject processInfo in searcher.Get())
+                    {
+                        string commandLine = Convert.ToString(processInfo["CommandLine"]);
+                        if (String.IsNullOrWhiteSpace(commandLine)
+                            || commandLine.IndexOf(EdgeProfilePath, StringComparison.OrdinalIgnoreCase) < 0)
+                        {
+                            continue;
+                        }
+                        int processId = Convert.ToInt32(processInfo["ProcessId"]);
+                        try
+                        {
+                            using (Process edgeProcess = Process.GetProcessById(processId))
+                            {
+                                edgeProcess.Refresh();
+                                if (edgeProcess.MainWindowHandle != IntPtr.Zero)
+                                {
+                                    return edgeProcess.MainWindowHandle;
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                Log("查找专用 Edge 主窗口失败：" + exception.Message);
+            }
+            return IntPtr.Zero;
+        }
+
+        private static bool ActivateDedicatedEdgeWindow(IntPtr windowHandle)
+        {
+            if (windowHandle == IntPtr.Zero) return false;
+            uint currentThreadId = GetCurrentThreadId();
+            IntPtr foregroundWindow = GetForegroundWindow();
+            uint foregroundThreadId = foregroundWindow == IntPtr.Zero
+                ? 0
+                : GetWindowThreadProcessId(foregroundWindow, IntPtr.Zero);
+            uint targetThreadId = GetWindowThreadProcessId(windowHandle, IntPtr.Zero);
+            bool attachedToForeground = false;
+            bool attachedToTarget = false;
+            try
+            {
+                if (foregroundThreadId != 0 && foregroundThreadId != currentThreadId)
+                {
+                    attachedToForeground = AttachThreadInput(currentThreadId, foregroundThreadId, true);
+                }
+                if (targetThreadId != 0 && targetThreadId != currentThreadId && targetThreadId != foregroundThreadId)
+                {
+                    attachedToTarget = AttachThreadInput(currentThreadId, targetThreadId, true);
+                }
+
+                uint positionFlags = SetWindowPositionNoMove | SetWindowPositionNoSize | SetWindowPositionShow;
+                ShowWindowAsync(windowHandle, ShowWindow);
+                SetWindowPos(windowHandle, WindowTopMost, 0, 0, 0, 0, positionFlags);
+                BringWindowToTop(windowHandle);
+                SetForegroundWindow(windowHandle);
+                SetWindowPos(windowHandle, WindowNotTopMost, 0, 0, 0, 0, positionFlags);
+                return GetAncestor(GetForegroundWindow(), GetAncestorRoot) == windowHandle;
+            }
+            finally
+            {
+                if (attachedToTarget) AttachThreadInput(currentThreadId, targetThreadId, false);
+                if (attachedToForeground) AttachThreadInput(currentThreadId, foregroundThreadId, false);
+            }
+        }
+
         internal static bool RunWatchdogSelfTest()
         {
             DateTime start = new DateTime(2026, 7, 30, 0, 0, 0, DateTimeKind.Utc);
@@ -793,6 +938,15 @@ namespace MESWorkstationConfigurator
             if (pageWatchdog.Evaluate(start.AddSeconds(61), true, false) != WorkstationRecoveryReason.PageInactive) return false;
             if (pageWatchdog.Evaluate(start.AddSeconds(62), true, true) != WorkstationRecoveryReason.None) return false;
             return true;
+        }
+
+        internal static bool RunWindowFocusSelfTest()
+        {
+            return StartupDesktopSettleMilliseconds == 8000
+                && FocusRetryDelaysMilliseconds.Length == 3
+                && FocusRetryDelaysMilliseconds[0] == 500
+                && FocusRetryDelaysMilliseconds[1] == 1500
+                && FocusRetryDelaysMilliseconds[2] == 3000;
         }
 
         private static void StopDedicatedEdge()
@@ -1114,6 +1268,11 @@ namespace MESWorkstationConfigurator
         [STAThread]
         private static int Main(string[] args)
         {
+            if (args.Length > 0 && String.Equals(args[0], "--window-focus-self-test", StringComparison.OrdinalIgnoreCase))
+            {
+                return LauncherRuntime.RunWindowFocusSelfTest() ? 0 : 5;
+            }
+
             if (args.Length > 0 && String.Equals(args[0], "--watchdog-self-test", StringComparison.OrdinalIgnoreCase))
             {
                 return LauncherRuntime.RunWatchdogSelfTest() ? 0 : 4;

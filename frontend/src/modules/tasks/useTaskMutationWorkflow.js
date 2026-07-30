@@ -16,6 +16,7 @@ import {
 } from "./model";
 
 const SAMPLE_COUNT_LOCKED_MESSAGE = "该任务已保存预接驳托盘或已确认到货，请先重新入库后再修改样品数量";
+const SAMPLE_CODES_LOCKED_MESSAGE = "该任务样品已在接驳间确认收货，不允许修改样品编号，请先重新入库";
 
 function useTaskMutationWorkflow({
   arraysEqual,
@@ -232,6 +233,10 @@ function useTaskMutationWorkflow({
     const originalTask = rawTasks.value.find((task) => normalizeText(task?.id) === taskId);
     if (!originalTask) {
       sampleCodesWarning.value = "当前任务不存在，请刷新后重试";
+      return;
+    }
+    if (taskStorageConfirmed(originalTask, rawSamples.value)) {
+      sampleCodesWarning.value = SAMPLE_CODES_LOCKED_MESSAGE;
       return;
     }
     const originalCount = normalizeTaskSampleCount(originalTask?.sample_count, taskDetailSampleCodes.value.length);

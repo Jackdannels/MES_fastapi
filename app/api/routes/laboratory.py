@@ -262,6 +262,24 @@ def apply_laboratory_operation(
         resource_keys=resource_keys,
         storage=storage,
     )
+    try:
+        get_attendance_service().record_laboratory_workflow_operation(
+            operation_type=request.operation_type,
+            lab_name=request.lab_name,
+            lab_code=request.lab_code,
+            task_code=request.task_code,
+            experiment_code=request.experiment_code,
+            tray_codes=result.get("affectedTrayCodes") or request.tray_codes,
+            source="api",
+            operated_at=occurred_at,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to record laboratory workflow attendance operation task=%s experiment=%s operation=%s",
+            request.task_code,
+            request.experiment_code,
+            request.operation_type,
+        )
     return {
         "ok": True,
         "operationId": request.operation_id,

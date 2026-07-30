@@ -124,7 +124,7 @@ describe("SystemPage runtime", () => {
     expect(wrapper.get("#employee-table tbody tr:first-child td").text()).toBe("17");
   });
 
-  test("provides default administrator credentials and multi-select work-log filters", async () => {
+  test("provides default administrator credentials and independently confirmed work-log filters", async () => {
     stubAttendanceFetch();
     const wrapper = mount(SystemPage);
     await flushPromises();
@@ -139,13 +139,21 @@ describe("SystemPage runtime", () => {
     expect(wrapper.find(".picker-only-calendar").exists()).toBe(true);
 
     await wrapper.get('[data-testid="operation-log-employee"]').trigger("click");
-    expect(wrapper.get('[data-testid="operation-log-scope-step-employee"]').attributes("aria-current")).toBe("step");
+    expect(wrapper.get('[data-testid="operation-log-employee-step"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="operation-log-lab-step"]').exists()).toBe(false);
     const employeeOption = wrapper.get('[data-testid="operation-log-employee-option-1"]');
     await employeeOption.trigger("click");
     expect(employeeOption.classes()).toContain("is-selected");
     expect(wrapper.get('[data-testid="operation-log-employee"]').text()).toContain("选择员工");
+    expect(wrapper.find('[data-testid="operation-log-scope-next"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="confirm-operation-log-scope"]').text()).toBe("确认");
+    await wrapper.get('[data-testid="confirm-operation-log-scope"]').trigger("click");
+    expect(wrapper.get('[data-testid="operation-log-employee"]').text()).toContain("张三");
+    expect(wrapper.get('[data-testid="operation-log-lab"]').text()).toContain("选择试验间");
 
-    await wrapper.get('[data-testid="operation-log-scope-next"]').trigger("click");
+    await wrapper.get('[data-testid="operation-log-lab"]').trigger("click");
+    expect(wrapper.get('[data-testid="operation-log-lab-step"]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="operation-log-employee-step"]').exists()).toBe(false);
     const labOption = wrapper.get('[data-testid="operation-log-lab-option-冲击一室"]');
     await labOption.trigger("click");
     expect(labOption.classes()).toContain("is-selected");
@@ -154,7 +162,7 @@ describe("SystemPage runtime", () => {
     expect(wrapper.get('[data-testid="operation-log-lab"]').text()).toContain("冲击一室");
   });
 
-  test("supports select all, clear, and cancel rollback in the two-step work-log scope wizard", async () => {
+  test("supports select all, clear, and cancel rollback in independent work-log selectors", async () => {
     stubAttendanceFetch();
     const wrapper = mount(SystemPage);
     await flushPromises();
@@ -168,7 +176,10 @@ describe("SystemPage runtime", () => {
     expect(wrapper.get('[data-testid="operation-log-employee-option-1"]').classes()).not.toContain("is-selected");
 
     await wrapper.get('[data-testid="operation-log-employee-option-1"]').trigger("click");
-    await wrapper.get('[data-testid="operation-log-scope-next"]').trigger("click");
+    await wrapper.get('[data-testid="confirm-operation-log-scope"]').trigger("click");
+    expect(wrapper.get('[data-testid="operation-log-employee"]').text()).toContain("张三");
+
+    await wrapper.get('[data-testid="operation-log-lab"]').trigger("click");
     await wrapper.get('[data-testid="operation-log-lab-select-all"]').trigger("click");
     expect(wrapper.findAll(".system-operation-scope-option.is-selected").length).toBeGreaterThan(1);
     await wrapper.get('[data-testid="operation-log-lab-clear"]').trigger("click");
@@ -177,13 +188,41 @@ describe("SystemPage runtime", () => {
     await wrapper.get('[data-testid="confirm-operation-log-scope"]').trigger("click");
 
     expect(wrapper.get('[data-testid="operation-log-employee"]').text()).toContain("张三");
+    expect(wrapper.get('[data-testid="operation-log-lab"]').text()).toContain("冲击一室");
     await wrapper.get('[data-testid="operation-log-employee"]').trigger("click");
     await wrapper.get('[data-testid="operation-log-employee-option-1"]').trigger("click");
     await wrapper.get('[data-testid="cancel-operation-log-scope"]').trigger("click");
     expect(wrapper.get('[data-testid="operation-log-employee"]').text()).toContain("张三");
 
     await wrapper.get('[data-testid="operation-log-lab"]').trigger("click");
-    expect(wrapper.get('[data-testid="operation-log-scope-step-lab"]').attributes("aria-current")).toBe("step");
+    expect(wrapper.get('[data-testid="operation-log-lab-step"]').exists()).toBe(true);
+  });
+
+  test("paginates the employee work-log selector with ten employees per page", async () => {
+    const employees = stubAttendanceFetch();
+    for (let index = 2; index <= 23; index += 1) {
+      employees.push({
+        ...employees[0],
+        employeeName: `员工${index}`,
+        id: index,
+        username: `employee${index}`,
+      });
+    }
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+
+    await wrapper.get('[data-testid="open-employee-operation-logs"]').trigger("click");
+    await wrapper.get('[data-testid="operation-log-employee"]').trigger("click");
+
+    expect(wrapper.findAll('[data-testid^="operation-log-employee-option-"]')).toHaveLength(10);
+    expect(wrapper.get('[data-testid="operation-log-employee-pagination-range"]').text()).toContain("1–10");
+    expect(wrapper.get('[data-testid="operation-log-employee-pagination"] [data-testid="pagination-status"]').text()).toContain("1 / 3");
+
+    await wrapper.get('[data-testid="operation-log-employee-pagination"] [data-page="next"]').trigger("click");
+
+    expect(wrapper.findAll('[data-testid^="operation-log-employee-option-"]')).toHaveLength(10);
+    expect(wrapper.get('[data-testid="operation-log-employee-pagination-range"]').text()).toContain("11–20");
+    expect(wrapper.get('[data-testid="operation-log-employee-option-11"]').exists()).toBe(true);
   });
 
   test("displays employee operation log timestamps as Beijing local time without timezone markers", async () => {

@@ -121,6 +121,42 @@ def test_attendance_operation_logs_are_recorded_from_the_active_lab_session_and_
     assert {log["labName"] for log in multi_select_response.json()} == {"盐雾试验室"}
 
 
+def test_attendance_records_detailed_laboratory_workflow_operations_per_tray():
+    service = AttendanceService(repository=InMemoryAttendanceRepository())
+    service.login_lab("盐雾试验室", username="zhangsan", password="123")
+
+    for operation_type in ("compare", "install", "ready"):
+        service.record_laboratory_workflow_operation(
+            operation_type=operation_type,
+            lab_name="盐雾试验室",
+            task_code="TASK-LOG-001",
+            experiment_code="EXP-LOG-001",
+            tray_codes=["TP-LOG-001", "TP-LOG-002"],
+        )
+
+    workflow_logs = [log for log in service.list_operation_logs() if log["taskCode"] == "TASK-LOG-001"]
+    assert {log["action"] for log in workflow_logs} == {"任务比对", "安装样品", "确认准备就绪"}
+    assert {log["experimentCode"] for log in workflow_logs} == {"EXP-LOG-001"}
+    assert {log["trayNo"] for log in workflow_logs} == {"TP-LOG-001", "TP-LOG-002"}
+    assert {log["employeeName"] for log in workflow_logs} == {"张三"}
+    assert len(workflow_logs) == 6
+
+
+def test_attendance_skips_laboratory_workflow_operation_without_active_employee():
+    service = AttendanceService(repository=InMemoryAttendanceRepository())
+
+    logs = service.record_laboratory_workflow_operation(
+        operation_type="compare",
+        lab_name="盐雾试验室",
+        task_code="TASK-NO-LOGIN",
+        experiment_code="EXP-NO-LOGIN",
+        tray_codes=["TP-NO-LOGIN"],
+    )
+
+    assert logs == []
+    assert service.list_operation_logs() == []
+
+
 def test_attendance_login_rejects_wrong_password(client):
     response = client.post(
         "/api/attendance/labs/%E5%86%B2%E5%87%BB%E4%B8%80%E5%AE%A4/login",

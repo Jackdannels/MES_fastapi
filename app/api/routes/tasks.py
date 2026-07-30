@@ -56,6 +56,7 @@ SCHEDULED_EXPERIMENT_REMOVAL_CODE = "SCHEDULED_EXPERIMENT_REMOVAL_REQUIRES_CONFI
 SCHEDULED_EXPERIMENT_REMOVAL_MESSAGE = "删除已排程实验类型需要确认"
 EXPERIMENT_TYPE_LOCKED_MESSAGE = "该任务样品已在接驳区确认到货，不允许更改实验类型"
 SAMPLE_COUNT_LOCKED_MESSAGE = "该任务已保存预接驳托盘或已确认到货，请先重新入库后再修改样品数量"
+SAMPLE_CODES_LOCKED_MESSAGE = "该任务样品已在接驳间确认收货，不允许修改样品编号，请先重新入库"
 COMPLETED_TASK_EDIT_LOCKED_MESSAGE = "任务已完成，仅允许修改任务名称"
 RUNNING_TASK_EDIT_LOCKED_MESSAGE = "任务进行中，仅允许修改任务名称"
 RUNNING_TASK_DELETE_MESSAGE = "任务存在进行中的实验，不能删除任务"
@@ -970,6 +971,8 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         storage.write_many(snapshot)
         publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
         return running_task
+    if explicit_sample_codes_value is not None and task_storage_confirmed(previous_task, samples):
+        raise HTTPException(status_code=400, detail=SAMPLE_CODES_LOCKED_MESSAGE)
     if (
         "due_at" in payload_dict
         and normalize_text(updated_task.get("due_at")) != normalize_text(previous_task.get("due_at"))

@@ -17,7 +17,7 @@ describe("useTaskMutationWorkflow", () => {
     mocks.updateTask.mockReset();
   });
 
-  const createSampleCodeWorkflow = (draftCodes) => {
+  const createSampleCodeWorkflow = (draftCodes, { storageConfirmed = false } = {}) => {
     const originalTask = {
       id: "task-001",
       code: "SYLU-2026-07-001",
@@ -50,6 +50,7 @@ describe("useTaskMutationWorkflow", () => {
         "SYLU-2026-07-001-SP-002",
       ]),
       taskSampleCountLocked: vi.fn(() => false),
+      taskStorageConfirmed: vi.fn(() => storageConfirmed),
     });
 
     return {
@@ -103,5 +104,18 @@ describe("useTaskMutationWorkflow", () => {
     expect(workflow.closeSampleCodesEditor).not.toHaveBeenCalled();
     expect(workflow.loadTasksPage).not.toHaveBeenCalled();
     expect(workflow.sampleCodesWarning.value).toBe("样品编号数量必须与样品数量一致（当前 2 个）");
+  });
+
+  test("rejects saving sample codes when handover receipt is confirmed while the editor is open", async () => {
+    const workflow = createSampleCodeWorkflow(
+      ["SYLU-2026-07-001-SP-010", "SYLU-2026-07-001-SP-011"],
+      { storageConfirmed: true },
+    );
+
+    await workflow.saveSampleCodes();
+
+    expect(mocks.updateTask).not.toHaveBeenCalled();
+    expect(workflow.closeSampleCodesEditor).not.toHaveBeenCalled();
+    expect(workflow.sampleCodesWarning.value).toBe("该任务样品已在接驳间确认收货，不允许修改样品编号，请先重新入库");
   });
 });

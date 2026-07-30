@@ -1022,6 +1022,46 @@ class AttendanceService:
             }
         )
 
+    def record_laboratory_workflow_operation(
+        self,
+        *,
+        operation_type: str,
+        lab_name: str = "",
+        lab_code: str = "",
+        task_code: str = "",
+        experiment_code: str = "",
+        tray_codes: list[str] | None = None,
+        source: str = "api",
+        operated_at: datetime | str | None = None,
+    ) -> list[dict[str, Any]]:
+        action = {
+            "compare": "任务比对",
+            "install": "安装样品",
+            "ready": "确认准备就绪",
+        }.get(normalize_text(operation_type))
+        if not action:
+            return []
+        session = self.repository.find_active_session(lab_name=lab_name, lab_code=lab_code)
+        if not session:
+            return []
+        normalized_tray_codes = list(
+            dict.fromkeys(normalize_text(tray_code) for tray_code in (tray_codes or []) if normalize_text(tray_code))
+        )
+        logs = []
+        for tray_code in normalized_tray_codes or [""]:
+            operation_log = self.record_operation(
+                session,
+                action=action,
+                source=normalize_text(source) or "api",
+                task_code=task_code,
+                experiment_code=experiment_code,
+                tray_no=tray_code,
+                operated_at=operated_at,
+            )
+            if operation_log:
+                logs.append(operation_log)
+        return logs
+
     def serialize_operation_log(self, operation_log: dict[str, Any]) -> dict[str, Any]:
         return {
             "action": normalize_text(operation_log.get("action")),

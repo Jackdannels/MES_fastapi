@@ -357,9 +357,12 @@ function useSystemPage() {
     operationLogScopeSelectorOpen.value = false;
   };
 
-  const confirmOperationLogScope = ({ employeeNames = [], labNames = [] } = {}) => {
-    operationLogFilters.value.employeeNames = Array.isArray(employeeNames) ? [...employeeNames] : [];
-    operationLogFilters.value.labNames = Array.isArray(labNames) ? [...labNames] : [];
+  const confirmOperationLogScope = ({ scope = "employee", employeeNames = [], labNames = [] } = {}) => {
+    if (scope === "lab") {
+      operationLogFilters.value.labNames = Array.isArray(labNames) ? [...labNames] : [];
+    } else {
+      operationLogFilters.value.employeeNames = Array.isArray(employeeNames) ? [...employeeNames] : [];
+    }
     operationLogScopeSelectorOpen.value = false;
   };
 

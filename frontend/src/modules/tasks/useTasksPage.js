@@ -240,6 +240,14 @@ function useTasksPage() {
     ));
     return Boolean(task && taskSampleCountLocked(task, rawSamples.value));
   });
+  const isTaskSampleCodesLocked = computed(() => {
+    const taskId = normalizeText(editForm.value.id);
+    const taskCode = normalizeText(editForm.value.code);
+    const task = rawTasks.value.find((entry) => (
+      normalizeText(entry?.id) === taskId || taskCodeOf(entry) === taskCode
+    ));
+    return Boolean(task && taskStorageConfirmed(task, rawSamples.value));
+  });
 
   const syncIntakeDerivedFields = () => {
     intakeForm.value.test_type = intakeExperimentPlainSummary.value;
@@ -419,7 +427,7 @@ function useTasksPage() {
   };
 
   const openSampleCodesEditor = () => {
-    if (isTaskDetailLocked.value) {
+    if (isTaskDetailLocked.value || isTaskSampleCodesLocked.value) {
       return;
     }
     const taskCode = normalizeText(editForm.value.code);
@@ -935,6 +943,7 @@ function useTasksPage() {
     isRunningTaskDetail,
     isTaskDetailLocked,
     isTaskSampleCountLocked,
+    isTaskSampleCodesLocked,
     intakeModalOpen: intakeModal.open,
     intakeSampleCodePreview,
     intakeWarning,

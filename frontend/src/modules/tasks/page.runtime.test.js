@@ -551,6 +551,34 @@ describe("TasksPage runtime", () => {
     expect(wrapper.get('[data-testid="task-detail-sample-code-preview"]').text()).toContain("SYLU-2026-03-001-SP-101");
   });
 
+  test("disables sample code editing after handover confirms receipt", async () => {
+    installApiFetchMock({
+      tasks: [createTask({ sample_count: 2, transfer_status: "到货" })],
+      samples: Array.from({ length: 2 }, (_, index) => ({
+        id: `sample-confirmed-${index + 1}`,
+        code: `SYLU-2026-03-001-SP-${String(index + 1).padStart(3, "0")}`,
+        task_code: "SYLU-2026-03-001",
+        status: "到货",
+        flow_status: "到货",
+        trays: [{
+          tray_code: "SYLU-2026-03-001-TP-001",
+          sample_code: `SYLU-2026-03-001-SP-${String(index + 1).padStart(3, "0")}`,
+          status: "到货",
+        }],
+      })),
+    });
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+
+    const editButton = wrapper.get('[data-testid="open-sample-codes-editor"]');
+    expect(editButton.attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="task-sample-codes-locked-hint"]').text()).toContain("接驳间已确认收货");
+    await editButton.trigger("click");
+    expect(wrapper.find('[data-testid="task-sample-codes-modal"].modal.is-open').exists()).toBe(false);
+  });
+
   test("limits task detail sample code count to the task sample count", async () => {
     installApiFetchMock({
       tasks: [createTask({ sample_count: 99 })],

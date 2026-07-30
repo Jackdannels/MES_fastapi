@@ -2149,6 +2149,58 @@ def test_update_task_explicit_sample_codes_atomically_migrates_experiment_relati
     assert storage.write_many_calls == []
 
 
+def test_update_task_rejects_sample_code_change_after_handover_confirms_arrival(monkeypatch):
+    task_code = "SYLU-2026-07-036"
+    original_codes = [f"{task_code}-SP-001", f"{task_code}-SP-002"]
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": task_code,
+                "code": task_code,
+                "name": "已确认收货样品",
+                "sample_count": "2",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "transfer_status": "到货",
+                "status": "待排程",
+            }
+        ],
+        samples=[
+            {
+                "id": f"sample-{index}",
+                "code": code,
+                "task_code": task_code,
+                "status": "到货",
+                "flow_status": "到货",
+                "trays": [{"tray_code": f"{task_code}-TP-001", "sample_code": code, "status": "到货"}],
+            }
+            for index, code in enumerate(original_codes, start=1)
+        ],
+    )
+    storage = client.app.state.storage
+    before = storage.read_all()
+
+    response = client.put(
+        f"/api/tasks/{task_code}",
+        json={
+            "id": task_code,
+            "code": task_code,
+            "name": "已确认收货样品",
+            "sample_count": 2,
+            "sample_codes": [f"{task_code}-NEW-001", f"{task_code}-NEW-002"],
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "transfer_status": "到货",
+            "status": "待排程",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该任务样品已在接驳间确认收货，不允许修改样品编号，请先重新入库"
+    assert storage.read_all() == before
+
+
 def test_update_task_rejects_sample_count_change_after_handover_confirms_arrival(monkeypatch):
     client = build_client(
         monkeypatch,
