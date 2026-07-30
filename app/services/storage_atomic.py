@@ -41,6 +41,23 @@ def task_code_value(item: Any) -> str:
     return normalize_text(item.get("task_code") or item.get("taskCode"))
 
 
+def task_sample_limits(tasks: list[Any]) -> dict[str, int]:
+    limits: dict[str, int] = {}
+    for task in as_list(tasks):
+        if not isinstance(task, dict):
+            continue
+        task_code = normalize_text(task.get("code") or task.get("id"))
+        if not task_code:
+            continue
+        try:
+            sample_count = int(task.get("sample_count"))
+        except (TypeError, ValueError):
+            continue
+        if sample_count >= 0:
+            limits[task_code] = sample_count
+    return limits
+
+
 def tray_key(tray: Any) -> str:
     if not isinstance(tray, dict):
         return ""
@@ -102,6 +119,7 @@ def merge_samples(
     incoming_samples: list[Any],
     *,
     replace_task_codes: set[str] | None = None,
+    sample_limits_by_task: dict[str, int] | None = None,
 ) -> list[dict[str, Any]]:
     normalized_replace_task_codes = {
         normalize_text(task_code)
@@ -110,6 +128,16 @@ def merge_samples(
     }
     current_by_key = {sample_key(sample): dict(sample) for sample in as_list(current_samples) if isinstance(sample, dict) and sample_key(sample)}
     incoming_by_key = {sample_key(sample): dict(sample) for sample in as_list(incoming_samples) if isinstance(sample, dict) and sample_key(sample)}
+    normalized_sample_limits = {
+        normalize_text(task_code): limit
+        for task_code, limit in (sample_limits_by_task or {}).items()
+        if normalize_text(task_code) and isinstance(limit, int) and limit >= 0
+    }
+    merged_counts_by_task: dict[str, int] = {}
+    for sample in current_by_key.values():
+        task_code = task_code_value(sample)
+        if task_code:
+            merged_counts_by_task[task_code] = merged_counts_by_task.get(task_code, 0) + 1
     ordered_keys = []
     seen_keys: set[str] = set()
     for sample in [*as_list(current_samples), *as_list(incoming_samples)]:
@@ -123,7 +151,17 @@ def merge_samples(
         current = current_by_key.get(key)
         incoming = incoming_by_key.get(key)
         if current is None and incoming is not None:
+            incoming_task_code = task_code_value(incoming)
+            task_limit = normalized_sample_limits.get(incoming_task_code)
+            if (
+                incoming_task_code not in normalized_replace_task_codes
+                and task_limit is not None
+                and merged_counts_by_task.get(incoming_task_code, 0) >= task_limit
+            ):
+                continue
             merged.append(dict(incoming))
+            if incoming_task_code:
+                merged_counts_by_task[incoming_task_code] = merged_counts_by_task.get(incoming_task_code, 0) + 1
             continue
         if incoming is None and current is not None:
             current_task_code = task_code_value(current)
@@ -269,6 +307,7 @@ def merge_concurrent_storage_updates(
             current_payload.get("mes.samples"),
             merged["mes.samples"],
             replace_task_codes=replace_task_codes,
+            sample_limits_by_task=task_sample_limits(current_payload.get("mes.tasks")),
         )
     if "mes.staging_events" in merged:
         merged["mes.staging_events"] = merge_events(current_payload.get("mes.staging_events"), merged["mes.staging_events"])

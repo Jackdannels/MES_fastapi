@@ -245,6 +245,30 @@ def build_client_with_storage(monkeypatch, storage):
     return TestClient(app), storage
 
 
+def test_storage_write_does_not_resurrect_renamed_samples_from_a_stale_client(monkeypatch):
+    task_code = "TASK-RENAMED-SAMPLES"
+    current_samples = [
+        {"code": "CUSTOM-A", "task_code": task_code, "updated_at": "2026-07-30T11:00:00"},
+        {"code": "CUSTOM-B", "task_code": task_code, "updated_at": "2026-07-30T11:00:00"},
+    ]
+    stale_samples = [
+        {"code": f"{task_code}-SP-001", "task_code": task_code, "updated_at": "2026-07-30T10:00:00"},
+        {"code": f"{task_code}-SP-002", "task_code": task_code, "updated_at": "2026-07-30T10:00:00"},
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.tasks": [{"code": task_code, "sample_count": 2}],
+            "mes.samples": current_samples,
+        },
+    )
+
+    response = client.put("/api/storage", json={"mes.samples": stale_samples})
+
+    assert response.status_code == 200
+    assert storage.read("mes.samples") == current_samples
+
+
 def test_storage_reads_only_requested_snapshot_keys(monkeypatch):
     client, _storage = build_client(
         monkeypatch,

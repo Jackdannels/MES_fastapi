@@ -205,18 +205,55 @@ const createTasksPageFetchMock = ({
       const previousTask = state.tasks.find((task) => task.id === taskId);
       const previousTaskCode = String(previousTask?.code ?? "").trim();
       const nextTaskCode = String(nextTask?.code ?? previousTaskCode).trim();
+      const explicitSampleCodes = Array.isArray(nextTask.sample_codes) ? [...nextTask.sample_codes] : null;
+      const savedTask = { ...nextTask };
+      delete savedTask.sample_codes;
       const existingTaskExperiments = state.experiments.filter(
         (experiment) => String(experiment?.task_code ?? "").trim() === previousTaskCode,
       );
-      state.tasks = state.tasks.map((task) => (task.id === taskId ? clone(nextTask) : task));
+      if (explicitSampleCodes) {
+        const relatedSamples = state.samples
+          .filter((sample) => String(sample?.task_code ?? "").trim() === previousTaskCode)
+          .sort((left, right) => String(left?.code ?? "").localeCompare(String(right?.code ?? ""), "zh-Hans-CN", { numeric: true }));
+        const desiredCodeSet = new Set(explicitSampleCodes);
+        const existingByCode = new Map(relatedSamples.map((sample) => [String(sample?.code ?? "").trim(), sample]));
+        const unusedSamples = relatedSamples.filter((sample) => !desiredCodeSet.has(String(sample?.code ?? "").trim()));
+        const sampleCodeMap = new Map();
+        const nextTaskSamples = explicitSampleCodes.map((code) => {
+          const existing = existingByCode.get(code) ?? unusedSamples.shift();
+          const previousCode = String(existing?.code ?? "").trim();
+          if (previousCode) sampleCodeMap.set(previousCode, code);
+          return {
+            ...(existing ?? {}),
+            id: existing?.id ?? code,
+            code,
+            task_code: nextTaskCode,
+            trays: Array.isArray(existing?.trays)
+              ? existing.trays.map((tray) => ({ ...tray, sample_code: code }))
+              : [],
+          };
+        });
+        state.samples = [
+          ...state.samples.filter((sample) => String(sample?.task_code ?? "").trim() !== previousTaskCode),
+          ...nextTaskSamples,
+        ];
+        state.experimentSamples = state.experimentSamples
+          .map((entry) => {
+            if (String(entry?.task_code ?? "").trim() !== previousTaskCode) return entry;
+            const nextCode = sampleCodeMap.get(String(entry?.sample_code ?? "").trim());
+            return nextCode ? { ...entry, task_code: nextTaskCode, sample_code: nextCode } : null;
+          })
+          .filter(Boolean);
+      }
+      state.tasks = state.tasks.map((task) => (task.id === taskId ? clone(savedTask) : task));
       state.experiments = [
         ...state.experiments.filter((experiment) => String(experiment?.task_code ?? "").trim() !== previousTaskCode),
-        ...buildMockTaskExperiments({ ...nextTask, code: nextTaskCode }, existingTaskExperiments),
+        ...buildMockTaskExperiments({ ...savedTask, code: nextTaskCode }, existingTaskExperiments),
       ];
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => clone(nextTask),
+        json: async () => clone(savedTask),
       });
     }
 

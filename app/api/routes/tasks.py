@@ -491,6 +491,77 @@ def sync_task_samples(
     return next_samples
 
 
+def build_task_sample_code_mapping(
+    samples: list[dict[str, Any]],
+    task: dict[str, Any],
+    previous_task_code: str,
+    desired_sample_codes: list[str],
+) -> dict[str, str]:
+    """Return the old-to-new code mapping used by ``sync_task_samples``.
+
+    Exact code matches keep their current sample record. Remaining requested
+    codes reuse the remaining task samples in the same deterministic sort order
+    as ``sync_task_samples``.
+    """
+    next_task_code = task_code(task)
+    old_task_code = normalize_text(previous_task_code) or next_task_code
+    related_samples: list[tuple[str, dict[str, Any]]] = []
+    for sample in samples:
+        source = dict(sample)
+        if sample_task_code(source) != old_task_code:
+            continue
+        old_code = normalize_text(source.get("code"))
+        migrated = dict(source)
+        migrate_task_sample_code(migrated, old_task_code, next_task_code)
+        related_samples.append((old_code, migrated))
+    related_samples.sort(key=lambda item: sample_sort_key(item[1]))
+
+    desired_code_set = set(desired_sample_codes)
+    existing_by_code = {
+        normalize_text(sample.get("code")): (old_code, sample)
+        for old_code, sample in related_samples
+        if normalize_text(sample.get("code"))
+    }
+    unused_samples = [
+        (old_code, sample)
+        for old_code, sample in related_samples
+        if normalize_text(sample.get("code")) not in desired_code_set
+    ]
+    mapping: dict[str, str] = {}
+    for desired_code in desired_sample_codes:
+        existing = existing_by_code.get(desired_code)
+        if existing is None and unused_samples:
+            existing = unused_samples.pop(0)
+        if existing is None:
+            continue
+        old_code, _sample = existing
+        if old_code:
+            mapping[old_code] = desired_code
+    return mapping
+
+
+def migrate_task_experiment_sample_codes(
+    experiment_samples: list[dict[str, Any]],
+    *,
+    previous_task_code: str,
+    next_task_code: str,
+    sample_code_mapping: dict[str, str],
+) -> list[dict[str, Any]]:
+    migrated_rows: list[dict[str, Any]] = []
+    for relation in experiment_samples:
+        row = dict(relation)
+        if row_task_code(row) != previous_task_code:
+            migrated_rows.append(row)
+            continue
+        next_sample_code = sample_code_mapping.get(normalize_text(row.get("sample_code")))
+        if not next_sample_code:
+            continue
+        row["task_code"] = next_task_code
+        row["sample_code"] = next_sample_code
+        migrated_rows.append(row)
+    return migrated_rows
+
+
 def collect_unique_texts(*values: Any) -> list[str]:
     collected: list[str] = []
     for value in values:
@@ -805,6 +876,7 @@ def persist_task_scoped_update(
     next_task_code: str,
     include_samples: bool,
     include_experiments: bool,
+    include_experiment_samples: bool,
 ) -> bool:
     writer = getattr(storage, "write_task_scope", None)
     if not callable(writer) or not previous_task_code or previous_task_code != next_task_code:
@@ -828,6 +900,12 @@ def persist_task_scoped_update(
             dict(experiment)
             for experiment in snapshot.get("mes.experiments", [])
             if row_task_code(experiment) in task_codes
+        ]
+    if include_experiment_samples:
+        updates["mes.experiment_samples"] = [
+            dict(relation)
+            for relation in snapshot.get("mes.experiment_samples", [])
+            if row_task_code(relation) in task_codes
         ]
     writer(updates, task_codes=task_codes)
     return True
@@ -957,12 +1035,29 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         )
     tasks[task_index] = updated_task
     snapshot["mes.tasks"] = tasks
+    sample_code_mapping = (
+        build_task_sample_code_mapping(
+            snapshot.get("mes.samples", []),
+            updated_task,
+            previous_task_code,
+            explicit_sample_codes,
+        )
+        if explicit_sample_codes is not None
+        else {}
+    )
     snapshot["mes.samples"] = sync_task_samples(
         [dict(sample) for sample in snapshot.get("mes.samples", [])],
         updated_task,
         previous_task_code,
         explicit_sample_codes,
     )
+    if explicit_sample_codes is not None:
+        snapshot["mes.experiment_samples"] = migrate_task_experiment_sample_codes(
+            [dict(row) for row in snapshot.get("mes.experiment_samples", [])],
+            previous_task_code=previous_task_code,
+            next_task_code=task_code(updated_task),
+            sample_code_mapping=sample_code_mapping,
+        )
     if experiment_types_changed:
         reset_task_preallocation(updated_task, snapshot["mes.samples"], task_code(updated_task))
         reset_experiments_for_reschedule(next_experiments)
@@ -1036,6 +1131,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         next_task_code=task_code(updated_task),
         include_samples=sample_count_changed or explicit_sample_codes is not None,
         include_experiments=experiment_records_changed,
+        include_experiment_samples=explicit_sample_codes is not None,
     ):
         storage.write_many(snapshot)
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))

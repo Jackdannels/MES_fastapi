@@ -2055,6 +2055,100 @@ def test_update_task_sample_count_99_to_15_uses_task_scoped_write(monkeypatch):
     assert storage.write_many_calls == []
 
 
+def test_update_task_explicit_sample_codes_atomically_migrates_experiment_relations(monkeypatch):
+    task_code = "SYLU-2026-07-035"
+    old_codes = [f"{task_code}-SP-001", f"{task_code}-SP-002"]
+    next_codes = [f"{task_code}-SAMPLE-A", f"{task_code}-SAMPLE-B"]
+    client = build_client(
+        monkeypatch,
+        tasks=[
+            {
+                "id": task_code,
+                "code": task_code,
+                "name": "样品改号",
+                "sample_count": "2",
+                "test_type": "冲击试验",
+                "test_types": ["冲击试验"],
+                "status": "待排程",
+            },
+            {
+                "id": "TASK-OTHER",
+                "code": "TASK-OTHER",
+                "name": "其他任务",
+                "sample_count": "1",
+                "test_type": "盐雾试验",
+                "test_types": ["盐雾试验"],
+                "status": "待排程",
+            },
+        ],
+        samples=[
+            {
+                "id": "sample-1",
+                "code": old_codes[0],
+                "task_code": task_code,
+                "status": "运输中",
+                "trays": [{"tray_code": f"{task_code}-TP-001", "sample_code": old_codes[0]}],
+            },
+            {
+                "id": "sample-2",
+                "code": old_codes[1],
+                "task_code": task_code,
+                "status": "运输中",
+                "trays": [{"tray_code": f"{task_code}-TP-001", "sample_code": old_codes[1]}],
+            },
+            {"id": "other-sample", "code": "OTHER-SP-001", "task_code": "TASK-OTHER"},
+        ],
+        experiments=[
+            {
+                "id": f"{task_code}-A",
+                "task_code": task_code,
+                "experiment_code": f"{task_code}-A",
+                "experiment_name": "冲击试验",
+                "required_device": "冲击试验",
+                "status": "待排程",
+            }
+        ],
+        experiment_samples=[
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "sample_code": old_codes[0]},
+            {"task_code": task_code, "experiment_code": f"{task_code}-A", "sample_code": old_codes[1]},
+            {"task_code": "TASK-OTHER", "experiment_code": "TASK-OTHER-A", "sample_code": "OTHER-SP-001"},
+        ],
+    )
+
+    response = client.put(
+        f"/api/tasks/{task_code}",
+        json={
+            "id": task_code,
+            "code": task_code,
+            "name": "样品改号",
+            "sample_count": 2,
+            "sample_codes": next_codes,
+            "test_type": "冲击试验",
+            "test_types": ["冲击试验"],
+            "status": "待排程",
+        },
+    )
+
+    storage = client.app.state.storage
+    task_samples = [row for row in storage.read("mes.samples") if row.get("task_code") == task_code]
+    task_relations = [
+        row for row in storage.read("mes.experiment_samples") if row.get("task_code") == task_code
+    ]
+
+    assert response.status_code == 200
+    assert [row["code"] for row in task_samples] == next_codes
+    assert [row["trays"][0]["sample_code"] for row in task_samples] == next_codes
+    assert [row["sample_code"] for row in task_relations] == next_codes
+    assert all(old_code not in {row["code"] for row in storage.read("mes.samples")} for old_code in old_codes)
+    assert {row["sample_code"] for row in storage.read("mes.experiment_samples")} == {
+        *next_codes,
+        "OTHER-SP-001",
+    }
+    assert len(storage.write_task_scope_calls) == 1
+    assert "mes.experiment_samples" in storage.write_task_scope_calls[0]["updates"]
+    assert storage.write_many_calls == []
+
+
 def test_update_task_rejects_sample_count_change_after_handover_confirms_arrival(monkeypatch):
     client = build_client(
         monkeypatch,

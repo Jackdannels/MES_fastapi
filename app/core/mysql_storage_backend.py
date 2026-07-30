@@ -281,6 +281,40 @@ class MySQLMesStorageBackend(StorageBackend):
     def _replace_task_experiments(self, cursor, experiments: list[dict[str, Any]], task_codes: set[str]) -> None:
         replace_task_experiments(cursor, experiments, task_codes)
 
+    def _delete_task_experiment_samples(self, cursor, task_codes: set[str]) -> None:
+        normalized_task_codes = sorted({normalize_text(code) for code in task_codes if normalize_text(code)})
+        if not normalized_task_codes:
+            return
+        placeholders = ", ".join(["%s"] * len(normalized_task_codes))
+        cursor.execute(
+            f"DELETE FROM biz_experiment_sample WHERE task_no IN ({placeholders})",
+            normalized_task_codes,
+        )
+
+    def _insert_task_experiment_samples(
+        self,
+        cursor,
+        experiment_samples: list[dict[str, Any]],
+        task_codes: set[str],
+    ) -> None:
+        normalized_task_codes = {normalize_text(code) for code in task_codes if normalize_text(code)}
+        rows = [
+            build_experiment_sample_insert_row(relation)
+            for relation in experiment_samples
+            if normalize_text(relation.get("task_code")) in normalized_task_codes
+            and normalize_text(relation.get("experiment_code"))
+            and normalize_text(relation.get("sample_code"))
+        ]
+        if not rows:
+            return
+        cursor.executemany(
+            """
+            INSERT INTO biz_experiment_sample (experiment_no, task_no, sample_no, created_at, updated_at)
+            VALUES (%(experiment_no)s, %(task_no)s, %(sample_no)s, %(created_at)s, %(updated_at)s)
+            """,
+            rows,
+        )
+
     def _replace_task_allocation_relations(
         self,
         cursor,
@@ -549,22 +583,34 @@ class MySQLMesStorageBackend(StorageBackend):
             normalized_updates = {
                 key: _normalize_value(key, value if isinstance(value, list) else [])
                 for key, value in updates.items()
-                if key in {"mes.tasks", "mes.samples", "mes.experiments"}
+                if key in {"mes.tasks", "mes.samples", "mes.experiments", "mes.experiment_samples"}
             }
             if not normalized_updates:
                 return
             self._ensure_schema_extensions()
             with self._connect() as connection:
-                with connection.cursor() as cursor:
-                    if "mes.tasks" in normalized_updates:
-                        self._replace_tasks(cursor, normalized_updates["mes.tasks"], prune=False)
-                    if "mes.samples" in normalized_updates:
-                        self._replace_task_samples(cursor, normalized_updates["mes.samples"], normalized_task_codes)
-                    if "mes.experiments" in normalized_updates:
-                        self._replace_task_experiments(cursor, normalized_updates["mes.experiments"], normalized_task_codes)
-                    self._backfill_schedule_task_ids(cursor)
-                    self._sync_progress_statuses(cursor)
-                connection.commit()
+                try:
+                    with connection.cursor() as cursor:
+                        if "mes.experiment_samples" in normalized_updates:
+                            self._delete_task_experiment_samples(cursor, normalized_task_codes)
+                        if "mes.tasks" in normalized_updates:
+                            self._replace_tasks(cursor, normalized_updates["mes.tasks"], prune=False)
+                        if "mes.samples" in normalized_updates:
+                            self._replace_task_samples(cursor, normalized_updates["mes.samples"], normalized_task_codes)
+                        if "mes.experiments" in normalized_updates:
+                            self._replace_task_experiments(cursor, normalized_updates["mes.experiments"], normalized_task_codes)
+                        if "mes.experiment_samples" in normalized_updates:
+                            self._insert_task_experiment_samples(
+                                cursor,
+                                normalized_updates["mes.experiment_samples"],
+                                normalized_task_codes,
+                            )
+                        self._backfill_schedule_task_ids(cursor)
+                        self._sync_progress_statuses(cursor)
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
 
     def write_task_allocation_scope(self, task_code: str, updates: Dict[str, Any]) -> None:
         """Atomically persist only the allocation-owned rows for one task."""

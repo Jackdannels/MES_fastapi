@@ -4379,6 +4379,16 @@ def test_write_task_scope_updates_only_target_task_collections(monkeypatch) -> N
     monkeypatch.setattr(backend, "_replace_tasks", lambda cursor, rows, prune=True: calls.append(("tasks", prune, rows)))
     monkeypatch.setattr(backend, "_replace_task_samples", lambda cursor, rows, task_codes: calls.append(("samples", task_codes, rows)))
     monkeypatch.setattr(backend, "_replace_task_experiments", lambda cursor, rows, task_codes: calls.append(("experiments", task_codes, rows)))
+    monkeypatch.setattr(
+        backend,
+        "_delete_task_experiment_samples",
+        lambda cursor, task_codes: calls.append(("delete_experiment_samples", task_codes)),
+    )
+    monkeypatch.setattr(
+        backend,
+        "_insert_task_experiment_samples",
+        lambda cursor, rows, task_codes: calls.append(("insert_experiment_samples", task_codes, rows)),
+    )
     monkeypatch.setattr(backend, "_backfill_schedule_task_ids", lambda cursor: calls.append(("backfill",)))
     monkeypatch.setattr(backend, "_sync_progress_statuses", lambda cursor: calls.append(("statuses",)))
 
@@ -4387,14 +4397,23 @@ def test_write_task_scope_updates_only_target_task_collections(monkeypatch) -> N
             "mes.tasks": [{"code": "TASK-1", "sample_count": 15}],
             "mes.samples": [{"code": "TASK-1-SP-001", "task_code": "TASK-1"}],
             "mes.experiments": [{"experiment_code": "TASK-1-A", "task_code": "TASK-1"}],
+            "mes.experiment_samples": [
+                {"experiment_code": "TASK-1-A", "task_code": "TASK-1", "sample_code": "TASK-1-SP-001"}
+            ],
         },
         task_codes={"TASK-1"},
     )
 
     assert calls == [
+        ("delete_experiment_samples", {"TASK-1"}),
         ("tasks", False, [{"code": "TASK-1", "sample_count": 15}]),
         ("samples", {"TASK-1"}, [{"code": "TASK-1-SP-001", "task_code": "TASK-1"}]),
         ("experiments", {"TASK-1"}, [{"experiment_code": "TASK-1-A", "task_code": "TASK-1"}]),
+        (
+            "insert_experiment_samples",
+            {"TASK-1"},
+            [{"experiment_code": "TASK-1-A", "task_code": "TASK-1", "sample_code": "TASK-1-SP-001"}],
+        ),
         ("backfill",),
         ("statuses",),
     ]

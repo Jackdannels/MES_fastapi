@@ -539,6 +539,9 @@
           data-testid="task-sample-codes-textarea"
           placeholder="每行一个样品编号"
         ></textarea>
+        <div class="helper" data-testid="task-sample-codes-count-hint">
+          当前任务共 {{ taskDetailSampleCodes.length }} 个样品；这里只能等量修改编号，不能增加或减少样品数量。
+        </div>
       </div>
       <AppFeedback :message="sampleCodesWarning" tone="warning" @close="sampleCodesWarning = ''" />
     </div>

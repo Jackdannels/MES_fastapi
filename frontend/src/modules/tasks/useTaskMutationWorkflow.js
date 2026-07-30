@@ -4,7 +4,6 @@ import { serverNowMs } from "@/lib/serverClock";
 import { deleteTask as deleteTaskByApi, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
-  applyTaskSampleCodes,
   deleteTaskSnapshot,
   normalizeTaskSampleCount,
   normalizeText,
@@ -236,49 +235,20 @@ function useTaskMutationWorkflow({
       return;
     }
     const originalCount = normalizeTaskSampleCount(originalTask?.sample_count, taskDetailSampleCodes.value.length);
-    if (codes.length !== originalCount
-      && taskSampleCountLocked(originalTask, rawSamples.value)) {
-      sampleCodesWarning.value = SAMPLE_COUNT_LOCKED_MESSAGE;
+    if (codes.length !== originalCount) {
+      sampleCodesWarning.value = `样品编号数量必须与样品数量一致（当前 ${originalCount} 个）`;
       return;
     }
-    const updatedTask = { ...originalTask, sample_count: codes.length, updated_at: formatLocalDateTime() };
+    const updatedTask = { ...originalTask, sample_count: originalCount, updated_at: formatLocalDateTime() };
     try {
-      await updateTaskByApi(taskId, updatedTask);
-      rawTasks.value = rawTasks.value.map((task) => (normalizeText(task?.id) === taskId ? updatedTask : task));
+      const savedTask = await updateTaskByApi(taskId, { ...updatedTask, sample_codes: codes });
+      const nextTask = savedTask && typeof savedTask === "object" ? savedTask : updatedTask;
+      rawTasks.value = rawTasks.value.map((task) => (normalizeText(task?.id) === taskId ? nextTask : task));
     } catch (error) {
       sampleCodesWarning.value = buildFailureMessage("样品编号保存失败，请稍后重试", error);
       return;
     }
-    const currentCodes = taskDetailSampleCodes.value;
-    const sampleCodeMap = new Map();
-    currentCodes.forEach((code, index) => {
-      const nextCode = normalizeText(codes[index]);
-      const currentCode = normalizeText(code);
-      if (currentCode && nextCode && currentCode !== nextCode) sampleCodeMap.set(currentCode, nextCode);
-    });
-    const currentCodeSet = new Set(currentCodes.map(normalizeText).filter(Boolean));
-    const nextCodeSet = new Set(codes.map(normalizeText).filter(Boolean));
-    const nextSamples = applyTaskSampleCodes(rawSamples.value, updatedTask, codes);
-    const nextExperimentSamples = rawExperimentSamples.value.map((entry) => {
-      if (normalizeText(entry?.task_code) !== taskCode) return entry;
-      const currentCode = normalizeText(entry?.sample_code);
-      const nextCode = sampleCodeMap.get(currentCode) || currentCode;
-      return nextCode ? { ...entry, sample_code: nextCode } : entry;
-    }).filter((entry) => {
-      if (normalizeText(entry?.task_code) !== taskCode) return true;
-      const sampleCode = normalizeText(entry?.sample_code);
-      return !currentCodeSet.has(sampleCode) || nextCodeSet.has(sampleCode);
-    });
-    try {
-      await persistRelated({
-        [STORAGE_KEYS.samples]: nextSamples,
-        [STORAGE_KEYS.experiment_samples]: nextExperimentSamples,
-      });
-    } catch (error) {
-      sampleCodesWarning.value = buildFailureMessage("样品编号已更新任务数量，但样品数据保存失败，请刷新后确认", error);
-      return;
-    }
-    editForm.value.sample_count = String(codes.length);
+    editForm.value.sample_count = String(originalCount);
     closeSampleCodesEditor();
     try {
       await loadTasksPage();
