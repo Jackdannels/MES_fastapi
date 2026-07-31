@@ -52,7 +52,7 @@ def test_experiment_end_request_publishes_current_run_context(monkeypatch):
     ]
 
 
-def test_experiment_end_request_rejects_hostless_laboratory(monkeypatch):
+def test_experiment_end_request_allows_hot_humid_laboratory_two(monkeypatch):
     client, published = build_client(monkeypatch)
 
     response = client.post(
@@ -65,9 +65,18 @@ def test_experiment_end_request_rejects_hostless_laboratory(monkeypatch):
         },
     )
 
-    assert response.status_code == 422
-    assert "仅支持 hostless 接口" in response.json()["detail"]
-    assert published == []
+    assert response.status_code == 200
+    assert published == [
+        {
+            "command": "END_REQUEST",
+            "payload": {
+                "task_code": "TASK-HH2",
+                "lab_code": "LAB_HOT_HUMID_2",
+                "experiment_code": "EXP-HH2",
+                "run_no": "RUN-HH2",
+            },
+        }
+    ]
 
 
 def test_end_request_command_uses_dedicated_mqtt_topic():

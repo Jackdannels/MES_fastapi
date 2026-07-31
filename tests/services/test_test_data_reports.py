@@ -22,6 +22,13 @@ class MemoryStorage:
         self.values[key] = deepcopy(value)
 
 
+def test_default_save_path_uses_container_override(monkeypatch, tmp_path) -> None:
+    reports_path = tmp_path / "reports"
+    monkeypatch.setattr(test_data_reports.app_settings, "TEST_DATA_SAVE_PATH", str(reports_path))
+
+    assert test_data_reports.default_save_path() == reports_path
+
+
 def report_snapshot():
     return {
         "tasks": [{"code": "TASK:001"}],

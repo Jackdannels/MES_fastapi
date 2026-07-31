@@ -6,17 +6,11 @@ import {
   HOST_INTERFACE_MODE_CHANGED_EVENT,
   HOST_INTERFACE_MODE_STORAGE_KEY,
 } from "@/lib/hostInterfaceMode";
-import {
-  markLaboratoryAxisAdjustmentReady,
-  startLaboratoryExperiment,
-} from "@/lib/laboratoryApi";
-import { formatLocalDateTime } from "@/lib/dateTime";
 import { serverNowDate } from "@/lib/serverClock";
 import { publishLaboratoryEndRequest, publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
-import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 import { resolveDeviceUnavailableReason } from "@/modules/schedule/model";
 import {
   buildLaboratoryChecklist,
@@ -42,11 +36,8 @@ import {
   SWITCH_REVERTIBLE_TRAY_STATUSES,
   TASK_SWITCH_LOCKED_TRAY_STATUSES,
   formatErrorMessage,
-  generateExperimentRunNo,
   isResettableTrayStatus,
   normalizeText,
-  resolveSubExperimentCode,
-  scheduleAxisCodes,
 } from "./pageHelpers";
 import { useLaboratoryAttendance } from "./useLaboratoryAttendance";
 import { useLaboratoryRunningModal } from "./useLaboratoryRunningModal";
@@ -116,7 +107,7 @@ function useLaboratoryPage(options = {}) {
   const resetDangerModalOpen = ref(false);
   const resetTarget = ref(null);
   const resetSubmitting = ref(false);
-  const completePromptVisible = ref(false);
+  const completionSubmitting = ref(false);
   const runningModalVisible = ref(false);
   const completedRunningExperiment = ref(null);
   const axisReadySubmitting = ref(false);
@@ -155,11 +146,8 @@ function useLaboratoryPage(options = {}) {
     openAttendanceLogin,
     openAttendanceLogoutPrompt,
     resetAttendanceInteraction,
-    rollbackOptimisticAttendanceWork,
     runWithAttendance,
     setAttendanceLoginMode,
-    setSuppressNextAttendanceWorkStart,
-    startAttendanceWorkOptimistically,
     startWorkForRunningExperiment,
     submitAttendanceLogin,
     submitAttendanceQrLogin,
@@ -362,9 +350,6 @@ function useLaboratoryPage(options = {}) {
   const canRequestReady = computed(() => actionState.value.canMarkReady || canResendReady.value);
   const installActionLabel = computed(() => (canResendFixtureInstall.value ? "重新下发安装" : "安装样品"));
   const readyActionLabel = computed(() => {
-    if (canResendReady.value && isHostlessMqttLab()) {
-      return "重试启动实验";
-    }
     return canResendReady.value ? "重新下发准备" : "确认准备就绪";
   });
   const fixtureConfirmCopy = computed(() => (
@@ -385,14 +370,11 @@ function useLaboratoryPage(options = {}) {
   const { focusScanInput } = useScanInputFocus(compareScanInputRef);
   const progressMessage = computed(() => buildLaboratoryProgressMessage(workflow.value, currentTask.value, laboratoryConfig.value.labName));
   const {
-    clearCompletedRunningModalAutoCloseTimer,
     clearRunningModalRestoreTimer,
     handleRunningModalActivity,
     hideRunningModal,
-    scheduleCompletedRunningModalAutoClose,
     showRunningModal,
   } = useLaboratoryRunningModal({
-    completePromptVisible,
     completedRunningExperiment,
     confirmedModalOpen,
     experimentRuns,
@@ -437,13 +419,12 @@ function useLaboratoryPage(options = {}) {
 
   const {
     clearLaboratoryMqError,
-    clearHostlessStartTimer,
     ensureHostInterfaceModeSynced,
     getCurrentLabHostInterfaceCapabilities,
-    isHostlessMqttLab,
+    isHostlessFixtureLab,
     isMqttHostInterfaceMode,
     publishLaboratoryMqSafely,
-    scheduleHostlessStart,
+    usesMqttExperimentEnd,
   } = createLaboratoryDeviceInterface({
     confirmedModalOpen,
     fixtureConfirmModalOpen,
@@ -454,14 +435,8 @@ function useLaboratoryPage(options = {}) {
   });
   const clearHostlessTimers = () => {
     clearHostlessFixtureReadyTimer();
-    clearHostlessStartTimer();
   };
-  const usesMqttCompletion = () => isMqttHostInterfaceMode() && !isHostlessMqttLab();
-  const completionConfirmMessage = computed(() => (
-    usesMqttCompletion()
-      ? `确认后将通知上位机立即结束当前${runningModalExperiment.value.experimentName || laboratoryConfig.value.labName}，收到结束事件后更新为实验已完成。`
-      : `确认后将把当前${runningModalExperiment.value.experimentName || laboratoryConfig.value.labName}更新为实验已完成。`
-  ));
+  const usesMqttCompletion = () => isMqttHostInterfaceMode() && usesMqttExperimentEnd();
 
   const closeFullInteractionState = () => {
     selectedTaskCode.value = "";
@@ -485,7 +460,6 @@ function useLaboratoryPage(options = {}) {
     resetConfirmModalOpen.value = false;
     resetDangerModalOpen.value = false;
     resetTarget.value = null;
-    completePromptVisible.value = false;
     runningModalVisible.value = false;
     completedRunningExperiment.value = null;
     resetAttendanceInteraction();
@@ -493,7 +467,6 @@ function useLaboratoryPage(options = {}) {
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
     clearHostlessTimers();
-    clearCompletedRunningModalAutoCloseTimer();
     flushPendingRealtimeRefresh();
   };
 
@@ -633,7 +606,6 @@ function useLaboratoryPage(options = {}) {
 
   const realtimeRefresh = useLaboratoryRealtimeRefresh({
     compareModalOpen,
-    completePromptVisible,
     installModalOpen,
     load,
     readyModalOpen,
@@ -684,7 +656,6 @@ function useLaboratoryPage(options = {}) {
       window.removeEventListener("storage", handleHostInterfaceModeChanged);
       window.removeEventListener(HOST_INTERFACE_MODE_CHANGED_EVENT, handleHostInterfaceModeChanged);
     }
-    clearHostlessStartTimer();
   });
 
   const openScheduleBoard = () => {
@@ -756,7 +727,6 @@ function useLaboratoryPage(options = {}) {
     },
   );
   const {
-    applyExperimentStartResponse,
     buildFixtureInstallPayload,
     buildReadyPayload,
     persistCurrentTaskStep,
@@ -778,14 +748,12 @@ function useLaboratoryPage(options = {}) {
     verifiedTrayCodes,
   });
   const {
-    closeCompleteConfirm,
+    completeExperimentNow,
     confirmCompleteCurrentAxis,
-    confirmCompleteExperiment,
-    openCompleteConfirm,
   } = useLaboratoryCompletionFlow({
     axisContinuation,
     clearRunningModalRestoreTimer,
-    completePromptVisible,
+    completionSubmitting,
     completedRunningExperiment,
     currentTask,
     experimentRunSteps,
@@ -795,7 +763,6 @@ function useLaboratoryPage(options = {}) {
     flushPendingRealtimeRefresh: () => flushPendingRealtimeRefresh(),
     laboratoryConfig,
     load,
-    openAttendanceLogoutPrompt,
     persistRunningExperimentCompletion,
     requestMqttExperimentEnd: (payload) => publishLaboratoryMqSafely(
       publishLaboratoryEndRequest,
@@ -806,7 +773,6 @@ function useLaboratoryPage(options = {}) {
     runningExperiment,
     runningModalVisible,
     samples,
-    scheduleCompletedRunningModalAutoClose,
     schedules,
     usesMqttCompletion,
   });
@@ -827,58 +793,6 @@ function useLaboratoryPage(options = {}) {
   clearFixtureConfirmSuccessTimer = fixtureConfirmation.clearFixtureConfirmSuccessTimer;
   clearHostlessFixtureReadyTimer = fixtureConfirmation.clearHostlessFixtureReadyTimer;
   const { openFixtureConfirmPending, scheduleHostlessFixtureReady, startFixtureConfirmCountdown } = fixtureConfirmation;
-  const scheduleHostlessExperimentStart = ({
-    axisBatchNo = "",
-    axisCodes = [],
-    currentAxisCode = "",
-    experimentCode,
-    plannedEndAt = "",
-    plannedHours = null,
-    runNo = "",
-    scheduleId = "",
-    subExperimentCode = "",
-    taskCode,
-    trayCodes = [],
-    onFailure = () => {},
-  }) => {
-    const startExperiment = () => {
-      const startedAt = formatLocalDateTime();
-      setSuppressNextAttendanceWorkStart(true);
-      const previousAttendanceSession = startAttendanceWorkOptimistically(startedAt);
-      void startLaboratoryExperiment({
-        axisBatchNo,
-        axisCodes,
-        currentAxisCode,
-        experimentCode,
-        labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
-        labName: laboratoryConfig.value.labName,
-        plannedEndAt,
-        plannedHours,
-        runNo,
-        scheduleId,
-        startedAt,
-        subExperimentCode,
-        taskCode,
-        trayCodes,
-      })
-        .then((payload) => {
-          applyExperimentStartResponse(payload);
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
-          }
-        })
-        .catch((error) => {
-          rollbackOptimisticAttendanceWork(previousAttendanceSession, startedAt);
-          setSuppressNextAttendanceWorkStart(false);
-          onFailure(error);
-          laboratoryMqError.value = {
-            detail: formatErrorMessage(error),
-            title: "实验启动失败",
-          };
-        });
-    };
-    scheduleHostlessStart(startExperiment);
-  };
   const confirmAxisAdjustmentReady = async () => {
     await runWithAttendance(async () => {
       const continuation = axisContinuation.value;
@@ -901,36 +815,6 @@ function useLaboratoryPage(options = {}) {
       });
       payload.axis_adjustment_ready = true;
       try {
-        if (isHostlessMqttLab()) {
-          const adjustmentPayload = await markLaboratoryAxisAdjustmentReady({
-            axisCode: targetAxisCode,
-            experimentCode: currentTask.value?.experimentCode || payload.experiment_code,
-            labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
-            labName: laboratoryConfig.value.labName,
-            runNo: continuation.runNo,
-            taskCode: currentTask.value?.taskCode || payload.task_code,
-          });
-          applyExperimentStartResponse(adjustmentPayload);
-          axisReadyPendingKey.value = transitionKey;
-          scheduleHostlessExperimentStart({
-            axisBatchNo: continuation.axisBatchNo,
-            axisCodes: runAxisCodes,
-            currentAxisCode: targetAxisCode,
-            experimentCode: currentTask.value?.experimentCode || payload.experiment_code,
-            plannedEndAt: currentTask.value?.endAt || "",
-            runNo: continuation.runNo,
-            scheduleId: continuation.scheduleId,
-            subExperimentCode: continuation.subExperimentCode,
-            taskCode: currentTask.value?.taskCode || payload.task_code,
-            trayCodes: runningExperiment.value?.trayCodes || [],
-            onFailure: () => {
-              if (axisReadyPendingKey.value === transitionKey) {
-                axisReadyPendingKey.value = "";
-              }
-            },
-          });
-          return;
-        }
         const published = await publishLaboratoryMqSafely(publishLaboratoryReady, payload, "准备就绪");
         if (published) {
           axisReadyPendingKey.value = transitionKey;
@@ -1017,7 +901,7 @@ function useLaboratoryPage(options = {}) {
     const payload = buildFixtureInstallPayload({ trayCodes: targetTrayCodes });
     const persistOperation = isResend ? Promise.resolve() : persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
     installModalOpen.value = false;
-    if (isHostlessMqttLab()) {
+    if (isHostlessFixtureLab()) {
       clearFixtureConfirmTimer();
       clearFixtureConfirmSuccessTimer();
       fixtureConfirmModalOpen.value = false;
@@ -1072,22 +956,6 @@ function useLaboratoryPage(options = {}) {
     }
     readyModalOpen.value = false;
     confirmedModalOpen.value = true;
-    if (isHostlessMqttLab()) {
-      const currentAxisCodes = scheduleAxisCodes(currentTask.value);
-      scheduleHostlessExperimentStart({
-        axisBatchNo: currentTask.value?.axis_batch_no || currentTask.value?.axisBatchNo || "",
-        axisCodes: currentAxisCodes,
-        currentAxisCode: currentAxisCodes[0] || "",
-        experimentCode: currentTask.value?.experimentCode || payload.experiment_code,
-        plannedEndAt: currentTask.value?.endAt || "",
-        runNo: generateExperimentRunNo(),
-        scheduleId: currentTask.value?.id || "",
-        subExperimentCode: resolveSubExperimentCode(currentTask.value),
-        taskCode: currentTask.value?.taskCode || payload.task_code,
-        trayCodes: getCurrentTaskTrayCodesByStatus(LAB_READY_STATUS),
-      });
-      return;
-    }
     void publishLaboratoryMqSafely(publishLaboratoryReady, payload, "准备就绪");
   };
   const closeConfirmed = () => {
@@ -1139,8 +1007,8 @@ function useLaboratoryPage(options = {}) {
     canRequestReady,
     canTeleportScheduleAction,
     checklist,
-    closeCompleteConfirm,
     closeAttendanceLogin,
+    completionSubmitting,
     currentAxisCompletion,
     compareFeedback,
     compareScanInputRef,
@@ -1159,14 +1027,11 @@ function useLaboratoryPage(options = {}) {
       canResetCurrentTask,
       compareScanCode,
       compareModalOpen,
-    completePromptVisible,
-    completionConfirmMessage,
       confirmCurrentTask,
       confirmCompare,
     confirmResetPrompt,
     confirmResetTask,
     confirmCurrentAxisAction,
-    confirmCompleteExperiment,
     confirmInstall,
     confirmReady,
     confirmedModalOpen,
@@ -1182,9 +1047,9 @@ function useLaboratoryPage(options = {}) {
     currentTaskSwitchLocked,
     selectedTask,
     hasLaboratoryTasks,
+    completeExperimentNow,
     openCompare,
     openAttendanceLogin,
-    openCompleteConfirm,
     openInstall,
     openReady,
     openResetConfirm,

@@ -1,10 +1,16 @@
 {
   "name": "MES与上位机MQTT接口定义",
-  "version": "2.0",
+  "version": "2.1",
   "encoding": "UTF-8",
   "payloadFormat": "JSON",
   "timeFormat": "北京时间 YYYY-MM-DD HH:mm:ss",
   "topicPrefix": "mes/v1",
+  "laboratoryInterfaceExceptions": {
+    "LAB_HOT_HUMID_2": {
+      "hostless": ["INSTALL_FIXTURE", "FIXTURE_READY"],
+      "mqtt": ["READY", "EXPERIMENT_STARTED", "END_REQUEST", "EXPERIMENT_ENDED"]
+    }
+  },
   "send": [
     {
       "name": "安装夹具，校验信息",
@@ -29,6 +35,20 @@
         "sub_experiment_code": "轴向分段实验编号，非轴向省略",
         "axis_codes": ["x+", "x-", "y+"],
         "current_axis_code": "本次准备启动的轴向，非轴向省略"
+      }
+    },
+    {
+      "name": "请求结束实验",
+      "direction": "MES_TO_HOST",
+      "topic": "mes/v1/labs/{lab_code}/commands/experiment-end-request",
+      "payload": {
+        "task_code": "任务编号",
+        "lab_code": "试验间编码",
+        "experiment_code": "实验编号",
+        "run_no": "MES实验运行批次号",
+        "sub_experiment_code": "轴向分段实验编号，非轴向省略",
+        "axis_code": "当前轴向，非轴向省略",
+        "next_axis_code": "下一轴向，最终轴向省略"
       }
     }
   ],

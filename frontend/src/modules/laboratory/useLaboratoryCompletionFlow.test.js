@@ -4,18 +4,21 @@ import { useLaboratoryCompletionFlow } from "./useLaboratoryCompletionFlow";
 
 const ref = (value) => ({ value });
 
-describe("useLaboratoryCompletionFlow MQTT completion", () => {
-  test("requests the upper computer to end the run without using hostless persistence", async () => {
-    const requestMqttExperimentEnd = vi.fn().mockResolvedValue(true);
+describe("useLaboratoryCompletionFlow completion action", () => {
+  test("clicking experiment complete immediately requests the upper computer end command", async () => {
+    let resolveEndRequest;
+    const requestMqttExperimentEnd = vi.fn(() => new Promise((resolve) => {
+      resolveEndRequest = resolve;
+    }));
     const persistRunningExperimentCompletion = vi.fn();
-    const completePromptVisible = ref(true);
+    const completionSubmitting = ref(false);
     const runningModalVisible = ref(true);
-    const openAttendanceLogoutPrompt = vi.fn();
     const flushPendingRealtimeRefresh = vi.fn();
+    const runWithAttendance = vi.fn((operation) => operation());
     const flow = useLaboratoryCompletionFlow({
       axisContinuation: ref({}),
       clearRunningModalRestoreTimer: vi.fn(),
-      completePromptVisible,
+      completionSubmitting,
       completedRunningExperiment: ref(null),
       currentTask: ref({
         experimentCode: "SYLU-2026-07-001-B",
@@ -29,10 +32,9 @@ describe("useLaboratoryCompletionFlow MQTT completion", () => {
       flushPendingRealtimeRefresh,
       laboratoryConfig: ref({ labCode: "LAB_SALT" }),
       load: vi.fn(),
-      openAttendanceLogoutPrompt,
       persistRunningExperimentCompletion,
       requestMqttExperimentEnd,
-      runWithAttendance: (operation) => operation(),
+      runWithAttendance,
       runningExperiment: ref({
         active: true,
         runNo: "RUN-SALT-001",
@@ -41,13 +43,14 @@ describe("useLaboratoryCompletionFlow MQTT completion", () => {
       }),
       runningModalVisible,
       samples: ref([]),
-      scheduleCompletedRunningModalAutoClose: vi.fn(),
       schedules: ref([]),
       usesMqttCompletion: () => true,
     });
 
-    await flow.confirmCompleteExperiment();
+    const completionAction = flow.completeExperimentNow();
 
+    expect(runWithAttendance).toHaveBeenCalledOnce();
+    expect(completionSubmitting.value).toBe(true);
     expect(requestMqttExperimentEnd).toHaveBeenCalledWith({
       axis_code: "",
       experiment_code: "SYLU-2026-07-001-B",
@@ -57,29 +60,22 @@ describe("useLaboratoryCompletionFlow MQTT completion", () => {
       sub_experiment_code: "SYLU-2026-07-001-B-SALT",
       task_code: "SYLU-2026-07-001",
     });
+    resolveEndRequest(true);
+    await completionAction;
     expect(persistRunningExperimentCompletion).not.toHaveBeenCalled();
-    expect(completePromptVisible.value).toBe(false);
     expect(runningModalVisible.value).toBe(true);
-    expect(openAttendanceLogoutPrompt).not.toHaveBeenCalled();
+    expect(completionSubmitting.value).toBe(false);
     expect(flushPendingRealtimeRefresh).toHaveBeenCalledOnce();
   });
 
-  test("keeps high-temperature humid laboratory two on local hostless completion", async () => {
-    const requestMqttExperimentEnd = vi.fn();
-    const persistRunningExperimentCompletion = vi.fn().mockResolvedValue({
-      experimentRuns: [],
-      experiments: [{
-        experiment_code: "EXP-HH2",
-        status: "实验已完成",
-        task_code: "TASK-HH2",
-      }],
-      samples: [],
-      schedules: [],
-    });
+  test("routes hot humid laboratory two completion through the upper computer", async () => {
+    const requestMqttExperimentEnd = vi.fn().mockResolvedValue(true);
+    const persistRunningExperimentCompletion = vi.fn();
+    const runningModalVisible = ref(true);
     const flow = useLaboratoryCompletionFlow({
       axisContinuation: ref({}),
       clearRunningModalRestoreTimer: vi.fn(),
-      completePromptVisible: ref(true),
+      completionSubmitting: ref(false),
       completedRunningExperiment: ref(null),
       currentTask: ref({ experimentCode: "EXP-HH2", taskCode: "TASK-HH2" }),
       experimentRunSteps: ref([]),
@@ -89,21 +85,28 @@ describe("useLaboratoryCompletionFlow MQTT completion", () => {
       flushPendingRealtimeRefresh: vi.fn(),
       laboratoryConfig: ref({ labCode: "LAB_HOT_HUMID_2" }),
       load: vi.fn(),
-      openAttendanceLogoutPrompt: vi.fn(),
       persistRunningExperimentCompletion,
       requestMqttExperimentEnd,
       runWithAttendance: (operation) => operation(),
       runningExperiment: ref({ active: true, runNo: "RUN-HH2", trayCodes: ["TP-HH2"] }),
-      runningModalVisible: ref(true),
+      runningModalVisible,
       samples: ref([]),
-      scheduleCompletedRunningModalAutoClose: vi.fn(),
       schedules: ref([]),
-      usesMqttCompletion: () => false,
+      usesMqttCompletion: () => true,
     });
 
-    await flow.confirmCompleteExperiment();
+    await flow.completeExperimentNow();
 
-    expect(persistRunningExperimentCompletion).toHaveBeenCalledOnce();
-    expect(requestMqttExperimentEnd).not.toHaveBeenCalled();
+    expect(requestMqttExperimentEnd).toHaveBeenCalledWith({
+      axis_code: "",
+      experiment_code: "EXP-HH2",
+      lab_code: "LAB_HOT_HUMID_2",
+      next_axis_code: "",
+      run_no: "RUN-HH2",
+      sub_experiment_code: "",
+      task_code: "TASK-HH2",
+    });
+    expect(persistRunningExperimentCompletion).not.toHaveBeenCalled();
+    expect(runningModalVisible.value).toBe(true);
   });
 });

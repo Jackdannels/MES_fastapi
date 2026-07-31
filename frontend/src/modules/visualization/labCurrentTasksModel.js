@@ -1,4 +1,3 @@
-import { labIdentityMatches } from "@/lib/labIdentity";
 import { parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { serverNowMs } from "@/lib/serverClock";
 import { buildDeviceRows } from "@/modules/devices/model";
@@ -62,38 +61,12 @@ const statusIsRepair = (value) => {
     || text.includes("不可用");
 };
 
-const labRefFromName = (labName) => ({ code: normalizeText(labName), name: normalizeText(labName) });
-const recordMatchesLab = (record, labRef) => labIdentityMatches(record, labRef);
-const makeExperimentKey = (taskCode, experimentCode) => `${normalizeText(taskCode)}::${normalizeText(experimentCode)}`;
 const resolveDisplayDateTime = (label, value) => normalizeText(label) || formatDateTime(value) || normalizeText(value) || "-";
 const buildPlanTimeLabel = (startAt, endAt) => {
   if (startAt === "-" && endAt === "-") {
     return "-";
   }
   return `${startAt} - ${endAt}`;
-};
-
-const buildTaskByCode = (tasks) => {
-  const map = new Map();
-  asArray(tasks).forEach((task) => {
-    const code = normalizeText(task?.code || task?.task_code);
-    if (code) {
-      map.set(code, task);
-    }
-  });
-  return map;
-};
-
-const buildExperimentByKey = (experiments) => {
-  const map = new Map();
-  asArray(experiments).forEach((experiment) => {
-    const taskCode = normalizeText(experiment?.task_code);
-    const experimentCode = normalizeText(experiment?.experiment_code);
-    if (taskCode && experimentCode) {
-      map.set(makeExperimentKey(taskCode, experimentCode), experiment);
-    }
-  });
-  return map;
 };
 
 const findDeviceRowForLab = (deviceRows, labName) => {
@@ -111,46 +84,6 @@ const findRawDeviceForLab = (devices, labName) => {
     || normalizeText(device?.name) === lab
     || normalizeText(device?.location) === lab,
   ) || null;
-};
-
-const findLatestCompletedSchedule = ({ schedules, taskByCode, experimentByKey, labRef }) => {
-  const rows = asArray(schedules)
-    .filter((schedule) => recordMatchesLab(schedule, labRef))
-    .map((schedule) => {
-      const taskCode = normalizeText(schedule?.task_code);
-      const experimentCode = normalizeText(schedule?.experiment_code);
-      const experiment = experimentByKey.get(makeExperimentKey(taskCode, experimentCode)) || null;
-      const completed =
-        statusIsCompleted(schedule?.status)
-        || statusIsCompleted(schedule?.displayStatus)
-        || statusIsCompleted(experiment?.status);
-      if (!completed) {
-        return null;
-      }
-      const task = taskByCode.get(taskCode) || null;
-      const finishedAt = parseTime(schedule?.actual_end_at || schedule?.actualEndAt || schedule?.end_at || schedule?.endAt);
-      const startAt = schedule?.start_at || schedule?.startAt;
-      const endAt = schedule?.actual_end_at || schedule?.actualEndAt || schedule?.end_at || schedule?.endAt;
-      return {
-        endAt,
-        experimentCode,
-        experimentName:
-          normalizeText(experiment?.experiment_name)
-          || normalizeText(schedule?.experiment_name)
-          || normalizeText(task?.test_type)
-          || "-",
-        finishedAt: Number.isFinite(finishedAt) ? finishedAt : 0,
-        sampleCount: 0,
-        startAt,
-        status: "实验已完成",
-        taskCode,
-        taskName: normalizeText(task?.name) || taskCode || "-",
-        trayCodes: [],
-      };
-    })
-    .filter(Boolean)
-    .sort((left, right) => right.finishedAt - left.finishedAt);
-  return rows[0] || null;
 };
 
 const buildCountdown = (runningExperiment) => {
@@ -210,8 +143,7 @@ const trayItemsFromCodes = (trayCodes, sampleCount) => {
   });
 };
 
-const buildLabCard = ({ deviceRow, experimentByKey, labName, now, rawDevice, snapshot, taskByCode }) => {
-  const labRef = labRefFromName(labName);
+const buildLabCard = ({ deviceRow, labName, now, rawDevice, snapshot }) => {
   const workbench = buildLaboratoryWorkbenchView({
     tasks: snapshot.tasks,
     schedules: snapshot.schedules,
@@ -225,14 +157,8 @@ const buildLabCard = ({ deviceRow, experimentByKey, labName, now, rawDevice, sna
     labName,
     labCode: normalizeText(deviceRow?.code),
   });
-  const currentTask = workbench.currentTask;
-  const completedTask = currentTask ? null : findLatestCompletedSchedule({
-    schedules: snapshot.schedules,
-    taskByCode,
-    experimentByKey,
-    labRef,
-  });
-  const displayTask = currentTask || completedTask;
+  const currentTask = statusIsCompleted(workbench.currentTask?.status) ? null : workbench.currentTask;
+  const displayTask = currentTask;
   const countdown = buildCountdown(workbench.runningExperiment);
   const displayTrayRows = countdown.active
     ? asArray(workbench.runningExperiment?.trayRows)
@@ -248,28 +174,23 @@ const buildLabCard = ({ deviceRow, experimentByKey, labName, now, rawDevice, sna
     : trayItemsFromCodes(displayTrayCodes, displaySampleCount);
   const remainingSeconds = Number(workbench.runningExperiment?.remainingSeconds) || 0;
   const isUrgentRunning = countdown.active && remainingSeconds <= URGENT_REMAINING_SECONDS;
-  const isCompleted = Boolean(completedTask) || statusIsCompleted(currentTask?.status);
   const issueTone = resolveDeviceIssueTone(rawDevice?.status, deviceRow?.status, deviceRow?.safetyStatus);
   const repair = Boolean(issueTone) || statusIsRepair(deviceRow?.status) || statusIsRepair(deviceRow?.safetyStatus);
   const taskCode = normalizeText(displayTask?.taskCode);
   const statusTone = repair
     ? issueTone || "repair"
-    : isCompleted
-      ? "completed"
-      : countdown.active || normalizeText(deviceRow?.status) === "工作中"
-        ? "running"
-        : taskCode
-          ? "scheduled"
-          : "unplanned";
+    : countdown.active || normalizeText(deviceRow?.status) === "工作中"
+      ? "running"
+      : taskCode
+        ? "scheduled"
+        : "unplanned";
   const statusLabel = repair
     ? issueTone === "upkeep" ? "保养" : "维修"
-    : isCompleted
-      ? "实验已完成"
-      : countdown.active
-        ? "实验进行中"
-        : taskCode
-          ? "已排程"
-          : "未排程";
+    : countdown.active
+      ? "实验进行中"
+      : taskCode
+        ? "已排程"
+        : "未排程";
   const startAt = resolveDisplayDateTime(displayTask?.startDateTimeLabel, displayTask?.startAt);
   const endAt = resolveDisplayDateTime(displayTask?.endDateTimeLabel, displayTask?.endAt);
 
@@ -320,16 +241,12 @@ function buildLabCurrentTaskMatrixView(input = {}) {
     snapshot.experimentTrays,
     snapshot.experimentRuns,
   );
-  const taskByCode = buildTaskByCode(snapshot.tasks);
-  const experimentByKey = buildExperimentByKey(snapshot.experiments);
   const labs = labNames.map((labName) => buildLabCard({
     deviceRow: findDeviceRowForLab(deviceRows, labName),
-    experimentByKey,
     labName,
     now,
     rawDevice: findRawDeviceForLab(snapshot.devices, labName),
     snapshot,
-    taskByCode,
   }));
   const counts = labs.reduce(
     (summary, lab) => {

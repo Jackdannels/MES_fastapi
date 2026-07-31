@@ -7,6 +7,7 @@ from copy import deepcopy
 from threading import Lock
 from typing import Any, Protocol
 
+from app.db.schema_version import require_schema_version
 from app.db.session import get_connection
 
 
@@ -66,23 +67,7 @@ class MySQLFixedTerminalRepository:
                 return
             with get_connection() as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS sys_fixed_terminal (
-                          terminal_id VARCHAR(128) NOT NULL PRIMARY KEY,
-                          terminal_name VARCHAR(255) NOT NULL,
-                          secret_hash CHAR(64) NOT NULL,
-                          bound_module VARCHAR(32) NOT NULL,
-                          bound_lab_name VARCHAR(128) NOT NULL DEFAULT '',
-                          active TINYINT(1) NOT NULL DEFAULT 1,
-                          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                          last_authenticated_at DATETIME NULL,
-                          INDEX idx_fixed_terminal_active (active, bound_module)
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                        """
-                    )
-                connection.commit()
+                    require_schema_version(cursor)
             self._schema_ready = True
 
     def upsert_terminal(self, terminal: dict[str, Any]) -> dict[str, Any]:

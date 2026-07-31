@@ -377,7 +377,7 @@ describe("processLabModel", () => {
     );
   });
 
-  test("buildProcessLabCards keeps the latest completed experiment visible as an urgent lab", () => {
+  test("buildProcessLabCards returns a lab to idle after its latest experiment completes", () => {
     const cards = buildProcessLabCards(
       [{ name: "Impact Lab 1", testType: "冲击试验" }],
       [{ code: "TASK-001", test_type: "冲击试验" }],
@@ -404,11 +404,11 @@ describe("processLabModel", () => {
 
     expect(cards[0]).toEqual(
       expect.objectContaining({
-        hasTask: true,
-        status: "实验已完成",
-        statusClass: "is-urgent",
-        taskCode: "TASK-001",
-        targetExperiment: "冲击试验",
+        hasTask: false,
+        status: "空闲",
+        statusClass: "is-idle",
+        taskCode: "-",
+        targetExperiment: "未分配",
       })
     );
   });

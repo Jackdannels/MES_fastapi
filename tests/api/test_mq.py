@@ -69,20 +69,8 @@ def build_client(monkeypatch):
             },
         ),
         (
-            "/api/mq/laboratory/ready",
-            {
-                "task_code": "TASK-HH2",
-                "lab_code": "LAB_HOT_HUMID_2",
-                "experiment_code": "EXP-HH2",
-            },
-        ),
-        (
-            "/api/mq/laboratory/events/experiment-started",
-            {
-                "message_type": "EXPERIMENT_STARTED",
-                "message_id": "MSG-HH2-HTTP",
-                "lab_code": "LAB_HOT_HUMID_2",
-            },
+            "/api/mq/laboratory/events/fixture-ready",
+            {"message_type": "FIXTURE_READY", "message_id": "MSG-HH2-FIXTURE", "lab_code": "LAB_HOT_HUMID_2"},
         ),
     ],
 )
@@ -290,6 +278,29 @@ def test_ready_endpoint_preserves_schedule_and_axis_context(monkeypatch):
         "current_axis_code": "x+",
         "sub_experiment_code": "SYLU-2026-06-021-A-AXIS-X",
     }
+
+
+def test_ready_endpoint_allows_hot_humid_laboratory_two(monkeypatch):
+    client, published = build_client(monkeypatch)
+
+    response = client.post(
+        "/api/mq/laboratory/ready",
+        json={
+            "task_code": "TASK-HH2",
+            "lab_code": "LAB_HOT_HUMID_2",
+            "experiment_code": "EXP-HH2",
+        },
+    )
+
+    assert response.status_code == 200
+    assert published[0]["command"] == "READY"
+    assert published[0]["payload"] == {
+        "task_code": "TASK-HH2",
+        "lab_code": "LAB_HOT_HUMID_2",
+        "experiment_code": "EXP-HH2",
+        "run_no": published[0]["payload"]["run_no"],
+    }
+    assert published[0]["payload"]["run_no"].startswith("run-")
 
 
 def test_ready_endpoint_marks_axis_adjustment_ready_before_republishing(monkeypatch):
@@ -808,25 +819,14 @@ def test_mqtt_subscriber_keeps_consuming_after_one_bad_lab_event(monkeypatch):
 def test_create_app_starts_mqtt_subscriber_only_when_enabled(monkeypatch):
     calls = []
 
+    monkeypatch.setattr(mq_runtime.MqttRuntimeController, "set_mode", lambda self, mode: calls.append(("set_mode", mode)))
     monkeypatch.setattr(mq_runtime.MqttRuntimeController, "shutdown", lambda self: calls.append(("shutdown", self.mode)))
 
     app = app_main.create_app(Settings(MQTT_ENABLED=True, UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=False))
     with TestClient(app) as client:
-        assert client.get("/api/mq/interface-mode").json() == {
-            "ok": True,
-            "mode": "mqtt",
-            "mqtt_enabled": True,
-            "subscriber_running": False,
-            "upper_computer": {
-                "enabled": False,
-                "connected": False,
-                "auto_mode": False,
-                "reason": "not_started",
-            },
-            "reason": "not_started",
-        }
+        assert client.get("/health/live").status_code == 200
 
-    assert calls == [("shutdown", "mqtt")]
+    assert calls == [("set_mode", "mqtt"), ("shutdown", "mqtt")]
 
 
 def test_create_app_restarts_and_stops_auto_upper_computer_simulator(monkeypatch):
@@ -1236,23 +1236,51 @@ class FakeMqEventRepository:
                 break
 
 
-def test_process_laboratory_event_rejects_hostless_laboratory_before_repository_access():
+def test_process_laboratory_event_allows_hot_humid_laboratory_two_start_and_end():
     repository = FakeMqEventRepository()
+    repository.contexts_by_lab["LAB_HOT_HUMID_2"] = {
+        "task_no": "TASK-HH2",
+        "experiment_no": "EXP-HH2",
+        "schedule_no": "SCHEDULE-HH2",
+        "device_name": "高低温湿热二室",
+        "planned_hours": 2,
+        "tray_nos": ["TP-HH2"],
+        "sample_nos": ["SP-HH2"],
+    }
+    started = process_laboratory_event(
+        "mes/v1/labs/LAB_HOT_HUMID_2/events/experiment-started",
+        {
+            "message_type": "EXPERIMENT_STARTED",
+            "message_id": "MSG-HH2-STARTED",
+            "lab_code": "LAB_HOT_HUMID_2",
+            "run_no": "RUN-HH2",
+        },
+        received_at="2026-07-31 10:00:00",
+        repository=repository,
+    )
+    repository.runs_by_lab["LAB_HOT_HUMID_2"] = {
+        "run_no": "RUN-HH2",
+        "task_no": "TASK-HH2",
+        "experiment_no": "EXP-HH2",
+        "lab_code": "LAB_HOT_HUMID_2",
+        "device_name": "高低温湿热二室",
+    }
+    ended = process_laboratory_event(
+        "mes/v1/labs/LAB_HOT_HUMID_2/events/experiment-ended",
+        {
+            "message_type": "EXPERIMENT_ENDED",
+            "message_id": "MSG-HH2-ENDED",
+            "lab_code": "LAB_HOT_HUMID_2",
+            "run_no": "RUN-HH2",
+        },
+        received_at="2026-07-31 12:00:00",
+        repository=repository,
+    )
 
-    with pytest.raises(ValueError, match="仅支持 hostless 接口"):
-        process_laboratory_event(
-            "mes/v1/labs/LAB_HOT_HUMID_2/events/experiment-started",
-            {
-                "message_type": "EXPERIMENT_STARTED",
-                "message_id": "MSG-HH2-MQTT",
-                "lab_code": "LAB_HOT_HUMID_2",
-                "task_code": "TASK-HH2",
-            },
-            repository=repository,
-        )
-
-    assert repository.messages == []
-    assert repository.events == []
+    assert started["status"] == "PROCESSED"
+    assert ended["status"] == "PROCESSED"
+    assert [event["event_type"] for event in repository.events] == ["EXPERIMENT_STARTED", "EXPERIMENT_ENDED"]
+    assert repository.ended == [("RUN-HH2", "2026-07-31 12:00:00", "", "", "")]
 
 
 def test_process_fixture_ready_rejects_event_without_fixture_install_id():

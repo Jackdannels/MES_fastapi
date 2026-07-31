@@ -91,27 +91,28 @@
 
 /* 按实验室运行状态切换边框和内阴影。 */
 .process-lab-card.is-running {
-  border-color: rgba(34, 197, 94, 0.34);
-  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.82);
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.18), inset 0 0 0 1px rgba(34, 197, 94, 0.22);
 }
 
 .process-lab-card.is-scheduled {
-  border-color: rgba(59, 130, 246, 0.3);
-  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.1);
+  border-color: rgba(34, 211, 238, 0.78);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.16), inset 0 0 0 1px rgba(34, 211, 238, 0.2);
 }
 
 .process-lab-card.is-idle {
-  border-color: rgba(148, 163, 184, 0.26);
+  border-color: rgba(148, 163, 184, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.08);
 }
 
 .process-lab-card.is-maintenance {
-  border-color: rgba(239, 68, 68, 0.5);
-  box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.84);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.18), inset 0 0 0 1px rgba(239, 68, 68, 0.22);
 }
 
 .process-lab-card.is-urgent {
-  border-color: rgba(245, 158, 11, 0.56);
-  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.9);
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.2), inset 0 0 0 1px rgba(245, 158, 11, 0.24);
   animation: process-lab-urgent-pulse 1.25s ease-in-out infinite;
 }
 
@@ -180,7 +181,7 @@
 @keyframes process-lab-urgent-pulse {
   50% {
     border-color: rgba(251, 146, 60, 0.95);
-    box-shadow: inset 0 0 0 1px rgba(251, 146, 60, 0.4), 0 0 20px rgba(245, 158, 11, 0.28);
+    box-shadow: 0 0 0 1px rgba(251, 146, 60, 0.28), inset 0 0 0 1px rgba(251, 146, 60, 0.4), 0 0 20px rgba(245, 158, 11, 0.28);
   }
 }
 

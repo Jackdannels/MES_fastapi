@@ -9,6 +9,7 @@ from typing import Any, Iterable
 from uuid import uuid4
 
 from app.core.axis_codes import canonical_axis_code
+from app.core.config import settings as app_settings
 from app.core.storage_backend import get_storage_backend
 from app.core.time_utils import format_business_datetime, now_business_text, parse_business_datetime
 from app.services.test_data_repository import get_test_data_repository
@@ -33,6 +34,9 @@ _REGISTERED_FONT = ""
 
 
 def default_save_path() -> Path:
+    configured = str(app_settings.TEST_DATA_SAVE_PATH or "").strip()
+    if configured:
+        return Path(configured).expanduser()
     return Path.home() / "Desktop" / DEFAULT_FOLDER_NAME
 
 

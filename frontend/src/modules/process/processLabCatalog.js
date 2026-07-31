@@ -55,7 +55,7 @@ const resolveMqttStartDisabledReason = (lab) => {
     labCode: lab?.code || lab?.labCode || lab?.lab_code,
     labName: lab?.name || lab?.lab_name,
   });
-  return capabilities.hostless
+  return capabilities.experimentStartInterface === "hostless"
     ? "试验间将在准备就绪后自动开始实验"
     : "MQTT模式下等待上位机发送实验开始信号";
 };

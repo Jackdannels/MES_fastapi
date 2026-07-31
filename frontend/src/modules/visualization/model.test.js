@@ -388,7 +388,7 @@ describe("visualization model", () => {
     expect(lab.traySummaryLabel).toBe("托盘 2，样品 3");
   });
 
-  test("buildLabCurrentTaskMatrixView marks near-finish running labs and completed labs as urgent orange", () => {
+  test("buildLabCurrentTaskMatrixView keeps near-finish labs urgent and clears completed labs from current tasks", () => {
     const view = visualizationModelPublicApi.buildLabCurrentTaskMatrixView({
       labNames: ["盐雾试验室", "四综合实验室"],
       now: new Date("2026-06-17T14:45:00+08:00"),
@@ -485,9 +485,9 @@ describe("visualization model", () => {
     expect(view.labs.find((lab) => lab.labName === "四综合实验室")).toEqual(expect.objectContaining({
       countdown: expect.objectContaining({ active: false }),
       shouldBlink: false,
-      statusLabel: "实验已完成",
-      statusTone: "completed",
-      taskCode: "TASK-DONE",
+      statusLabel: "未排程",
+      statusTone: "unplanned",
+      taskCode: "-",
     }));
   });
 

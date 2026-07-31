@@ -37,20 +37,48 @@ HOSTLESS_LAB_CODE = "LAB_HOT_HUMID_2"
 HOSTLESS_LAB_NAME = "高低温湿热二室"
 LAB_INTERFACE_MQTT = "mqtt"
 LAB_INTERFACE_HOSTLESS = "hostless"
+LAB_INTERFACE_OPERATION_FIXTURE_READY = "fixture_ready"
+LAB_INTERFACE_OPERATION_EXPERIMENT_START = "experiment_start"
+LAB_INTERFACE_OPERATION_EXPERIMENT_END = "experiment_end"
 
 
 def normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
 
-def require_laboratory_interface(expected: str, *, lab_code: Any = "", lab_name: Any = "") -> None:
+def laboratory_interface_for_operation(
+    *,
+    operation: Any = "",
+    lab_code: Any = "",
+    lab_name: Any = "",
+) -> str:
     code = normalize_text(lab_code).upper()
     name = normalize_text(lab_name)
     code_is_hostless = code == HOSTLESS_LAB_CODE
     name_is_hostless = name == HOSTLESS_LAB_NAME
     if code and name and code_is_hostless != name_is_hostless:
         raise ValueError("lab_code 与 lab_name 不匹配")
-    actual = LAB_INTERFACE_HOSTLESS if code_is_hostless or name_is_hostless else LAB_INTERFACE_MQTT
+    if not (code_is_hostless or name_is_hostless):
+        return LAB_INTERFACE_MQTT
+    normalized_operation = normalize_text(operation)
+    if normalized_operation in {
+        LAB_INTERFACE_OPERATION_EXPERIMENT_START,
+        LAB_INTERFACE_OPERATION_EXPERIMENT_END,
+    }:
+        return LAB_INTERFACE_MQTT
+    return LAB_INTERFACE_HOSTLESS
+
+
+def require_laboratory_interface(
+    expected: str,
+    *,
+    operation: Any = "",
+    lab_code: Any = "",
+    lab_name: Any = "",
+) -> None:
+    code = normalize_text(lab_code).upper()
+    name = normalize_text(lab_name)
+    actual = laboratory_interface_for_operation(operation=operation, lab_code=code, lab_name=name)
     if actual != expected:
         label = name or code or "当前实验室"
         raise ValueError(f"{label} 仅支持 {actual} 接口，不允许使用 {expected} 接口")

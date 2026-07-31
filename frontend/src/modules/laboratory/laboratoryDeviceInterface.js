@@ -12,7 +12,6 @@ function createLaboratoryDeviceInterface({
   readyPublishRetryAvailable,
 }) {
   let hostInterfaceModeSync = null;
-  let hostlessStartTimer = null;
 
   const isMqttHostInterfaceMode = () => readHostInterfaceMode() === HOST_INTERFACE_MODES.mqtt;
   const getCurrentLabHostInterfaceCapabilities = () => getLabHostInterfaceCapabilities({
@@ -20,32 +19,9 @@ function createLaboratoryDeviceInterface({
     labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
     labName: laboratoryConfig.value.labName,
   });
-  const isHostlessMqttLab = () => getCurrentLabHostInterfaceCapabilities().hostless;
-
-  const clearHostlessStartTimer = () => {
-    if (hostlessStartTimer && typeof window !== "undefined") {
-      window.clearTimeout(hostlessStartTimer);
-      hostlessStartTimer = null;
-    }
-  };
-
-  const scheduleHostlessStart = (startExperiment) => {
-    const capabilities = getCurrentLabHostInterfaceCapabilities();
-    clearHostlessStartTimer();
-    if (!capabilities.hostless) {
-      return false;
-    }
-    const invokeStart = () => {
-      hostlessStartTimer = null;
-      startExperiment();
-    };
-    if (typeof window === "undefined" || capabilities.startDelayMs <= 0) {
-      invokeStart();
-      return true;
-    }
-    hostlessStartTimer = window.setTimeout(invokeStart, capabilities.startDelayMs);
-    return true;
-  };
+  const isHostlessFixtureLab = () => getCurrentLabHostInterfaceCapabilities().fixtureReadyInterface === "hostless";
+  const usesMqttExperimentStart = () => getCurrentLabHostInterfaceCapabilities().experimentStartInterface === "mqtt";
+  const usesMqttExperimentEnd = () => getCurrentLabHostInterfaceCapabilities().experimentEndInterface === "mqtt";
 
   const ensureHostInterfaceModeSynced = async () => {
     if (!isMqttHostInterfaceMode()) {
@@ -92,13 +68,13 @@ function createLaboratoryDeviceInterface({
 
   return {
     clearLaboratoryMqError,
-    clearHostlessStartTimer,
     ensureHostInterfaceModeSynced,
     getCurrentLabHostInterfaceCapabilities,
-    isHostlessMqttLab,
+    isHostlessFixtureLab,
     isMqttHostInterfaceMode,
     publishLaboratoryMqSafely,
-    scheduleHostlessStart,
+    usesMqttExperimentEnd,
+    usesMqttExperimentStart,
   };
 }
 

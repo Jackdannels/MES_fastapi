@@ -357,7 +357,7 @@ def test_laboratory_axis_complete_passes_sub_experiment_code_to_shared_service(m
     assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验进行中"
 
 
-def test_laboratory_start_experiment_updates_ready_hot_humid_second_lab_through_common_endpoint(monkeypatch):
+def test_laboratory_start_endpoint_rejects_hot_humid_second_lab_now_using_mqtt_start(monkeypatch):
     from app.api.routes import laboratory as laboratory_route
 
     monkeypatch.setattr(laboratory_route, "now_business_text", lambda: "2026-06-06 15:00:00")
@@ -392,70 +392,10 @@ def test_laboratory_start_experiment_updates_ready_hot_humid_second_lab_through_
         },
     )
 
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["affectedTrayCodes"] == ["TP-HH2-501"]
-    assert payload["startedAt"] == "2026-06-06 15:00:00"
-    updated_sample = storage.read("mes.samples")[0]
-    assert updated_sample["location"] == "高低温湿热二室"
-    assert updated_sample["status"] == "实验进行中"
-    assert updated_sample["flow_status"] == "实验进行中"
-    updated_tray = updated_sample["trays"][0]
-    assert updated_tray["status"] == "实验进行中"
-    assert "fixture_ready" not in updated_tray
-    assert "fixtureReady" not in updated_tray
-    assert "target_lab" not in updated_tray
-    assert "target_experiment_code" not in updated_tray
-    assert updated_sample["history"][0] == {
-        "action": "开始实验",
-        "detail": "TASK-501 / 高低温湿热试验 / 实验进行中 / 托盘：TP-HH2-501",
-        "location": "高低温湿热二室",
-        "owner": "",
-        "status": "实验进行中",
-        "time": "2026-06-06 15:00:00",
-    }
-
-
-    assert storage.read("mes.tasks")[0]["status"] == "任务进行中"
-    assert storage.read("mes.experiments")[-1]["status"] == "实验进行中"
-    assert storage.read("mes.schedules")[-2]["status"] == "实验准备就绪"
-    assert storage.read("mes.schedules")[-1]["status"] == "实验进行中"
-    assert storage.read("mes.experiment_runs") == [
-        {
-            "id": "RUN-HH2-501",
-            "run_no": "RUN-HH2-501",
-            "schedule_id": "SCH-HH2-501",
-            "task_code": "TASK-501",
-            "experiment_code": "EXP-D",
-            "sub_experiment_code": "EXP-D-AXIS-X",
-            "device": "高低温湿热二室",
-            "device_name": "高低温湿热二室",
-            "tray_codes": ["TP-HH2-501"],
-            "status": "实验进行中",
-            "started_at": "2026-06-06 15:00:00",
-            "planned_hours": 2,
-            "planned_end_at": "2026-06-06 17:00:00",
-            "ended_at": "",
-            "created_at": "2026-06-06 15:00:00",
-            "updated_at": "2026-06-06 15:00:00",
-        }
-    ]
-    assert storage.read("mes.experiment_run_trays") == [
-        {
-            "id": "RUN-HH2-501:TP-HH2-501",
-            "run_no": "RUN-HH2-501",
-            "task_code": "TASK-501",
-            "experiment_code": "EXP-D",
-            "sub_experiment_code": "EXP-D-AXIS-X",
-            "tray_code": "TP-HH2-501",
-            "status": "实验进行中",
-            "run_tray_status": "实验进行中",
-            "started_at": "2026-06-06 15:00:00",
-            "ended_at": "",
-            "created_at": "2026-06-06 15:00:00",
-            "updated_at": "2026-06-06 15:00:00",
-        }
-    ]
+    assert response.status_code == 422
+    assert "仅支持 mqtt 接口" in response.json()["detail"]
+    assert storage.read("mes.experiment_runs") == []
+    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验准备就绪"
 
 
 def test_laboratory_complete_rejects_mqtt_laboratory_hostless_endpoint(monkeypatch):
@@ -474,6 +414,26 @@ def test_laboratory_complete_rejects_mqtt_laboratory_hostless_endpoint(monkeypat
 
     assert response.status_code == 422
     assert response.json() == {"detail": "盐雾试验室 仅支持 mqtt 接口，不允许使用 hostless 接口"}
+    assert storage.read_all() == before
+
+
+def test_laboratory_complete_rejects_hot_humid_second_lab_now_using_mqtt_end(monkeypatch):
+    sample = sample_with_history("实验进行中", "高低温湿热二室", [], tray_code="TP-HH2-501")
+    payloads = base_payloads(
+        [sample],
+        experiment_trays=[{"task_code": "TASK-501", "experiment_code": "EXP-A", "tray_code": "TP-HH2-501"}],
+    )
+    payloads["mes.schedules"][0]["device"] = "高低温湿热二室"
+    client, storage = build_client(monkeypatch, payloads, bypass_completion_interface_guard=False)
+    before = deepcopy(storage.read_all())
+
+    response = client.post(
+        "/api/laboratory/tasks/TASK-501/experiments/EXP-A/complete",
+        json={"runNo": "RUN-HH2-501", "trayCodes": ["TP-HH2-501"], "completedAt": "2026-05-19T10:00:00"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "高低温湿热二室 仅支持 mqtt 接口，不允许使用 hostless 接口"}
     assert storage.read_all() == before
 
 
@@ -690,7 +650,7 @@ def test_start_endpoint_rejects_non_hostless_laboratory_before_shared_service(mo
     assert calls == []
 
 
-def test_hostless_axis_adjustment_ready_then_delayed_start_preserves_completed_axis(monkeypatch):
+def test_local_axis_adjustment_and_start_endpoints_reject_hot_humid_second_lab(monkeypatch):
     from app.api.routes import laboratory as laboratory_route
 
     payloads = base_payloads([])
@@ -727,13 +687,11 @@ def test_hostless_axis_adjustment_ready_then_delayed_start_preserves_completed_a
         },
     )
 
-    assert ready_response.status_code == 200
-    assert start_response.status_code == 200
-    steps = {step["axis_code"]: step for step in storage.read("mes.experiment_run_steps")}
-    assert steps["x+"]["status"] == "实验已完成"
-    assert steps["x+"]["ended_at"] == "2026-07-27 10:00:00"
-    assert steps["x-"]["status"] == "实验进行中"
-    assert steps["y+"]["status"] == "待执行"
+    assert ready_response.status_code == 422
+    assert start_response.status_code == 422
+    assert "仅支持 mqtt 接口" in ready_response.json()["detail"]
+    assert "仅支持 mqtt 接口" in start_response.json()["detail"]
+    assert [step["status"] for step in storage.read("mes.experiment_run_steps")] == ["实验已完成", "轴向调整中", "待执行"]
 
 
 def test_laboratory_complete_experiment_clears_stale_tray_target(monkeypatch):

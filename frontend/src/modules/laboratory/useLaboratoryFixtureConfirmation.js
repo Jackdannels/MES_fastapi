@@ -108,7 +108,7 @@ function useLaboratoryFixtureConfirmation({
     clearHostlessFixtureReadyTimer();
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
-    if (!capabilities.hostless) {
+    if (capabilities.fixtureReadyInterface !== "hostless") {
       return;
     }
     const confirmFixtureReady = () => {

@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from app.core.master_data import DEFAULT_LABS
 from app.db.session import get_connection
-from app.services.attendance_schema import ATTENDANCE_SCHEMA_SQL
+from app.db.schema_version import require_schema_version
 from app.services.attendance_security import (
     ATTENDANCE_QR_PREFIX,
     build_qr_payload,
@@ -231,27 +231,8 @@ class MySQLAttendanceRepository:
             return
         with get_connection() as connection:
             with connection.cursor() as cursor:
-                for statement in ATTENDANCE_SCHEMA_SQL.split(";"):
-                    normalized = statement.strip()
-                    if normalized:
-                        cursor.execute(normalized)
-                self._ensure_schema_extensions(cursor)
-            connection.commit()
+                require_schema_version(cursor)
         self._schema_ready = True
-
-    def _ensure_schema_extensions(self, cursor: Any) -> None:
-        cursor.execute("SHOW COLUMNS FROM sys_attendance_user LIKE 'qr_token_hash'")
-        if not cursor.fetchone():
-            cursor.execute("ALTER TABLE sys_attendance_user ADD COLUMN qr_token_hash VARCHAR(64) NULL AFTER password_hash")
-        cursor.execute("SHOW COLUMNS FROM sys_attendance_user LIKE 'qr_token_payload'")
-        if not cursor.fetchone():
-            cursor.execute("ALTER TABLE sys_attendance_user ADD COLUMN qr_token_payload VARCHAR(255) NULL AFTER qr_token_hash")
-        cursor.execute("SHOW COLUMNS FROM sys_attendance_user LIKE 'qr_token_created_at'")
-        if not cursor.fetchone():
-            cursor.execute("ALTER TABLE sys_attendance_user ADD COLUMN qr_token_created_at DATETIME NULL AFTER qr_token_payload")
-        cursor.execute("SHOW INDEX FROM sys_attendance_user WHERE Key_name = 'idx_sys_attendance_user_qr_token_hash'")
-        if not cursor.fetchone():
-            cursor.execute("ALTER TABLE sys_attendance_user ADD INDEX idx_sys_attendance_user_qr_token_hash (qr_token_hash)")
 
     def _rows(self, cursor: Any) -> list[dict[str, Any]]:
         rows = cursor.fetchall()

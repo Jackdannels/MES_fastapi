@@ -5,6 +5,7 @@ __pycache__/
 .env
 artifacts/performance/
 artifacts/p0-runtime/
+artifacts/db-backups/
 
 frontend/node_modules/
 frontend/.vite/
@@ -12,5 +13,7 @@ frontend/dist/
 app/static/dist/
 .worktrees/
 .superpowers/
+.tmp/*.env
+.tmp/production-secrets/
 *.stdout.log
 *.stderr.log

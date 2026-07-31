@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from weakref import WeakKeyDictionary
 
 from app.core.time_utils import now_business_text
+from app.db.schema_version import require_schema_version
 
 
 EXPORTS_STORAGE_KEY = "mes.test_data_exports"
@@ -139,43 +140,7 @@ class MySQLTestDataRepository:
             return
         with self.storage._connect() as connection:  # noqa: SLF001 - same backend-owned connection pool
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS biz_test_data_export (
-                      export_key VARCHAR(255) NOT NULL PRIMARY KEY,
-                      task_no VARCHAR(100) NOT NULL,
-                      experiment_no VARCHAR(100) NOT NULL,
-                      run_no VARCHAR(100) NOT NULL DEFAULT '',
-                      axis_code VARCHAR(20) NOT NULL DEFAULT '',
-                      sample_no VARCHAR(100) NOT NULL DEFAULT '',
-                      export_status VARCHAR(20) NOT NULL,
-                      file_path VARCHAR(1024) NULL,
-                      relative_path VARCHAR(1024) NULL,
-                      error_text TEXT NULL,
-                      attempts INT NOT NULL DEFAULT 0,
-                      generated_at VARCHAR(40) NULL,
-                      updated_at VARCHAR(40) NULL,
-                      payload_json JSON NOT NULL,
-                      INDEX idx_test_data_export_task (task_no, experiment_no),
-                      INDEX idx_test_data_export_status (export_status, updated_at)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                    """
-                )
-                cursor.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS biz_test_data_share (
-                      share_token VARCHAR(128) NOT NULL PRIMARY KEY,
-                      task_no VARCHAR(100) NOT NULL,
-                      experiment_no VARCHAR(100) NOT NULL,
-                      active TINYINT(1) NOT NULL DEFAULT 1,
-                      created_at VARCHAR(40) NOT NULL,
-                      updated_at VARCHAR(40) NOT NULL,
-                      UNIQUE KEY uk_test_data_share_scope (task_no, experiment_no),
-                      INDEX idx_test_data_share_active (active, updated_at)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                    """
-                )
-            connection.commit()
+                require_schema_version(cursor)
 
     def _migrate_snapshot_exports(self) -> None:
         legacy = _rows(self.storage.read(EXPORTS_STORAGE_KEY))

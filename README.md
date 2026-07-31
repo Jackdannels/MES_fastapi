@@ -328,10 +328,29 @@ python scripts\init_mysql_storage.py --seed-demo
 
 说明：
 
-- `scripts\init_mysql_storage.py` 会先创建数据库和 `app_storage_snapshot` 表，再对已有 MES 主表做结构对齐
-- 该脚本要求基础 MES 主表已存在；当前仓库不包含 `biz_task`、`biz_sample`、`biz_tray`、`biz_tray_item`、`md_equipment`、`sys_role` 的完整建表种子 SQL
+- `scripts\init_mysql_storage.py` 会先创建数据库，再通过 `schema_migrations` 只应用尚未执行的 MES 基线、`app_storage_snapshot` 和结构对齐版本；全新空数据库无需预置业务表
+- 已执行版本会保存 SHA-256 校验值；历史 SQL 被修改、上次迁移失败或无法取得数据库迁移锁时，脚本会停止而不是继续修改结构
+- 所有 SQL 应用完成后，脚本会按版本化 Schema 合约校验 39 张表、509 个字段、149 个索引、38 个外键以及引擎、字符集和默认值；结构漂移时最终迁移不会记录为成功
+- V004 已将原先业务请求期间的自动建表、补字段和补索引迁入版本 SQL，V005 对齐历史终端表字符集；运行期不再自动执行 DDL
+- 已有数据库尚无 `schema_migrations` 时，非生产环境会只读校验完整结构合约，结构完整才允许临时兼容；生产环境必须存在成功的 V005 记录
+- 正式部署应配置独立的 `MYSQL_MIGRATION_USER` / `MYSQL_MIGRATION_PASSWORD` 运行初始化脚本；FastAPI 使用 `MYSQL_USER` / `MYSQL_PASSWORD`，仅授予 `SELECT`、`INSERT`、`UPDATE`、`DELETE`
+- `APP_ENV=prod` 时迁移账号必须与 API 账号不同，且数据库必须由 DBA 预先创建；API 启动前会只读校验 V005 和完整物理结构
+- `/health/live` 只表示进程存活；`/health/ready` 会检查数据库版本、完整结构合约和已启用的 RabbitMQ 连接
+- 升级已有环境仍应先备份并执行 `python scripts\init_mysql_storage.py`，尽快把只读兼容状态转为正式 V005 记录；旧库结构不完整或发生漂移时新版服务会拒绝访问
 - 后端运行期只支持 MySQL 存储，不再支持 `STORAGE_BACKEND=json`
 - `init_mysql_storage.py` 不会隐式从其他持久化介质导入业务数据
+
+生产账号授权模板位于 `scripts/sql/mysql-production-grants.example.sql`。模板中的主机、数据库名和密码占位符必须由 DBA 替换，不能直接原样执行。
+
+Docker 隔离打包、启动、验证与清理说明见 `docs/docker-deployment.md`；验收栈固定使用独立端口、独立卷和 `mes_packaging_test`，不得指向当前 `mes_single_branch`。
+
+真实 MySQL 集成验收默认跳过，只允许对名称满足 `mes_phase1_<name>_test` 的临时数据库执行，且删除确认值必须与数据库名完全一致：
+
+```powershell
+$env:MES_PHASE1_MYSQL_TEST_DATABASE="mes_phase1_release_test"
+$env:MES_PHASE1_MYSQL_ALLOW_DROP="mes_phase1_release_test"
+python -m pytest -q tests\integration\test_mysql_phase1_real.py
+```
 
 ## 演示数据整库重置
 

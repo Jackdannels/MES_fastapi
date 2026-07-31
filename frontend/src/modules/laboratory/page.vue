@@ -606,7 +606,13 @@
 
     <Teleport v-if="runningModalExperiment.active && runningModalVisible" to="body">
       <div class="laboratory-running-overlay" data-testid="laboratory-running-overlay">
-        <div class="laboratory-running-overlay__backdrop" data-testid="laboratory-running-backdrop" @click="hideRunningModal"></div>
+        <button
+          class="laboratory-running-overlay__backdrop"
+          data-testid="laboratory-running-backdrop"
+          type="button"
+          :aria-label="runningModalExperiment.completed ? '关闭实验已完成弹窗' : '临时隐藏实验运行弹窗'"
+          @click="hideRunningModal"
+        ></button>
         <div class="laboratory-running-overlay__content laboratory-running-modal" data-testid="laboratory-running-modal">
           <div class="laboratory-running-modal__head">
             <div>
@@ -666,38 +672,35 @@
             </button>
           </div>
           <div class="laboratory-running-modal__hint muted">
-            <span>{{ runningModalExperiment.completed ? "实验状态已自动更新为实验已完成。" : "点击空白处可临时隐藏弹窗，10 秒无操作后会自动恢复。" }}</span>
+            <span>{{ runningModalExperiment.completed ? "实验状态已自动更新为实验已完成，点击空白处关闭弹窗。" : "点击空白处可临时隐藏弹窗，10 秒无操作后会自动恢复。" }}</span>
             <span v-if="!runningModalExperiment.completed && runningModalExperiment.remainingSeconds <= 0">实验已超时，请在确认现场状态后完成实验。</span>
           </div>
-          <div v-if="completePromptVisible && !runningModalExperiment.completed" class="laboratory-running-complete-prompt" data-testid="laboratory-complete-prompt">
-            <p><strong>任务编号</strong> {{ runningModalExperiment.taskCode }}</p>
-            <p><strong>实验名称</strong> {{ runningModalExperiment.experimentName }}</p>
-            <p><strong>托盘</strong> {{ runningModalExperiment.trayCodes.length }} 个</p>
-            <p><strong>样品</strong> {{ runningModalExperiment.sampleCodes.length }} 个</p>
-            <p>{{ completionConfirmMessage }}</p>
-            <div class="laboratory-running-complete-prompt__actions">
-              <button class="action-btn secondary" type="button" @click="closeCompleteConfirm">取消</button>
-              <button class="action-btn" data-testid="laboratory-complete-experiment-confirm" type="button" @click="confirmCompleteExperiment">
-                确认实验完成
-              </button>
-            </div>
-          </div>
           <div class="laboratory-running-actions">
-            <button v-if="!completePromptVisible && !runningModalExperiment.completed && !currentAxisCompletion.enabled" class="action-btn laboratory-running-complete-button" data-testid="laboratory-complete-experiment" type="button" @click="openCompleteConfirm">
-              实验完成
+            <button
+              v-if="!runningModalExperiment.completed && !currentAxisCompletion.enabled"
+              class="action-btn laboratory-running-complete-button"
+              data-testid="laboratory-complete-experiment"
+              type="button"
+              :disabled="completionSubmitting"
+              @click="completeExperimentNow"
+            >
+              {{ completionSubmitting ? "结束命令发送中…" : "实验完成" }}
             </button>
             <button
-              v-if="!completePromptVisible && !runningModalExperiment.completed && currentAxisCompletion.enabled"
+              v-if="!runningModalExperiment.completed && currentAxisCompletion.enabled"
               class="action-btn success"
               data-testid="laboratory-complete-axis-continue"
               type="button"
-              :disabled="runningModalExperiment.axisContinuation?.isSubmittingReady
+              :disabled="completionSubmitting
+                || runningModalExperiment.axisContinuation?.isSubmittingReady
                 || runningModalExperiment.axisContinuation?.isWaitingForStart
                 || (Boolean(runningModalExperiment.axisContinuation?.nextAxisCode) && !runningModalExperiment.axisContinuation?.canContinue)"
               @click="confirmCurrentAxisAction"
             >
               {{
-                runningModalExperiment.axisContinuation?.isWaitingForStart
+                completionSubmitting
+                  ? "结束命令发送中…"
+                  : runningModalExperiment.axisContinuation?.isWaitingForStart
                   ? `已准备就绪，等待 ${runningModalExperiment.axisContinuation.currentAxisCode} 轴向启动`
                   : runningModalExperiment.axisContinuation?.isAdjusting
                     ? `下一轴向调整完成，可继续 ${runningModalExperiment.axisContinuation.currentAxisCode} 试验`
@@ -756,7 +759,8 @@ const {
   canSelectTaskKey,
   checklist,
   closeAttendanceLogin,
-  closeCompleteConfirm,
+  completeExperimentNow,
+  completionSubmitting,
   compareFeedback,
   compareScanInputRef,
   compareScanCode,
@@ -768,14 +772,11 @@ const {
   closeResetDanger,
   closeTaskList,
   compareModalOpen,
-  completePromptVisible,
-  completionConfirmMessage,
   confirmCurrentTask,
   confirmCompare,
   confirmResetPrompt,
   confirmResetTask,
   confirmCurrentAxisAction,
-  confirmCompleteExperiment,
   confirmInstall,
   confirmReady,
   confirmedModalOpen,
@@ -792,7 +793,6 @@ const {
   installActionLabel,
   laboratoryMqError,
   labName,
-  openCompleteConfirm,
   openCompare,
   openInstall,
   openReady,

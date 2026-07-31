@@ -18,7 +18,6 @@ const LABORATORY_SNAPSHOT_KEYS = new Set([
 
 function useLaboratoryRealtimeRefresh({
   compareModalOpen,
-  completePromptVisible,
   installModalOpen,
   load,
   readyModalOpen,
@@ -38,7 +37,6 @@ function useLaboratoryRealtimeRefresh({
     || readyModalOpen.value
     || resetConfirmModalOpen.value
     || resetDangerModalOpen.value
-    || completePromptVisible.value
   );
 
   const handleSamplesUpdated = (event) => {

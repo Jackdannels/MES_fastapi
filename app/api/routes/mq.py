@@ -5,7 +5,13 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from app.core.axis_codes import sort_axis_codes
 from app.core.config import settings
-from app.core.master_data import LAB_INTERFACE_MQTT, require_laboratory_interface
+from app.core.master_data import (
+    LAB_INTERFACE_MQTT,
+    LAB_INTERFACE_OPERATION_EXPERIMENT_END,
+    LAB_INTERFACE_OPERATION_EXPERIMENT_START,
+    LAB_INTERFACE_OPERATION_FIXTURE_READY,
+    require_laboratory_interface,
+)
 from app.services.mq_event_processor import MySQLMqEventRepository, generated_run_no, now_iso, process_laboratory_event
 from app.services.fixture_installations import mark_fixture_installation_failed, normalize_tray_codes, register_pending_fixture_installation
 from app.services.mq_publisher import publish_laboratory_command
@@ -111,9 +117,9 @@ def get_mq_runtime(request: Request):
     return getattr(request.app.state, "mq_runtime", default_mq_runtime)
 
 
-def require_mqtt_laboratory(lab_code: str) -> None:
+def require_mqtt_laboratory(lab_code: str, *, operation: str = "") -> None:
     try:
-        require_laboratory_interface(LAB_INTERFACE_MQTT, lab_code=lab_code)
+        require_laboratory_interface(LAB_INTERFACE_MQTT, operation=operation, lab_code=lab_code)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -135,7 +141,7 @@ def set_interface_mode(request: Request, payload: InterfaceModeRequest) -> dict[
 
 @router.post("/laboratory/fixture-install")
 def publish_fixture_install(request: FixtureInstallRequest) -> dict[str, Any]:
-    require_mqtt_laboratory(request.lab_code)
+    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_FIXTURE_READY)
     payload = {
         "task_code": request.task_code,
         "lab_code": request.lab_code,
@@ -181,7 +187,7 @@ def publish_fixture_install(request: FixtureInstallRequest) -> dict[str, Any]:
 
 @router.post("/laboratory/ready")
 def publish_ready(request: ReadyRequest) -> dict[str, Any]:
-    require_mqtt_laboratory(request.lab_code)
+    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_EXPERIMENT_START)
     axis_repository = None
     if request.axis_adjustment_ready:
         if not request.run_no or not request.current_axis_code:
@@ -227,7 +233,7 @@ def publish_ready(request: ReadyRequest) -> dict[str, Any]:
 
 @router.post("/laboratory/end-request")
 def publish_experiment_end_request(request: ExperimentEndRequest) -> dict[str, Any]:
-    require_mqtt_laboratory(request.lab_code)
+    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_EXPERIMENT_END)
     payload = {
         "task_code": request.task_code,
         "lab_code": request.lab_code,
@@ -253,7 +259,6 @@ def receive_laboratory_event(event_name: str, payload: dict[str, Any]) -> dict[s
     lab_code = str(payload.get("lab_code") or "").strip()
     if not lab_code:
         raise HTTPException(status_code=422, detail="lab_code is required")
-    require_mqtt_laboratory(lab_code)
     topic = f"{str(settings.MQTT_TOPIC_PREFIX or 'mes/v1').strip().strip('/')}/labs/{lab_code}/events/{event_name}"
     try:
         return process_laboratory_event(topic, payload)

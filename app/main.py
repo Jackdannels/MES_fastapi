@@ -12,6 +12,7 @@ from app.api.routes.tasks import store_external_task_intake
 from app.services.mq_runtime import MqttRuntimeController
 from app.services.lims_rabbitmq import LimsRabbitRuntime
 from app.services.upper_computer_simulator import restart_upper_computer_simulator_auto_mode, stop_upper_computer_simulator
+from app.db.readiness import require_runtime_database_ready
 from app.web import routes as web_routes
 
 
@@ -25,10 +26,13 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         _app.state.mq_runtime = mq_runtime
         _app.state.lims_rabbit_runtime = lims_rabbit_runtime
         try:
+            if configured_settings.APP_ENV == "prod":
+                require_runtime_database_ready(configured_settings)
             if configured_settings.RABBITMQ_ENABLED:
                 await lims_rabbit_runtime.start()
-            if configured_settings.MQTT_ENABLED and configured_settings.UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE:
-                restart_upper_computer_simulator_auto_mode(configured_settings)
+            if configured_settings.MQTT_ENABLED:
+                if configured_settings.UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE:
+                    restart_upper_computer_simulator_auto_mode(configured_settings)
                 mq_runtime.set_mode("mqtt")
             yield
         finally:
@@ -39,6 +43,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=configured_settings.APP_NAME, debug=configured_settings.DEBUG, lifespan=lifespan)
     app.state.mq_runtime = mq_runtime
     app.state.lims_rabbit_runtime = lims_rabbit_runtime
+    app.state.settings = configured_settings
 
     app.add_middleware(
         PerformanceMiddleware,

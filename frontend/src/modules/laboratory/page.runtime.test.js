@@ -232,15 +232,6 @@ const waitForLaboratoryEndRequestCount = async (count) => {
   }
   expect(laboratoryEndRequestCalls()).toHaveLength(count);
 };
-const waitForLaboratoryStartCount = async (count) => {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    await flushPageUpdates();
-    if (laboratoryStartCalls().length >= count) {
-      return;
-    }
-  }
-  expect(laboratoryStartCalls()).toHaveLength(count);
-};
 const waitForAttendanceWorkStartCount = async (count) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await flushPageUpdates();
@@ -4637,7 +4628,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-fixture-confirm-countdown"]').text()).toBe("9");
   });
 
-  test("uses local hostless MQTT fixture ready and start for hot humid laboratory two", async () => {
+  test("keeps fixture ready local but publishes ready through MQTT for hot humid laboratory two", async () => {
     useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
     reactiveRoute.query = { lab: "高低温湿热二室" };
     snapshotState = {
@@ -4711,40 +4702,27 @@ describe("LaboratoryPage runtime", () => {
     await mounted.get('[data-testid="laboratory-ready"]').trigger("click");
     await mounted.get('[data-testid="laboratory-ready-confirm"]').trigger("click");
     await waitForSamplesUpdatedEvent(dispatchEventSpy, 4);
+    const readyCall = await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
     expect(laboratoryStartCalls()).toHaveLength(0);
     expect(attendanceWorkStartCalls()).toHaveLength(0);
-    expect(mounted.get('[data-testid="laboratory-ready"]').text()).not.toContain("重新下发准备");
+    expect(JSON.parse(String(readyCall[1].body || "{}"))).toEqual(expect.objectContaining({
+      experiment_code: "SYLU-2026-04-601-A",
+      lab_code: "LAB_HOT_HUMID_2",
+      schedule_id: "schedule-hot-humid-2",
+      task_code: "SYLU-2026-04-601",
+    }));
+    expect(mounted.get('[data-testid="laboratory-ready"]').text()).toContain("重新下发准备");
     expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(true);
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
 
     vi.advanceTimersByTime(3000);
-    await waitForLaboratoryStartCount(1);
-    await waitForSamplesUpdatedEvent(dispatchEventSpy, 5);
     await flushPageUpdates();
 
-    expect(laboratoryStartCalls()[0][0]).toBe("/api/laboratory/tasks/SYLU-2026-04-601/experiments/SYLU-2026-04-601-A/start");
+    expect(laboratoryStartCalls()).toHaveLength(0);
     expect(attendanceWorkStartCalls()).toHaveLength(0);
-    expect(document.body.querySelector('[data-testid="laboratory-attendance-status"]')?.textContent || "").toContain("当前 00:00:03");
-    expect(JSON.parse(String(laboratoryStartCalls()[0][1].body || "{}"))).toEqual(expect.objectContaining({
-      labCode: "LAB_HOT_HUMID_2",
-      labName: "高低温湿热二室",
-      runNo: expect.stringMatching(/^run-\d+-\d{3}$/),
-      scheduleId: "schedule-hot-humid-2",
-      startedAt: `${toDisplayedDateTime("2026-04-02T10:00:06.000Z")}:06`,
-      subExperimentCode: "hot-humid-segment-1",
-      trayCodes: ["TP-GDW-001"],
-    }));
-    expect(laboratoryMqCalls()).toHaveLength(0);
-    expect(snapshotState[STORAGE_KEYS.experiment_runs]).toContainEqual(expect.objectContaining({
-      run_no: "run-hot-humid-2",
-      status: "实验进行中",
-    }));
-    expect(snapshotState[STORAGE_KEYS.experiment_run_trays]).toContainEqual(expect.objectContaining({
-      run_no: "run-hot-humid-2",
-      tray_code: "TP-GDW-001",
-    }));
-    expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(false);
-    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("SYLU-2026-04-601");
+    expect(laboratoryMqCalls().filter(([input]) => String(input).includes("/ready"))).toHaveLength(1);
+    expect(mounted.find('[data-testid="laboratory-confirmed-modal"].is-open').exists()).toBe(true);
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
   });
 
   test("clears pending hostless fixture-ready timers when the hot humid laboratory two task is reset", async () => {
@@ -4886,10 +4864,11 @@ describe("LaboratoryPage runtime", () => {
     expect(findRunningModal()).not.toBeNull();
 
     document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await nextTick();
+    await waitForLaboratoryEndRequestCount(1);
 
     expect(document.body.querySelector('[data-testid="laboratory-complete-confirm-modal"]')).toBeNull();
-    expect(findRunningModal()?.textContent || "").toContain("确认后将通知上位机立即结束当前盐雾试验-A");
+    expect(document.body.querySelector('[data-testid="laboratory-complete-prompt"]')).toBeNull();
+    expect(findRunningModal()?.textContent || "").toContain("实验已完成");
     expect(findRunningModal()?.textContent || "").toContain("SYLU-2026-04-101");
     expect(findRunningModal()?.textContent || "").toContain("TP-001");
   });
@@ -4941,10 +4920,10 @@ describe("LaboratoryPage runtime", () => {
     const completeExperimentButton = runningModal()?.querySelector('[data-testid="laboratory-complete-experiment"]');
     expect(completeExperimentButton?.classList.contains("laboratory-running-complete-button")).toBe(true);
     completeExperimentButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await nextTick();
+    await waitForLaboratoryEndRequestCount(1);
 
-    expect(runningModal()?.textContent || "").toContain("托盘 7 个");
-    expect(runningModal()?.textContent || "").toContain("样品 7 个");
+    expect(document.body.querySelector('[data-testid="laboratory-complete-prompt"]')).toBeNull();
+    expect(runningModal()?.textContent || "").toContain("实验已完成");
     expect(runningModal()?.textContent || "").not.toContain("查看全部");
     expect(runningModal()?.textContent || "").not.toContain("TP-007、");
   });
@@ -5029,7 +5008,7 @@ describe("LaboratoryPage runtime", () => {
     }));
   });
 
-  test("automatically closes the completed experiment popup after sixty seconds", async () => {
+  test("keeps the completed popup open until backdrop dismissal, then starts the thirty-second logout countdown", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.experiments] = snapshotState[STORAGE_KEYS.experiments].map((experiment) =>
       experiment.experiment_code === "SYLU-2026-04-101-A"
@@ -5083,18 +5062,27 @@ describe("LaboratoryPage runtime", () => {
     expect(laboratoryEndRequestCalls()).toHaveLength(0);
 
     document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await nextTick();
-    document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await waitForLaboratoryEndRequestCount(1);
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已完成");
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeFalsy();
 
-    vi.advanceTimersByTime(59_000);
+    vi.advanceTimersByTime(60_000);
     await flushPageUpdates();
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).not.toBeNull();
+    expect(attendanceLogoutCalls()).toHaveLength(0);
+
+    document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeTruthy();
+
+    vi.advanceTimersByTime(29_000);
+    await flushPageUpdates();
+    expect(attendanceLogoutCalls()).toHaveLength(0);
 
     vi.advanceTimersByTime(1_000);
     await flushPageUpdates();
-    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).toBeNull();
+    expect(attendanceLogoutCalls()).toHaveLength(1);
   });
 
   test("keeps the running modal open as completed when MQTT storage marks the run completed", async () => {
@@ -5231,8 +5219,6 @@ describe("LaboratoryPage runtime", () => {
     expect(laboratoryEndRequestCalls()).toHaveLength(0);
 
     document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await nextTick();
-    document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await waitForLaboratoryEndRequestCount(1);
 
     expect(snapshotState[STORAGE_KEYS.samples]).toEqual(
@@ -5611,9 +5597,6 @@ describe("LaboratoryPage runtime", () => {
 
     document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();
-    document.body.querySelector('[data-testid="laboratory-complete-experiment-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await nextTick();
-    await nextTick();
     await waitForLaboratoryEndRequestCount(1);
 
     expect(snapshotState[STORAGE_KEYS.samples]).toEqual(
@@ -5925,7 +5908,7 @@ describe("LaboratoryPage runtime", () => {
     expect(laboratoryMqCalls().filter(([input]) => String(input).includes("/ready"))).toHaveLength(1);
   });
 
-  test("persists hostless axis adjustment readiness before the three-second local start", async () => {
+  test("publishes hot humid laboratory two axis adjustment readiness through MQTT", async () => {
     useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
     reactiveRoute.query = { lab: "高低温湿热二室" };
     masterLabsState = [
@@ -5986,32 +5969,26 @@ describe("LaboratoryPage runtime", () => {
     axisButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushPageUpdates();
 
-    const adjustmentCalls = fetch.mock.calls.filter(([input]) => String(input).includes("/axis-adjustment-ready"));
-    expect(adjustmentCalls).toHaveLength(1);
-    expect(JSON.parse(String(adjustmentCalls[0][1]?.body || "{}"))).toEqual({
-      axisCode: "x-",
-      labCode: "LAB_HOT_HUMID_2",
-      labName: "高低温湿热二室",
-      runNo,
-    });
-    expect(laboratoryMqCalls()).toHaveLength(0);
+    const readyCall = await waitForLaboratoryMqCall("/api/mq/laboratory/ready");
+    expect(fetch.mock.calls.filter(([input]) => String(input).includes("/axis-adjustment-ready"))).toHaveLength(0);
+    expect(JSON.parse(String(readyCall[1]?.body || "{}"))).toEqual(expect.objectContaining({
+      axis_adjustment_ready: true,
+      axis_codes: ["x+", "x-"],
+      current_axis_code: "x-",
+      experiment_code: experimentCode,
+      lab_code: "LAB_HOT_HUMID_2",
+      run_no: runNo,
+      schedule_id: "schedule-hostless-adjustment",
+      sub_experiment_code: "hostless-adjustment-segment",
+      task_code: taskCode,
+    }));
     expect(axisButton?.textContent || "").toContain("已准备就绪，等待 x- 轴向启动");
     expect(laboratoryStartCalls()).toHaveLength(0);
 
-    vi.advanceTimersByTime(2999);
+    vi.advanceTimersByTime(3000);
     await flushPageUpdates();
     expect(laboratoryStartCalls()).toHaveLength(0);
-
-    vi.advanceTimersByTime(1);
-    await waitForLaboratoryStartCount(1);
-    expect(JSON.parse(String(laboratoryStartCalls()[0][1]?.body || "{}"))).toEqual(expect.objectContaining({
-      axisCodes: ["x+", "x-"],
-      currentAxisCode: "x-",
-      runNo,
-      scheduleId: "schedule-hostless-adjustment",
-      subExperimentCode: "hostless-adjustment-segment",
-      trayCodes: ["TP-HOSTLESS-208"],
-    }));
+    expect(laboratoryMqCalls().filter(([input]) => String(input).includes("/ready"))).toHaveLength(1);
   });
 
   test("does not prompt attendance logout while continuing the next axis in the same schedule", async () => {
@@ -6385,6 +6362,11 @@ describe("LaboratoryPage runtime", () => {
       sub_experiment_code: "vib-current-axis-segment",
     }));
     expect(completeBody.next_axis_code).toBe("");
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已完成");
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeFalsy();
+
+    document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
     expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeTruthy();
   });
 
@@ -6467,6 +6449,10 @@ describe("LaboratoryPage runtime", () => {
     await flushPageUpdates();
 
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已完成");
+    expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeFalsy();
+
+    document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
     expect(document.body.querySelector('[data-testid="laboratory-attendance-logout-prompt"].is-open')).toBeTruthy();
   });
 });

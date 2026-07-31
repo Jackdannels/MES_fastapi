@@ -5,6 +5,7 @@ import threading
 from typing import Any
 
 from app.core.performance import increment_performance_count, performance_span
+from app.db.mysql_tls import mysql_tls_connect_options
 
 
 class _ObservedCursor:
@@ -88,6 +89,7 @@ class MySQLConnectionPool:
             from pymysql.cursors import DictCursor
 
             connect_options["cursorclass"] = DictCursor
+        connect_options.update(mysql_tls_connect_options(self._connection_settings))
         with performance_span("db.connect"):
             return pymysql.connect(**connect_options)
 
@@ -153,6 +155,11 @@ def get_mysql_connection_pool(connection_settings: Any, *, dict_cursor: bool = F
         getattr(connection_settings, "charset", "utf8mb4"),
         int(getattr(connection_settings, "pool_size", 20) or 20),
         float(getattr(connection_settings, "pool_timeout_seconds", 5.0) or 5.0),
+        getattr(connection_settings, "ssl_ca", None),
+        getattr(connection_settings, "ssl_cert", None),
+        getattr(connection_settings, "ssl_key", None),
+        bool(getattr(connection_settings, "ssl_verify_cert", False)),
+        bool(getattr(connection_settings, "ssl_verify_identity", False)),
         dict_cursor,
     )
     with _POOLS_LOCK:

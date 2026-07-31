@@ -3,21 +3,23 @@ import { describe, expect, test } from "vitest";
 import { getLabHostInterfaceCapabilities } from "./labHostInterfaceCapabilities.js";
 
 describe("labHostInterfaceCapabilities", () => {
-  test("marks only hot humid laboratory two as hostless", () => {
+  test("keeps only fixture confirmation hostless for hot humid laboratory two", () => {
     expect(getLabHostInterfaceCapabilities({
       labCode: "LAB_HOT_HUMID_2",
     })).toEqual({
+      experimentEndInterface: "mqtt",
+      experimentStartInterface: "mqtt",
       fixtureReadyDelayMs: 3000,
-      hostless: true,
-      startDelayMs: 3000,
+      fixtureReadyInterface: "hostless",
     });
 
     expect(getLabHostInterfaceCapabilities({
       labCode: "LAB_HOT_HUMID",
     })).toEqual({
+      experimentEndInterface: "mqtt",
+      experimentStartInterface: "mqtt",
       fixtureReadyDelayMs: 0,
-      hostless: false,
-      startDelayMs: 0,
+      fixtureReadyInterface: "mqtt",
     });
   });
 
@@ -25,9 +27,10 @@ describe("labHostInterfaceCapabilities", () => {
     expect(getLabHostInterfaceCapabilities({
       labName: "高低温湿热二室",
     })).toEqual({
+      experimentEndInterface: "mqtt",
+      experimentStartInterface: "mqtt",
       fixtureReadyDelayMs: 3000,
-      hostless: true,
-      startDelayMs: 3000,
+      fixtureReadyInterface: "hostless",
     });
   });
 });

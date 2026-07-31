@@ -3,10 +3,8 @@ import { onBeforeUnmount, watch } from "vue";
 import { COMPLETED_EXPERIMENT_RUN_STATUSES, normalizeText } from "./pageHelpers";
 
 const RUNNING_MODAL_RESTORE_MS = 10_000;
-const COMPLETED_RUNNING_MODAL_AUTO_CLOSE_MS = 60_000;
 
 function useLaboratoryRunningModal({
-  completePromptVisible,
   completedRunningExperiment,
   confirmedModalOpen,
   experimentRuns,
@@ -16,20 +14,12 @@ function useLaboratoryRunningModal({
   runningModalVisible,
 }) {
   let runningModalRestoreTimer = null;
-  let completedRunningModalAutoCloseTimer = null;
   let lastActiveRunningExperiment = null;
 
   const clearRunningModalRestoreTimer = () => {
     if (runningModalRestoreTimer && typeof window !== "undefined") {
       window.clearTimeout(runningModalRestoreTimer);
       runningModalRestoreTimer = null;
-    }
-  };
-
-  const clearCompletedRunningModalAutoCloseTimer = () => {
-    if (completedRunningModalAutoCloseTimer && typeof window !== "undefined") {
-      window.clearTimeout(completedRunningModalAutoCloseTimer);
-      completedRunningModalAutoCloseTimer = null;
     }
   };
 
@@ -51,24 +41,12 @@ function useLaboratoryRunningModal({
     }, RUNNING_MODAL_RESTORE_MS);
   };
 
-  const scheduleCompletedRunningModalAutoClose = () => {
-    clearCompletedRunningModalAutoCloseTimer();
-    if (!completedRunningExperiment.value?.active || typeof window === "undefined") {
-      return;
-    }
-    completedRunningModalAutoCloseTimer = window.setTimeout(() => {
-      completedRunningExperiment.value = null;
-      runningModalVisible.value = false;
-      completedRunningModalAutoCloseTimer = null;
-    }, COMPLETED_RUNNING_MODAL_AUTO_CLOSE_MS);
-  };
-
   const hideRunningModal = () => {
     if (completedRunningExperiment.value?.active) {
       completedRunningExperiment.value = null;
       runningModalVisible.value = false;
-      clearCompletedRunningModalAutoCloseTimer();
       clearRunningModalRestoreTimer();
+      openAttendanceLogoutPrompt();
       return;
     }
     if (!runningExperiment.value.active) {
@@ -125,9 +103,6 @@ function useLaboratoryRunningModal({
       statusLabel: "实验已完成",
     };
     runningModalVisible.value = true;
-    completePromptVisible.value = false;
-    openAttendanceLogoutPrompt();
-    scheduleCompletedRunningModalAutoClose();
     clearRunningModalRestoreTimer();
     return true;
   };
@@ -150,12 +125,10 @@ function useLaboratoryRunningModal({
       lastActiveRunningExperiment = null;
       if (completedRunningExperiment.value?.active) {
         runningModalVisible.value = true;
-        completePromptVisible.value = false;
         clearRunningModalRestoreTimer();
         return;
       }
       runningModalVisible.value = false;
-      completePromptVisible.value = false;
       clearRunningModalRestoreTimer();
     },
     { immediate: true },
@@ -163,17 +136,14 @@ function useLaboratoryRunningModal({
 
   const clearRunningModalTimers = () => {
     clearRunningModalRestoreTimer();
-    clearCompletedRunningModalAutoCloseTimer();
   };
 
   onBeforeUnmount(clearRunningModalTimers);
 
   return {
-    clearCompletedRunningModalAutoCloseTimer,
     clearRunningModalRestoreTimer,
     handleRunningModalActivity,
     hideRunningModal,
-    scheduleCompletedRunningModalAutoClose,
     showRunningModal,
   };
 }

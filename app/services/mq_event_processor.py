@@ -5,7 +5,13 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
-from app.core.master_data import LAB_INTERFACE_MQTT, require_laboratory_interface
+from app.core.master_data import (
+    LAB_INTERFACE_MQTT,
+    LAB_INTERFACE_OPERATION_EXPERIMENT_END,
+    LAB_INTERFACE_OPERATION_EXPERIMENT_START,
+    LAB_INTERFACE_OPERATION_FIXTURE_READY,
+    require_laboratory_interface,
+)
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.db.session import get_connection
 from app.services.attendance_service import get_attendance_service, should_finish_work_interval_for_completion
@@ -838,7 +844,16 @@ def process_laboratory_event(
     lab_code = first_text(payload, "lab_code") or topic_lab_code(topic)
     if not lab_code:
         raise ValueError("lab_code is required")
-    require_laboratory_interface(LAB_INTERFACE_MQTT, lab_code=lab_code)
+    interface_operation = {
+        "FIXTURE_READY": LAB_INTERFACE_OPERATION_FIXTURE_READY,
+        "EXPERIMENT_STARTED": LAB_INTERFACE_OPERATION_EXPERIMENT_START,
+        "EXPERIMENT_ENDED": LAB_INTERFACE_OPERATION_EXPERIMENT_END,
+    }.get(message_type, "")
+    require_laboratory_interface(
+        LAB_INTERFACE_MQTT,
+        operation=interface_operation,
+        lab_code=lab_code,
+    )
     # MES receive time is the authoritative business timestamp. The original
     # upper-computer timestamp remains in payload_json for auditing.
     occurred_at = normalize_text(received_at) or now_iso()

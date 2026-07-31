@@ -1367,49 +1367,153 @@ def test_init_mysql_storage_script_initializes_schema_without_demo_seed_by_defau
     assert "demo_seeded=no" in capsys.readouterr().out
 
 
-def test_initialize_mysql_storage_applies_schema_sql_before_loading_backend(monkeypatch, tmp_path) -> None:
+def test_initialize_mysql_storage_uses_migration_connection_without_loading_runtime_backend(monkeypatch) -> None:
     module = importlib.import_module("scripts.init_mysql_storage")
-    schema_paths = [tmp_path / "001.sql", tmp_path / "002.sql"]
-    applied_paths = []
     touched = []
 
-    class _DummyBackend:
-        def read_all(self):
-            touched.append("read_all")
-            return {"mes.tasks": []}
+    class _Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, sql):
+            touched.append("count_tasks")
+
+        def fetchone(self):
+            return (0,)
+
+    class _Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def cursor(self):
+            return _Cursor()
 
     monkeypatch.setattr(module, "ensure_database_exists", lambda: touched.append("ensure_database"))
-    monkeypatch.setattr(module, "ensure_required_base_tables_exist", lambda: touched.append("ensure_required_base_tables"))
-    monkeypatch.setattr(module, "iter_schema_sql_paths", lambda: schema_paths)
-    monkeypatch.setattr(module, "apply_sql_file", lambda path: applied_paths.append(path))
-    monkeypatch.setattr(module, "create_mysql_storage_backend", lambda: _DummyBackend())
+    monkeypatch.setattr(
+        module,
+        "apply_pending_schema_migrations",
+        lambda: touched.append("apply_pending_schema_migrations") or ["V001", "V002"],
+    )
+    monkeypatch.setattr(
+        module,
+        "validate_required_schema_tables_exist",
+        lambda: touched.append("validate_required_schema_tables"),
+    )
+    monkeypatch.setattr(module, "_connect_mysql", lambda **_kwargs: _Connection())
+    monkeypatch.setattr(
+        module,
+        "create_mysql_storage_backend",
+        lambda: (_ for _ in ()).throw(AssertionError("runtime backend must not be loaded")),
+    )
 
     summary = module.initialize_mysql_storage(seed_demo=False)
 
-    assert applied_paths == schema_paths
-    assert touched == ["ensure_database", "ensure_required_base_tables", "read_all"]
+    assert touched == [
+        "ensure_database",
+        "apply_pending_schema_migrations",
+        "validate_required_schema_tables",
+        "count_tasks",
+    ]
     assert summary["schema_initialized"] is True
+    assert summary["applied_migrations"] == ["V001", "V002"]
     assert summary["task_count"] == 0
 
 
-def test_initialize_mysql_storage_requires_preprovisioned_base_schema(monkeypatch, tmp_path) -> None:
+def test_initialize_mysql_storage_validates_schema_only_after_migrations_are_applied(monkeypatch) -> None:
     module = importlib.import_module("scripts.init_mysql_storage")
-    schema_paths = [tmp_path / "001.sql", tmp_path / "2026-03-17-mes-single-branch-schema-alignment.sql"]
-    applied_paths = []
+    touched = []
 
     monkeypatch.setattr(module, "ensure_database_exists", lambda: None)
-    monkeypatch.setattr(module, "iter_schema_sql_paths", lambda: schema_paths)
-    monkeypatch.setattr(module, "apply_sql_file", lambda path: applied_paths.append(path))
     monkeypatch.setattr(
         module,
-        "ensure_required_base_tables_exist",
-        lambda: (_ for _ in ()).throw(RuntimeError("Missing required tables: biz_task")),
+        "apply_pending_schema_migrations",
+        lambda: touched.append("migrations") or ["V001", "V002", "V003", "V004", "V005"],
     )
 
-    with pytest.raises(RuntimeError, match="Missing required tables: biz_task"):
-        module.initialize_mysql_storage(seed_demo=False)
+    def _validate_after_migrations() -> None:
+        assert touched == ["migrations"]
+        touched.append("validation")
 
-    assert applied_paths == []
+    monkeypatch.setattr(
+        module,
+        "validate_required_schema_tables_exist",
+        _validate_after_migrations,
+    )
+    class _Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, _sql):
+            return None
+
+        def fetchone(self):
+            return (0,)
+
+    class _Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def cursor(self):
+            return _Cursor()
+
+    monkeypatch.setattr(module, "_connect_mysql", lambda **_kwargs: _Connection())
+
+    summary = module.initialize_mysql_storage(seed_demo=False)
+
+    assert touched == ["migrations", "validation"]
+    assert summary["schema_initialized"] is True
+    assert summary["schema_version"] == "V005"
+
+
+def test_initialize_mysql_storage_forbids_demo_seed_in_production(monkeypatch) -> None:
+    module = importlib.import_module("scripts.init_mysql_storage")
+    monkeypatch.setattr(module.settings, "APP_ENV", "prod")
+    monkeypatch.setattr(
+        module,
+        "ensure_database_exists",
+        lambda: (_ for _ in ()).throw(AssertionError("database must not be touched")),
+    )
+
+    with pytest.raises(RuntimeError, match="seed-demo is forbidden"):
+        module.initialize_mysql_storage(seed_demo=True)
+
+
+def test_init_mysql_storage_schema_order_starts_with_complete_baseline() -> None:
+    module = importlib.import_module("scripts.init_mysql_storage")
+
+    schema_names = [path.name for path in module.iter_schema_sql_paths()]
+
+    assert schema_names == [
+        "0001-complete-baseline-schema.sql",
+        "2026-03-17-app-storage-snapshot.sql",
+        "2026-03-17-mes-single-branch-schema-alignment.sql",
+        "V004__runtime_schema_finalization.sql",
+        "V005__terminal_collation_alignment.sql",
+    ]
+
+
+def test_init_mysql_storage_validates_full_schema_including_experiment_run_tables(monkeypatch) -> None:
+    module = importlib.import_module("scripts.init_mysql_storage")
+    representative_table = "biz_experiment_run"
+
+    assert len(module.REQUIRED_SCHEMA_TABLES) == 39
+    assert representative_table in module.REQUIRED_SCHEMA_TABLES
+    monkeypatch.setattr(module, "find_missing_schema_tables", lambda: [representative_table])
+
+    with pytest.raises(RuntimeError, match=representative_table):
+        module.validate_required_schema_tables_exist()
 
 
 def test_storage_health_report_has_mysql_only_fields(monkeypatch) -> None:

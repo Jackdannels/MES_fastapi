@@ -1,0 +1,6331 @@
+{
+  "contract_version": "V005",
+  "source": "scripts/sql/0001-complete-baseline-schema.sql",
+  "source_sha256": "fc7394d08733ba281a63602f7375786d3c8b3d996b722dc02d28b02eb5ff9c29",
+  "tables": {
+    "app_storage_snapshot": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "payload_json": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "longtext"
+        },
+        "storage_key": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "storage_key"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_barcode": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "barcode_content": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(200)"
+        },
+        "barcode_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "barcode_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "barcode_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "generated_by": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "last_print_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "object_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "object_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(30)"
+        },
+        "print_count": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "task_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_biz_barcode_generated_by": {
+          "columns": [
+            "generated_by"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "user_id"
+          ],
+          "referenced_table": "sys_user",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_barcode_task": {
+          "columns": [
+            "task_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "task_id"
+          ],
+          "referenced_table": "biz_task",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "barcode_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "fk_biz_barcode_generated_by": {
+          "columns": [
+            "generated_by"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_barcode_task": {
+          "columns": [
+            "task_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_barcode_barcode_no": {
+          "columns": [
+            "barcode_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_data_stream": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "device_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "equipment_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "equipment_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "last_packet_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "quality_value": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "decimal(6,2)"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(300)"
+        },
+        "reported_flag": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "0",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "stream_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "stream_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "stream_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "task_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_biz_data_stream_equipment": {
+          "columns": [
+            "equipment_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "equipment_id"
+          ],
+          "referenced_table": "md_equipment",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_data_stream_task": {
+          "columns": [
+            "task_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "task_id"
+          ],
+          "referenced_table": "biz_task",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "stream_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "fk_biz_data_stream_equipment": {
+          "columns": [
+            "equipment_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_data_stream_storage_read": {
+          "columns": [
+            "remark",
+            "last_packet_time",
+            "stream_no"
+          ],
+          "sub_parts": [
+            32,
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_data_stream_task_id": {
+          "columns": [
+            "task_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_data_stream_task_no": {
+          "columns": [
+            "task_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_data_stream_no": {
+          "columns": [
+            "stream_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_experiment": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "actual_end_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "actual_start_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "axis_codes_json": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "json"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "experiment_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "experiment_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "experiment_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "planned_hours": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "decimal(10,2)"
+        },
+        "priority": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "tinyint"
+        },
+        "required_device": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "task_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "unscheduled_since": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "experiment_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_experiment_task_no": {
+          "columns": [
+            "task_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_experiment_no": {
+          "columns": [
+            "experiment_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_experiment_event": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "event_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "event_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "experiment_event_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "lab_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "message_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "message_log_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "payload_json": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "json"
+        },
+        "sub_experiment_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "success_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "experiment_event_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_experiment_event_task_exp": {
+          "columns": [
+            "task_no",
+            "experiment_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_event_time": {
+          "columns": [
+            "event_type",
+            "event_time"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_experiment_event_message": {
+          "columns": [
+            "message_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_experiment_result": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "conclusion": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "experiment_result_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "lab_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "message_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "message_log_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "result_payload_json": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "json"
+        },
+        "result_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "datetime"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "RECEIVED",
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "sub_experiment_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "summary": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "text"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "experiment_result_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_experiment_result_exp": {
+          "columns": [
+            "experiment_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_result_task": {
+          "columns": [
+            "task_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_experiment_result_message": {
+          "columns": [
+            "message_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_experiment_run": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "axis_batch_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "axis_codes_json": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "json"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "device_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "ended_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "planned_end_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "planned_hours": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "decimal(10,2)"
+        },
+        "run_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "run_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
+        "run_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "schedule_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "started_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "sub_experiment_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "run_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_experiment_run_schedule": {
+          "columns": [
+            "schedule_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_run_status": {
+          "columns": [
+            "run_status"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_run_task_exp": {
+          "columns": [
+            "task_no",
+            "experiment_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_experiment_run_no": {
+          "columns": [
+            "run_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_experiment_run_step": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "axis_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(20)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "ended_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "run_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
+        "started_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "step_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "step_no": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "int"
+        },
+        "step_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "sub_experiment_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "step_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_experiment_run_step_run": {
+          "columns": [
+            "run_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_run_step_status": {
+          "columns": [
+            "step_status"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_run_step_task_exp": {
+          "columns": [
+            "task_no",
+            "experiment_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_experiment_run_step_axis": {
+          "columns": [
+            "run_no",
+            "axis_code"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_experiment_run_tray": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "ended_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "relation_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "run_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
+        "run_tray_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "started_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "sub_experiment_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "tray_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "relation_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_experiment_run_tray_exp": {
+          "columns": [
+            "task_no",
+            "experiment_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_run_tray_no": {
+          "columns": [
+            "tray_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_experiment_run_tray_unique": {
+          "columns": [
+            "run_no",
+            "tray_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_experiment_sample": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "relation_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "sample_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "relation_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_experiment_sample_sample_no": {
+          "columns": [
+            "sample_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_sample_task_no": {
+          "columns": [
+            "task_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_experiment_sample_unique": {
+          "columns": [
+            "experiment_no",
+            "sample_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_experiment_tray": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "relation_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "tray_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "relation_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_experiment_tray_task_no": {
+          "columns": [
+            "task_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_tray_tray_no": {
+          "columns": [
+            "tray_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_experiment_tray_unique": {
+          "columns": [
+            "experiment_no",
+            "tray_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_fixture_install_pending": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "fixture_install_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "lab_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "ready_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "requested_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "PENDING",
+          "nullable": false,
+          "type": "varchar(20)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "tray_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "fixture_install_id",
+            "tray_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_fixture_install_pending_match": {
+          "columns": [
+            "task_no",
+            "experiment_no",
+            "lab_code",
+            "tray_no",
+            "status"
+          ],
+          "sub_parts": [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_fixture_install_pending_status": {
+          "columns": [
+            "status",
+            "requested_at"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        }
+      }
+    },
+    "biz_lab_attendance_session": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "active": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "1",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "employee_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "lab_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "lab_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "last_seen_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "logged_in_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "datetime"
+        },
+        "logged_out_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "reason": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "session_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "username": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
+        "work_started_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "session_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_lab_attendance_active_lab": {
+          "columns": [
+            "active",
+            "lab_name"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_lab_attendance_username": {
+          "columns": [
+            "username"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        }
+      }
+    },
+    "biz_lab_operation_log": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "action_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "employee_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "lab_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "lab_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "operated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "datetime"
+        },
+        "operation_log_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "run_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "session_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "source": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(20)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "tray_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "username": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "operation_log_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_lab_operation_employee_time": {
+          "columns": [
+            "username",
+            "operated_at"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_lab_operation_lab_time": {
+          "columns": [
+            "lab_name",
+            "operated_at"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_lab_operation_time": {
+          "columns": [
+            "operated_at"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        }
+      }
+    },
+    "biz_lab_work_interval": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "employee_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "ended_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "interval_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "lab_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "lab_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "run_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "session_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "source": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(20)"
+        },
+        "started_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "datetime"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "username": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "interval_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_lab_work_lab_open": {
+          "columns": [
+            "lab_name",
+            "ended_at"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_lab_work_run_no": {
+          "columns": [
+            "run_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_lab_work_username_time": {
+          "columns": [
+            "username",
+            "started_at"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        }
+      }
+    },
+    "biz_mq_message_log": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "correlation_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "direction": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(20)"
+        },
+        "error_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "error_message": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(1000)"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "lab_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "message_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "message_log_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "message_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "payload_json": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "json"
+        },
+        "process_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "RECEIVED",
+          "nullable": false,
+          "type": "varchar(30)"
+        },
+        "processed_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "qos": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "tinyint"
+        },
+        "received_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "retain_flag": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "0",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "sub_experiment_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "topic": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(255)"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "message_log_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_mq_status": {
+          "columns": [
+            "process_status"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_mq_task_exp": {
+          "columns": [
+            "task_no",
+            "experiment_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_mq_topic_time": {
+          "columns": [
+            "topic",
+            "created_at"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_mq_message_id": {
+          "columns": [
+            "message_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_sample": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "arrival_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "barcode_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "batch_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "current_owner_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "flow_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "location_desc": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(200)"
+        },
+        "quantity": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "received_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(500)"
+        },
+        "sample_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "sample_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "sample_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "sample_spec": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "sample_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "sample_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "storage_condition": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "task_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "tray_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "unit": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(20)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_biz_sample_owner": {
+          "columns": [
+            "current_owner_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "user_id"
+          ],
+          "referenced_table": "sys_user",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_sample_task": {
+          "columns": [
+            "task_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "task_id"
+          ],
+          "referenced_table": "biz_task",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_sample_tray": {
+          "columns": [
+            "tray_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "tray_id"
+          ],
+          "referenced_table": "biz_tray",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "sample_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "fk_biz_sample_owner": {
+          "columns": [
+            "current_owner_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_sample_task": {
+          "columns": [
+            "task_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_sample_tray": {
+          "columns": [
+            "tray_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_sample_storage_read": {
+          "columns": [
+            "remark"
+          ],
+          "sub_parts": [
+            32
+          ],
+          "unique": false
+        },
+        "uk_biz_sample_sample_no": {
+          "columns": [
+            "sample_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_sample_event": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "action_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "detail": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(500)"
+        },
+        "event_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "event_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "datetime"
+        },
+        "location_desc": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(200)"
+        },
+        "owner_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "sample_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "sample_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "sample_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "task_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_biz_sample_event_sample": {
+          "columns": [
+            "sample_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "sample_id"
+          ],
+          "referenced_table": "biz_sample",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_sample_event_task": {
+          "columns": [
+            "task_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "task_id"
+          ],
+          "referenced_table": "biz_task",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "event_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_sample_event_sample_time": {
+          "columns": [
+            "sample_id",
+            "event_time"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_sample_event_task_id": {
+          "columns": [
+            "task_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        }
+      }
+    },
+    "biz_schedule": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "axis_batch_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "axis_codes_json": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "json"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "created_by": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "device_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "equipment_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "is_retention": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "0",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "lab_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "planned_hours": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "decimal(10,2)"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(500)"
+        },
+        "schedule_end_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "datetime"
+        },
+        "schedule_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "schedule_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "schedule_start_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "datetime"
+        },
+        "schedule_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "schedule_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "sub_experiment_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "task_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "temp_room_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_biz_schedule_created_by": {
+          "columns": [
+            "created_by"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "user_id"
+          ],
+          "referenced_table": "sys_user",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_schedule_equipment": {
+          "columns": [
+            "equipment_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "equipment_id"
+          ],
+          "referenced_table": "md_equipment",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_schedule_lab": {
+          "columns": [
+            "lab_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "lab_id"
+          ],
+          "referenced_table": "md_lab",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_schedule_task": {
+          "columns": [
+            "task_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "task_id"
+          ],
+          "referenced_table": "biz_task",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_schedule_temp_room": {
+          "columns": [
+            "temp_room_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "temp_room_id"
+          ],
+          "referenced_table": "wh_temp_room",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "schedule_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "fk_biz_schedule_created_by": {
+          "columns": [
+            "created_by"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_schedule_equipment": {
+          "columns": [
+            "equipment_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_schedule_lab": {
+          "columns": [
+            "lab_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_schedule_temp_room": {
+          "columns": [
+            "temp_room_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_schedule_device_time": {
+          "columns": [
+            "device_name",
+            "schedule_start_time",
+            "schedule_end_time"
+          ],
+          "sub_parts": [
+            null,
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_schedule_storage_read": {
+          "columns": [
+            "schedule_type",
+            "schedule_start_time",
+            "schedule_no"
+          ],
+          "sub_parts": [
+            null,
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_schedule_task_id": {
+          "columns": [
+            "task_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_schedule_task_no": {
+          "columns": [
+            "task_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_schedule_no": {
+          "columns": [
+            "schedule_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_task": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "actual_end_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "arrival_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "arrival_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "assign_dept_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "attachment_path": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(500)"
+        },
+        "client_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "conditions_text": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "text"
+        },
+        "contact_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "contact_phone": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "due_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "external_task_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "finished_tray_count": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "generated_by": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "issue_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "plan_end_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "plan_start_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "priority": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "tinyint"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(500)"
+        },
+        "required_device": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(200)"
+        },
+        "sample_count": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "sample_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "source_system": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "task_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "task_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(200)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "task_source_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(20)"
+        },
+        "task_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "task_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(200)"
+        },
+        "transfer_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "tray_count": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "tray_limit": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_biz_task_assign_dept": {
+          "columns": [
+            "assign_dept_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "dept_id"
+          ],
+          "referenced_table": "sys_dept",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_task_generated_by": {
+          "columns": [
+            "generated_by"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "user_id"
+          ],
+          "referenced_table": "sys_user",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_task_issue": {
+          "columns": [
+            "issue_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "issue_id"
+          ],
+          "referenced_table": "lab_task_issue",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "task_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "fk_biz_task_assign_dept": {
+          "columns": [
+            "assign_dept_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_task_generated_by": {
+          "columns": [
+            "generated_by"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_task_issue": {
+          "columns": [
+            "issue_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_task_storage_read": {
+          "columns": [
+            "source_system",
+            "created_at",
+            "task_no"
+          ],
+          "sub_parts": [
+            null,
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_task_task_no": {
+          "columns": [
+            "task_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_test_data_export": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "attempts": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "0",
+          "nullable": false,
+          "type": "int"
+        },
+        "axis_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "",
+          "nullable": false,
+          "type": "varchar(20)"
+        },
+        "error_text": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "text"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "export_key": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(255)"
+        },
+        "export_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(20)"
+        },
+        "file_path": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(1024)"
+        },
+        "generated_at": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(40)"
+        },
+        "payload_json": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "json"
+        },
+        "relative_path": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(1024)"
+        },
+        "run_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "",
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "sample_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "",
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(40)"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "export_key"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_test_data_export_status": {
+          "columns": [
+            "export_status",
+            "updated_at"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_test_data_export_task": {
+          "columns": [
+            "task_no",
+            "experiment_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        }
+      }
+    },
+    "biz_test_data_share": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "active": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "1",
+          "nullable": false,
+          "type": "tinyint(1)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(40)"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "share_token": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(128)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(40)"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "share_token"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_test_data_share_active": {
+          "columns": [
+            "active",
+            "updated_at"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "uk_test_data_share_scope": {
+          "columns": [
+            "task_no",
+            "experiment_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_tray": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "bind_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "capacity": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "current_barcode_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "current_equipment_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "current_lab_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "current_owner_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "current_temp_room_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "fixture_ready": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "0",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "in_temp_room_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "last_barcode_print_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "load_qty": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "out_temp_room_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(500)"
+        },
+        "target_sub_experiment_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
+        },
+        "task_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "temp_position_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "test_state": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "tray_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "tray_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
+        "tray_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "tray_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "unbind_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_biz_tray_current_barcode": {
+          "columns": [
+            "current_barcode_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "barcode_id"
+          ],
+          "referenced_table": "biz_barcode",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_tray_equipment": {
+          "columns": [
+            "current_equipment_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "equipment_id"
+          ],
+          "referenced_table": "md_equipment",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_tray_lab": {
+          "columns": [
+            "current_lab_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "lab_id"
+          ],
+          "referenced_table": "md_lab",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_tray_owner": {
+          "columns": [
+            "current_owner_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "user_id"
+          ],
+          "referenced_table": "sys_user",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_tray_task": {
+          "columns": [
+            "task_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "task_id"
+          ],
+          "referenced_table": "biz_task",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_tray_temp_room": {
+          "columns": [
+            "current_temp_room_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "temp_room_id"
+          ],
+          "referenced_table": "wh_temp_room",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "tray_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "fk_biz_tray_current_barcode": {
+          "columns": [
+            "current_barcode_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_tray_equipment": {
+          "columns": [
+            "current_equipment_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_tray_lab": {
+          "columns": [
+            "current_lab_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_tray_owner": {
+          "columns": [
+            "current_owner_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_tray_task": {
+          "columns": [
+            "task_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_biz_tray_temp_room": {
+          "columns": [
+            "current_temp_room_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_tray_storage_read": {
+          "columns": [
+            "remark",
+            "tray_no",
+            "task_id"
+          ],
+          "sub_parts": [
+            32,
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_tray_tray_no": {
+          "columns": [
+            "tray_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_tray_item": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "bind_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "position_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "quantity": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "sample_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "tray_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "tray_item_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "unbind_time": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_biz_tray_item_sample": {
+          "columns": [
+            "sample_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "sample_id"
+          ],
+          "referenced_table": "biz_sample",
+          "update_rule": "RESTRICT"
+        },
+        "fk_biz_tray_item_tray": {
+          "columns": [
+            "tray_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "tray_id"
+          ],
+          "referenced_table": "biz_tray",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "tray_item_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "fk_biz_tray_item_sample": {
+          "columns": [
+            "sample_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_tray_item": {
+          "columns": [
+            "tray_id",
+            "sample_id"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "lab_task_issue": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "apply_dept_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "apply_user_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "external_task_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "issue_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "priority": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "tinyint"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(500)"
+        },
+        "sample_count": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "sample_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "source_system": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "task_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(200)"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "task_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "task_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "issue_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "uk_lab_task_issue_task_no": {
+          "columns": [
+            "task_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "md_equipment": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "acquisition_enabled": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "启用",
+          "nullable": false,
+          "type": "varchar(20)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "equipment_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "equipment_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "equipment_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "equipment_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "lab_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "location_desc": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(200)"
+        },
+        "maintenance_end_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "maintenance_note": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(500)"
+        },
+        "maintenance_start_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "maintenance_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "manager_user_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "manufacturer": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "model_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "next_calibration_date": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "date"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(300)"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "test_type_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_md_equipment_lab": {
+          "columns": [
+            "lab_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "lab_id"
+          ],
+          "referenced_table": "md_lab",
+          "update_rule": "RESTRICT"
+        },
+        "fk_md_equipment_manager": {
+          "columns": [
+            "manager_user_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "user_id"
+          ],
+          "referenced_table": "sys_user",
+          "update_rule": "RESTRICT"
+        },
+        "fk_md_equipment_test_type": {
+          "columns": [
+            "test_type_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "test_type_id"
+          ],
+          "referenced_table": "md_test_type",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "equipment_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "fk_md_equipment_lab": {
+          "columns": [
+            "lab_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_md_equipment_manager": {
+          "columns": [
+            "manager_user_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_md_equipment_test_type": {
+          "columns": [
+            "test_type_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_md_equipment_code": {
+          "columns": [
+            "equipment_code"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "md_equipment_connection": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "connection_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "endpoint": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "equipment_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "function_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "parity": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "polling_interval": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "port": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(20)"
+        },
+        "protocol": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(300)"
+        },
+        "retry_policy": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "station_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(20)"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_md_equipment_connection_equipment": {
+          "columns": [
+            "equipment_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "equipment_id"
+          ],
+          "referenced_table": "md_equipment",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "connection_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "uk_md_equipment_connection_equipment": {
+          "columns": [
+            "equipment_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "md_equipment_point": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "address": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "data_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "equipment_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "frequency": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "note": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(300)"
+        },
+        "point_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "point_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "point_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "ratio": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "1",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "unit": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_md_equipment_point_equipment": {
+          "columns": [
+            "equipment_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "equipment_id"
+          ],
+          "referenced_table": "md_equipment",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "point_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "uk_md_equipment_point_unique": {
+          "columns": [
+            "equipment_id",
+            "address",
+            "point_name"
+          ],
+          "sub_parts": [
+            null,
+            null,
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "md_lab": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "capacity": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "dept_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "lab_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "lab_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "lab_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "lab_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "location_desc": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(200)"
+        },
+        "manager_user_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(300)"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "1",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "test_type_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_md_lab_dept": {
+          "columns": [
+            "dept_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "dept_id"
+          ],
+          "referenced_table": "sys_dept",
+          "update_rule": "RESTRICT"
+        },
+        "fk_md_lab_manager": {
+          "columns": [
+            "manager_user_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "user_id"
+          ],
+          "referenced_table": "sys_user",
+          "update_rule": "RESTRICT"
+        },
+        "fk_md_lab_test_type": {
+          "columns": [
+            "test_type_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "test_type_id"
+          ],
+          "referenced_table": "md_test_type",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "lab_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "fk_md_lab_dept": {
+          "columns": [
+            "dept_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_md_lab_manager": {
+          "columns": [
+            "manager_user_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_md_lab_test_type": {
+          "columns": [
+            "test_type_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_md_lab_code": {
+          "columns": [
+            "lab_code"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "md_test_type": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "default_duration_hour": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "decimal(10,2)"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(300)"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "1",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "test_category": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "test_type_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "test_type_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "test_type_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "test_type_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "uk_md_test_type_code": {
+          "columns": [
+            "test_type_code"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "sys_attendance_user": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "active": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "1",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "employee_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "password_hash": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(255)"
+        },
+        "qr_token_created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "qr_token_hash": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(64)"
+        },
+        "qr_token_payload": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(255)"
+        },
+        "role_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "user_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "username": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "user_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_sys_attendance_user_qr_token_hash": {
+          "columns": [
+            "qr_token_hash"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_sys_attendance_user_username": {
+          "columns": [
+            "username"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "sys_config": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "config_group": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(50)"
+        },
+        "config_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "config_key": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "config_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "config_value": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(500)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(300)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "config_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "uk_sys_config_key": {
+          "columns": [
+            "config_key"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "sys_dept": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "dept_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "dept_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "dept_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "dept_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "manager_user_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "parent_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "1",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_sys_dept_manager": {
+          "columns": [
+            "manager_user_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "user_id"
+          ],
+          "referenced_table": "sys_user",
+          "update_rule": "RESTRICT"
+        },
+        "fk_sys_dept_parent": {
+          "columns": [
+            "parent_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "dept_id"
+          ],
+          "referenced_table": "sys_dept",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "dept_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "fk_sys_dept_manager": {
+          "columns": [
+            "manager_user_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_sys_dept_parent_id": {
+          "columns": [
+            "parent_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_sys_dept_code": {
+          "columns": [
+            "dept_code"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "sys_fixed_terminal": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "active": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "1",
+          "nullable": false,
+          "type": "tinyint(1)"
+        },
+        "bound_lab_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "",
+          "nullable": false,
+          "type": "varchar(128)"
+        },
+        "bound_module": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(32)"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "last_authenticated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "secret_hash": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "char(64)"
+        },
+        "terminal_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(128)"
+        },
+        "terminal_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(255)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "terminal_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_fixed_terminal_active": {
+          "columns": [
+            "active",
+            "bound_module"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        }
+      }
+    },
+    "sys_role": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "data_scope": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "key_permissions": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(300)"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(300)"
+        },
+        "role_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "role_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "role_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "role_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "1",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "role_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "uk_sys_role_code": {
+          "columns": [
+            "role_code"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "sys_terminal_command": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "action": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(16)"
+        },
+        "command_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "completed_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "datetime"
+        },
+        "dispatched_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "message": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "",
+          "nullable": false,
+          "type": "varchar(512)"
+        },
+        "requested_by": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(128)"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "queued",
+          "nullable": false,
+          "type": "varchar(16)"
+        },
+        "terminal_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(128)"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "command_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_terminal_command_latest": {
+          "columns": [
+            "terminal_id",
+            "command_id"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_terminal_command_pending": {
+          "columns": [
+            "terminal_id",
+            "status",
+            "command_id"
+          ],
+          "sub_parts": [
+            null,
+            null,
+            null
+          ],
+          "unique": false
+        }
+      }
+    },
+    "sys_terminal_runtime": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "agent_version": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "",
+          "nullable": false,
+          "type": "varchar(32)"
+        },
+        "allow_power": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "0",
+          "nullable": false,
+          "type": "tinyint(1)"
+        },
+        "allow_reload": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "0",
+          "nullable": false,
+          "type": "tinyint(1)"
+        },
+        "configured_path": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "",
+          "nullable": false,
+          "type": "varchar(1024)"
+        },
+        "current_path": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "",
+          "nullable": false,
+          "type": "varchar(1024)"
+        },
+        "current_title": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "",
+          "nullable": false,
+          "type": "varchar(255)"
+        },
+        "ip_address": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "",
+          "nullable": false,
+          "type": "varchar(64)"
+        },
+        "last_page_seen_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "last_seen_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "machine_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": "",
+          "nullable": false,
+          "type": "varchar(255)"
+        },
+        "terminal_id": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(128)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "terminal_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_terminal_runtime_seen": {
+          "columns": [
+            "last_seen_at"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        }
+      }
+    },
+    "sys_user": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "dept_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "email": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(100)"
+        },
+        "password_hash": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(200)"
+        },
+        "phone": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "real_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "1",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "user_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "username": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_sys_user_dept": {
+          "columns": [
+            "dept_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "dept_id"
+          ],
+          "referenced_table": "sys_dept",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "user_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_sys_user_dept_id": {
+          "columns": [
+            "dept_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_sys_user_username": {
+          "columns": [
+            "username"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "wh_temp_room": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "capacity_tray_qty": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        },
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "dept_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "keeper_user_id": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "bigint"
+        },
+        "location_desc": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(200)"
+        },
+        "remark": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(300)"
+        },
+        "status": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "1",
+          "nullable": false,
+          "type": "tinyint"
+        },
+        "temp_room_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "temp_room_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "temp_room_name": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "used_tray_qty": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "int"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {
+        "fk_wh_temp_room_dept": {
+          "columns": [
+            "dept_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "dept_id"
+          ],
+          "referenced_table": "sys_dept",
+          "update_rule": "RESTRICT"
+        },
+        "fk_wh_temp_room_keeper": {
+          "columns": [
+            "keeper_user_id"
+          ],
+          "delete_rule": "RESTRICT",
+          "referenced_columns": [
+            "user_id"
+          ],
+          "referenced_table": "sys_user",
+          "update_rule": "RESTRICT"
+        }
+      },
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "temp_room_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "fk_wh_temp_room_dept": {
+          "columns": [
+            "dept_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "fk_wh_temp_room_keeper": {
+          "columns": [
+            "keeper_user_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "uk_wh_temp_room_code": {
+          "columns": [
+            "temp_room_code"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    }
+  }
+}

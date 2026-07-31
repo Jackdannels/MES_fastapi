@@ -39,7 +39,7 @@
 - `app/services/attendance_service.py`：考勤业务服务、仓储实现和兼容入口。
 - `app/services/attendance_time.py`：考勤业务时间解析、格式化和轴向完成计时规则。
 - `app/services/attendance_security.py`：密码校验及二维码令牌生成、规范化和哈希。
-- `app/services/attendance_schema.py`：考勤 MySQL Schema 定义。
+- `scripts/sql/V004__runtime_schema_finalization.sql`：考勤及其他运行期结构扩展迁移。
 - `frontend/src/modules/laboratory/useLaboratoryAttendance.js`：实验室页面的考勤会话、开工计时和登出倒计时。
 - `tests/api/test_attendance.py`：考勤 API 测试。
 - `tests/services/test_attendance_architecture.py`：考勤服务边界和兼容入口测试。
@@ -181,7 +181,7 @@
 - `frontend/src/modules/laboratory/model.js`：实验室模型公共入口。
 - `frontend/src/modules/laboratory/laboratoryConfig.js`：实验室配置。
 - `frontend/src/modules/laboratory/laboratoryConstants.js`：实验室状态、流程节点和共享集合。
-- `frontend/src/modules/laboratory/laboratoryDeviceInterface.js`：MQTT/hostless 能力判断和设备命令边界；除高低温湿热二室外使用 MQTT，高低温湿热二室仅使用 hostless 本地模拟。
+- `frontend/src/modules/laboratory/laboratoryDeviceInterface.js`：按物理操作区分 MQTT/hostless 能力；高低温湿热二室仅在样品安装和夹具就绪环节使用 hostless，本实验室的准备、启动和结束仍使用 MQTT。
 - `frontend/src/modules/laboratory/workflowState.js`：比对、安装和确认等工作流状态转换。
 - `frontend/src/modules/laboratory/laboratoryTrayEligibility.js`：托盘派发资格、操作锁和部分轴向作用域判断。
 - `frontend/src/modules/laboratory/laboratoryTrayState.js`：托盘状态聚合和当前实验状态恢复。
@@ -285,6 +285,10 @@
 - `app/core/mysql_storage_status_sql.py`：状态归一化、关联回填和进度同步 SQL。
 - `app/db/session.py`：数据库连接会话。
 - `app/db/mysql_snapshot.py`：MySQL 快照仓储和连接设置。
+- `app/db/schema_contract.py` / `schema_contract.json`：版本化 MySQL 完整物理结构合约与漂移检查。
+- `app/db/schema_version.py`：运行期迁移版本和生产环境历史门禁。
+- `app/db/mysql_credentials.py`：API 与迁移账号隔离规则。
+- `app/db/readiness.py`：正式启动前数据库 readiness 校验。
 - `tests/api/test_storage.py`：存储 API 测试。
 - `tests/core/test_storage_backend.py`：统一存储后端测试。
 - `tests/core/test_mysql_storage_backend.py`：MySQL 存储模块测试。
@@ -341,7 +345,7 @@
 
 ## 健康检查与模块注册测试
 
-- `app/api/routes/health.py`：应用健康检查接口。
+- `app/api/routes/health.py`：应用健康、liveness 和 readiness 接口。
 - `tests/api/test_health.py`：健康检查测试。
 - `tests/api/test_module_registry.py`：模块注册测试。
 - `tests/api/test_router_registry.py`：API 路由注册测试。
@@ -357,6 +361,15 @@
 - `frontend/src/**/*.test.js`：前端 Vitest 单元、运行时和结构测试。
 - `scripts/`：初始化、构建、客户端和报告等辅助脚本。
 - `scripts/init_mysql_storage.py`：MySQL 存储初始化脚本。
+- `scripts/generate_schema_contract.py`：从最终基线生成可审计 Schema 合约。
+- `scripts/sql/V005__terminal_collation_alignment.sql`：历史终端表字符集对齐迁移。
+- `scripts/sql/mysql-production-grants.example.sql`：正式迁移/API 账号授权模板。
+- `compose.packaging.yml`：MySQL、迁移、API、Web、RabbitMQ/MQTT 的隔离验收编排。
+- `deploy/docker/`：后端/迁移与前端/Nginx 多阶段镜像定义。
+- `deploy/nginx/`：非 root Nginx 主配置、SPA 和 API/SSE 代理配置。
+- `deploy/mysql/init-users.sh`：隔离 MySQL 的迁移/API 权限拆分。
+- `deploy/.env.compose.example`：不含真实密码的 Compose 环境模板。
+- `docs/docker-deployment.md`：Docker 打包、验收、停止和清理手册。
 - `frontend/scripts/legacy-fallback-snapshot-report.mjs`：旧数据兜底快照扫描报告脚本。
 - `docs/`：项目设计、计划、接口和代码目录文档。
 - `docs/code-directory.md`：当前代码目录。

@@ -3,8 +3,14 @@ from fastapi.responses import JSONResponse
 
 from app.core.storage_backend import get_storage_health_report
 from app.db.session import get_connection
+from app.db.schema_version import require_schema_version
 
 router = APIRouter(prefix="/health", tags=["health"])
+
+
+@router.get("/live")
+def health_live():
+    return {"status": "ok"}
 
 
 @router.get("")
@@ -36,6 +42,56 @@ def health_db():
         conn.close()
 
     return {"status": "ok", "result": row[0] if row else None}
+
+
+@router.get("/ready")
+def health_ready(request: Request):
+    details: dict[str, object] = {}
+    try:
+        conn = get_connection()
+        try:
+            cursor = conn.cursor()
+            try:
+                app_settings = getattr(request.app.state, "settings", None)
+                require_schema_version(
+                    cursor,
+                    app_env=getattr(app_settings, "APP_ENV", None),
+                )
+            finally:
+                cursor.close()
+        finally:
+            conn.close()
+        details["database"] = {"status": "ok"}
+    except Exception as exc:
+        details["database"] = {"status": "unhealthy", "detail": str(exc)}
+
+    rabbit_runtime = getattr(request.app.state, "lims_rabbit_runtime", None)
+    rabbit_status = rabbit_runtime.status() if rabbit_runtime is not None else {"enabled": False, "connected": False}
+    rabbit_ready = not bool(rabbit_status.get("enabled")) or bool(rabbit_status.get("connected"))
+    details["rabbitmq"] = {
+        "status": "ok" if rabbit_ready else "unhealthy",
+        **rabbit_status,
+    }
+
+    mqtt_runtime = getattr(request.app.state, "mq_runtime", None)
+    mqtt_status = (
+        mqtt_runtime.status()
+        if mqtt_runtime is not None
+        else {"mqtt_enabled": False, "subscriber_running": False}
+    )
+    mqtt_ready = not bool(mqtt_status.get("mqtt_enabled")) or bool(
+        mqtt_status.get("subscriber_running")
+    )
+    details["mqtt"] = {
+        "status": "ok" if mqtt_ready else "unhealthy",
+        **mqtt_status,
+    }
+
+    ready = details["database"].get("status") == "ok" and rabbit_ready and mqtt_ready
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={"status": "ready" if ready else "unavailable", **details},
+    )
 
 
 @router.get("/rabbitmq")

@@ -68,19 +68,6 @@ const scheduleIsActiveAt = (schedule, now) => {
   return !Number.isFinite(end) || end >= now;
 };
 
-const scheduleIsMarkedCompleted = ({ experiments, schedule }) => {
-  if (isExperimentCompletedStatus(schedule?.status)) {
-    return true;
-  }
-  const taskCode = normalizeText(schedule?.task_code);
-  const experimentCode = normalizeText(schedule?.experiment_code);
-  return asArray(experiments).some((experiment) =>
-    normalizeText(experiment?.task_code) === taskCode
-    && normalizeText(experiment?.experiment_code) === experimentCode
-    && isExperimentCompletedStatus(experiment?.status)
-  );
-};
-
 const formatUrgentMinutes = (remainingMilliseconds) => {
   if (remainingMilliseconds <= 0) {
     return "已完成";
@@ -332,22 +319,6 @@ const buildProcessLabCards = (
             })
         )
         .sort((left, right) => (parseBusinessDateTimeToMs(right?.start_at) || 0) - (parseBusinessDateTimeToMs(left?.start_at) || 0));
-      const completedSchedule = scheduleList
-        .filter((entry) => scheduleMatchesLab(entry, lab))
-        .filter((entry) =>
-          scheduleIsMarkedCompleted({ experiments, schedule: entry })
-          && scheduleExperimentIsCompleted({
-            experiments,
-            experimentRunSteps,
-            experimentRunTrays,
-            experimentTrays,
-            samples: sampleList,
-            schedule: entry,
-            taskStatusMap,
-          })
-        )
-        .sort((left, right) => (parseBusinessDateTimeToMs(right?.end_at) || 0) - (parseBusinessDateTimeToMs(left?.end_at) || 0))[0] || null;
-
       // 当前命中排程窗口只说明已进入执行时段，不能自动说明已经开始实验。
       const runningSchedule =
         labSchedules.find((entry) => {
@@ -371,7 +342,7 @@ const buildProcessLabCards = (
           const start = parseBusinessDateTimeToMs(entry?.start_at);
           return Number.isFinite(start) && start > now;
         }) || null;
-      const nextSchedule = runningSchedule || activeSchedule || readySchedule || upcomingSchedule || completedSchedule || null;
+      const nextSchedule = runningSchedule || activeSchedule || readySchedule || upcomingSchedule || null;
 
       const taskCode = String(nextSchedule?.task_code || "").trim();
       const task = taskMap.get(taskCode);
@@ -386,7 +357,6 @@ const buildProcessLabCards = (
 
       const device = findDeviceByLabName(devices, lab.name);
       const deviceUnavailable = isDeviceUnavailable(device);
-      const isCompleted = Boolean(completedSchedule) && nextSchedule === completedSchedule;
       const remainingMilliseconds = parseBusinessDateTimeToMs(nextSchedule?.end_at) - now;
       const isUrgentRunning = Boolean(runningSchedule)
         && Number.isFinite(remainingMilliseconds)
@@ -397,9 +367,6 @@ const buildProcessLabCards = (
       if (deviceUnavailable) {
         status = normalizeText(device?.status) || STATUS_MAINTENANCE;
         statusClass = "is-maintenance";
-      } else if (isCompleted) {
-        status = EXPERIMENT_STATUS_COMPLETED;
-        statusClass = "is-urgent";
       } else if (isUrgentRunning) {
         status = formatUrgentMinutes(remainingMilliseconds);
         statusClass = "is-urgent";

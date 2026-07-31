@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from app.core import mysql_storage_schema
 
 
+V004_SQL = Path("scripts/sql/V004__runtime_schema_finalization.sql")
 EXPECTED_PERFORMANCE_INDEXES = {
     "idx_biz_task_storage_read": "(source_system, created_at, task_no)",
     "idx_biz_sample_storage_read": "(remark(32))",
@@ -14,86 +18,63 @@ EXPECTED_PERFORMANCE_INDEXES = {
 }
 
 
-class _IndexCursor:
-    def __init__(self, existing: set[str] | None = None) -> None:
-        self.existing = existing or set()
-        self.statements: list[str] = []
-        self._result = None
+class _Cursor:
+    def __enter__(self):
+        return self
 
-    def execute(self, sql, _params=None) -> None:
-        statement = " ".join(str(sql).split())
-        self.statements.append(statement)
-        if statement.startswith("SHOW INDEX"):
-            self._result = next(
-                ({"Key_name": name} for name in self.existing if f"Key_name = '{name}'" in statement),
-                None,
-            )
-        else:
-            self._result = None
-
-    def fetchone(self):
-        return self._result
+    def __exit__(self, exc_type, exc, traceback):
+        return False
 
 
-def test_ensure_performance_indexes_adds_each_missing_high_frequency_index() -> None:
-    cursor = _IndexCursor()
+class _Connection:
+    def __init__(self) -> None:
+        self.cursor_instance = _Cursor()
 
-    mysql_storage_schema.ensure_performance_indexes(cursor)
+    def __enter__(self):
+        return self
 
-    alter_statements = [statement for statement in cursor.statements if statement.startswith("ALTER TABLE")]
-    assert len(alter_statements) == len(EXPECTED_PERFORMANCE_INDEXES)
-    for index_name, columns in EXPECTED_PERFORMANCE_INDEXES.items():
-        assert any(f"ADD INDEX {index_name} {columns}" in statement for statement in alter_statements)
+    def __exit__(self, exc_type, exc, traceback):
+        return False
 
-
-def test_ensure_performance_indexes_does_not_recreate_existing_indexes() -> None:
-    cursor = _IndexCursor(existing=set(EXPECTED_PERFORMANCE_INDEXES))
-
-    mysql_storage_schema.ensure_performance_indexes(cursor)
-
-    assert not any(statement.startswith("ALTER TABLE") for statement in cursor.statements)
+    def cursor(self):
+        return self.cursor_instance
 
 
-def test_schema_bootstrap_invokes_performance_index_check(monkeypatch) -> None:
-    class Cursor:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, traceback):
-            return False
-
-        def execute(self, _sql, _params=None) -> None:
-            return None
-
-        def fetchone(self):
-            return {"Field": "existing", "Type": "varchar(200)", "Key_name": "existing"}
-
-    class Connection:
-        def __init__(self) -> None:
-            self.cursor_instance = Cursor()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, traceback):
-            return False
-
-        def cursor(self):
-            return self.cursor_instance
-
-        def commit(self) -> None:
-            return None
-
-    connection = Connection()
+def test_runtime_schema_check_only_validates_migration_version(monkeypatch) -> None:
+    connection = _Connection()
     backend = SimpleNamespace(_schema_initialized=False, _connect=lambda: connection)
     checked_cursors = []
     monkeypatch.setattr(
         mysql_storage_schema,
-        "ensure_performance_indexes",
+        "require_schema_version",
         lambda cursor: checked_cursors.append(cursor),
     )
 
     mysql_storage_schema.ensure_schema_extensions(backend)
+    mysql_storage_schema.ensure_schema_extensions(backend)
 
     assert checked_cursors == [connection.cursor_instance]
     assert backend._schema_initialized is True
+
+
+def test_runtime_schema_check_does_not_mark_failed_validation_ready(monkeypatch) -> None:
+    connection = _Connection()
+    backend = SimpleNamespace(_schema_initialized=False, _connect=lambda: connection)
+    monkeypatch.setattr(
+        mysql_storage_schema,
+        "require_schema_version",
+        lambda _cursor: (_ for _ in ()).throw(RuntimeError("V004 required")),
+    )
+
+    with pytest.raises(RuntimeError, match="V004 required"):
+        mysql_storage_schema.ensure_schema_extensions(backend)
+
+    assert backend._schema_initialized is False
+
+
+def test_v004_migration_owns_high_frequency_indexes() -> None:
+    sql = V004_SQL.read_text(encoding="utf-8")
+
+    for index_name, columns in EXPECTED_PERFORMANCE_INDEXES.items():
+        assert index_name in sql
+        assert columns in sql

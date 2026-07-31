@@ -9,7 +9,7 @@ import {
 function useLaboratoryCompletionFlow({
   axisContinuation,
   clearRunningModalRestoreTimer,
-  completePromptVisible,
+  completionSubmitting,
   completedRunningExperiment,
   currentTask,
   experimentRunSteps,
@@ -19,32 +19,16 @@ function useLaboratoryCompletionFlow({
   flushPendingRealtimeRefresh,
   laboratoryConfig,
   load,
-  openAttendanceLogoutPrompt,
   persistRunningExperimentCompletion,
   requestMqttExperimentEnd = async () => false,
   runWithAttendance,
   runningExperiment,
   runningModalVisible,
   samples,
-  scheduleCompletedRunningModalAutoClose,
   schedules,
   usesMqttCompletion = () => false,
 }) {
   const completingRunningExperimentKeys = new Set();
-
-  const openCompleteConfirm = () => {
-    if (!runningExperiment.value?.active) {
-      return;
-    }
-    void runWithAttendance(async () => {
-      completePromptVisible.value = true;
-    });
-  };
-
-  const closeCompleteConfirm = () => {
-    completePromptVisible.value = false;
-    flushPendingRealtimeRefresh();
-  };
 
   const completeRunningExperiment = async ({ axisCode = "", keepModal = false, nextAxisCode = "" } = {}) => {
     if (!runningExperiment.value?.active) {
@@ -59,6 +43,7 @@ function useLaboratoryCompletionFlow({
       return;
     }
     completingRunningExperimentKeys.add(completionKey);
+    completionSubmitting.value = true;
     const completedAt = formatLocalDateTime();
     const runningRunNo = normalizeText(runningExperiment.value?.runNo);
     const runningTrayCodes = (runningExperiment.value?.trayCodes || []).map(normalizeText).filter(Boolean);
@@ -75,7 +60,6 @@ function useLaboratoryCompletionFlow({
           task_code: taskCode,
         });
         if (published) {
-          completePromptVisible.value = false;
           flushPendingRealtimeRefresh();
         }
         return;
@@ -96,7 +80,7 @@ function useLaboratoryCompletionFlow({
           && COMPLETED_EXPERIMENT_RUN_STATUSES.has(normalizeText(experiment?.status)),
       );
       const continuingNextAxisInSchedule = keepModal && Boolean(normalizeText(nextAxisCode));
-      completedRunningExperiment.value = keepModal && !continuingNextAxisInSchedule && (!effectiveAxisCode || experimentCompleted)
+      completedRunningExperiment.value = !continuingNextAxisInSchedule && (!effectiveAxisCode || experimentCompleted)
         ? {
             ...runningSnapshot,
             active: true,
@@ -129,21 +113,24 @@ function useLaboratoryCompletionFlow({
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
       }
-      completePromptVisible.value = false;
-      runningModalVisible.value = keepModal || Boolean(effectiveAxisCode && !experimentCompleted);
-      if (!continuingNextAxisInSchedule) {
-        openAttendanceLogoutPrompt();
-        scheduleCompletedRunningModalAutoClose();
-      }
+      runningModalVisible.value = Boolean(completedRunningExperiment.value?.active)
+        || keepModal
+        || Boolean(effectiveAxisCode && !experimentCompleted);
       clearRunningModalRestoreTimer();
       flushPendingRealtimeRefresh();
     } finally {
       completingRunningExperimentKeys.delete(completionKey);
+      completionSubmitting.value = false;
     }
   };
 
-  const confirmCompleteExperiment = async () => {
-    await completeRunningExperiment();
+  const completeExperimentNow = async () => {
+    if (!runningExperiment.value?.active) {
+      return;
+    }
+    await runWithAttendance(async () => {
+      await completeRunningExperiment();
+    });
   };
 
   const confirmCompleteCurrentAxis = async () => {
@@ -161,10 +148,8 @@ function useLaboratoryCompletionFlow({
   };
 
   return {
-    closeCompleteConfirm,
+    completeExperimentNow,
     confirmCompleteCurrentAxis,
-    confirmCompleteExperiment,
-    openCompleteConfirm,
   };
 }
 

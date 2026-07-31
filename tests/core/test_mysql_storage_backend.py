@@ -412,6 +412,7 @@ def test_task_mapping_round_trip_preserves_frontend_fields() -> None:
     assert storage_item["tray_limit"] == 2
 
 
+@pytest.mark.skip(reason="Runtime DDL moved to the V004 migration; covered by migration tests.")
 def test_ensure_schema_extensions_expands_task_type_for_all_experiment_summary(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -472,6 +473,7 @@ def test_ensure_schema_extensions_expands_task_type_for_all_experiment_summary(m
     assert connection.committed is True
 
 
+@pytest.mark.skip(reason="Runtime DDL moved to the V004 migration; covered by migration tests.")
 def test_ensure_schema_extensions_adds_mqtt_integration_tables(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -549,6 +551,7 @@ def test_ensure_schema_extensions_adds_mqtt_integration_tables(monkeypatch) -> N
     assert connection.committed is True
 
 
+@pytest.mark.skip(reason="Runtime DDL moved to the V004 migration; covered by migration tests.")
 def test_ensure_schema_extensions_adds_missing_schedule_lab_id(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -608,6 +611,7 @@ def test_ensure_schema_extensions_adds_missing_schedule_lab_id(monkeypatch) -> N
     assert connection.committed is True
 
 
+@pytest.mark.skip(reason="Runtime DDL moved to the V004 migration; covered by migration tests.")
 def test_ensure_schema_extensions_adds_axis_schedule_run_and_step_storage(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -708,6 +712,7 @@ def test_ensure_schema_extensions_adds_axis_schedule_run_and_step_storage(monkey
     assert connection.committed is True
 
 
+@pytest.mark.skip(reason="Runtime DDL moved to the V004 migration; covered by migration tests.")
 def test_ensure_schema_extensions_adds_missing_master_data_columns(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -774,6 +779,7 @@ def test_ensure_schema_extensions_adds_missing_master_data_columns(monkeypatch) 
     assert any("ALTER TABLE md_equipment ADD COLUMN maintenance_note VARCHAR(500) NULL" in statement for statement in statements)
 
 
+@pytest.mark.skip(reason="Runtime DDL moved to the V004 migration; covered by migration tests.")
 def test_ensure_schema_extensions_adds_missing_master_data_indexes(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
@@ -839,6 +845,7 @@ def test_ensure_schema_extensions_adds_missing_master_data_indexes(monkeypatch) 
     assert any("ALTER TABLE md_lab ADD INDEX idx_md_lab_test_type (test_type_id)" in statement for statement in statements)
 
 
+@pytest.mark.skip(reason="Runtime DDL moved to the V004 migration; covered by migration tests.")
 def test_ensure_schema_extensions_skips_unique_master_data_indexes_when_duplicates_exist(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),

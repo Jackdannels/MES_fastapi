@@ -4,17 +4,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterable
 
 from app.db.mysql_pool import get_mysql_connection_pool
-
-
-CREATE_STORAGE_TABLE_SQL = """
-CREATE TABLE IF NOT EXISTS app_storage_snapshot (
-  storage_key VARCHAR(50) NOT NULL,
-  payload_json LONGTEXT NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (storage_key)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-"""
+from app.db.schema_version import require_schema_version
 
 
 @dataclass(frozen=True)
@@ -27,6 +17,11 @@ class MySQLConnectionSettings:
     charset: str = "utf8mb4"
     pool_size: int = 20
     pool_timeout_seconds: float = 5.0
+    ssl_ca: str | None = None
+    ssl_cert: str | None = None
+    ssl_key: str | None = None
+    ssl_verify_cert: bool = False
+    ssl_verify_identity: bool = False
 
 
 class MySQLSnapshotRepository:
@@ -43,8 +38,7 @@ class MySQLSnapshotRepository:
             return
         with self._connect() as connection:
             with connection.cursor() as cursor:
-                cursor.execute(CREATE_STORAGE_TABLE_SQL)
-            connection.commit()
+                require_schema_version(cursor)
         self._initialized = True
 
     def read_all(self) -> Dict[str, str]:

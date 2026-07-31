@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = REPO_ROOT / ".env"
 DEFAULT_UPPER_COMPUTER_SIMULATOR_DIR = Path.home() / "Desktop" / "MES_upper_computer_simulator"
+DOCKER_SECRETS_DIR = Path("/run/secrets")
 
 
 class Settings(BaseSettings):
@@ -24,17 +25,25 @@ class Settings(BaseSettings):
     SESSION_MAX_AGE_HOURS: int = 0
     FRONTEND_ORIGINS: str = "http://192.168.110.15:5173,http://127.0.0.1:5173,http://localhost:5173"
     TEST_DATA_PUBLIC_BASE_URL: str = "http://192.168.110.15:8000"
+    TEST_DATA_SAVE_PATH: Optional[str] = None
     STORAGE_BACKEND: str = "mysql"
 
     MYSQL_HOST: str = "127.0.0.1"
     MYSQL_PORT: int = 3306
     MYSQL_USER: str = "root"
     MYSQL_PASSWORD: str = ""
+    MYSQL_MIGRATION_USER: Optional[str] = None
+    MYSQL_MIGRATION_PASSWORD: Optional[str] = None
     MYSQL_DATABASE: str = "mes_single_branch"
     MYSQL_AUTO_INIT_SCHEMA: bool = False
     MYSQL_AUTO_SEED_DEMO: bool = False
     MYSQL_POOL_SIZE: int = 20
     MYSQL_POOL_TIMEOUT_SECONDS: float = 5.0
+    MYSQL_SSL_CA: Optional[str] = None
+    MYSQL_SSL_CERT: Optional[str] = None
+    MYSQL_SSL_KEY: Optional[str] = None
+    MYSQL_SSL_VERIFY_CERT: bool = False
+    MYSQL_SSL_VERIFY_IDENTITY: bool = False
 
     PERFORMANCE_MONITOR_ENABLED: bool = True
     PERFORMANCE_LOG_ALL_REQUESTS: bool = False
@@ -113,4 +122,6 @@ class Settings(BaseSettings):
         return normalized or str(DEFAULT_UPPER_COMPUTER_SIMULATOR_DIR)
 
 
-settings = Settings()
+# Docker/Compose secrets are mounted as files named after each setting. Avoid
+# probing a nonexistent Linux path (and emitting warnings) during local runs.
+settings = Settings(_secrets_dir=DOCKER_SECRETS_DIR if DOCKER_SECRETS_DIR.is_dir() else None)

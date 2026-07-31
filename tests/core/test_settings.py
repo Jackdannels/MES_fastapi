@@ -75,3 +75,29 @@ def test_settings_blank_upper_computer_simulator_dir_falls_back_to_default(monke
 
     assert settings.UPPER_COMPUTER_SIMULATOR_DIR.endswith("MES_upper_computer_simulator")
     assert "Desktop" in settings.UPPER_COMPUTER_SIMULATOR_DIR
+
+
+def test_settings_keep_runtime_and_migration_mysql_credentials_separate() -> None:
+    settings = Settings(
+        _env_file=None,
+        MYSQL_USER="mes_api",
+        MYSQL_PASSWORD="api-secret",
+        MYSQL_MIGRATION_USER="mes_migrator",
+        MYSQL_MIGRATION_PASSWORD="migration-secret",
+    )
+
+    assert settings.MYSQL_USER == "mes_api"
+    assert settings.MYSQL_PASSWORD == "api-secret"
+    assert settings.MYSQL_MIGRATION_USER == "mes_migrator"
+    assert settings.MYSQL_MIGRATION_PASSWORD == "migration-secret"
+
+
+def test_settings_load_docker_secret_files(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("SESSION_SECRET_KEY", raising=False)
+    (tmp_path / "MYSQL_PASSWORD").write_text("api-secret-from-file", encoding="utf-8")
+    (tmp_path / "SESSION_SECRET_KEY").write_text("session-secret-from-file", encoding="utf-8")
+
+    settings = Settings(_env_file=None, _secrets_dir=tmp_path)
+
+    assert settings.MYSQL_PASSWORD == "api-secret-from-file"
+    assert settings.SESSION_SECRET_KEY == "session-secret-from-file"

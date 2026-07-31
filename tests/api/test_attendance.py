@@ -618,7 +618,9 @@ def test_attendance_clear_all_sessions_preserves_personnel_accounts():
     assert service.list_operation_logs(raw_date="2026-07-03") == []
 
 
-def test_hostless_api_experiment_start_and_complete_updates_attendance_work_interval(monkeypatch):
+def test_shared_api_experiment_start_and_complete_updates_attendance_work_interval_when_interface_guard_is_bypassed(monkeypatch):
+    monkeypatch.setattr(laboratory_route, "require_hostless_laboratory", lambda **_kwargs: None)
+    monkeypatch.setattr(laboratory_route, "require_hostless_completion_laboratory", lambda **_kwargs: None)
     business_times = iter(["2026-07-03 09:00:00", "2026-07-03 09:05:00"])
     monkeypatch.setattr(laboratory_route, "now_business_text", lambda: next(business_times))
     current_time = {"value": datetime(2026, 7, 3, 9, 0, 0, tzinfo=timezone.utc)}
@@ -709,7 +711,8 @@ def test_hostless_api_experiment_start_and_complete_updates_attendance_work_inte
     assert worker["todaySeconds"] == 300
 
 
-def test_hostless_api_experiment_start_uses_storage_started_at_for_attendance_when_request_is_empty(monkeypatch):
+def test_shared_api_experiment_start_uses_storage_started_at_for_attendance_when_interface_guard_is_bypassed(monkeypatch):
+    monkeypatch.setattr(laboratory_route, "require_hostless_laboratory", lambda **_kwargs: None)
     service = AttendanceService(repository=InMemoryAttendanceRepository())
     set_attendance_service_for_tests(service)
     service.create_user(

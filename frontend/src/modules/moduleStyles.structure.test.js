@@ -114,7 +114,7 @@ describe("module style structure", () => {
     expect(dataStylesSource).toContain(".data-settings-card");
     expect(dataStylesSource).toContain(".data-failures-card");
     expect(systemStylesSource).toContain(".system-roles-card");
-    expect(systemStylesSource).toContain(".system-settings-card");
+    expect(systemStylesSource).toContain(".system-worktime-card");
 
     expect(tasksPageSource).toContain('class="card section tasks-list-card"');
     expect(tasksPageSource).toContain('class="tasks-intake-form"');
@@ -123,7 +123,7 @@ describe("module style structure", () => {
     expect(dataPageSource).toContain('class="card data-settings-card"');
     expect(dataPageSource).toContain('class="card data-failures-card"');
     expect(systemPageSource).toContain('class="card section system-roles-card"');
-    expect(systemPageSource).toContain('class="card section system-settings-card"');
+    expect(systemPageSource).toContain('class="card section system-worktime-card"');
   });
 
   test("keeps the enlarged current status and lifecycle action on one row", () => {

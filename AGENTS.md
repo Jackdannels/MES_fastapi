@@ -3,8 +3,8 @@
 # Project Rules
 
 - Do not create git commits, push branches, or submit git changes unless the user explicitly asks for that exact git operation.
-- The project uses MQTT mode for all laboratories except 高低温湿热二室.
-- 高低温湿热二室 has no upper computer. This laboratory only uses mock mode via hostless local simulation; do not remove or "clean up" this exception by mistake.
+- The project uses MQTT for experiment-ready, experiment-started, experiment-end-request, and experiment-ended in every laboratory.
+- 高低温湿热二室 is a deliberate hybrid exception: sample installation and fixture-ready remain hostless local simulation, while experiment ready/start/end use MQTT through the upper-computer interface. Do not remove or broaden the local fixture exception.
 - Keep task, tray, laboratory, process, storage, and device workflow business rules shared between MQTT events and any local hostless simulation. The only allowed difference is the physical device interface boundary for 高低温湿热二室.
 
 # Agent Usage

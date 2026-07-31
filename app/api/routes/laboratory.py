@@ -11,7 +11,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.routes.storage import publish_storage_update
 from app.core.axis_codes import canonical_axis_code, sort_axis_codes
-from app.core.master_data import LAB_INTERFACE_HOSTLESS, require_laboratory_interface
+from app.core.master_data import (
+    LAB_INTERFACE_HOSTLESS,
+    LAB_INTERFACE_OPERATION_EXPERIMENT_END,
+    LAB_INTERFACE_OPERATION_EXPERIMENT_START,
+    LAB_INTERFACE_OPERATION_FIXTURE_READY,
+    require_laboratory_interface,
+)
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.core.time_utils import now_business_text, parse_business_datetime
 from app.services.attendance_service import get_attendance_service, should_finish_work_interval_for_completion
@@ -144,16 +150,21 @@ def normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
 
-def require_hostless_laboratory(*, lab_code: str = "", lab_name: str = "") -> None:
+def require_hostless_laboratory(*, operation: str = "", lab_code: str = "", lab_name: str = "") -> None:
     try:
-        require_laboratory_interface(LAB_INTERFACE_HOSTLESS, lab_code=lab_code, lab_name=lab_name)
+        require_laboratory_interface(
+            LAB_INTERFACE_HOSTLESS,
+            operation=operation,
+            lab_code=lab_code,
+            lab_name=lab_name,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def require_hostless_completion_laboratory(*, lab_name: str = "") -> None:
     """Physical-interface guard kept separate from shared completion rules."""
-    require_hostless_laboratory(lab_name=lab_name)
+    require_hostless_laboratory(operation=LAB_INTERFACE_OPERATION_EXPERIMENT_END, lab_name=lab_name)
 
 
 def normalize_axis_codes(value: Any) -> list[str]:
@@ -231,7 +242,11 @@ def apply_laboratory_operation(
     request: LaboratoryOperationRequest = Body(default_factory=LaboratoryOperationRequest),
 ) -> dict[str, Any]:
     if normalize_text(request.operation_type) in {"fixtureReady", "fixture_ready"}:
-        require_hostless_laboratory(lab_code=request.lab_code, lab_name=request.lab_name)
+        require_hostless_laboratory(
+            operation=LAB_INTERFACE_OPERATION_FIXTURE_READY,
+            lab_code=request.lab_code,
+            lab_name=request.lab_name,
+        )
     storage = get_storage_backend()
     occurred_at = now_business_text()
     resource_keys = operation_resource_keys(
@@ -685,7 +700,11 @@ def confirm_axis_adjustment_ready(
     normalized_experiment_code = normalize_text(experiment_code)
     snapshot = read_snapshot()
     lab_name = resolve_lab_name(snapshot, normalized_task_code, normalized_experiment_code) or request.lab_name
-    require_hostless_laboratory(lab_code=request.lab_code, lab_name=lab_name)
+    require_hostless_laboratory(
+        operation=LAB_INTERFACE_OPERATION_EXPERIMENT_START,
+        lab_code=request.lab_code,
+        lab_name=lab_name,
+    )
     resource_keys = operation_resource_keys(lab_code=request.lab_code, lab_name=lab_name)
     resource_keys.append(f"experiment:{normalized_task_code}:{normalized_experiment_code}")
     with acquire_laboratory_operation_locks(resource_keys):
@@ -738,7 +757,11 @@ def start_current_experiment(
         request.schedule_id,
         request.lab_name,
     )
-    require_hostless_laboratory(lab_code=request.lab_code, lab_name=initial_lab_name)
+    require_hostless_laboratory(
+        operation=LAB_INTERFACE_OPERATION_EXPERIMENT_START,
+        lab_code=request.lab_code,
+        lab_name=initial_lab_name,
+    )
     resource_keys = operation_resource_keys(
         lab_code=request.lab_code,
         lab_name=initial_lab_name,

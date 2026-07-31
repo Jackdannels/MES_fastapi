@@ -1,0 +1,123 @@
+name: ${COMPOSE_PROJECT_NAME:-mes-production}
+
+x-backend-environment: &backend-environment
+  APP_ENV: prod
+  DEBUG: "false"
+  SERVE_WEB_APP: "false"
+  STORAGE_BACKEND: mysql
+  MYSQL_HOST: ${MYSQL_HOST:?MYSQL_HOST is required}
+  MYSQL_PORT: ${MYSQL_PORT:-3306}
+  MYSQL_DATABASE: ${MYSQL_DATABASE:?MYSQL_DATABASE is required}
+  MYSQL_USER: ${MYSQL_API_USER:?MYSQL_API_USER is required}
+  MYSQL_AUTO_INIT_SCHEMA: "false"
+  MYSQL_AUTO_SEED_DEMO: "false"
+  MYSQL_SSL_CA: /run/secrets/mysql_ca.pem
+  MYSQL_SSL_VERIFY_CERT: "true"
+  MYSQL_SSL_VERIFY_IDENTITY: "true"
+  RABBITMQ_ENABLED: "true"
+  RABBITMQ_REQUIRED: "true"
+  MQTT_ENABLED: "true"
+  MQTT_HOST: ${MQTT_HOST:?MQTT_HOST is required}
+  MQTT_PORT: ${MQTT_PORT:-1883}
+  MQTT_USERNAME: ${MQTT_USERNAME:?MQTT_USERNAME is required}
+  UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE: "false"
+  UPPER_COMPUTER_SIMULATOR_AUTO_START: "false"
+  SESSION_COOKIE_SECURE: "true"
+  FRONTEND_ORIGINS: https://${MES_DOMAIN:?MES_DOMAIN is required}
+  TEST_DATA_PUBLIC_BASE_URL: https://${MES_DOMAIN:?MES_DOMAIN is required}
+  TEST_DATA_SAVE_PATH: /data/reports
+
+services:
+  migrate:
+    image: ${MES_API_IMAGE:?MES_API_IMAGE with an immutable digest is required}
+    pull_policy: never
+    profiles: [migration]
+    environment:
+      <<: *backend-environment
+      MYSQL_MIGRATION_USER: ${MYSQL_MIGRATION_USER:?MYSQL_MIGRATION_USER is required}
+      RABBITMQ_ENABLED: "false"
+      MQTT_ENABLED: "false"
+    secrets:
+      - source: mysql_migration_password
+        target: MYSQL_MIGRATION_PASSWORD
+      - source: mysql_ca_certificate
+        target: mysql_ca.pem
+    command: ["python", "scripts/init_mysql_storage.py"]
+    restart: "no"
+    networks: [mes_internal]
+
+  api:
+    image: ${MES_API_IMAGE:?MES_API_IMAGE with an immutable digest is required}
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      <<: *backend-environment
+    secrets:
+      - source: mysql_api_password
+        target: MYSQL_PASSWORD
+      - source: mysql_ca_certificate
+        target: mysql_ca.pem
+      - source: rabbitmq_url
+        target: RABBITMQ_URL
+      - source: mqtt_password
+        target: MQTT_PASSWORD
+      - source: session_secret_key
+        target: SESSION_SECRET_KEY
+    volumes:
+      - mes_reports:/data/reports
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 18
+      start_period: 20s
+    networks: [mes_internal]
+
+  web:
+    image: ${MES_WEB_IMAGE:?MES_WEB_IMAGE with an immutable digest is required}
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - "${MES_HTTP_PORT:-80}:8080"
+      - "${MES_HTTPS_PORT:-443}:8443"
+    volumes:
+      - ./deploy/nginx/production-https.conf:/etc/nginx/conf.d/default.conf:ro
+    secrets:
+      - source: tls_certificate
+        target: tls_certificate.pem
+      - source: tls_private_key
+        target: tls_private_key.pem
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [mes_internal]
+
+volumes:
+  mes_reports:
+
+networks:
+  mes_internal:
+    driver: bridge
+
+secrets:
+  mysql_api_password:
+    file: ${MYSQL_API_PASSWORD_FILE:?MYSQL_API_PASSWORD_FILE is required}
+  mysql_migration_password:
+    file: ${MYSQL_MIGRATION_PASSWORD_FILE:?MYSQL_MIGRATION_PASSWORD_FILE is required}
+  mysql_ca_certificate:
+    file: ${MYSQL_CA_CERTIFICATE_FILE:?MYSQL_CA_CERTIFICATE_FILE is required}
+  rabbitmq_url:
+    file: ${RABBITMQ_URL_FILE:?RABBITMQ_URL_FILE is required}
+  mqtt_password:
+    file: ${MQTT_PASSWORD_FILE:?MQTT_PASSWORD_FILE is required}
+  session_secret_key:
+    file: ${SESSION_SECRET_KEY_FILE:?SESSION_SECRET_KEY_FILE is required}
+  tls_certificate:
+    file: ${TLS_CERTIFICATE_FILE:?TLS_CERTIFICATE_FILE is required}
+  tls_private_key:
+    file: ${TLS_PRIVATE_KEY_FILE:?TLS_PRIVATE_KEY_FILE is required}

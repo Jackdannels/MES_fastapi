@@ -37,6 +37,11 @@ def get_connection():
                 charset="utf8mb4",
                 pool_size=settings.MYSQL_POOL_SIZE,
                 pool_timeout_seconds=settings.MYSQL_POOL_TIMEOUT_SECONDS,
+                ssl_ca=settings.MYSQL_SSL_CA,
+                ssl_cert=settings.MYSQL_SSL_CERT,
+                ssl_key=settings.MYSQL_SSL_KEY,
+                ssl_verify_cert=settings.MYSQL_SSL_VERIFY_CERT,
+                ssl_verify_identity=settings.MYSQL_SSL_VERIFY_IDENTITY,
             )
             _mysql_pool = get_mysql_connection_pool(connection_settings)
         return _mysql_pool.acquire()

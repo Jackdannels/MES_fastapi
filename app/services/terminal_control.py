@@ -6,6 +6,7 @@ from ipaddress import ip_address
 from threading import Lock
 from typing import Any, Callable, Protocol
 
+from app.db.schema_version import require_schema_version
 from app.db.session import get_connection
 from app.services.fixed_terminal_auth import FixedTerminalAuthService, get_fixed_terminal_auth_service, normalize_text
 
@@ -146,43 +147,7 @@ class MySQLTerminalControlRepository:
                 return
             with get_connection() as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS sys_terminal_runtime (
-                          terminal_id VARCHAR(128) NOT NULL PRIMARY KEY,
-                          machine_name VARCHAR(255) NOT NULL DEFAULT '',
-                          ip_address VARCHAR(64) NOT NULL DEFAULT '',
-                          configured_path VARCHAR(1024) NOT NULL DEFAULT '',
-                          current_path VARCHAR(1024) NOT NULL DEFAULT '',
-                          current_title VARCHAR(255) NOT NULL DEFAULT '',
-                          agent_version VARCHAR(32) NOT NULL DEFAULT '',
-                          allow_reload TINYINT(1) NOT NULL DEFAULT 0,
-                          allow_power TINYINT(1) NOT NULL DEFAULT 0,
-                          last_seen_at DATETIME NULL,
-                          last_page_seen_at DATETIME NULL,
-                          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                          INDEX idx_terminal_runtime_seen (last_seen_at)
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                        """
-                    )
-                    cursor.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS sys_terminal_command (
-                          command_id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-                          terminal_id VARCHAR(128) NOT NULL,
-                          action VARCHAR(16) NOT NULL,
-                          status VARCHAR(16) NOT NULL DEFAULT 'queued',
-                          requested_by VARCHAR(128) NOT NULL,
-                          message VARCHAR(512) NOT NULL DEFAULT '',
-                          created_at DATETIME NOT NULL,
-                          dispatched_at DATETIME NULL,
-                          completed_at DATETIME NULL,
-                          INDEX idx_terminal_command_pending (terminal_id, status, command_id),
-                          INDEX idx_terminal_command_latest (terminal_id, command_id)
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                        """
-                    )
-                connection.commit()
+                    require_schema_version(cursor)
             self._schema_ready = True
 
     def record_heartbeat(self, runtime: dict[str, Any]) -> datetime | None:

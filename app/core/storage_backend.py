@@ -861,6 +861,8 @@ def check_mysql_storage_connection() -> Dict[str, Any]:
             "detail": "pymysql is required for the MySQL storage backend",
         }
 
+    from app.db.mysql_tls import mysql_tls_connect_options
+
     connection = None
     try:
         connection = pymysql.connect(
@@ -874,6 +876,7 @@ def check_mysql_storage_connection() -> Dict[str, Any]:
             connect_timeout=MYSQL_HEALTHCHECK_TIMEOUT_SECONDS,
             read_timeout=MYSQL_HEALTHCHECK_TIMEOUT_SECONDS,
             write_timeout=MYSQL_HEALTHCHECK_TIMEOUT_SECONDS,
+            **mysql_tls_connect_options(settings),
         )
         with connection.cursor() as cursor:
             cursor.execute("SELECT 1")
@@ -940,6 +943,11 @@ def get_storage_backend() -> StorageBackend:
             database=settings.MYSQL_DATABASE,
             pool_size=settings.MYSQL_POOL_SIZE,
             pool_timeout_seconds=settings.MYSQL_POOL_TIMEOUT_SECONDS,
+            ssl_ca=settings.MYSQL_SSL_CA,
+            ssl_cert=settings.MYSQL_SSL_CERT,
+            ssl_key=settings.MYSQL_SSL_KEY,
+            ssl_verify_cert=settings.MYSQL_SSL_VERIFY_CERT,
+            ssl_verify_identity=settings.MYSQL_SSL_VERIFY_IDENTITY,
         )
         repository = MySQLSnapshotRepository(connection_settings)
         _storage_backend = MySQLMesStorageBackend(

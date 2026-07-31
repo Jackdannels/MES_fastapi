@@ -38,7 +38,8 @@ describe("laboratory workbench layout", () => {
   test("renders every running-experiment modal state as a large touch-friendly surface", () => {
     expect(pageSource).toContain('data-testid="laboratory-running-modal"');
     expect(pageSource).toContain('data-testid="laboratory-complete-experiment"');
-    expect(pageSource).toContain('data-testid="laboratory-complete-experiment-confirm"');
+    expect(pageSource).not.toContain('data-testid="laboratory-complete-experiment-confirm"');
+    expect(pageSource).not.toContain('data-testid="laboratory-complete-prompt"');
     expect(stylesSource).toMatch(/\.laboratory-running-overlay__content\s*\{[^}]*width:\s*min\(1240px,\s*calc\(100vw\s*-\s*32px\)\)[^}]*min-height:\s*min\(640px,\s*calc\(100dvh\s*-\s*32px\)\)/i);
     expect(stylesSource).toMatch(/\.laboratory-running-actions \.action-btn,\s*\.laboratory-running-complete-prompt__actions \.action-btn\s*\{[^}]*min-width:\s*200px[^}]*min-height:\s*72px[^}]*font-size:\s*18px/i);
     expect(stylesSource).toMatch(/\.laboratory-running-complete-button\s*\{[^}]*min-width:\s*280px[^}]*min-height:\s*80px[^}]*font-size:\s*20px/i);
@@ -55,7 +56,7 @@ describe("laboratory workbench layout", () => {
 
   test("enlarges compare, install, and ready operation dialogs", () => {
     expect(pageSource).toContain('class="laboratory-operation-modal laboratory-operation-modal--compare"');
-    expect(pageSource.match(/class="laboratory-operation-modal"/g)).toHaveLength(2);
+    expect(pageSource.match(/class="laboratory-operation-modal(?:\s[^"]*)?"/g)).toHaveLength(3);
     expect(pageSource).toContain("laboratory-operation-modal-button");
     expect(stylesSource).toMatch(/\.laboratory-operation-modal \.modal-content\s*\{[^}]*width:\s*min\(860px,\s*92vw\)[^}]*min-height:\s*360px/i);
     expect(stylesSource).toMatch(/\.laboratory-operation-modal--compare \.modal-content\s*\{[^}]*width:\s*min\(1320px,\s*96vw\)[^}]*max-width:\s*calc\(100vw\s*-\s*24px\)/i);

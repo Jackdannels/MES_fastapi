@@ -16,6 +16,102 @@ def test_health_db_returns_unhealthy_response_when_connection_fails(client, monk
     }
 
 
+def test_health_live_does_not_depend_on_external_services(client):
+    response = client.get("/health/live")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_health_ready_requires_database_schema_and_enabled_rabbitmq(client, monkeypatch):
+    class Cursor:
+        def close(self):
+            return None
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            return None
+
+    class RabbitRuntime:
+        def status(self):
+            return {"enabled": True, "connected": True}
+
+    class MqttRuntime:
+        def status(self):
+            return {"mqtt_enabled": False, "subscriber_running": False}
+
+    monkeypatch.setattr(health_routes, "get_connection", lambda: Connection())
+    monkeypatch.setattr(
+        health_routes,
+        "require_schema_version",
+        lambda cursor, **_kwargs: None,
+    )
+    client.app.state.lims_rabbit_runtime = RabbitRuntime()
+    client.app.state.mq_runtime = MqttRuntime()
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    assert response.json()["database"] == {"status": "ok"}
+    assert response.json()["rabbitmq"]["connected"] is True
+
+
+def test_health_ready_returns_503_for_schema_failure(client, monkeypatch):
+    class Cursor:
+        def close(self):
+            return None
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(health_routes, "get_connection", lambda: Connection())
+    monkeypatch.setattr(
+        health_routes,
+        "require_schema_version",
+        lambda cursor, **_kwargs: (_ for _ in ()).throw(RuntimeError("V005 required")),
+    )
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "unavailable"
+    assert response.json()["database"] == {"status": "unhealthy", "detail": "V005 required"}
+
+
+def test_health_ready_returns_503_when_enabled_mqtt_subscriber_is_not_connected(client, monkeypatch):
+    class Cursor:
+        def close(self):
+            return None
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            return None
+
+    class MqttRuntime:
+        def status(self):
+            return {"mqtt_enabled": True, "subscriber_running": False, "reason": "not_connected"}
+
+    monkeypatch.setattr(health_routes, "get_connection", lambda: Connection())
+    monkeypatch.setattr(health_routes, "require_schema_version", lambda cursor, **_kwargs: None)
+    client.app.state.mq_runtime = MqttRuntime()
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["mqtt"]["status"] == "unhealthy"
+
+
 def test_health_reports_storage_diagnostics(client, monkeypatch):
     monkeypatch.setattr(
         health_routes,

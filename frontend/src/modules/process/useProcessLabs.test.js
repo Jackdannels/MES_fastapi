@@ -2329,7 +2329,7 @@ describe("useProcessLabs", () => {
     expect(hostlessLab).toMatchObject({
       canStartExperiment: false,
       readyTrayCount: 1,
-      startDisabledReason: "试验间将在准备就绪后自动开始实验",
+      startDisabledReason: "MQTT模式下等待上位机发送实验开始信号",
     });
 
 
