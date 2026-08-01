@@ -2252,7 +2252,7 @@ describe("useProcessLabs", () => {
     expect(persistSnapshot).not.toHaveBeenCalled();
   });
 
-  test("uses hostless mqtt ready message for high-low temperature humidity room 2 without manual process start", async () => {
+  test("waits for the MQTT experiment-started event in high-low temperature humidity room 2", async () => {
     window.localStorage.getItem.mockImplementation((key) => (key === HOST_INTERFACE_MODE_STORAGE_KEY ? HOST_INTERFACE_MODES.mqtt : null));
     const loadSnapshot = vi.fn(async () => ({
       "mes.schedules": [
@@ -2325,8 +2325,8 @@ describe("useProcessLabs", () => {
       readyTrayCount: 1,
       startDisabledReason: "MQTT模式下等待上位机发送实验开始信号",
     });
-    const hostlessLab = labCards.value.find((lab) => lab.name === "高低温湿热二室");
-    expect(hostlessLab).toMatchObject({
+    const hybridLab = labCards.value.find((lab) => lab.name === "高低温湿热二室");
+    expect(hybridLab).toMatchObject({
       canStartExperiment: false,
       readyTrayCount: 1,
       startDisabledReason: "MQTT模式下等待上位机发送实验开始信号",

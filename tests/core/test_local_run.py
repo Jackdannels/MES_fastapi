@@ -42,6 +42,7 @@ def test_build_local_run_env_drops_inherited_app_settings_when_env_file_omits_th
         "FRONTEND_ORIGINS": "http://machine.example",
         "MYSQL_HOST": "machine-mysql.example",
         "MQTT_HOST": "machine-mqtt.example",
+        "MQTT_HTTP_EVENT_INGRESS_ENABLED": "true",
         "UPPER_COMPUTER_SIMULATOR_DIR": "C:\\machine\\upper",
         "PATH": "C:\\Windows\\System32",
     }
@@ -58,6 +59,7 @@ def test_build_local_run_env_drops_inherited_app_settings_when_env_file_omits_th
     assert "FRONTEND_ORIGINS" not in merged_env
     assert "MYSQL_HOST" not in merged_env
     assert "MQTT_HOST" not in merged_env
+    assert "MQTT_HTTP_EVENT_INGRESS_ENABLED" not in merged_env
     assert "UPPER_COMPUTER_SIMULATOR_DIR" not in merged_env
     assert merged_env["PATH"] == "C:\\Windows\\System32"
 

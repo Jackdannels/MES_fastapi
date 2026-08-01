@@ -71,6 +71,7 @@ def test_production_compose_uses_external_database_file_secrets_and_immutable_im
     assert "target: MYSQL_MIGRATION_PASSWORD" in compose
     assert "target: mysql_ca.pem" in compose
     assert 'MYSQL_SSL_VERIFY_IDENTITY: "true"' in compose
+    assert 'MQTT_HTTP_EVENT_INGRESS_ENABLED: "false"' in compose
     assert 'SESSION_COOKIE_SECURE: "true"' in compose
     assert 'FRONTEND_ORIGINS: https://${MES_DOMAIN' in compose
     assert "profiles: [migration]" in compose
@@ -92,7 +93,26 @@ def test_offline_release_tools_verify_checksums_and_never_start_services() -> No
     import_script = (REPO_ROOT / "scripts" / "deploy" / "Import-MesRelease.ps1").read_text(encoding="utf-8")
 
     assert "docker save" in export_script
-    assert "Get-FileHash -Algorithm SHA256" in export_script
+    assert "Get-Sha256" in export_script
+    assert "System.Security.Cryptography.SHA256" in export_script
+    assert "System.Security.Cryptography.SHA256" in import_script
+    assert "Get-FileHash" not in export_script + import_script
+    assert "GetRelativePath" not in export_script
+    assert "Release file escaped the output directory" in export_script
     assert "docker load" in import_script
     assert "Checksum mismatch" in import_script
     assert "docker compose up" not in export_script + import_script
+
+
+def test_backup_and_restore_rehearsal_scripts_are_fail_closed() -> None:
+    backup = (REPO_ROOT / "scripts" / "deploy" / "Backup-MesDatabase.ps1").read_text(encoding="utf-8")
+    restore = (REPO_ROOT / "scripts" / "deploy" / "Restore-MesRehearsal.ps1").read_text(encoding="utf-8")
+
+    assert "--single-transaction" in backup
+    assert "--routines --triggers --events --hex-blob" in backup
+    assert "ClientImage must use an immutable @sha256 digest" in backup
+    assert "TargetDatabase must be an isolated name ending in _restore_test" in restore
+    assert "Target database is not empty" in restore
+    assert "Backup checksum mismatch" in restore
+    assert "python scripts/init_mysql_storage.py" in restore
+    assert "DROP DATABASE" not in backup + restore

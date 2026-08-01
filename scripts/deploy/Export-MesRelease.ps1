@@ -19,6 +19,18 @@ function Assert-ImmutableImage([string]$Name, [string]$Reference) {
     }
 }
 
+function Get-Sha256([string]$Path) {
+    $stream = [System.IO.File]::OpenRead($Path)
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $algorithm.ComputeHash($stream)
+        return -join ($bytes | ForEach-Object { $_.ToString("x2") })
+    } finally {
+        $algorithm.Dispose()
+        $stream.Dispose()
+    }
+}
+
 Assert-ImmutableImage "ApiImage" $ApiImage
 Assert-ImmutableImage "WebImage" $WebImage
 
@@ -51,9 +63,13 @@ Copy-Item (Join-Path $root "scripts\deploy\Test-ProductionDeployment.ps1") (Join
 Copy-Item (Join-Path $root "docs\production-deployment.md") (Join-Path $release "docs")
 
 $trackedFiles = Get-ChildItem -LiteralPath $release -File -Recurse | Where-Object { $_.Name -ne "release-manifest.json" }
+$releasePrefix = $release.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
 $checksums = foreach ($file in $trackedFiles) {
-    $relative = [System.IO.Path]::GetRelativePath($release, $file.FullName).Replace("\", "/")
-    [ordered]@{ path = $relative; sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant() }
+    if (-not $file.FullName.StartsWith($releasePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Release file escaped the output directory: $($file.FullName)"
+    }
+    $relative = $file.FullName.Substring($releasePrefix.Length).Replace("\", "/")
+    [ordered]@{ path = $relative; sha256 = Get-Sha256 $file.FullName }
 }
 $manifest = [ordered]@{
     release_version = $ReleaseVersion

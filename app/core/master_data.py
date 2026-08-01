@@ -37,8 +37,11 @@ HOSTLESS_LAB_CODE = "LAB_HOT_HUMID_2"
 HOSTLESS_LAB_NAME = "高低温湿热二室"
 LAB_INTERFACE_MQTT = "mqtt"
 LAB_INTERFACE_HOSTLESS = "hostless"
+LAB_INTERFACE_OPERATION_SAMPLE_INSTALL = "sample_install"
 LAB_INTERFACE_OPERATION_FIXTURE_READY = "fixture_ready"
+LAB_INTERFACE_OPERATION_EXPERIMENT_READY = "experiment_ready"
 LAB_INTERFACE_OPERATION_EXPERIMENT_START = "experiment_start"
+LAB_INTERFACE_OPERATION_EXPERIMENT_END_REQUEST = "experiment_end_request"
 LAB_INTERFACE_OPERATION_EXPERIMENT_END = "experiment_end"
 
 
@@ -62,11 +65,13 @@ def laboratory_interface_for_operation(
         return LAB_INTERFACE_MQTT
     normalized_operation = normalize_text(operation)
     if normalized_operation in {
-        LAB_INTERFACE_OPERATION_EXPERIMENT_START,
-        LAB_INTERFACE_OPERATION_EXPERIMENT_END,
+        LAB_INTERFACE_OPERATION_SAMPLE_INSTALL,
+        LAB_INTERFACE_OPERATION_FIXTURE_READY,
     }:
-        return LAB_INTERFACE_MQTT
-    return LAB_INTERFACE_HOSTLESS
+        return LAB_INTERFACE_HOSTLESS
+    # The hybrid exception is deliberately fail-closed: every known or future
+    # non-fixture operation continues through the MQTT upper-computer boundary.
+    return LAB_INTERFACE_MQTT
 
 
 def require_laboratory_interface(

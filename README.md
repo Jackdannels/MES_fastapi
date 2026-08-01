@@ -165,7 +165,7 @@ python scripts\trial_run.py --port 8021
 
 终端管理面板是独立 Windows 程序，不嵌入 MES 网页。执行 `scripts\build_terminal_manager.ps1` 会在桌面生成 `MES终端管理_v1.1.exe`。打开后填写 MES 地址和中控管理员账号，即可查看终端 IP、在线状态、当前页面、最后心跳和权限，并执行单台刷新/关机/重启，以及全部关机/全部重启。批量操作只会命中当前在线且已在本机授权的终端。
 
-实验室工作台 URL 使用标准英文编码，例如冲击二室为 `/laboratory?lab=LAB_IMPACT_2`。终端密钥使用 Windows 当前用户 DPAPI 加密保存；控制接口不接收任意 IP 作为命令目标，而是按已注册的终端 ID 下发，终端每次领取命令时都会重新校验密钥。各终端统一安装并保存一次 v2.1 设置。
+实验室工作台 URL 使用标准英文编码，例如冲击二室为  `/laboratory?lab=LAB_IMPACT_2`。终端密钥使用 Windows 当前用户 DPAPI 加密保存；控制接口不接收任意 IP 作为命令目标，而是按已注册的终端 ID 下发，终端每次领取命令时都会重新校验密钥。各终端统一安装并保存一次 v2.1 设置。
 
 ## LIMS 外部委托开发联调
 
@@ -290,6 +290,7 @@ MES 发送给上位机：
 ```text
 mes/v1/labs/{lab_code}/commands/fixture-install
 mes/v1/labs/{lab_code}/commands/experiment-ready
+mes/v1/labs/{lab_code}/commands/experiment-end-request
 ```
 
 上位机发送给 MES：
@@ -300,6 +301,10 @@ mes/v1/labs/{lab_code}/events/experiment-started
 mes/v1/labs/{lab_code}/events/experiment-ended
 mes/v1/labs/{lab_code}/events/experiment-result
 ```
+
+高低温湿热二室（`LAB_HOT_HUMID_2`）采用严格的混合接口边界：安装样品和夹具就绪由 hostless 本地模拟完成；`READY`、`EXPERIMENT_STARTED`、`END_REQUEST`、`EXPERIMENT_ENDED` 必须与其他实验室一样通过 MQTT。未知或后续新增的实验操作默认走 MQTT，不得自动扩大 hostless 范围。
+
+`/api/mq/laboratory/events/{event_name}` 仅用于显式开启的开发/测试事件注入，默认关闭，并且在 `APP_ENV=prod` 时始终返回 404；正式事件只能由 MQTT subscriber 接收。
 
 上位机可订阅所有试验间指令：
 
@@ -372,6 +377,5 @@ python scripts\reset_demo_data.py
 设备定义会保留，不会随这次重置被删除。
 
 补充说明：
-
 - `scripts\reset_demo_data.py` 会先校验并补齐当前 MySQL 存储扩展，再重置业务演示数据
 - `scripts\reset_demo_data.py` 只重置当前 MySQL 业务数据

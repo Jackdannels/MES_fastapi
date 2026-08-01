@@ -7,9 +7,12 @@ from app.core.axis_codes import sort_axis_codes
 from app.core.config import settings
 from app.core.master_data import (
     LAB_INTERFACE_MQTT,
+    LAB_INTERFACE_OPERATION_EXPERIMENT_END_REQUEST,
     LAB_INTERFACE_OPERATION_EXPERIMENT_END,
+    LAB_INTERFACE_OPERATION_EXPERIMENT_READY,
     LAB_INTERFACE_OPERATION_EXPERIMENT_START,
     LAB_INTERFACE_OPERATION_FIXTURE_READY,
+    LAB_INTERFACE_OPERATION_SAMPLE_INSTALL,
     require_laboratory_interface,
 )
 from app.services.mq_event_processor import MySQLMqEventRepository, generated_run_no, now_iso, process_laboratory_event
@@ -141,7 +144,7 @@ def set_interface_mode(request: Request, payload: InterfaceModeRequest) -> dict[
 
 @router.post("/laboratory/fixture-install")
 def publish_fixture_install(request: FixtureInstallRequest) -> dict[str, Any]:
-    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_FIXTURE_READY)
+    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_SAMPLE_INSTALL)
     payload = {
         "task_code": request.task_code,
         "lab_code": request.lab_code,
@@ -187,7 +190,7 @@ def publish_fixture_install(request: FixtureInstallRequest) -> dict[str, Any]:
 
 @router.post("/laboratory/ready")
 def publish_ready(request: ReadyRequest) -> dict[str, Any]:
-    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_EXPERIMENT_START)
+    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_EXPERIMENT_READY)
     axis_repository = None
     if request.axis_adjustment_ready:
         if not request.run_no or not request.current_axis_code:
@@ -233,7 +236,7 @@ def publish_ready(request: ReadyRequest) -> dict[str, Any]:
 
 @router.post("/laboratory/end-request")
 def publish_experiment_end_request(request: ExperimentEndRequest) -> dict[str, Any]:
-    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_EXPERIMENT_END)
+    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_EXPERIMENT_END_REQUEST)
     payload = {
         "task_code": request.task_code,
         "lab_code": request.lab_code,
@@ -255,7 +258,10 @@ def publish_experiment_end_request(request: ExperimentEndRequest) -> dict[str, A
 
 
 @router.post("/laboratory/events/{event_name}")
-def receive_laboratory_event(event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+def receive_laboratory_event(event_name: str, payload: dict[str, Any], request: Request) -> dict[str, Any]:
+    app_settings = getattr(request.app.state, "settings", settings)
+    if app_settings.APP_ENV == "prod" or not app_settings.MQTT_HTTP_EVENT_INGRESS_ENABLED:
+        raise HTTPException(status_code=404, detail="Not Found")
     lab_code = str(payload.get("lab_code") or "").strip()
     if not lab_code:
         raise HTTPException(status_code=422, detail="lab_code is required")

@@ -80,7 +80,7 @@ rtk proxy C:\ProgramData\anaconda3\envs\fastapi\python.exe scripts\run_p0_baseli
 ## 5用户读写混合基线
 
 该场景只允许对已经加载固定容量数据的隔离数据库执行。它使用4个只读用户和1个低频遥测流写入用户，
-不会调用MQTT或高低温湿热二室 hostless 操作：
+不会调用MQTT，也不会调用高低温湿热二室的安装样品/夹具就绪 hostless 操作：
 
 ```powershell
 rtk proxy C:\ProgramData\anaconda3\envs\fastapi\python.exe scripts\run_p0_mixed_baseline.py --duration 60 --confirm-isolated-write REPLACE_CAPACITY_DATABASE

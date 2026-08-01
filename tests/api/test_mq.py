@@ -50,6 +50,7 @@ def build_client(monkeypatch):
 
     monkeypatch.setattr(mq_route, "publish_laboratory_command", fake_publish)
     app = FastAPI()
+    app.state.settings = Settings(_env_file=None, APP_ENV="test", MQTT_HTTP_EVENT_INGRESS_ENABLED=True)
     app.include_router(mq_route.router)
     return TestClient(app), published
 
@@ -4407,6 +4408,7 @@ def test_inbound_event_endpoint_uses_processor(monkeypatch):
 
     monkeypatch.setattr(mq_route, "process_laboratory_event", fake_process)
     app = FastAPI()
+    app.state.settings = Settings(_env_file=None, APP_ENV="test", MQTT_HTTP_EVENT_INGRESS_ENABLED=True)
     app.include_router(mq_route.router)
     client = TestClient(app)
 
@@ -4423,3 +4425,29 @@ def test_inbound_event_endpoint_uses_processor(monkeypatch):
     assert response.status_code == 200
     assert response.json()["status"] == "PROCESSED"
     assert calls[0][0] == "mes/v1/labs/LAB_SALT/events/fixture-ready"
+
+
+@pytest.mark.parametrize(
+    "app_settings",
+    [
+        Settings(_env_file=None, APP_ENV="test", MQTT_HTTP_EVENT_INGRESS_ENABLED=False),
+        Settings(_env_file=None, APP_ENV="prod", MQTT_HTTP_EVENT_INGRESS_ENABLED=True),
+    ],
+)
+def test_inbound_http_event_endpoint_is_disabled_by_default_and_always_disabled_in_production(
+    monkeypatch,
+    app_settings,
+):
+    calls = []
+    monkeypatch.setattr(mq_route, "process_laboratory_event", lambda topic, payload: calls.append((topic, payload)))
+    app = FastAPI()
+    app.state.settings = app_settings
+    app.include_router(mq_route.router)
+
+    response = TestClient(app).post(
+        "/api/mq/laboratory/events/experiment-started",
+        json={"lab_code": "LAB_HOT_HUMID_2", "run_no": "RUN-HH2"},
+    )
+
+    assert response.status_code == 404
+    assert calls == []

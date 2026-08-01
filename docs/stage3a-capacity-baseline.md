@@ -47,7 +47,7 @@
 - 第三阶段探针、任务、接驳区、MQTT 与实验室相关测试：284 项通过。
 - 同一托盘并发出库只有一个请求成功。
 - 任务编辑、接驳操作与实验室进度并发时不会回滚后提交状态。
-- 高低温湿热二室继续使用 hostless mock；其他实验室保持 MQTT 路径。
+- 高低温湿热二室仅在安装样品和夹具就绪环节使用 hostless mock；其 `READY`、`EXPERIMENT_STARTED`、`END_REQUEST`、`EXPERIMENT_ENDED` 与其他实验室一样保持 MQTT 路径。
 
 ## 结论与触发条件
 

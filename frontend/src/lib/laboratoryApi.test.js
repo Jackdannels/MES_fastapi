@@ -160,7 +160,7 @@ describe("laboratoryApi", () => {
     });
   });
 
-  test("persists hostless axis adjustment readiness before local restart", async () => {
+  test("persists second-room axis adjustment readiness before MQTT re-arming", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       status: 200,

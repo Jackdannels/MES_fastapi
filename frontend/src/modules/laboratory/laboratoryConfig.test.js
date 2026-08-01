@@ -7,7 +7,7 @@ import {
 } from "./laboratoryConfig";
 
 describe("laboratory config helpers", () => {
-  test("keeps the hostless second hot-humid room code stable", () => {
+  test("keeps the hybrid-interface second hot-humid room code stable", () => {
     expect(createDefaultLaboratoryConfig("高低温湿热二室")).toMatchObject({
       labCode: "LAB_HOT_HUMID_2",
       labId: "LAB_HOT_HUMID_2",

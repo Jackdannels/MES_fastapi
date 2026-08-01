@@ -137,8 +137,8 @@ rtk proxy .\.venv\Scripts\python.exe -m pytest -q tests/api/test_storage.py test
 
 强制保留：
 
-- 除高低温湿热二室外，所有实验室使用MQTT。
-- 高低温湿热二室没有上位机，只使用hostless本地模拟。
+- 所有实验室的 `READY`、`EXPERIMENT_STARTED`、`END_REQUEST`、`EXPERIMENT_ENDED` 均使用MQTT。
+- 高低温湿热二室是混合接口例外：只有安装样品和夹具就绪使用hostless本地模拟，实验准备、启动和结束仍通过上位机MQTT接口。
 - MQTT和hostless复用完全相同的业务服务、状态转换和持久化规则。
 - 只允许物理设备接口边界不同。
 - 比对后排程删除锁定、部分轴向续做、撤回恢复、实验完成时间和跨页面展示一致。
@@ -230,7 +230,7 @@ rtk git diff --check
 
 - `frontend/src/modules/samples/trayFlowConsistency.test.js`
 - 任务、排程、暂存、实验室、交接工作台相关测试。
-- MQTT与高低温湿热二室hostless专项。
+- MQTT与高低温湿热二室夹具环节hostless混合边界专项。
 - HTTP状态和响应体。
 - 数据库状态、实验运行、托盘关系和历史事件。
 - 跨页面托盘状态、目标位置和业务时间。
@@ -273,7 +273,7 @@ rtk git diff --check
 - 任务14B：`useDevicesPage.js`从1056行降至8行兼容门面；拆出592行页面引擎、94行维保规则、115行排程冲突投影、199行运行中维修投影和27行设备时钟。
 - 结构测试只把源码读取范围扩展到新组件或引擎；原DOM、CSS、实时暂停/补刷断言均未删除、跳过或放宽。
 
-阶段三开始前冻结四个目标文件SHA-256和19个文件416项确定性基线。任务13指定7个文件96项通过；任务14样品侧7个文件181项、设备侧4个文件61项通过。固定场景覆盖共享托盘、部分轴向、最终轴向折叠、比对/夹具时间恢复、外观周期、暂存/实验室/厂家收回、运行中维修两分支、MQTT实验室和高低温湿热二室hostless例外。
+阶段三开始前冻结四个目标文件SHA-256和19个文件416项确定性基线。任务13指定7个文件96项通过；任务14样品侧7个文件181项、设备侧4个文件61项通过。固定场景覆盖共享托盘、部分轴向、最终轴向折叠、比对/夹具时间恢复、外观周期、暂存/实验室/厂家收回、运行中维修两分支、MQTT实验室和高低温湿热二室夹具环节hostless例外。
 
 ### 阶段三后最终验证
 
@@ -288,7 +288,7 @@ rtk git diff --check
 
 ### 独立行为一致性审核
 
-审核代理在修改前冻结四目标哈希、19个文件416项基线及固定业务时间/标识，覆盖过程刷新门禁、托盘跨页状态/目标/时间、设备维修、MQTT与高低温湿热二室hostless例外。首次终审运行环境禁止了所有只读 `rtk` 命令，因此仅因无法取得独立执行证据返回技术性 `REJECT`；该次审核未发现代码问题，也未修改任何文件。
+审核代理在修改前冻结四目标哈希、19个文件416项基线及固定业务时间/标识，覆盖过程刷新门禁、托盘跨页状态/目标/时间、设备维修、MQTT与高低温湿热二室夹具环节hostless例外。首次终审运行环境禁止了所有只读 `rtk` 命令，因此仅因无法取得独立执行证据返回技术性 `REJECT`；该次审核未发现代码问题，也未修改任何文件。
 
 在启用命令访问并继续保持只读约束后重新执行终审。审核代理独立运行：
 
@@ -296,6 +296,6 @@ rtk git diff --check
 rtk npm --prefix frontend run test:run -- src/modules/process/useProcessLabs.test.js src/modules/samples/trayFlowConsistency.test.js src/modules/devices/useDevicesPage.test.js src/modules/process/useProcessLabs.realtime.structure.test.js src/modules/devices/useDevicesPage.realtime.structure.test.js
 ```
 
-结果为5个测试文件、95项测试全部通过；独立执行 `rtk git diff --check` 通过。最终差异检查确认兼容入口、参数、返回字段及ref/computed语义保持，新增模块依赖单向且无循环，结构测试仅聚合拆分后的源码、未删除或放宽原断言，17个页面动态导入和Vite配置未回退。除高低温湿热二室继续使用hostless本地模拟外，其余实验室保持MQTT模式。最终独立行为一致性结论：`APPROVE`。
+结果为5个测试文件、95项测试全部通过；独立执行 `rtk git diff --check` 通过。最终差异检查确认兼容入口、参数、返回字段及ref/computed语义保持，新增模块依赖单向且无循环，结构测试仅聚合拆分后的源码、未删除或放宽原断言，17个页面动态导入和Vite配置未回退。所有实验室的实验准备、启动和结束保持MQTT模式；高低温湿热二室仅保留安装样品和夹具就绪hostless例外。最终独立行为一致性结论：`APPROVE`。
 
 本轮未创建commit、未push、未切换分支、未创建worktree；阶段四/五及此前任务的未提交改动均保留。

@@ -5916,10 +5916,10 @@ describe("LaboratoryPage runtime", () => {
     ];
     const taskCode = "SYLU-2026-06-208";
     const experimentCode = `${taskCode}-A`;
-    const runNo = "RUN-HOSTLESS-ADJUSTMENT";
+    const runNo = "RUN-MQTT-ADJUSTMENT";
     snapshotState = {
       ...createSnapshot(),
-      [STORAGE_KEYS.tasks]: [{ code: taskCode, name: "无上位机轴向调整任务", test_type: "高低温湿热试验" }],
+      [STORAGE_KEYS.tasks]: [{ code: taskCode, name: "二室 MQTT 轴向调整任务", test_type: "高低温湿热试验" }],
       [STORAGE_KEYS.experiments]: [{
         axis_codes: ["x+", "x-"],
         experiment_code: experimentCode,
@@ -5927,16 +5927,16 @@ describe("LaboratoryPage runtime", () => {
         status: "实验进行中",
         task_code: taskCode,
       }],
-      [STORAGE_KEYS.experiment_trays]: [{ experiment_code: experimentCode, task_code: taskCode, tray_code: "TP-HOSTLESS-208" }],
+      [STORAGE_KEYS.experiment_trays]: [{ experiment_code: experimentCode, task_code: taskCode, tray_code: "TP-MQTT-208" }],
       [STORAGE_KEYS.schedules]: [{
         axis_codes: ["x+", "x-"],
         device: "高低温湿热二室",
         end_at: "2026-04-02T12:00:00.000Z",
         experiment_code: experimentCode,
-        id: "schedule-hostless-adjustment",
+        id: "schedule-mqtt-adjustment",
         start_at: "2026-04-02T09:30:00.000Z",
         status: "实验进行中",
-        sub_experiment_code: "hostless-adjustment-segment",
+        sub_experiment_code: "mqtt-adjustment-segment",
         task_code: taskCode,
       }],
       [STORAGE_KEYS.samples]: [{
@@ -5945,18 +5945,18 @@ describe("LaboratoryPage runtime", () => {
         location: "高低温湿热二室",
         status: "实验进行中",
         task_code: taskCode,
-        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-HOSTLESS-208" }],
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-MQTT-208" }],
       }],
       [STORAGE_KEYS.experiment_runs]: [{
         axis_codes: ["x+", "x-"],
         experiment_code: experimentCode,
         id: runNo,
         run_no: runNo,
-        schedule_id: "schedule-hostless-adjustment",
+        schedule_id: "schedule-mqtt-adjustment",
         status: "实验进行中",
-        sub_experiment_code: "hostless-adjustment-segment",
+        sub_experiment_code: "mqtt-adjustment-segment",
         task_code: taskCode,
-        tray_codes: ["TP-HOSTLESS-208"],
+        tray_codes: ["TP-MQTT-208"],
       }],
       [STORAGE_KEYS.experiment_run_steps]: [
         { axis_code: "x+", experiment_code: experimentCode, run_no: runNo, status: "实验已完成", step_no: 1, task_code: taskCode },
@@ -5978,8 +5978,8 @@ describe("LaboratoryPage runtime", () => {
       experiment_code: experimentCode,
       lab_code: "LAB_HOT_HUMID_2",
       run_no: runNo,
-      schedule_id: "schedule-hostless-adjustment",
-      sub_experiment_code: "hostless-adjustment-segment",
+      schedule_id: "schedule-mqtt-adjustment",
+      sub_experiment_code: "mqtt-adjustment-segment",
       task_code: taskCode,
     }));
     expect(axisButton?.textContent || "").toContain("已准备就绪，等待 x- 轴向启动");

@@ -51,6 +51,8 @@ mysqldump --single-transaction --quick --routines --triggers --events --hex-blob
 
 在未完成恢复演练前，不执行正式迁移。
 
+仓库提供 `scripts/deploy/Backup-MesDatabase.ps1` 和 `Restore-MesRehearsal.ps1`。两者只接受固定 digest 的镜像和仓库外密码文件；恢复脚本只允许名称以 `_restore_test` 结尾的空数据库，并在导入后执行迁移记录和 schema contract 校验。正式数据库恢复仍必须由 DBA 在独立维护窗口执行，不能使用演练脚本覆盖非空库。
+
 ## 4. 维护窗口部署
 
 1. 停止旧 API 的写入入口，确认没有正在执行的写事务。

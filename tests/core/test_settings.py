@@ -101,3 +101,11 @@ def test_settings_load_docker_secret_files(tmp_path, monkeypatch) -> None:
 
     assert settings.MYSQL_PASSWORD == "api-secret-from-file"
     assert settings.SESSION_SECRET_KEY == "session-secret-from-file"
+
+
+def test_http_mqtt_event_ingress_is_disabled_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("MQTT_HTTP_EVENT_INGRESS_ENABLED", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.MQTT_HTTP_EVENT_INGRESS_ENABLED is False

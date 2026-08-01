@@ -7,6 +7,18 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+function Get-Sha256([string]$Path) {
+    $stream = [System.IO.File]::OpenRead($Path)
+    $algorithm = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $algorithm.ComputeHash($stream)
+        return -join ($bytes | ForEach-Object { $_.ToString("x2") })
+    } finally {
+        $algorithm.Dispose()
+        $stream.Dispose()
+    }
+}
+
 $release = (Resolve-Path -LiteralPath $ReleaseDirectory).Path
 $manifestPath = Join-Path $release "release-manifest.json"
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
@@ -19,7 +31,7 @@ foreach ($entry in $manifest.files) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Release file is missing: $($entry.path)"
     }
-    $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
+    $actual = Get-Sha256 $path
     if ($actual -ne ([string]$entry.sha256).ToLowerInvariant()) {
         throw "Checksum mismatch: $($entry.path)"
     }

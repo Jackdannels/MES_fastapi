@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     MQTT_PASSWORD: str = "guest"
     MQTT_QOS: int = 1
     MQTT_TOPIC_PREFIX: str = "mes/v1"
+    MQTT_HTTP_EVENT_INGRESS_ENABLED: bool = False
 
     RABBITMQ_ENABLED: bool = False
     RABBITMQ_REQUIRED: bool = True
