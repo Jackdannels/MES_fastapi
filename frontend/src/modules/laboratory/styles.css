@@ -400,6 +400,67 @@
   font-size: 20px;
 }
 
+.laboratory-running-completion-pending,
+.laboratory-running-completion-error {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 320px;
+  min-height: 80px;
+  padding: 16px 22px;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.5);
+  border-radius: 6px;
+  background: rgba(var(--industrial-accent-rgb), 0.12);
+  color: var(--text);
+}
+
+.laboratory-running-completion-pending > span:last-child,
+.laboratory-running-completion-error {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.laboratory-running-completion-pending strong,
+.laboratory-running-completion-error strong {
+  display: block;
+  font-size: 17px;
+}
+
+.laboratory-running-completion-pending small,
+.laboratory-running-completion-error span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.laboratory-running-completion-pending__spinner {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border: 3px solid rgba(var(--industrial-accent-rgb), 0.24);
+  border-top-color: rgba(var(--industrial-accent-rgb), 0.95);
+  border-radius: 50%;
+  animation: laboratory-completion-spin 0.8s linear infinite;
+}
+
+.laboratory-running-completion-error {
+  border-color: rgba(248, 113, 113, 0.58);
+  background: rgba(127, 29, 29, 0.2);
+}
+
+@keyframes laboratory-completion-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .laboratory-running-completion-pending__spinner {
+    animation: none;
+  }
+}
+
 .laboratory-running-axis-status {
   align-self: start;
   display: grid;

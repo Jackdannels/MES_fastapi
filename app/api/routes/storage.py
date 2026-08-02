@@ -28,6 +28,7 @@ from app.services.storage_tray_actions import (
     summarize_tray_row,
 )
 from app.services.storage_schedule_patch import (
+    PATCHABLE_KEYS,
     StorageSchedulePatchError,
     build_schedule_patch_updates,
     validate_maintenance_time_order,
@@ -99,6 +100,39 @@ APPEARANCE_SOURCE_REQUIRED_DETAIL = "当前试验类型不支持进入外观检�
 APPEARANCE_REPEAT_STOCK_IN_BLOCKED_DETAIL = "该托盘已完成实验前外观检测并出库，不能重复入库外观检测间。"
 APPEARANCE_DISPATCH_TARGET_REQUIRED_DETAIL = "目标实验室与当前托盘不匹配"
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
+TRAY_ACTION_SCOPE_KEYS = (
+    "mes.tasks",
+    "mes.samples",
+    "mes.schedules",
+    "mes.experiments",
+    "mes.experiment_runs",
+    "mes.experiment_run_trays",
+    "mes.experiment_run_steps",
+    "mes.experiment_trays",
+    "mes.staging_events",
+    "mes.devices",
+)
+SAMPLE_UPDATE_DEPENDENCY_KEYS = {
+    "mes.tasks",
+    "mes.samples",
+    "mes.staging_events",
+    "mes.experiments",
+    "mes.experiment_runs",
+    "mes.experiment_run_steps",
+    "mes.experiment_trays",
+    "mes.experiment_run_trays",
+    "mes.schedules",
+    "mes.devices",
+}
+SCHEDULE_UPDATE_DEPENDENCY_KEYS = {
+    "mes.schedules",
+    "mes.samples",
+    "mes.experiment_runs",
+    "mes.experiment_run_trays",
+    "mes.experiment_trays",
+    "mes.experiment_run_steps",
+    "mes.devices",
+}
 
 
 
@@ -756,6 +790,31 @@ def _publish_tray_action_update(updates: dict[str, Any], *, source: str = "", re
     publish_storage_update(keys)
 
 
+def _read_tray_action_snapshot(storage: Any, tray_code: str) -> tuple[dict[str, Any], str, bool]:
+    task_resolver = getattr(storage, "find_task_code_by_tray", None)
+    scope_reader = getattr(storage, "read_task_scope", None)
+    scope_writer = getattr(storage, "write_task_scope", None)
+    if callable(task_resolver) and callable(scope_reader) and callable(scope_writer):
+        task_code = _normalize_text(task_resolver(tray_code))
+        if task_code:
+            return scope_reader({task_code}, TRAY_ACTION_SCOPE_KEYS), task_code, True
+    return storage.read_all(), "", False
+
+
+def _read_storage_update_snapshot(storage: Any, update_keys: Any) -> dict[str, Any]:
+    requested = {key for key in update_keys if key in STORAGE_KEYS}
+    if "mes.samples" in requested:
+        requested.update(SAMPLE_UPDATE_DEPENDENCY_KEYS)
+    if "mes.schedules" in requested:
+        requested.update(SCHEDULE_UPDATE_DEPENDENCY_KEYS)
+    if "mes.devices" in requested:
+        requested.update({"mes.devices", "mes.schedules"})
+    read_many = getattr(storage, "read_many", None)
+    if callable(read_many):
+        return read_many(sorted(requested))
+    return storage.read_all()
+
+
 def _run_storage_tray_action(
     update_builder,
     *,
@@ -771,7 +830,7 @@ def _run_storage_tray_action(
     normalized_tray_code = _normalize_tray_scan_code(tray_code)
     try:
         with acquire_laboratory_storage_commit_lock():
-            snapshot = storage.read_all()
+            snapshot, task_code, scoped = _read_tray_action_snapshot(storage, normalized_tray_code)
             updates = update_builder(snapshot, room=room, tray_code=normalized_tray_code, payload=payload, now=action_time)
             _validate_storage_update(
                 storage,
@@ -779,7 +838,10 @@ def _run_storage_tray_action(
                 snapshot,
                 allow_terminal_schedule_cleanup=allow_terminal_schedule_cleanup,
             )
-            storage.write_many(updates)
+            if scoped:
+                storage.write_task_scope(updates, task_codes={task_code})
+            else:
+                storage.write_many(updates)
     except StorageTrayActionError as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from error
     _publish_tray_action_update(updates, source=source, request_id=request_id)
@@ -801,7 +863,7 @@ def _run_storage_schedule_patch(
     storage = get_storage_backend()
     try:
         with acquire_laboratory_storage_commit_lock():
-            snapshot = storage.read_all()
+            snapshot = _read_storage_update_snapshot(storage, {*PATCHABLE_KEYS, "mes.devices"})
             updates = build_schedule_patch_updates(snapshot, payload if isinstance(payload, dict) else {})
             _validate_storage_update(storage, updates, snapshot)
             storage.write_many(updates)
@@ -929,7 +991,7 @@ def write_key(key: str, payload: Any = Body(...)) -> Dict[str, bool]:
         raise HTTPException(status_code=404, detail="Unknown storage key")
     storage = get_storage_backend()
     with acquire_laboratory_storage_commit_lock():
-        snapshot = storage.read_all()
+        snapshot = _read_storage_update_snapshot(storage, {key})
         updates = merge_concurrent_storage_updates(snapshot, {key: payload})
         updates = _normalize_future_maintenance_device_statuses(updates)
         _validate_storage_update(storage, updates, snapshot)
@@ -949,7 +1011,7 @@ def write_many(
     if not updates:
         raise HTTPException(status_code=400, detail="No valid storage keys provided")
     with acquire_laboratory_storage_commit_lock():
-        snapshot = storage.read_all()
+        snapshot = _read_storage_update_snapshot(storage, updates)
         updates = merge_concurrent_storage_updates(snapshot, updates)
         updates = _normalize_future_maintenance_device_statuses(updates)
         _validate_storage_update(storage, updates, snapshot)

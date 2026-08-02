@@ -192,4 +192,5 @@ def apply_pending_fixture_ready(installation: dict[str, Any], occurred_at: str) 
         ),
         publish_storage_update=None,
         resource_keys=operation_resource_keys(lab_code=lab_code, tray_codes=tray_codes),
+        task_code=task_code,
     )

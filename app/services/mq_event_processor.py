@@ -35,6 +35,7 @@ from app.services.laboratory_completion import (
 from app.services.laboratory_operations import (
     acquire_laboratory_storage_commit_lock,
     merge_scoped_samples,
+    read_laboratory_task_payload,
     scope_snapshot_samples_for_experiment as scope_laboratory_samples_for_experiment,
     write_laboratory_updates,
 )
@@ -580,6 +581,21 @@ class MySQLMqEventRepository:
             raise ValueError(f"multiple experiment contexts found for lab_code: {lab_code}")
         return next(iter(contexts.values()))
 
+    def _storage_snapshot_for_run(
+        self,
+        storage: Any,
+        run_no: str,
+    ) -> tuple[dict[str, list[dict[str, Any]]], str]:
+        if callable(getattr(storage, "read_task_scope", None)):
+            persisted_run = self.find_run_by_no(run_no) or {}
+            task_no = normalize_text(persisted_run.get("task_no") or persisted_run.get("task_code"))
+            if not task_no:
+                raise ValueError(f"experiment run is required for run_no: {run_no}")
+            return storage_completion_snapshot(read_laboratory_task_payload(storage, task_no)), task_no
+        snapshot = storage_completion_snapshot(storage.read_all())
+        run = run_context_from_snapshot(snapshot, run_no)
+        return snapshot, normalize_text(run.get("task_code") or run.get("task_no"))
+
     def start_run_for_context(self, context: dict[str, Any], occurred_at: str, run_no: str = "") -> dict[str, Any]:
         task_no = normalize_text(context.get("task_no"))
         experiment_no = normalize_text(context.get("experiment_no"))
@@ -601,7 +617,7 @@ class MySQLMqEventRepository:
         run_no = normalize_text(run_no) or generated_run_no()
         storage = get_storage_backend()
         with acquire_laboratory_storage_commit_lock():
-            snapshot = storage_completion_snapshot(storage.read_all())
+            snapshot = storage_completion_snapshot(read_laboratory_task_payload(storage, task_no))
             scoped_snapshot = scope_snapshot_samples_for_experiment(
                 snapshot,
                 task_code=task_no,
@@ -634,6 +650,7 @@ class MySQLMqEventRepository:
                 storage,
                 updates,
                 scoped_samples=result["samples"],
+                task_codes={task_no},
             )
         return {
             "run_no": run_no,
@@ -647,9 +664,10 @@ class MySQLMqEventRepository:
     def mark_run_started(self, run_no: str, occurred_at: str) -> None:
         storage = get_storage_backend()
         with acquire_laboratory_storage_commit_lock():
-            snapshot = storage_completion_snapshot(storage.read_all())
+            snapshot, task_scope = self._storage_snapshot_for_run(storage, run_no)
             run = run_context_from_snapshot(snapshot, run_no)
             task_no = normalize_text(run.get("task_code") or run.get("task_no"))
+            task_scope = task_scope or task_no
             experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
             sub_experiment_code = record_sub_experiment_code(run)
             tray_codes = [
@@ -692,6 +710,7 @@ class MySQLMqEventRepository:
                 storage,
                 updates,
                 scoped_samples=result["samples"],
+                task_codes={task_scope} if task_scope else None,
             )
 
     def mark_run_ended(
@@ -704,9 +723,10 @@ class MySQLMqEventRepository:
     ) -> None:
         storage = get_storage_backend()
         with acquire_laboratory_storage_commit_lock():
-            snapshot = storage_completion_snapshot(storage.read_all())
+            snapshot, task_scope = self._storage_snapshot_for_run(storage, run_no)
             run = run_context_from_snapshot(snapshot, run_no)
             task_no = normalize_text(run.get("task_code") or run.get("task_no"))
+            task_scope = task_scope or task_no
             experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
             sub_experiment_code = normalize_text(sub_experiment_code) or record_sub_experiment_code(run)
             tray_codes = [
@@ -759,6 +779,7 @@ class MySQLMqEventRepository:
                 storage,
                 updates,
                 scoped_samples=result["samples"],
+                task_codes={task_no},
             )
         try:
             archive_completion_reports(
@@ -784,7 +805,7 @@ class MySQLMqEventRepository:
     def mark_axis_adjustment_ready(self, run_no: str, axis_code: str, occurred_at: str) -> None:
         storage = get_storage_backend()
         with acquire_laboratory_storage_commit_lock():
-            snapshot = storage_completion_snapshot(storage.read_all())
+            snapshot, task_no = self._storage_snapshot_for_run(storage, run_no)
             run_context_from_snapshot(snapshot, run_no)
             result = mark_storage_laboratory_axis_adjustment_ready(
                 snapshot,
@@ -795,12 +816,13 @@ class MySQLMqEventRepository:
             write_laboratory_updates(
                 storage,
                 {"mes.experiment_run_steps": result["experimentRunSteps"]},
+                task_codes={task_no} if task_no else None,
             )
 
     def restore_axis_adjustment(self, run_no: str, axis_code: str, occurred_at: str) -> None:
         storage = get_storage_backend()
         with acquire_laboratory_storage_commit_lock():
-            snapshot = storage_completion_snapshot(storage.read_all())
+            snapshot, task_no = self._storage_snapshot_for_run(storage, run_no)
             run_context_from_snapshot(snapshot, run_no)
             result = restore_storage_laboratory_axis_adjustment(
                 snapshot,
@@ -811,12 +833,13 @@ class MySQLMqEventRepository:
             write_laboratory_updates(
                 storage,
                 {"mes.experiment_run_steps": result["experimentRunSteps"]},
+                task_codes={task_no} if task_no else None,
             )
 
     def mark_axis_step_started(self, run_no: str, axis_code: str, occurred_at: str) -> None:
         storage = get_storage_backend()
         with acquire_laboratory_storage_commit_lock():
-            snapshot = storage_completion_snapshot(storage.read_all())
+            snapshot, task_no = self._storage_snapshot_for_run(storage, run_no)
             run_context_from_snapshot(snapshot, run_no)
             result = start_storage_laboratory_axis_step(
                 snapshot,
@@ -827,6 +850,7 @@ class MySQLMqEventRepository:
             write_laboratory_updates(
                 storage,
                 {"mes.experiment_run_steps": result["experimentRunSteps"]},
+                task_codes={task_no} if task_no else None,
             )
 
 

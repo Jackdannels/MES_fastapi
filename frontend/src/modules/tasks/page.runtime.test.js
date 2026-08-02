@@ -118,6 +118,7 @@ const createTasksPageFetchMock = ({
   testTypesError = null,
   afterReset = null,
   resetError = null,
+  failTaskPageAfterCreate = false,
 } = {}) => {
   const state = {
     tasks: clone(tasks),
@@ -129,9 +130,119 @@ const createTasksPageFetchMock = ({
     experimentSamples: clone(experimentSamples),
     externalTaskIntakes: clone(externalTaskIntakes),
   };
+  let taskCreated = false;
 
   const fetchMock = vi.fn((url, options = {}) => {
     const method = options.method ?? "GET";
+
+    if (url.startsWith(`${TASKS_ENDPOINT}/page?`) && method === "GET") {
+      if (failTaskPageAfterCreate && taskCreated) {
+        return Promise.reject(new Error("reload failed"));
+      }
+      const requestUrl = new URL(url, "http://mes.test");
+      const page = Number(requestUrl.searchParams.get("page") || 1);
+      const pageSize = Number(requestUrl.searchParams.get("pageSize") || 8);
+      const query = String(requestUrl.searchParams.get("query") || "").toLowerCase();
+      const status = String(requestUrl.searchParams.get("status") || "");
+      const testType = String(requestUrl.searchParams.get("testType") || "");
+      const activeTasks = state.tasks
+        .filter((task) => !isReturnedTask(task, state.samples))
+        .filter((task) => {
+          if (!query || JSON.stringify(task).toLowerCase().includes(query)) {
+            return true;
+          }
+          const code = String(task.code || task.id || "");
+          return state.samples.some((sample) => (
+            String(sample.task_code || "") === code
+            && JSON.stringify(sample).toLowerCase().includes(query)
+          ));
+        })
+        .filter((task) => !status || String(task.status || task.transfer_status || "") === status)
+        .filter((task) => !testType || String(task.test_type || "").includes(testType));
+      const sortKey = String(requestUrl.searchParams.get("sortKey") || "code");
+      const sortDirection = String(requestUrl.searchParams.get("sortDirection") || "asc");
+      const sortFields = { code: "code", source: "source", sampleCount: "sample_count", testType: "test_type", dueAt: "due_at", displayStatus: "status" };
+      const sortField = sortFields[sortKey] || "code";
+      activeTasks.sort((left, right) => {
+        const leftValue = sortField === "sample_count" ? Number(left[sortField] || 0) : String(left[sortField] || "");
+        const rightValue = sortField === "sample_count" ? Number(right[sortField] || 0) : String(right[sortField] || "");
+        const compared = typeof leftValue === "number" ? leftValue - rightValue : leftValue.localeCompare(rightValue, "zh-Hans-CN", { numeric: true });
+        return sortDirection === "desc" ? -compared : compared;
+      });
+      const totalPages = Math.max(1, Math.ceil(activeTasks.length / pageSize));
+      const currentPage = Math.min(Math.max(page, 1), totalPages);
+      const pageTasks = activeTasks.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+      const pageCodes = new Set(pageTasks.map((task) => String(task.code || task.id || "")));
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          currentPage,
+          totalCount: activeTasks.length,
+          totalPages,
+          tasks: clone(pageTasks),
+          samples: clone(state.samples.filter((row) => pageCodes.has(String(row.task_code || "")))),
+          experiments: clone(state.experiments.filter((row) => pageCodes.has(String(row.task_code || "")))),
+          schedules: clone(state.schedules.filter((row) => pageCodes.has(String(row.task_code || "")))),
+          metrics: {
+            externalCount: activeTasks.filter((task) => task.source === "外部委托").length,
+            internalCount: activeTasks.filter((task) => task.source === "内部新增").length,
+            unscheduledCount: activeTasks.filter((task) => ["待排程", "已受理"].includes(task.status)).length,
+          },
+          statusOptions: [...new Set(state.tasks
+            .filter((task) => !isReturnedTask(task, state.samples))
+            .filter((task) => !testType || String(task.test_type || "").includes(testType))
+            .map((task) => task.status)
+            .filter(Boolean))],
+          testTypeOptions: [...new Set(state.tasks.filter((task) => !isReturnedTask(task, state.samples)).map((task) => task.test_type).filter(Boolean))],
+        }),
+      });
+    }
+
+    if (url.startsWith(`${TASKS_ENDPOINT}/next-code`) && method === "GET") {
+      const requestUrl = new URL(url, "http://mes.test");
+      const reference = new Date(requestUrl.searchParams.get("reference") || Date.now());
+      const prefix = `SYLU-${reference.getFullYear()}-${String(reference.getMonth() + 1).padStart(2, "0")}-`;
+      const maxSequence = state.tasks.reduce((maximum, task) => {
+        const code = String(task.code || "");
+        return code.startsWith(prefix) ? Math.max(maximum, Number(code.slice(prefix.length)) || 0) : maximum;
+      }, 0);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ code: `${prefix}${String(maxSequence + 1).padStart(3, "0")}` }),
+      });
+    }
+
+    if (url === `${TASKS_ENDPOINT}/external-intakes?status=pending` && method === "GET") {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => clone(state.externalTaskIntakes.filter((item) => (item.acceptance_status || "pending") === "pending")),
+      });
+    }
+
+    if (url.startsWith(buildTaskEndpoint("")) && method === "GET") {
+      const taskId = decodeURIComponent(url.slice(buildTaskEndpoint("").length));
+      const selectedTask = state.tasks.find((task) => task.id === taskId || task.code === taskId);
+      const taskCode = String(selectedTask?.code || selectedTask?.id || "");
+      const related = (rows) => clone(rows.filter((row) => String(row.task_code || "") === taskCode));
+      return Promise.resolve({
+        ok: Boolean(selectedTask),
+        status: selectedTask ? 200 : 404,
+        statusText: selectedTask ? "OK" : "Not Found",
+        json: async () => ({
+          task: clone(selectedTask),
+          samples: related(state.samples),
+          experiments: related(state.experiments),
+          schedules: related(state.schedules),
+          experimentTrays: related(state.experimentTrays),
+          experimentSamples: related(state.experimentSamples),
+          experimentRuns: [],
+          experimentRunTrays: [],
+        }),
+      });
+    }
 
     if ((url === TASKS_ENDPOINT || url === `${TASKS_ENDPOINT}?includeArchived=true`) && method === "GET") {
       const tasks = url.includes("includeArchived=true")
@@ -147,6 +258,7 @@ const createTasksPageFetchMock = ({
     if (url === TASKS_ENDPOINT && method === "POST") {
       const nextTask = JSON.parse(options.body ?? "{}");
       state.tasks = [nextTask, ...state.tasks];
+      taskCreated = true;
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -211,6 +323,11 @@ const createTasksPageFetchMock = ({
       const existingTaskExperiments = state.experiments.filter(
         (experiment) => String(experiment?.task_code ?? "").trim() === previousTaskCode,
       );
+      const previousTypes = String(previousTask?.test_type || "").split("/").map((item) => item.trim()).filter(Boolean);
+      const nextTypes = Array.isArray(savedTask.test_types)
+        ? savedTask.test_types.map((item) => String(item).trim()).filter(Boolean)
+        : String(savedTask.test_type || "").split("/").map((item) => item.trim()).filter(Boolean);
+      const experimentTypesChanged = JSON.stringify(previousTypes) !== JSON.stringify(nextTypes);
       if (explicitSampleCodes) {
         const relatedSamples = state.samples
           .filter((sample) => String(sample?.task_code ?? "").trim() === previousTaskCode)
@@ -246,6 +363,17 @@ const createTasksPageFetchMock = ({
           .filter(Boolean);
       }
       state.tasks = state.tasks.map((task) => (task.id === taskId ? clone(savedTask) : task));
+      if (experimentTypesChanged) {
+        const outsideTask = (row) => String(row?.task_code ?? "").trim() !== previousTaskCode;
+        state.schedules = state.schedules.filter(outsideTask);
+        state.experimentTrays = state.experimentTrays.filter(outsideTask);
+        state.experimentSamples = state.experimentSamples.filter(outsideTask);
+        state.samples = state.samples.map((sample) => (
+          outsideTask(sample)
+            ? sample
+            : { ...sample, task_code: nextTaskCode, status: "运输中", flow_status: "运输中", trays: [] }
+        ));
+      }
       state.experiments = [
         ...state.experiments.filter((experiment) => String(experiment?.task_code ?? "").trim() !== previousTaskCode),
         ...buildMockTaskExperiments({ ...savedTask, code: nextTaskCode }, existingTaskExperiments),
@@ -259,7 +387,16 @@ const createTasksPageFetchMock = ({
 
     if (url.startsWith(buildTaskEndpoint("")) && method === "DELETE") {
       const taskId = url.slice(buildTaskEndpoint("").length);
+      const removedTask = state.tasks.find((task) => task.id === taskId);
+      const removedTaskCode = String(removedTask?.code || removedTask?.id || "");
       state.tasks = state.tasks.filter((task) => task.id !== taskId);
+      const outsideTask = (row) => String(row?.task_code ?? "") !== removedTaskCode;
+      state.schedules = state.schedules.filter(outsideTask);
+      state.samples = state.samples.filter(outsideTask);
+      state.streams = state.streams.filter(outsideTask);
+      state.experiments = state.experiments.filter(outsideTask);
+      state.experimentTrays = state.experimentTrays.filter(outsideTask);
+      state.experimentSamples = state.experimentSamples.filter(outsideTask);
       return Promise.resolve({
         ok: true,
         status: 204,
@@ -461,8 +598,9 @@ describe("TasksPage runtime", () => {
     expect(wrapper.findAll(".tasks-table__cell--status .status.waiting")).toHaveLength(2);
 
     await wrapper.get('input[placeholder="筛选任务编号/实验摘要/样品编号"]').setValue("SYLU-2026-03-001");
-
-    expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(1);
+    await vi.waitFor(() => {
+      expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(1);
+    });
     expect(wrapper.text()).toContain("SYLU-2026-03-001");
 
     await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
@@ -489,6 +627,84 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.get('[data-testid="task-edit-test-types-summary"]').text()).toContain("冲击试验（X+、Y+）");
+  });
+
+  test("keeps an open task detail out of the paged table when a search excludes it", async () => {
+    installApiFetchMock({
+      tasks: [
+        createTask({ id: "task-detail-1", code: "SYLU-2026-03-001" }),
+        createTask({ id: "task-detail-2", code: "SYLU-2026-03-002", name: "筛选保留任务" }),
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await settle(wrapper);
+
+    await wrapper.get("#task-list-search").setValue("SYLU-2026-03-002");
+    await vi.waitFor(() => {
+      const rows = wrapper.findAll("#task-table tbody tr");
+      expect(rows).toHaveLength(1);
+      expect(rows[0].text()).toContain("SYLU-2026-03-002");
+      expect(rows[0].text()).not.toContain("SYLU-2026-03-001");
+    });
+    expect(wrapper.get('[data-testid="task-detail-modal"]').text()).toContain("SYLU-2026-03-001");
+  });
+
+  test("keeps a task returned by server search when only its sample code matches", async () => {
+    installApiFetchMock({
+      tasks: [createTask({ id: "task-sample-search", code: "SYLU-2026-03-011" })],
+      samples: [
+        {
+          id: "sample-search-1",
+          code: "CUSTOM-SAMPLE-SEARCH-011",
+          task_code: "SYLU-2026-03-011",
+          status: "运输中",
+        },
+      ],
+    });
+
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+    await wrapper.get("#task-list-search").setValue("CUSTOM-SAMPLE-SEARCH-011");
+
+    await vi.waitFor(() => {
+      const rows = wrapper.findAll("#task-table tbody tr");
+      expect(rows).toHaveLength(1);
+      expect(rows[0].text()).toContain("SYLU-2026-03-011");
+    });
+  });
+
+  test("debounces rapid task searches into one page request", async () => {
+    vi.useFakeTimers();
+    try {
+      const { fetchMock } = installApiFetchMock({ tasks: [createTask()] });
+      const wrapper = mount(TasksPage);
+      await settle(wrapper);
+      const pageRequestCount = () => fetchMock.mock.calls.filter(
+        ([url, options]) => url.startsWith(`${TASKS_ENDPOINT}/page?`) && (options?.method ?? "GET") === "GET",
+      ).length;
+      expect(pageRequestCount()).toBe(1);
+
+      await wrapper.get("#task-list-search").setValue("S");
+      await wrapper.get("#task-list-search").setValue("SYLU");
+      await wrapper.get("#task-list-search").setValue("SYLU-2026-03-001");
+      expect(pageRequestCount()).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(249);
+      await settle(wrapper);
+      expect(pageRequestCount()).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await settle(wrapper);
+      expect(pageRequestCount()).toBe(2);
+      expect(fetchMock.mock.calls.some(
+        ([url]) => url.includes("query=SYLU-2026-03-001"),
+      )).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("shows five sample codes in task detail and edits sample codes in a separate modal", async () => {
@@ -755,16 +971,16 @@ describe("TasksPage runtime", () => {
     const sampleHeader = wrapper.get(".tasks-table__col--sample-count");
 
     await sampleHeader.trigger("click");
-    await settle(wrapper);
-
-    let rows = wrapper.findAll("#task-table tbody tr");
-    expect(rows.map((row) => row.get(".tasks-table__cell--sample-count").text())).toEqual(["2", "10"]);
+    await vi.waitFor(() => {
+      const rows = wrapper.findAll("#task-table tbody tr");
+      expect(rows.map((row) => row.get(".tasks-table__cell--sample-count").text())).toEqual(["2", "10"]);
+    });
 
     await sampleHeader.trigger("click");
-    await settle(wrapper);
-
-    rows = wrapper.findAll("#task-table tbody tr");
-    expect(rows.map((row) => row.get(".tasks-table__cell--sample-count").text())).toEqual(["10", "2"]);
+    await vi.waitFor(() => {
+      const rows = wrapper.findAll("#task-table tbody tr");
+      expect(rows.map((row) => row.get(".tasks-table__cell--sample-count").text())).toEqual(["10", "2"]);
+    });
   });
 
   test("uses compact side columns while prioritizing the experiment summary column", async () => {
@@ -889,20 +1105,21 @@ describe("TasksPage runtime", () => {
     await statusSelect().setValue("已排程");
     await settle(wrapper);
     await wrapper.get("#task-list-search").setValue("SYLU-2026-03-102");
-    await settle(wrapper);
-
+    await vi.waitFor(() => {
+      expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(1);
+    });
     let rows = wrapper.findAll("#task-table tbody tr");
-    expect(rows).toHaveLength(1);
     expect(rows[0].text()).toContain("SYLU-2026-03-102");
 
     await wrapper.get("#task-list-search").setValue("SYLU-2026-03-103");
-    await settle(wrapper);
-
-    rows = wrapper.findAll("#task-table tbody tr");
-    expect(rows).toHaveLength(0);
+    await vi.waitFor(() => {
+      expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(0);
+    });
 
     await wrapper.get("#task-list-search").setValue("");
-    await settle(wrapper);
+    await vi.waitFor(() => {
+      expect(wrapper.findAll("#task-table tbody tr").length).toBeGreaterThan(0);
+    });
     await typeSelect.setValue("霉菌试验");
     await settle(wrapper);
     expect(statusSelect().element.value).toBe("");
@@ -919,7 +1136,7 @@ describe("TasksPage runtime", () => {
     expect(rows).toHaveLength(2);
   });
 
-  test("loads tasks from the dedicated tasks api while reading related collections from storage snapshot", async () => {
+  test("loads the task page and related collections without reading the full storage snapshot", async () => {
     const { fetchMock } = installApiFetchMock({
       tasks: [
         createTask({
@@ -945,12 +1162,26 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("SYLU-2026-03-099");
     expect(wrapper.text()).toContain("温度冲击 / 振动 / 盐雾");
     expect(wrapper.text()).not.toContain("设备要求");
-    expect(fetchMock).toHaveBeenCalledWith(
-      `${TASKS_ENDPOINT}?includeArchived=true`,
-      expect.objectContaining({
-        credentials: "include",
-      }),
-    );
+    expect(fetchMock.mock.calls.some(
+      ([url, options]) => url.startsWith(`${TASKS_ENDPOINT}/page?`) && options?.credentials === "include",
+    )).toBe(true);
+    expect(fetchMock.mock.calls.some(
+      ([url, options]) => isStorageGetUrl(url) && (options?.method ?? "GET") === "GET",
+    )).toBe(false);
+    const supportingRequestCount = () => fetchMock.mock.calls.filter(
+      ([url]) => url === `${TASKS_ENDPOINT}/external-intakes?status=pending` || url === MASTER_TEST_TYPES_ENDPOINT,
+    ).length;
+    expect(supportingRequestCount()).toBe(2);
+
+    await wrapper.get("#task-list-filter-test-type").setValue("冲击试验");
+    await settle(wrapper);
+    await wrapper.get(".tasks-table__col--sample-count").trigger("click");
+    await settle(wrapper);
+
+    expect(supportingRequestCount()).toBe(2);
+    expect(fetchMock.mock.calls.some(
+      ([url, options]) => url === `${TASKS_ENDPOINT}?includeArchived=true` && (options?.method ?? "GET") === "GET",
+    )).toBe(false);
   });
 
   test("renders partial experiment completion as running with a completed count suffix", async () => {
@@ -1251,12 +1482,12 @@ describe("TasksPage runtime", () => {
       await wrapper.get('[data-testid="task-submit"]').trigger("click");
       await settle(wrapper);
 
-      expect(fetchMock).toHaveBeenCalledWith(
-        `${TASKS_ENDPOINT}?includeArchived=true`,
-        expect.objectContaining({
-          credentials: "include",
-        }),
-      );
+      expect(fetchMock.mock.calls.some(
+        ([url, options]) => url.startsWith(`${TASKS_ENDPOINT}/next-code?`) && options?.credentials === "include",
+      )).toBe(true);
+      expect(fetchMock.mock.calls.some(
+        ([url, options]) => url === `${TASKS_ENDPOINT}?includeArchived=true` && (options?.method ?? "GET") === "GET",
+      )).toBe(false);
       expect(state.tasks[0]).toEqual(
         expect.objectContaining({
           code: "SYLU-2026-05-002",
@@ -1378,7 +1609,7 @@ describe("TasksPage runtime", () => {
     expect(drawerArrivalInput.element.readOnly).toBe(true);
   });
 
-  test("submits tasks through the dedicated tasks api and only persists dependent collections through storage", async () => {
+  test("submits the complete task through the dedicated api without writing a partial storage snapshot", async () => {
     const { fetchMock } = installApiFetchMock({
       tasks: [],
       samples: [],
@@ -1416,13 +1647,9 @@ describe("TasksPage runtime", () => {
       }),
     );
 
-    const storageWriteCall = fetchMock.mock.calls.find(
+    expect(fetchMock.mock.calls.some(
       ([url, options]) => url === STORAGE_ENDPOINT && options?.method === "PUT",
-    );
-    expect(storageWriteCall).toBeTruthy();
-    expect(JSON.parse(storageWriteCall[1].body)).toEqual({
-      [SAMPLES_KEY]: expect.any(Array),
-    });
+    )).toBe(false);
   });
 
   test("edits task experiment types through the same multi-select picker and saves only type names", async () => {
@@ -2200,49 +2427,10 @@ describe("TasksPage runtime", () => {
 
   test("keeps the created task visible when creation succeeds but the follow-up reload fails", async () => {
     window.location.hash = "#task-intake-modal";
-    let taskReloadFailed = false;
-    const fetchMock = vi.fn((url, options = {}) => {
-      const method = options.method ?? "GET";
-      if (url === TASKS_ENDPOINT && method === "GET") {
-        if (taskReloadFailed) {
-          return Promise.reject(new Error("reload failed"));
-        }
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => [createTask()],
-        });
-      }
-      if (url === TASKS_ENDPOINT && method === "POST") {
-        taskReloadFailed = true;
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => JSON.parse(options.body ?? "{}"),
-        });
-      }
-      if (isStorageGetUrl(url) && method === "GET") {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({
-            [SCHEDULES_KEY]: [],
-            [SAMPLES_KEY]: [],
-            [STREAMS_KEY]: [],
-            [EXPERIMENTS_KEY]: [],
-          }),
-        });
-      }
-      if (url === STORAGE_ENDPOINT && method === "PUT") {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({ ok: true }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected request: ${method} ${url}`));
+    const { fetchMock } = installApiFetchMock({
+      tasks: [createTask()],
+      failTaskPageAfterCreate: true,
     });
-    vi.stubGlobal("fetch", fetchMock);
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
@@ -2261,6 +2449,9 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain(buildCurrentMonthFirstTaskCode());
     expect(wrapper.find(".modal.is-open").exists()).toBe(false);
     expect(wrapper.text()).toContain("任务列表刷新失败");
+    expect(fetchMock.mock.calls.some(
+      ([url, options]) => url === STORAGE_ENDPOINT && options?.method === "PUT",
+    )).toBe(false);
   });
 
   test("requires at least one selected experiment before submitting a non-pristine intake form", async () => {
@@ -2568,46 +2759,38 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).toContain("SYLU-2026-07-021");
   });
 
-  test("sample update event reloads tasks and refreshes the open detail modal arrival time", async () => {
-    let taskLoadCount = 0;
-    const fetchMock = vi.fn((url) => {
-      if (url === `${TASKS_ENDPOINT}?includeArchived=true`) {
-        taskLoadCount += 1;
-        return Promise.resolve({
-          ok: true,
-          json: async () =>
-            taskLoadCount === 1
-              ? [
-                  createTask({
-                    sample_count: 2,
-                    arrival_at: "",
-                    due_at: "",
-                    created_at: "2026-03-18T08:00:00.000Z",
-                  }),
-                ]
-              : [
-                  createTask({
-                    sample_count: 2,
-                    arrival_at: "2026-03-18 09:14:45",
-                    due_at: "",
-                    created_at: "2026-03-18T08:00:00.000Z",
-                  }),
-                ],
-        });
-      }
-      if (isStorageGetUrl(url)) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            [SCHEDULES_KEY]: [],
-            [SAMPLES_KEY]: [],
-            [STREAMS_KEY]: [],
-          }),
-        });
-      }
-      return Promise.reject(new Error(`unexpected url: ${url}`));
+  test("refreshes pending external tasks when the acceptance dialog is opened", async () => {
+    const { state } = installApiFetchMock({ externalTaskIntakes: [] });
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+    expect(wrapper.get("#task-external-count").text()).not.toContain("待确认：1");
+
+    state.externalTaskIntakes.push({
+      id: "LIMS-REFRESH-001",
+      intake_id: "LIMS-REFRESH-001",
+      code: "SYLU-2026-08-021",
+      name: "延后到达的外部委托",
+      acceptance_status: "pending",
     });
-    vi.stubGlobal("fetch", fetchMock);
+    window.dispatchEvent(new CustomEvent("mes:open-external-task-intake"));
+
+    await vi.waitFor(() => {
+      expect(wrapper.get('[data-testid="external-task-intake-list"]').text()).toContain("SYLU-2026-08-021");
+      expect(wrapper.get("#task-external-count").text()).toContain("待确认：1");
+    });
+  });
+
+  test("sample update event reloads tasks and refreshes the open detail modal arrival time", async () => {
+    const { state } = installApiFetchMock({
+      tasks: [
+        createTask({
+          sample_count: 2,
+          arrival_at: "",
+          due_at: "",
+          created_at: "2026-03-18T08:00:00.000Z",
+        }),
+      ],
+    });
 
     const wrapper = mount(TasksPage);
     await settle(wrapper);
@@ -2618,6 +2801,7 @@ describe("TasksPage runtime", () => {
     const arrivalInput = () => wrapper.find('[data-testid="task-detail-modal"] input[name="arrival_at"]');
     expect(arrivalInput().element.value).toBe("");
 
+    state.tasks[0].arrival_at = "2026-03-18 09:14:45";
     window.dispatchEvent(new CustomEvent("mes:samples-updated"));
     await settle(wrapper);
 

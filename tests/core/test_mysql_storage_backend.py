@@ -4427,6 +4427,154 @@ def test_write_task_scope_updates_only_target_task_collections(monkeypatch) -> N
     assert connection.commit_count == 1
 
 
+def test_write_task_scope_empty_task_collection_deletes_only_selected_task(monkeypatch) -> None:
+    class CaptureCursor:
+        def __init__(self):
+            self.executed = []
+
+        def execute(self, sql, params=None):
+            self.executed.append((" ".join(sql.split()), list(params or [])))
+
+        def fetchall(self):
+            return []
+
+    class CaptureConnection:
+        def __init__(self):
+            self.cursor_instance = CaptureCursor()
+            self.commit_count = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            cursor = self.cursor_instance
+
+            class Context:
+                def __enter__(self):
+                    return cursor
+
+                def __exit__(self, exc_type, exc, tb):
+                    return False
+
+            return Context()
+
+        def commit(self):
+            self.commit_count += 1
+
+        def rollback(self):
+            raise AssertionError("scoped delete should not roll back")
+
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    connection = CaptureConnection()
+    monkeypatch.setattr(backend, "_ensure_schema_extensions", lambda: None)
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+    monkeypatch.setattr(backend, "_replace_tasks", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(backend, "_replace_task_samples", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(backend, "_replace_task_experiments", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(backend, "_delete_task_experiment_samples", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(backend, "_insert_task_experiment_samples", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(backend, "_backfill_schedule_task_ids", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(backend, "_sync_progress_statuses", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(mysql_storage_backend_module, "replace_task_workflow_relations", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(mysql_storage_backend_module, "replace_task_streams", lambda *_args, **_kwargs: None)
+
+    backend.write_task_scope(
+        {
+            "mes.tasks": [],
+            "mes.samples": [],
+            "mes.experiments": [],
+            "mes.experiment_samples": [],
+            "mes.schedules": [],
+            "mes.experiment_runs": [],
+            "mes.experiment_run_trays": [],
+            "mes.experiment_run_steps": [],
+            "mes.experiment_trays": [],
+            "mes.streams": [],
+        },
+        task_codes={"TASK-TARGET"},
+    )
+
+    task_deletes = [item for item in connection.cursor_instance.executed if item[0].startswith("DELETE FROM biz_task")]
+    assert task_deletes == [
+        ("DELETE FROM biz_task WHERE task_no IN (%s) AND source_system = %s", ["TASK-TARGET", STORAGE_MARKER])
+    ]
+    assert connection.commit_count == 1
+
+
+def test_task_mutation_uniqueness_checks_use_targeted_sql(monkeypatch) -> None:
+    class QueryCursor:
+        def __init__(self):
+            self.sql = ""
+            self.params = []
+            self.executed = []
+
+        def execute(self, sql, params=None):
+            self.sql = " ".join(sql.split())
+            self.params = list(params or [])
+            self.executed.append((self.sql, self.params))
+
+        def fetchone(self):
+            if "FROM biz_tray AS tray" in self.sql:
+                return {"task_no": "TASK-TRAY"}
+            return {"exists": 1} if "FROM biz_task WHERE task_no" in self.sql else None
+
+        def fetchall(self):
+            if "SELECT task_name" in self.sql:
+                return [{"task_name": "测试实验00001"}, {"task_name": "测试实验00001-2"}]
+            if "SELECT sample.sample_no" in self.sql:
+                return [{"sample_no": "SAMPLE-DUPLICATE"}]
+            return []
+
+    class QueryConnection:
+        def __init__(self):
+            self.cursor_instance = QueryCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            cursor = self.cursor_instance
+
+            class Context:
+                def __enter__(self):
+                    return cursor
+
+                def __exit__(self, exc_type, exc, tb):
+                    return False
+
+            return Context()
+
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    connection = QueryConnection()
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+
+    assert backend.task_code_exists("TASK-001", exclude_task_code="TASK-OLD") is True
+    assert backend.find_task_names_by_prefix("测试实验00001") == {"测试实验00001", "测试实验00001-2"}
+    assert backend.find_existing_sample_codes(
+        {"SAMPLE-DUPLICATE", "SAMPLE-NEW"},
+        exclude_task_code="TASK-001",
+    ) == {"SAMPLE-DUPLICATE"}
+    assert backend.find_task_code_by_tray("TRAY-001") == "TASK-TRAY"
+
+    assert connection.cursor_instance.executed[0][1] == ["TASK-001", "TASK-OLD"]
+    assert "sample.sample_no IN (%s, %s)" in connection.cursor_instance.executed[2][0]
+    assert connection.cursor_instance.executed[2][1] == ["SAMPLE-DUPLICATE", "SAMPLE-NEW", "TASK-001"]
+    assert "WHERE tray.tray_no = %s" in connection.cursor_instance.executed[3][0]
+    assert connection.cursor_instance.executed[3][1] == ["TRAY-001"]
+
+
 def test_write_task_allocation_scope_filters_every_collection_to_target_task(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),

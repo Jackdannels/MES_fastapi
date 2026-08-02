@@ -4,7 +4,6 @@ import { serverNowDate, serverNowMs } from "@/lib/serverClock";
 import { useRoute } from "vue-router";
 
 import { useDialogState } from "@/composables/useDialogState";
-import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes } from "@/lib/experimentTypes";
 import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { TEST_PREFIX_MAP } from "@/lib/labs";
@@ -13,6 +12,10 @@ import { notifyStorageSnapshotUpdated } from "@/lib/storageApi";
 import {
   acceptExternalTaskIntake as acceptExternalTaskIntakeByApi,
   createTask,
+  readExternalTaskIntakes,
+  readNextTaskCode,
+  readTaskDetail,
+  readTaskPage,
   resetTasks as resetTasksByApi,
 } from "@/lib/tasksApi";
 import {
@@ -31,14 +34,11 @@ import {
   normalizeAxisCodesByTestType,
   normalizeText,
   normalizeTaskSampleCount,
-  syncTaskSamples,
   validateTaskSampleCount,
   validateTaskTextFields,
 } from "./model";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { useTasksTableView } from "./useTasksTableView";
 import { useTaskExperimentPickers } from "./useTaskExperimentPickers";
-import { useTasksPersistence } from "./useTasksPersistence";
 import { useTasksRealtime } from "./useTasksRealtime";
 import { useTaskMutationWorkflow } from "./useTaskMutationWorkflow";
 
@@ -85,18 +85,6 @@ const taskSampleCountLocked = (task, samples) => (
 // 将存储快照与弹窗、抽屉、表格状态连接起来，供任务页统一使用。
 function useTasksPage() {
   const route = useRoute();
-  const { loadSnapshot, persistSnapshot } = useStorageSnapshot([
-    STORAGE_KEYS.tasks,
-    STORAGE_KEYS.external_task_intakes,
-    STORAGE_KEYS.schedules,
-    STORAGE_KEYS.samples,
-    STORAGE_KEYS.streams,
-    STORAGE_KEYS.experiments,
-    STORAGE_KEYS.experiment_trays,
-    STORAGE_KEYS.experiment_samples,
-    STORAGE_KEYS.experiment_runs,
-    STORAGE_KEYS.experiment_run_trays,
-  ]);
 
   const rawTasks = ref([]);
   const rawExternalTaskIntakes = ref([]);
@@ -136,6 +124,10 @@ function useTasksPage() {
   const savedIntakeDraft = ref(null);
   const selectedTestType = ref("");
   const selectedStatus = ref("");
+  const taskServerMetrics = ref({});
+  const taskServerPageCount = ref(1);
+  const taskServerStatusOptions = ref([]);
+  const taskServerTestTypeOptions = ref([]);
 
   const intakeModal = useDialogState();
   const intakeExperimentModal = useDialogState();
@@ -148,6 +140,13 @@ function useTasksPage() {
   const externalAcceptanceModal = useDialogState();
   const taskDrawer = useDialogState();
   let resetFeedbackTimer = null;
+  let nextTaskCodeRequest = 0;
+  const nextTaskCodeCache = new Map();
+  let taskSearchRefreshTimer = 0;
+  let queryPageResetPending = false;
+  let taskDetailRequest = 0;
+  let taskScopeRequest = 0;
+  let taskPageRequest = 0;
 
   const {
     currentPage,
@@ -168,6 +167,11 @@ function useTasksPage() {
     rawSamples,
     rawSchedules,
     rawTasks,
+    serverMetrics: taskServerMetrics,
+    serverPageCount: taskServerPageCount,
+    serverPagination: true,
+    serverStatusOptions: taskServerStatusOptions,
+    serverTestTypeOptions: taskServerTestTypeOptions,
     selectedStatus,
     selectedTestType,
   });
@@ -249,6 +253,28 @@ function useTasksPage() {
     return Boolean(task && taskStorageConfirmed(task, rawSamples.value));
   });
 
+  const refreshNextTaskCode = async () => {
+    const requestId = ++nextTaskCodeRequest;
+    const reference = String(
+      intakeForm.value.due_at || intakeForm.value.arrival_at || serverNowDate().toISOString(),
+    );
+    const cachedCode = nextTaskCodeCache.get(reference);
+    if (cachedCode) {
+      intakeForm.value.code = cachedCode;
+      return;
+    }
+    try {
+      const code = await readNextTaskCode(reference);
+      if (requestId === nextTaskCodeRequest && code) {
+        nextTaskCodeCache.set(reference, code);
+        intakeForm.value.code = code;
+      }
+    } catch (_error) {
+      // Keep the immediate page-local preview. The create API still performs the
+      // authoritative uniqueness check if the sequence changes concurrently.
+    }
+  };
+
   const syncIntakeDerivedFields = () => {
     intakeForm.value.test_type = intakeExperimentPlainSummary.value;
     // 任务编号统一按 SYLU-年月-序号生成，月份优先跟随期望完成时间。
@@ -258,6 +284,7 @@ function useTasksPage() {
       intakeForm.value.due_at || intakeForm.value.arrival_at || serverNowDate(),
     );
     intakeForm.value.code = nextCode;
+    void refreshNextTaskCode();
   };
 
   const resetIntakeForm = () => {
@@ -402,15 +429,77 @@ function useTasksPage() {
     flushPendingRealtimeRefresh();
   };
 
-  const openTaskDrawer = (row) => {
+  const replaceTaskScopedRows = (targetRef, rows, taskCode) => {
+    if (!Array.isArray(rows)) {
+      return;
+    }
+    const normalizedTaskCode = normalizeText(taskCode);
+    const retained = targetRef.value.filter((entry) => taskCodeOf(entry) !== normalizedTaskCode);
+    targetRef.value = [...retained, ...rows];
+  };
+
+  const applyTaskDetailPayload = (payload, taskCode) => {
+    const safePayload = payload && typeof payload === "object" ? payload : {};
+    const taskExistsOnPage = rawTasks.value.some((entry) => taskCodeOf(entry) === normalizeText(taskCode));
+    if (taskExistsOnPage && safePayload.task && typeof safePayload.task === "object") {
+      replaceTaskScopedRows(rawTasks, [safePayload.task], taskCode);
+    }
+    replaceTaskScopedRows(rawSamples, safePayload.samples, taskCode);
+    replaceTaskScopedRows(rawExperiments, safePayload.experiments, taskCode);
+    replaceTaskScopedRows(rawSchedules, safePayload.schedules, taskCode);
+    replaceTaskScopedRows(rawExperimentTrays, safePayload.experimentTrays, taskCode);
+    replaceTaskScopedRows(rawExperimentSamples, safePayload.experimentSamples, taskCode);
+    replaceTaskScopedRows(rawExperimentRuns, safePayload.experimentRuns, taskCode);
+    replaceTaskScopedRows(rawExperimentRunTrays, safePayload.experimentRunTrays, taskCode);
+  };
+
+  const loadTaskDetailScope = async (taskCode) => {
+    const scopeRequest = ++taskScopeRequest;
+    const payload = await readTaskDetail(taskCode);
+    if (scopeRequest !== taskScopeRequest) {
+      return null;
+    }
+    applyTaskDetailPayload(payload, taskCode);
+    const safePayload = payload && typeof payload === "object" ? payload : {};
+    const detailRows = safePayload.task
+      ? buildTaskRows(
+        [safePayload.task],
+        Array.isArray(safePayload.schedules) ? safePayload.schedules : [],
+        Array.isArray(safePayload.samples) ? safePayload.samples : [],
+        Array.isArray(safePayload.experiments) ? safePayload.experiments : [],
+      )
+      : [];
+    return detailRows[0];
+  };
+
+  const openTaskDrawer = async (row) => {
+    const detailRequest = ++taskDetailRequest;
     refreshEditDueAtMin();
     editForm.value = buildTaskEditForm(row);
     editWarning.value = "";
     sampleCodesWarning.value = "";
     taskDrawer.openWith(row);
+    try {
+      const detailedRow = await loadTaskDetailScope(row.code);
+      const selectedTaskCode = normalizeText(taskDrawer.payload.value?.code || editForm.value.code);
+      if (
+        detailedRow
+        && detailRequest === taskDetailRequest
+        && taskDrawer.open.value
+        && selectedTaskCode === normalizeText(row.code)
+        && !isTaskEditFormDirty()
+      ) {
+        taskDrawer.openWith(detailedRow);
+        editForm.value = buildTaskEditForm(detailedRow);
+      }
+    } catch (error) {
+      editWarning.value = buildFailureMessage("任务详情加载失败，请稍后重试", error);
+    }
   };
 
   const closeTaskDrawer = () => {
+    taskDetailRequest += 1;
+    taskScopeRequest += 1;
     taskDrawer.close();
     editExperimentModal.close();
     editAxisModal.close();
@@ -502,6 +591,16 @@ function useTasksPage() {
 
   const handleOpenExternalTaskIntake = () => {
     openExternalAcceptanceModal();
+    // Pending LIMS intakes can arrive long after this page was mounted. Refresh
+    // only that lightweight collection when the user opens the dialog, while
+    // preserving the last known list if the request temporarily fails.
+    void readExternalTaskIntakes()
+      .then((externalIntakes) => {
+        if (Array.isArray(externalIntakes)) {
+          rawExternalTaskIntakes.value = externalIntakes;
+        }
+      })
+      .catch(() => {});
   };
 
   const buildFailureMessage = (prefix, error) => {
@@ -518,6 +617,9 @@ function useTasksPage() {
     externalAcceptanceError.value = "";
     try {
       await acceptExternalTaskIntakeByApi(intakeId);
+      rawExternalTaskIntakes.value = rawExternalTaskIntakes.value.filter(
+        (entry) => normalizeText(entry?.intakeId || entry?.intake_id || entry?.id) !== intakeId,
+      );
       selectedExternalTaskIntake.value = null;
       await loadTasksPage();
     } catch (error) {
@@ -581,24 +683,6 @@ function useTasksPage() {
     };
   };
 
-  const resetSamplesForExperimentTypeChange = (samples, taskCode) =>
-    (Array.isArray(samples) ? samples : []).map((sample) => {
-      if (taskCodeOf(sample) !== taskCode) {
-        return sample;
-      }
-      const history = Array.isArray(sample?.history)
-        ? sample.history.filter((entry) => !["样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"].includes(normalizeText(entry?.action)))
-        : sample?.history;
-      return {
-        ...sample,
-        status: "运输中",
-        flow_status: "运输中",
-        location: "",
-        trays: [],
-        ...(Array.isArray(sample?.history) ? { history } : {}),
-      };
-    });
-
   const clearResetFeedbackTimer = () => {
     if (resetFeedbackTimer) {
       window.clearTimeout(resetFeedbackTimer);
@@ -632,23 +716,6 @@ function useTasksPage() {
   };
 
   const {
-    applySnapshotArray,
-    buildSnapshotFallback,
-    persistRelated,
-    readAllTasks,
-  } = useTasksPersistence({
-    persistSnapshot,
-    rawExperimentRunTrays,
-    rawExperimentRuns,
-    rawExperimentSamples,
-    rawExperimentTrays,
-    rawExperiments,
-    rawExternalTaskIntakes,
-    rawSamples,
-    rawSchedules,
-    rawStreams,
-  });
-  const {
     closeScheduledExperimentRemovalConfirm,
     confirmScheduledExperimentRemoval,
     deleteTask,
@@ -661,23 +728,17 @@ function useTasksPage() {
     closeTaskDrawer,
     editForm,
     editWarning,
-    experimentCodeOf,
     isTaskDetailLocked,
     loadError,
     loadTasksPage: (...args) => loadTasksPage(...args),
-    persistRelated,
     rawExperimentRuns,
     rawExperimentRunTrays,
     rawExperiments,
-    rawExperimentSamples,
-    rawExperimentTrays,
     rawSamples,
     rawSchedules,
     rawStreams,
     rawTasks,
-    readAllTasks,
     resolveScheduledExperimentRemoval,
-    resetSamplesForExperimentTypeChange,
     sampleCodesDraft,
     sampleCodesWarning,
     sampleCountChanged,
@@ -710,11 +771,10 @@ function useTasksPage() {
     }
 
     const nextTask = createTaskRecord(intakeForm.value, rawTasks.value);
-    // 任务创建后立即同步样品编号，保持任务与样品侧数据一致。
-    const nextSamples = syncTaskSamples(rawSamples.value, nextTask);
     try {
       await createTask(nextTask);
       rawTasks.value = [nextTask, ...rawTasks.value];
+      nextTaskCodeCache.clear();
       savedIntakeDraft.value = null;
       closeIntakeModal();
       resetIntakeForm();
@@ -724,17 +784,11 @@ function useTasksPage() {
     }
 
     try {
-      await persistRelated({
-        [STORAGE_KEYS.samples]: nextSamples,
-      });
-    } catch (error) {
-      loadError.value = buildFailureMessage("任务已创建，但关联数据保存失败，请刷新后确认", error);
-      return;
-    }
-
-    try {
-      rawTasks.value = await readAllTasks();
-      loadError.value = "";
+      currentPage.value = 1;
+      await loadTasksPage();
+      if (loadError.value) {
+        loadError.value = "任务已创建，但任务列表刷新失败，请刷新后确认";
+      }
     } catch (error) {
       loadError.value = buildFailureMessage("任务已创建，但任务列表刷新失败，请刷新后确认", error);
     }
@@ -762,7 +816,7 @@ function useTasksPage() {
     try {
       const summary = await resetTasksByApi();
       resetModal.close();
-      notifyStorageSnapshotUpdated(buildSnapshotFallback(), { source: "tasks", reason: "reset" });
+      notifyStorageSnapshotUpdated({}, { source: "tasks", reason: "reset" });
       await loadTasksPage();
       showResetFeedback(`任务数据已重置，共重建 ${summary.task_count} 个任务。`);
     } catch (error) {
@@ -773,40 +827,75 @@ function useTasksPage() {
   };
 
   const loadTasksPage = async () => {
+    const pageRequest = ++taskPageRequest;
     try {
-      const [tasks, snapshot, testTypes] = await Promise.all([
-        readAllTasks(),
-        loadSnapshot({ fallbackSnapshot: buildSnapshotFallback() }),
-        readMasterTestTypes().catch(() => []),
-      ]);
-      rawTasks.value = Array.isArray(tasks) ? tasks : [];
-      applySnapshotArray(snapshot, STORAGE_KEYS.external_task_intakes, rawExternalTaskIntakes);
-      applySnapshotArray(snapshot, STORAGE_KEYS.schedules, rawSchedules);
-      applySnapshotArray(snapshot, STORAGE_KEYS.samples, rawSamples);
-      applySnapshotArray(snapshot, STORAGE_KEYS.streams, rawStreams);
-      applySnapshotArray(snapshot, STORAGE_KEYS.experiments, rawExperiments);
-      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, rawExperimentTrays);
-      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_samples, rawExperimentSamples);
-      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_runs, rawExperimentRuns);
-      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_trays, rawExperimentRunTrays);
-      masterTestTypes.value = Array.isArray(testTypes) ? testTypes : [];
+      const payload = await readTaskPage({
+        page: currentPage.value,
+        pageSize: 8,
+        query: query.value,
+        sortDirection: sortDirection.value,
+        sortKey: sortKey.value,
+        status: selectedStatus.value,
+        testType: selectedTestType.value,
+      });
+      if (pageRequest !== taskPageRequest) {
+        return;
+      }
+      const safePayload = payload && typeof payload === "object" ? payload : {};
+      if (Array.isArray(safePayload.tasks)) rawTasks.value = safePayload.tasks;
+      if (Array.isArray(safePayload.samples)) rawSamples.value = safePayload.samples;
+      if (Array.isArray(safePayload.experiments)) rawExperiments.value = safePayload.experiments;
+      if (Array.isArray(safePayload.schedules)) rawSchedules.value = safePayload.schedules;
+      rawStreams.value = [];
+      rawExperimentTrays.value = [];
+      rawExperimentSamples.value = [];
+      rawExperimentRuns.value = [];
+      rawExperimentRunTrays.value = [];
+      taskServerPageCount.value = Math.max(1, Number(safePayload.totalPages || 1));
+      taskServerMetrics.value = safePayload.metrics && typeof safePayload.metrics === "object" ? safePayload.metrics : {};
+      taskServerStatusOptions.value = Array.isArray(safePayload.statusOptions) ? safePayload.statusOptions : [];
+      taskServerTestTypeOptions.value = Array.isArray(safePayload.testTypeOptions) ? safePayload.testTypeOptions : [];
+      const responsePage = Number.parseInt(String(safePayload.currentPage || currentPage.value), 10);
+      if (Number.isFinite(responsePage) && responsePage > 0 && responsePage !== currentPage.value) {
+        currentPage.value = responsePage;
+      }
       loadError.value = "";
       if (taskDrawer.open.value) {
         const selectedTaskCode = normalizeText(taskDrawer.payload.value?.code || editForm.value.code);
-        const selectedRow = buildTaskRows(rawTasks.value, rawSchedules.value, rawSamples.value, rawExperiments.value).find(
-          (row) => normalizeText(row?.code) === selectedTaskCode,
-        );
-        if (selectedRow) {
+        const editWasDirty = isTaskEditFormDirty();
+        const selectedRow = await loadTaskDetailScope(selectedTaskCode);
+        const currentTaskCode = normalizeText(taskDrawer.payload.value?.code || editForm.value.code);
+        if (
+          selectedRow
+          && taskDrawer.open.value
+          && currentTaskCode === selectedTaskCode
+          && !editWasDirty
+          && !isTaskEditFormDirty()
+        ) {
           taskDrawer.openWith(selectedRow);
           editForm.value = buildTaskEditForm(selectedRow);
           editWarning.value = "";
         }
       }
     } catch (error) {
-      loadError.value = buildFailureMessage("任务数据加载失败，请检查网络后重试", error);
+      if (pageRequest === taskPageRequest) {
+        loadError.value = buildFailureMessage("任务数据加载失败，请检查网络后重试", error);
+      }
+    }
+    if (pageRequest !== taskPageRequest) {
+      return;
     }
     syncIntakeDerivedFields();
     syncModalWithHash(typeof window !== "undefined" ? window.location.hash : route.hash || "");
+  };
+
+  const loadTaskSupportingData = async () => {
+    const [externalIntakes, testTypes] = await Promise.all([
+      readExternalTaskIntakes().catch(() => []),
+      readMasterTestTypes().catch(() => []),
+    ]);
+    rawExternalTaskIntakes.value = Array.isArray(externalIntakes) ? externalIntakes : [];
+    masterTestTypes.value = Array.isArray(testTypes) ? testTypes : [];
   };
 
   const isTaskEditFormDirty = () => {
@@ -819,6 +908,8 @@ function useTasksPage() {
     return [
       "name",
       "source",
+      "contact",
+      "contact_info",
       "priority",
       "sample_count",
       "sample_type",
@@ -829,6 +920,13 @@ function useTasksPage() {
       || currentTypes.some((type, index) => type !== baselineTypes[index]);
   };
 
+  const refreshTasksPage = async (keys = []) => {
+    await loadTasksPage();
+    if (Array.isArray(keys) && keys.includes("mes.external_task_intakes")) {
+      await loadTaskSupportingData();
+    }
+  };
+
   const { flushPendingRealtimeRefresh } = useTasksRealtime({
     editAxisModal,
     editExperimentModal,
@@ -836,7 +934,7 @@ function useTasksPage() {
     intakeExperimentModal,
     intakeModal,
     isTaskEditFormDirty,
-    loadTasksPage,
+    loadTasksPage: refreshTasksPage,
     resetModal,
     sampleCodesModal,
     scheduledExperimentRemovalModal,
@@ -865,13 +963,32 @@ function useTasksPage() {
     },
   );
 
-  watch([selectedStatus, selectedTestType], () => {
-    // 过滤条件变化时回到第一页，避免当前页码失效。
+  const scheduleTaskPageRefresh = () => {
+    void loadTasksPage();
+  };
+
+  watch(query, () => {
+    queryPageResetPending = currentPage.value !== 1;
     currentPage.value = 1;
+    window.clearTimeout(taskSearchRefreshTimer);
+    taskSearchRefreshTimer = window.setTimeout(scheduleTaskPageRefresh, 250);
+  });
+
+  watch([selectedStatus, selectedTestType], () => {
+    currentPage.value = 1;
+    scheduleTaskPageRefresh();
+  });
+
+  watch([currentPage, sortKey, sortDirection], () => {
+    if (queryPageResetPending) {
+      queryPageResetPending = false;
+      return;
+    }
+    scheduleTaskPageRefresh();
   });
 
   watch(selectedTestType, () => {
-    if (selectedStatus.value && !scopedStatusOptions.value.includes(selectedStatus.value)) {
+    if (selectedStatus.value) {
       selectedStatus.value = "";
     }
   });
@@ -886,6 +1003,7 @@ function useTasksPage() {
 
   onMounted(() => {
     void loadTasksPage();
+    void loadTaskSupportingData();
     window.addEventListener("hashchange", handleHashChange);
     window.addEventListener("mes:open-task-intake", handleOpenTaskIntake);
     window.addEventListener(EXTERNAL_TASK_INTAKE_EVENT, handleOpenExternalTaskIntake);
@@ -895,6 +1013,7 @@ function useTasksPage() {
 
   onBeforeUnmount(() => {
     clearResetFeedbackTimer();
+    window.clearTimeout(taskSearchRefreshTimer);
     window.removeEventListener("hashchange", handleHashChange);
     window.removeEventListener("mes:open-task-intake", handleOpenTaskIntake);
     window.removeEventListener(EXTERNAL_TASK_INTAKE_EVENT, handleOpenExternalTaskIntake);

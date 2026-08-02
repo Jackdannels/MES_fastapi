@@ -5085,6 +5085,101 @@ describe("LaboratoryPage runtime", () => {
     expect(attendanceLogoutCalls()).toHaveLength(1);
   });
 
+  test("hides the completion button while waiting for delayed MQTT confirmation", async () => {
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.experiments] = snapshotState[STORAGE_KEYS.experiments].map((experiment) =>
+      experiment.experiment_code === "SYLU-2026-04-101-A"
+        ? { ...experiment, status: "实验进行中" }
+        : experiment,
+    );
+    snapshotState[STORAGE_KEYS.experiment_trays] = [
+      { task_code: "SYLU-2026-04-101", experiment_code: "SYLU-2026-04-101-A", tray_code: "TP-001" },
+    ];
+    snapshotState[STORAGE_KEYS.samples] = [
+      {
+        code: "SYLU-2026-04-101-SP-001",
+        location: "盐雾试验室",
+        owner: "王工",
+        status: "实验进行中",
+        flow_status: "实验进行中",
+        task_code: "SYLU-2026-04-101",
+        trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-001" }],
+      },
+    ];
+    snapshotState[STORAGE_KEYS.schedules] = [
+      {
+        id: "schedule-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        start_at: "2026-04-02T09:59:58.000Z",
+        end_at: "2026-04-02T10:30:00.000Z",
+        status: "实验进行中",
+      },
+    ];
+    snapshotState[STORAGE_KEYS.experiment_runs] = [
+      {
+        id: "run-1",
+        run_no: "run-1",
+        schedule_id: "schedule-1",
+        task_code: "SYLU-2026-04-101",
+        experiment_code: "SYLU-2026-04-101-A",
+        device: "盐雾试验室",
+        tray_codes: ["TP-001"],
+        status: "实验进行中",
+        started_at: "2026-04-02T09:59:58.000Z",
+        planned_end_at: "2026-04-02T10:30:00.000Z",
+      },
+    ];
+    await mountPage();
+
+    const defaultFetch = fetch.getMockImplementation();
+    fetch.mockImplementation(async (input, options = {}) => {
+      if (String(input).includes("/api/mq/laboratory/end-request")) {
+        return { ok: true, status: 200, json: async () => ({ ok: true, published: true }) };
+      }
+      return defaultFetch(input, options);
+    });
+
+    document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPageUpdates(10);
+
+    expect(laboratoryEndRequestCalls()).toHaveLength(1);
+    expect(document.body.querySelector('[data-testid="laboratory-complete-experiment"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-completion-awaiting-confirmation"]')?.textContent || "")
+      .toContain("正在发送结束命令");
+
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPageUpdates();
+    expect(document.body.querySelector('[data-testid="laboratory-complete-experiment"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-completion-awaiting-confirmation"]')?.textContent || "")
+      .toContain("等待上位机确认");
+
+    snapshotState = {
+      ...snapshotState,
+      [STORAGE_KEYS.samples]: snapshotState[STORAGE_KEYS.samples].map((sample) => ({
+        ...sample,
+        flow_status: "实验已完成",
+        status: "实验已完成",
+        trays: sample.trays.map((tray) => ({ ...tray, status: "实验已完成" })),
+      })),
+      [STORAGE_KEYS.experiment_runs]: snapshotState[STORAGE_KEYS.experiment_runs].map((run) => ({
+        ...run,
+        ended_at: "2026-04-02T10:00:00.500Z",
+        status: "实验已完成",
+      })),
+    };
+    const expectedStorageGetCalls = storageGetCalls().length + 1;
+    window.dispatchEvent(new CustomEvent(SNAPSHOT_UPDATED_EVENT, {
+      detail: { keys: [STORAGE_KEYS.samples, STORAGE_KEYS.experiment_runs] },
+    }));
+    await waitForStorageGetCount(expectedStorageGetCalls, { advanceStorageDebounce: true });
+    await flushPageUpdates();
+
+    expect(document.body.querySelector('[data-testid="laboratory-completion-awaiting-confirmation"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已完成");
+  });
+
   test("keeps the running modal open as completed when MQTT storage marks the run completed", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.experiments] = snapshotState[STORAGE_KEYS.experiments].map((experiment) =>

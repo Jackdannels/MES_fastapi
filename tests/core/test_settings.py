@@ -43,6 +43,50 @@ def test_settings_enable_slow_request_observability_without_logging_every_reques
     assert settings.READ_SNAPSHOT_CACHE_TTL_SECONDS == 5.0
 
 
+def test_settings_enable_bounded_event_retention_with_conservative_defaults(monkeypatch):
+    for name in (
+        "RETENTION_ENABLED",
+        "RETENTION_STARTUP_DELAY_SECONDS",
+        "RETENTION_INTERVAL_SECONDS",
+        "RETENTION_BATCH_SIZE",
+        "RETENTION_MAX_BATCHES_PER_RUN",
+        "MQ_MESSAGE_LOG_RETENTION_DAYS",
+        "EXPERIMENT_EVENT_RETENTION_DAYS",
+        "STAGING_EVENT_RETENTION_DAYS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.RETENTION_ENABLED is True
+    assert settings.RETENTION_STARTUP_DELAY_SECONDS == 60.0
+    assert settings.RETENTION_INTERVAL_SECONDS == 3600.0
+    assert settings.RETENTION_BATCH_SIZE == 500
+    assert settings.RETENTION_MAX_BATCHES_PER_RUN == 10
+    assert settings.MQ_MESSAGE_LOG_RETENTION_DAYS == 90
+    assert settings.EXPERIMENT_EVENT_RETENTION_DAYS == 365
+    assert settings.STAGING_EVENT_RETENTION_DAYS == 365
+
+
+def test_settings_define_long_running_capacity_warning_thresholds(monkeypatch):
+    for name in (
+        "CAPACITY_WARN_POOL_UTILIZATION",
+        "CAPACITY_WARN_STAGING_EVENT_ITEMS",
+        "CAPACITY_WARN_STAGING_EVENT_BYTES",
+        "CAPACITY_WARN_MQ_MESSAGE_ROWS",
+        "CAPACITY_WARN_EXPERIMENT_EVENT_ROWS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.CAPACITY_WARN_POOL_UTILIZATION == 0.8
+    assert settings.CAPACITY_WARN_STAGING_EVENT_ITEMS == 20000
+    assert settings.CAPACITY_WARN_STAGING_EVENT_BYTES == 16 * 1024 * 1024
+    assert settings.CAPACITY_WARN_MQ_MESSAGE_ROWS == 500000
+    assert settings.CAPACITY_WARN_EXPERIMENT_EVENT_ROWS == 500000
+
+
 def test_settings_disable_auth_session_timeouts_by_default(monkeypatch):
     monkeypatch.delenv("SESSION_IDLE_TIMEOUT_MINUTES", raising=False)
     monkeypatch.delenv("SESSION_MAX_AGE_HOURS", raising=False)

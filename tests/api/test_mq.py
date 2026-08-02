@@ -392,7 +392,7 @@ def test_mq_realtime_update_publishes_experiment_run_trays(monkeypatch):
     ]]
 
 
-def test_mqtt_publish_starts_network_loop_before_waiting_for_qos_ack(monkeypatch):
+def test_mqtt_publish_reuses_network_loop_and_disconnects_before_stopping_it(monkeypatch):
     calls = []
 
     class FakePublishResult:
@@ -402,8 +402,14 @@ def test_mqtt_publish_starts_network_loop_before_waiting_for_qos_ack(monkeypatch
             calls.append(("wait", timeout))
             assert ("loop_start",) in calls
 
+        def is_published(self):
+            return True
+
     class FakeClient:
-        def __init__(self):
+        def __init__(self, **kwargs):
+            self.on_connect = None
+            self.on_disconnect = None
+            calls.append(("client_options", kwargs))
             calls.append(("client",))
 
         def username_pw_set(self, username, password):
@@ -414,6 +420,7 @@ def test_mqtt_publish_starts_network_loop_before_waiting_for_qos_ack(monkeypatch
 
         def loop_start(self):
             calls.append(("loop_start",))
+            self.on_connect(self, None, None, 0)
 
         def publish(self, topic, payload, qos=0, retain=False):
             calls.append(("publish", topic, payload, qos, retain))
@@ -425,9 +432,13 @@ def test_mqtt_publish_starts_network_loop_before_waiting_for_qos_ack(monkeypatch
         def disconnect(self):
             calls.append(("disconnect",))
 
+        def reconnect_delay_set(self, min_delay=1, max_delay=120):
+            calls.append(("reconnect_delay", min_delay, max_delay))
+
     fake_paho = ModuleType("paho")
     fake_mqtt_package = ModuleType("paho.mqtt")
     fake_mqtt_client = ModuleType("paho.mqtt.client")
+    fake_mqtt_client.CallbackAPIVersion = type("CallbackAPIVersion", (), {"VERSION2": 2})
     fake_mqtt_client.Client = FakeClient
     fake_mqtt_package.client = fake_mqtt_client
     fake_paho.mqtt = fake_mqtt_package
@@ -436,15 +447,34 @@ def test_mqtt_publish_starts_network_loop_before_waiting_for_qos_ack(monkeypatch
     monkeypatch.setitem(modules, "paho.mqtt", fake_mqtt_package)
     monkeypatch.setitem(modules, "paho.mqtt.client", fake_mqtt_client)
 
-    result = mq_publisher.publish_mqtt_json(
-        "mes/v1/labs/salt-spray-lab-01/commands/experiment-ready",
-        {"cmd": "READY"},
-        Settings(MQTT_ENABLED=True, MQTT_USERNAME="guest", MQTT_PASSWORD="guest"),
-    )
+    app_settings = Settings(MQTT_ENABLED=True, MQTT_USERNAME="guest", MQTT_PASSWORD="guest")
+    mq_publisher.shutdown_mqtt_publisher()
+    try:
+        first = mq_publisher.publish_mqtt_json(
+            "mes/v1/labs/salt-spray-lab-01/commands/experiment-ready",
+            {"cmd": "READY"},
+            app_settings,
+        )
+        second = mq_publisher.publish_mqtt_json(
+            "mes/v1/labs/salt-spray-lab-01/commands/experiment-end-request",
+            {"cmd": "END_REQUEST"},
+            app_settings,
+        )
 
-    assert result["published"] is True
-    assert ("loop_stop",) in calls
-    assert ("disconnect",) in calls
+        assert first["published"] is True
+        assert second["published"] is True
+        assert calls.count(("client",)) == 1
+        assert calls.count(("loop_start",)) == 1
+        assert len([call for call in calls if call[0] == "connect"]) == 1
+        assert len([call for call in calls if call[0] == "publish"]) == 2
+        assert ("reconnect_delay", 1, 30) in calls
+        assert ("loop_stop",) not in calls
+        assert ("disconnect",) not in calls
+    finally:
+        mq_publisher.shutdown_mqtt_publisher(app_settings)
+        mq_publisher.shutdown_mqtt_publisher(app_settings)
+
+    assert calls.index(("disconnect",)) < calls.index(("loop_stop",))
 
 
 def test_publish_laboratory_command_records_context_before_mqtt_publish(monkeypatch):
@@ -820,6 +850,8 @@ def test_mqtt_subscriber_keeps_consuming_after_one_bad_lab_event(monkeypatch):
 def test_create_app_starts_mqtt_subscriber_only_when_enabled(monkeypatch):
     calls = []
 
+    monkeypatch.setattr(app_main, "start_mqtt_publisher", lambda settings: calls.append(("start_publisher", settings.MQTT_ENABLED)))
+    monkeypatch.setattr(app_main, "shutdown_mqtt_publisher", lambda settings: calls.append(("stop_publisher", settings.MQTT_ENABLED)))
     monkeypatch.setattr(mq_runtime.MqttRuntimeController, "set_mode", lambda self, mode: calls.append(("set_mode", mode)))
     monkeypatch.setattr(mq_runtime.MqttRuntimeController, "shutdown", lambda self: calls.append(("shutdown", self.mode)))
 
@@ -827,7 +859,12 @@ def test_create_app_starts_mqtt_subscriber_only_when_enabled(monkeypatch):
     with TestClient(app) as client:
         assert client.get("/health/live").status_code == 200
 
-    assert calls == [("set_mode", "mqtt"), ("shutdown", "mqtt")]
+    assert calls == [
+        ("start_publisher", True),
+        ("set_mode", "mqtt"),
+        ("shutdown", "mqtt"),
+        ("stop_publisher", True),
+    ]
 
 
 def test_create_app_restarts_and_stops_auto_upper_computer_simulator(monkeypatch):
@@ -835,6 +872,8 @@ def test_create_app_restarts_and_stops_auto_upper_computer_simulator(monkeypatch
 
     monkeypatch.setattr(app_main, "restart_upper_computer_simulator_auto_mode", lambda settings: calls.append(("restart", settings.MQTT_ENABLED)))
     monkeypatch.setattr(app_main, "stop_upper_computer_simulator", lambda settings: calls.append(("stop_upper", settings.MQTT_ENABLED)))
+    monkeypatch.setattr(app_main, "start_mqtt_publisher", lambda settings: calls.append(("start_publisher", settings.MQTT_ENABLED)))
+    monkeypatch.setattr(app_main, "shutdown_mqtt_publisher", lambda settings: calls.append(("stop_publisher", settings.MQTT_ENABLED)))
     monkeypatch.setattr(mq_runtime.MqttRuntimeController, "set_mode", lambda self, mode: calls.append(("set_mode", mode)))
     monkeypatch.setattr(mq_runtime.MqttRuntimeController, "shutdown", lambda self: calls.append(("shutdown", self.mode)))
 
@@ -842,7 +881,14 @@ def test_create_app_restarts_and_stops_auto_upper_computer_simulator(monkeypatch
     with TestClient(app):
         pass
 
-    assert calls == [("restart", True), ("set_mode", "mqtt"), ("shutdown", "mqtt"), ("stop_upper", True)]
+    assert calls == [
+        ("restart", True),
+        ("start_publisher", True),
+        ("set_mode", "mqtt"),
+        ("shutdown", "mqtt"),
+        ("stop_publisher", True),
+        ("stop_upper", True),
+    ]
 
 
 def test_interface_mode_endpoint_starts_subscriber_and_rejects_unsupported_mode():
@@ -1964,6 +2010,132 @@ def test_mysql_start_run_for_context_rejects_returned_trays_with_shared_start_ru
         )
 
     assert storage.writes == []
+
+
+def test_mysql_start_run_for_context_uses_task_scoped_storage_io(monkeypatch):
+    class TaskScopedStorage:
+        def __init__(self):
+            self.reads = []
+            self.writes = []
+            self.payload = {
+                "mes.tasks": [{"code": "TASK-001", "status": "实验准备就绪"}],
+                "mes.samples": [{
+                    "code": "SAMPLE-001",
+                    "task_code": "TASK-001",
+                    "trays": [{"tray_code": "TRAY-001", "status": "实验准备就绪"}],
+                }],
+                "mes.schedules": [{"id": "SCH-001", "task_code": "TASK-001", "experiment_code": "EXP-001"}],
+                "mes.experiments": [{"task_code": "TASK-001", "experiment_code": "EXP-001"}],
+                "mes.experiment_runs": [],
+                "mes.experiment_run_trays": [],
+                "mes.experiment_run_steps": [],
+                "mes.experiment_trays": [{"task_code": "TASK-001", "experiment_code": "EXP-001", "tray_code": "TRAY-001"}],
+                "mes.experiment_samples": [{"task_code": "TASK-001", "experiment_code": "EXP-001", "sample_code": "SAMPLE-001"}],
+                "mes.staging_events": [],
+            }
+
+        def read_all(self):
+            raise AssertionError("MQTT start must not load the complete storage snapshot")
+
+        def read_task_scope(self, task_codes, keys):
+            self.reads.append((set(task_codes), tuple(keys)))
+            return self.payload
+
+        def write_many(self, _updates):
+            raise AssertionError("task-scoped MQTT snapshot must not use an unscoped writer")
+
+        def write_task_scope(self, updates, *, task_codes):
+            self.writes.append((dict(updates), set(task_codes)))
+
+    storage = TaskScopedStorage()
+    monkeypatch.setattr("app.services.mq_event_processor.get_storage_backend", lambda: storage)
+
+    def fake_start(snapshot, **kwargs):
+        assert kwargs["task_code"] == "TASK-001"
+        return {
+            "tasks": snapshot["tasks"],
+            "samples": snapshot["samples"],
+            "schedules": snapshot["schedules"],
+            "experiments": snapshot["experiments"],
+            "experimentRuns": [{"run_no": kwargs["run_no"], "task_code": "TASK-001"}],
+            "experimentRunTrays": [{"run_no": kwargs["run_no"], "task_code": "TASK-001", "tray_code": "TRAY-001"}],
+            "experimentRunSteps": [],
+        }
+
+    monkeypatch.setattr("app.services.mq_event_processor.start_storage_laboratory_experiment", fake_start)
+
+    MySQLMqEventRepository().start_run_for_context(
+        {
+            "task_no": "TASK-001",
+            "experiment_no": "EXP-001",
+            "schedule_no": "SCH-001",
+            "device_name": "盐雾试验室",
+            "tray_nos": ["TRAY-001"],
+        },
+        "2026-08-02 10:00:00",
+        "RUN-001",
+    )
+
+    assert storage.reads[0][0] == {"TASK-001"}
+    assert "mes.experiment_run_steps" in storage.reads[0][1]
+    assert storage.writes[0][1] == {"TASK-001"}
+
+
+def test_mysql_axis_event_resolves_run_then_uses_task_scoped_storage_io(monkeypatch):
+    class TaskScopedStorage:
+        def __init__(self):
+            self.reads = []
+            self.writes = []
+
+        def read_all(self):
+            raise AssertionError("MQTT axis event must not load the complete storage snapshot")
+
+        def read_task_scope(self, task_codes, keys):
+            self.reads.append((set(task_codes), tuple(keys)))
+            return {
+                "mes.experiment_runs": [{
+                    "run_no": "RUN-AXIS",
+                    "task_code": "TASK-AXIS",
+                    "experiment_code": "EXP-AXIS",
+                }],
+                "mes.experiment_run_steps": [{
+                    "run_no": "RUN-AXIS",
+                    "task_code": "TASK-AXIS",
+                    "experiment_code": "EXP-AXIS",
+                    "axis_code": "x+",
+                    "status": "轴向调整中",
+                }],
+            }
+
+        def write_task_scope(self, updates, *, task_codes):
+            self.writes.append((dict(updates), set(task_codes)))
+
+    storage = TaskScopedStorage()
+    repository = MySQLMqEventRepository()
+    monkeypatch.setattr("app.services.mq_event_processor.get_storage_backend", lambda: storage)
+    monkeypatch.setattr(
+        repository,
+        "find_run_by_no",
+        lambda run_no: {"run_no": run_no, "task_no": "TASK-AXIS", "experiment_no": "EXP-AXIS"},
+    )
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.mark_storage_laboratory_axis_adjustment_ready",
+        lambda snapshot, **_kwargs: {"experimentRunSteps": snapshot["experiment_run_steps"]},
+    )
+
+    repository.mark_axis_adjustment_ready("RUN-AXIS", "x+", "2026-08-02 10:00:00")
+
+    assert storage.reads[0][0] == {"TASK-AXIS"}
+    assert storage.writes == [(
+        {"mes.experiment_run_steps": [{
+            "run_no": "RUN-AXIS",
+            "task_code": "TASK-AXIS",
+            "experiment_code": "EXP-AXIS",
+            "axis_code": "x+",
+            "status": "轴向调整中",
+        }]},
+        {"TASK-AXIS"},
+    )]
 
 
 def test_mysql_start_run_for_context_rejects_tray_status_returned_without_run_tray_record(monkeypatch):

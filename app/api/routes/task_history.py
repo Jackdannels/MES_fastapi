@@ -7,11 +7,22 @@ from fastapi import APIRouter, Query
 
 from app.core.storage_backend import get_storage_backend
 from app.services.attendance_service import get_attendance_service
+from app.services.task_page_queries import get_task_page_query_repository
 
 
 router = APIRouter(prefix="/api/task-history", tags=["task-history"])
 
 RETURNED_STATUS = "厂家收回"
+HISTORY_SCOPE_KEYS = (
+    "mes.tasks",
+    "mes.samples",
+    "mes.experiments",
+    "mes.experiment_runs",
+    "mes.experiment_run_trays",
+    "mes.experiment_trays",
+    "mes.schedules",
+    "mes.staging_events",
+)
 
 
 def normalize_text(value: Any) -> str:
@@ -232,6 +243,43 @@ def read_task_history_page(
     now: str = Query(default=""),
 ) -> dict[str, Any]:
     storage = get_storage_backend()
+    scope_reader = getattr(storage, "read_task_scope", None)
+    if callable(scope_reader):
+        repository = get_task_page_query_repository()
+        code_page = repository.list_history_task_codes(
+            page=page,
+            page_size=page_size,
+            query=query,
+            days=days,
+            now=now,
+        )
+        page_codes = set(code_page.task_codes)
+        snapshot = scope_reader(page_codes, HISTORY_SCOPE_KEYS) if page_codes else {}
+        task_by_code = {
+            task_code_value(task): dict(task)
+            for task in as_list(snapshot.get("mes.tasks"))
+            if isinstance(task, dict) and task_code_value(task)
+        }
+        attendance_service = get_attendance_service()
+        attendance_operations = [
+            attendance_service.serialize_operation_log(row)
+            for row in repository.list_attendance_operations(page_codes)
+        ]
+        return {
+            "currentPage": code_page.current_page,
+            "totalCount": code_page.total_count,
+            "totalPages": code_page.total_pages,
+            "tasks": [task_by_code.get(code, {"code": code}) for code in code_page.task_codes],
+            "samples": as_list(snapshot.get("mes.samples")),
+            "experiments": as_list(snapshot.get("mes.experiments")),
+            "experimentRuns": as_list(snapshot.get("mes.experiment_runs")),
+            "experimentRunTrays": as_list(snapshot.get("mes.experiment_run_trays")),
+            "experimentTrays": as_list(snapshot.get("mes.experiment_trays")),
+            "schedules": as_list(snapshot.get("mes.schedules")),
+            "stagingEvents": as_list(snapshot.get("mes.staging_events")),
+            "attendanceOperations": attendance_operations,
+        }
+
     snapshot = storage.read_all()
     if not isinstance(snapshot, dict):
         snapshot = {}

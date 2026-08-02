@@ -47,10 +47,11 @@ import { useLaboratoryFixtureConfirmation } from "./useLaboratoryFixtureConfirma
 import { buildLaboratoryAxisContinuation } from "./laboratoryAxisContinuation";
 import { useLaboratoryOperationPersistence } from "./useLaboratoryOperationPersistence";
 import { useLaboratoryResetFlow } from "./useLaboratoryResetFlow";
-import { useLaboratoryCompletionFlow } from "./useLaboratoryCompletionFlow";
+import { completionConfirmationMatches, useLaboratoryCompletionFlow } from "./useLaboratoryCompletionFlow";
 import { updateRunningExperimentClock } from "./laboratoryPresentation";
 
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
+const COMPLETION_CONFIRMATION_TIMEOUT_MS = 10_000;
 function useLaboratoryPage(options = {}) {
   const now = options.now;
   const readNow = typeof now === "function" ? now : () => now || serverNowDate();
@@ -107,6 +108,8 @@ function useLaboratoryPage(options = {}) {
   const resetDangerModalOpen = ref(false);
   const resetTarget = ref(null);
   const resetSubmitting = ref(false);
+  const completionAwaitingConfirmation = ref(null);
+  const completionConfirmationError = ref("");
   const completionSubmitting = ref(false);
   const runningModalVisible = ref(false);
   const completedRunningExperiment = ref(null);
@@ -116,12 +119,20 @@ function useLaboratoryPage(options = {}) {
   const structuralNow = ref(tickNow.value);
   let temporalBoundaryState = null;
   let tickTimer = null;
+  let completionConfirmationTimer = null;
   let latestSnapshotLoadRequest = 0;
   let ignoreNextSamplesUpdatedRefresh = () => {};
   let flushPendingRealtimeRefresh = () => false;
   let clearFixtureConfirmTimer = () => {};
   let clearFixtureConfirmSuccessTimer = () => {};
   let clearHostlessFixtureReadyTimer = () => {};
+
+  const clearCompletionConfirmationTimer = () => {
+    if (completionConfirmationTimer && typeof window !== "undefined") {
+      window.clearTimeout(completionConfirmationTimer);
+    }
+    completionConfirmationTimer = null;
+  };
 
   const getSelectedLabName = () => normalizeSelectedLabName(unref(options.selectedLabName));
   const {
@@ -462,6 +473,9 @@ function useLaboratoryPage(options = {}) {
     resetTarget.value = null;
     runningModalVisible.value = false;
     completedRunningExperiment.value = null;
+    completionAwaitingConfirmation.value = null;
+    completionConfirmationError.value = "";
+    clearCompletionConfirmationTimer();
     resetAttendanceInteraction();
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();
@@ -656,6 +670,7 @@ function useLaboratoryPage(options = {}) {
       window.removeEventListener("storage", handleHostInterfaceModeChanged);
       window.removeEventListener(HOST_INTERFACE_MODE_CHANGED_EVENT, handleHostInterfaceModeChanged);
     }
+    clearCompletionConfirmationTimer();
   });
 
   const openScheduleBoard = () => {
@@ -753,6 +768,8 @@ function useLaboratoryPage(options = {}) {
   } = useLaboratoryCompletionFlow({
     axisContinuation,
     clearRunningModalRestoreTimer,
+    completionAwaitingConfirmation,
+    completionConfirmationError,
     completionSubmitting,
     completedRunningExperiment,
     currentTask,
@@ -776,6 +793,35 @@ function useLaboratoryPage(options = {}) {
     schedules,
     usesMqttCompletion,
   });
+  watch(
+    completionAwaitingConfirmation,
+    (pending) => {
+      clearCompletionConfirmationTimer();
+      if (!pending || typeof window === "undefined") {
+        return;
+      }
+      completionConfirmationTimer = window.setTimeout(() => {
+        if (completionAwaitingConfirmation.value !== pending) {
+          return;
+        }
+        completionAwaitingConfirmation.value = null;
+        completionConfirmationError.value = "结束命令已发送，但 10 秒内未收到上位机结束确认。请确认设备状态后重试。";
+        completionConfirmationTimer = null;
+      }, COMPLETION_CONFIRMATION_TIMEOUT_MS);
+    },
+  );
+  watch(
+    [completionAwaitingConfirmation, experimentRuns, experimentRunSteps],
+    ([pending, currentRuns, currentSteps]) => {
+      if (!completionConfirmationMatches(pending, currentRuns, currentSteps)) {
+        return;
+      }
+      completionAwaitingConfirmation.value = null;
+      completionConfirmationError.value = "";
+      clearCompletionConfirmationTimer();
+    },
+    { deep: true },
+  );
   const fixtureConfirmation = useLaboratoryFixtureConfirmation({
     fixtureConfirmCountdown,
     fixtureConfirmHostless,
@@ -1008,6 +1054,8 @@ function useLaboratoryPage(options = {}) {
     canTeleportScheduleAction,
     checklist,
     closeAttendanceLogin,
+    completionAwaitingConfirmation,
+    completionConfirmationError,
     completionSubmitting,
     currentAxisCompletion,
     compareFeedback,

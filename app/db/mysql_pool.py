@@ -140,6 +140,19 @@ class MySQLConnectionPool:
             with self._guard:
                 self._created = max(0, self._created - 1)
 
+    def diagnostics(self) -> dict[str, int | float]:
+        """Return a non-sensitive, point-in-time pool utilization snapshot."""
+        with self._guard:
+            created = self._created
+        available = self._available.qsize()
+        return {
+            "maxSize": self._max_size,
+            "created": created,
+            "available": available,
+            "inUse": max(0, created - available),
+            "timeoutSeconds": self._timeout,
+        }
+
 
 _POOLS: dict[tuple[Any, ...], MySQLConnectionPool] = {}
 _POOLS_LOCK = threading.Lock()
@@ -168,3 +181,18 @@ def get_mysql_connection_pool(connection_settings: Any, *, dict_cursor: bool = F
             pool = MySQLConnectionPool(connection_settings, dict_cursor=dict_cursor)
             _POOLS[key] = pool
         return pool
+
+
+def get_mysql_pool_diagnostics() -> dict[str, Any]:
+    """Summarize all local pools without exposing credentials or connection targets."""
+    with _POOLS_LOCK:
+        pools = list(_POOLS.values())
+    snapshots = [pool.diagnostics() for pool in pools]
+    return {
+        "poolCount": len(snapshots),
+        "maxSize": sum(int(item["maxSize"]) for item in snapshots),
+        "created": sum(int(item["created"]) for item in snapshots),
+        "available": sum(int(item["available"]) for item in snapshots),
+        "inUse": sum(int(item["inUse"]) for item in snapshots),
+        "pools": snapshots,
+    }

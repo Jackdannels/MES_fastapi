@@ -52,6 +52,7 @@ from app.services.laboratory_withdrawal import (
     withdrawable_sample_matches,
 )
 from app.services.laboratory_snapshot_adapter import (
+    SNAPSHOT_KEYS as LABORATORY_SNAPSHOT_KEYS,
     completion_updates,
     snapshot_from_storage_payload,
     start_updates,
@@ -193,29 +194,49 @@ def parse_datetime_value(value: Any) -> datetime | None:
     return parse_business_datetime(value)
 
 
-def read_snapshot() -> dict[str, list[dict[str, Any]]]:
+def read_snapshot(task_code: str = "") -> dict[str, list[dict[str, Any]]]:
     storage = get_storage_backend()
-    payload = normalize_storage_payload(storage.read_all())
+    storage_keys = tuple(LABORATORY_SNAPSHOT_KEYS.values())
+    normalized_task_code = normalize_text(task_code)
+    scope_reader = getattr(storage, "read_task_scope", None)
+    read_many = getattr(storage, "read_many", None)
+    if normalized_task_code and callable(scope_reader):
+        raw_payload = scope_reader({normalized_task_code}, storage_keys)
+    elif callable(read_many):
+        raw_payload = read_many(storage_keys)
+    else:
+        raw_payload = storage.read_all()
+    payload = normalize_storage_payload(raw_payload)
     return snapshot_from_storage_payload(payload)
 
 
-def write_snapshot(snapshot: dict[str, list[dict[str, Any]]]) -> None:
-    get_storage_backend().write_many(
+def write_snapshot(snapshot: dict[str, list[dict[str, Any]]], task_code: str = "") -> None:
+    write_laboratory_updates(
+        get_storage_backend(),
         {
             "mes.samples": snapshot["samples"],
             "mes.staging_events": snapshot["staging_events"],
-        }
+        },
+        task_codes={task_code} if normalize_text(task_code) else None,
     )
     publish_storage_update(list(LABORATORY_STORAGE_UPDATE_KEYS))
 
 
-def write_completion_snapshot(result: dict[str, Any]) -> None:
+def write_completion_snapshot(result: dict[str, Any], task_code: str = "") -> None:
     payload = completion_updates(result)
-    get_storage_backend().write_many(payload)
+    write_laboratory_updates(
+        get_storage_backend(),
+        payload,
+        task_codes={task_code} if normalize_text(task_code) else None,
+    )
     publish_storage_update(list(LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS))
 
 
-def write_start_snapshot(original_snapshot: dict[str, list[dict[str, Any]]], result: dict[str, Any]) -> None:
+def write_start_snapshot(
+    original_snapshot: dict[str, list[dict[str, Any]]],
+    result: dict[str, Any],
+    task_code: str = "",
+) -> None:
     payload = start_updates(
         original_snapshot,
         result,
@@ -225,6 +246,7 @@ def write_start_snapshot(original_snapshot: dict[str, list[dict[str, Any]]], res
         get_storage_backend(),
         payload,
         scoped_samples=result["samples"],
+        task_codes={task_code} if normalize_text(task_code) else None,
     )
     publish_storage_update(list(LABORATORY_START_STORAGE_UPDATE_KEYS))
 
@@ -276,6 +298,7 @@ def apply_laboratory_operation(
         publish_storage_update=publish_storage_update,
         resource_keys=resource_keys,
         storage=storage,
+        task_code=request.task_code,
     )
     try:
         get_attendance_service().record_laboratory_workflow_operation(
@@ -698,7 +721,7 @@ def confirm_axis_adjustment_ready(
 ) -> dict[str, Any]:
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
-    snapshot = read_snapshot()
+    snapshot = read_snapshot(normalized_task_code)
     lab_name = resolve_lab_name(snapshot, normalized_task_code, normalized_experiment_code) or request.lab_name
     require_hostless_laboratory(
         operation=LAB_INTERFACE_OPERATION_EXPERIMENT_START,
@@ -709,7 +732,7 @@ def confirm_axis_adjustment_ready(
     resource_keys.append(f"experiment:{normalized_task_code}:{normalized_experiment_code}")
     with acquire_laboratory_operation_locks(resource_keys):
         with acquire_laboratory_storage_commit_lock():
-            snapshot = read_snapshot()
+            snapshot = read_snapshot(normalized_task_code)
             scoped_axis_step = next(
                 (
                     step
@@ -735,6 +758,7 @@ def confirm_axis_adjustment_ready(
             write_laboratory_updates(
                 get_storage_backend(),
                 {"mes.experiment_run_steps": result["experimentRunSteps"]},
+                task_codes={normalized_task_code},
             )
             publish_storage_update(["mes.experiment_run_steps"])
     return {"ok": True, **result}
@@ -749,7 +773,7 @@ def start_current_experiment(
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
     started_at = now_business_text()
-    initial_snapshot = read_snapshot()
+    initial_snapshot = read_snapshot(normalized_task_code)
     initial_lab_name = start_lab_name(
         initial_snapshot,
         normalized_task_code,
@@ -770,7 +794,7 @@ def start_current_experiment(
     resource_keys.append(f"experiment:{normalized_task_code}:{normalized_experiment_code}")
     with acquire_laboratory_operation_locks(resource_keys):
         with acquire_laboratory_storage_commit_lock():
-            snapshot = read_snapshot()
+            snapshot = read_snapshot(normalized_task_code)
             find_task(snapshot, normalized_task_code)
             current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
             requested_axis_code = canonical_axis_code(request.current_axis_code)
@@ -799,6 +823,7 @@ def start_current_experiment(
                 write_laboratory_updates(
                     get_storage_backend(),
                     {"mes.experiment_run_steps": result["experimentRunSteps"]},
+                    task_codes={normalized_task_code},
                 )
                 publish_storage_update(["mes.experiment_run_steps"])
                 return {
@@ -839,7 +864,7 @@ def start_current_experiment(
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-            write_start_snapshot(snapshot, result)
+            write_start_snapshot(snapshot, result, normalized_task_code)
             attendance_service = get_attendance_service()
             attendance_service.start_work_interval(
                 lab_code=request.lab_code,
@@ -867,7 +892,7 @@ def complete_current_experiment(
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
     completed_at = now_business_text()
-    initial_snapshot = read_snapshot()
+    initial_snapshot = read_snapshot(normalized_task_code)
     initial_tray_codes = request.tray_codes
     initial_lab_name = resolve_lab_name(initial_snapshot, normalized_task_code, normalized_experiment_code)
     require_hostless_completion_laboratory(lab_name=initial_lab_name)
@@ -878,7 +903,7 @@ def complete_current_experiment(
     resource_keys.append(f"experiment:{normalized_task_code}:{normalized_experiment_code}")
     with acquire_laboratory_operation_locks(resource_keys):
         with acquire_laboratory_storage_commit_lock():
-            snapshot = read_snapshot()
+            snapshot = read_snapshot(normalized_task_code)
             find_task(snapshot, normalized_task_code)
             current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
             try:
@@ -905,7 +930,7 @@ def complete_current_experiment(
                     )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-            write_completion_snapshot(result)
+            write_completion_snapshot(result, normalized_task_code)
             if should_finish_work_interval_for_completion(axis_code=request.axis_code, next_axis_code=request.next_axis_code):
                 get_attendance_service().finish_work_interval(
                     run_no=request.run_no,
@@ -964,7 +989,7 @@ def _withdraw_current_experiment(
 ) -> dict[str, Any]:
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
-    initial_snapshot = read_snapshot()
+    initial_snapshot = read_snapshot(normalized_task_code)
     requested_tray_codes = {normalize_text(code) for code in request.tray_codes if normalize_text(code)}
     initial_experiment_tray_codes = set(experiment_tray_codes(initial_snapshot, normalized_task_code, normalized_experiment_code))
     initial_tray_codes = sorted(initial_experiment_tray_codes & requested_tray_codes) if requested_tray_codes else sorted(initial_experiment_tray_codes)
@@ -975,7 +1000,7 @@ def _withdraw_current_experiment(
     resource_keys.append(f"experiment:{normalized_task_code}:{normalized_experiment_code}")
     with acquire_laboratory_operation_locks(resource_keys):
         with acquire_laboratory_storage_commit_lock():
-            snapshot = read_snapshot()
+            snapshot = read_snapshot(normalized_task_code)
             find_task(snapshot, normalized_task_code)
             current_experiment_name = experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
             current_lab_name = resolve_lab_name(snapshot, normalized_task_code, normalized_experiment_code)
@@ -1104,7 +1129,7 @@ def _withdraw_current_experiment(
                         snapshot["staging_events"].append(compensation_event)
                         compensated_tray_codes.add(tray_code)
 
-            write_snapshot(snapshot)
+            write_snapshot(snapshot, normalized_task_code)
             first_target = restored_targets[0]
             return {
                 "ok": True,

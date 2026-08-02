@@ -9,7 +9,9 @@ from app.core.config import Settings, settings
 from app.core.performance import PerformanceMiddleware
 from app.modules.registry import API_ROUTERS
 from app.api.routes.tasks import store_external_task_intake
+from app.services.data_retention import DataRetentionRuntime
 from app.services.mq_runtime import MqttRuntimeController
+from app.services.mq_publisher import start_mqtt_publisher, shutdown_mqtt_publisher
 from app.services.lims_rabbitmq import LimsRabbitRuntime
 from app.services.upper_computer_simulator import restart_upper_computer_simulator_auto_mode, stop_upper_computer_simulator
 from app.db.readiness import require_runtime_database_ready
@@ -20,6 +22,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     configured_settings = app_settings or settings
     mq_runtime = MqttRuntimeController(configured_settings)
     lims_rabbit_runtime = LimsRabbitRuntime(configured_settings, store_intake=store_external_task_intake)
+    data_retention_runtime = DataRetentionRuntime(configured_settings)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -33,16 +36,21 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
             if configured_settings.MQTT_ENABLED:
                 if configured_settings.UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE:
                     restart_upper_computer_simulator_auto_mode(configured_settings)
+                start_mqtt_publisher(configured_settings)
                 mq_runtime.set_mode("mqtt")
+            data_retention_runtime.start()
             yield
         finally:
+            await data_retention_runtime.stop()
             await lims_rabbit_runtime.stop()
             mq_runtime.shutdown()
+            shutdown_mqtt_publisher(configured_settings)
             stop_upper_computer_simulator(configured_settings)
 
     app = FastAPI(title=configured_settings.APP_NAME, debug=configured_settings.DEBUG, lifespan=lifespan)
     app.state.mq_runtime = mq_runtime
     app.state.lims_rabbit_runtime = lims_rabbit_runtime
+    app.state.data_retention_runtime = data_retention_runtime
     app.state.settings = configured_settings
 
     app.add_middleware(

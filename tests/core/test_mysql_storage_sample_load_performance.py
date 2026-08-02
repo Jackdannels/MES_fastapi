@@ -22,6 +22,26 @@ class _Cursor:
         return self._results.pop(0)
 
 
+def test_load_samples_applies_task_scope_to_the_initial_sample_query() -> None:
+    class EmptyCursor:
+        def __init__(self):
+            self.statement = ""
+            self.params = []
+
+        def execute(self, statement, params=None):
+            self.statement = " ".join(statement.split())
+            self.params = list(params or [])
+
+        def fetchall(self):
+            return []
+
+    cursor = EmptyCursor()
+
+    assert mysql_storage_sample_load.load_samples(cursor, task_codes={"TASK-B", "TASK-A"}) == []
+    assert "t.task_no IN (%s, %s)" in cursor.statement
+    assert cursor.params == [f"{mysql_storage_sample_load.SAMPLE_META_PREFIX}%", "TASK-A", "TASK-B"]
+
+
 def test_load_samples_builds_global_dispatch_indexes_once(monkeypatch) -> None:
     staging_index = {"TRAY-001": {"target_lab": "冲击一室"}}
     scheduled_index = {("TASK-001", "TRAY-001", "冲击一室"): "EXP-001"}

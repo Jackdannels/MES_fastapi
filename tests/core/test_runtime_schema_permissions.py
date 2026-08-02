@@ -18,6 +18,8 @@ from scripts import init_mysql_storage
 REPO_ROOT = Path(__file__).resolve().parents[2]
 V004_SQL = REPO_ROOT / "scripts" / "sql" / "V004__runtime_schema_finalization.sql"
 V005_SQL = REPO_ROOT / "scripts" / "sql" / "V005__terminal_collation_alignment.sql"
+V006_SQL = REPO_ROOT / "scripts" / "sql" / "V006__long_running_query_indexes.sql"
+V007_SQL = REPO_ROOT / "scripts" / "sql" / "V007__bounded_event_retention_indexes.sql"
 
 
 class _VersionCursor:
@@ -71,7 +73,7 @@ class _VersionCursor:
         return []
 
 
-@pytest.mark.parametrize("row", [("V005", 1), {"version": "V005", "success": 1}])
+@pytest.mark.parametrize("row", [("V007", 1), {"version": "V007", "success": 1}])
 def test_runtime_accepts_successful_required_schema_version(row, monkeypatch) -> None:
     cursor = _VersionCursor(row, history_exists=True)
     contract_checks = []
@@ -81,16 +83,16 @@ def test_runtime_accepts_successful_required_schema_version(row, monkeypatch) ->
 
     assert cursor.statements[-1] == (
         "SELECT version, success FROM schema_migrations WHERE version = %s",
-        ("V005",),
+        ("V007",),
     )
     assert contract_checks == [cursor]
 
 
-@pytest.mark.parametrize("row", [None, ("V004", 1), ("V005", 0)])
+@pytest.mark.parametrize("row", [None, ("V006", 1), ("V007", 0)])
 def test_runtime_rejects_missing_old_or_failed_schema_version(row) -> None:
     cursor = _VersionCursor(row, history_exists=True)
 
-    with pytest.raises(RuntimeError, match="V005"):
+    with pytest.raises(RuntimeError, match="V007"):
         require_schema_version(cursor)
 
 
@@ -100,7 +102,7 @@ def test_runtime_accepts_complete_legacy_schema_without_migration_history(caplog
 
     require_schema_version(cursor, app_env="dev")
 
-    assert "allowing a complete V005 legacy schema" in caplog.text
+    assert "allowing a complete V007 legacy schema" in caplog.text
 
 
 def test_runtime_rejects_incomplete_legacy_schema_without_migration_history(monkeypatch) -> None:
@@ -127,8 +129,8 @@ def test_runtime_rejects_historyless_schema_in_production_before_compatibility_c
         require_schema_version(cursor, app_env="prod")
 
 
-def test_runtime_rejects_schema_drift_even_when_v005_is_recorded(monkeypatch) -> None:
-    cursor = _VersionCursor(("V005", 1), history_exists=True)
+def test_runtime_rejects_schema_drift_even_when_v007_is_recorded(monkeypatch) -> None:
+    cursor = _VersionCursor(("V007", 1), history_exists=True)
     monkeypatch.setattr(
         schema_version,
         "validate_schema_contract",
@@ -200,5 +202,60 @@ def test_v005_only_aligns_the_three_historical_terminal_table_collations() -> No
     ):
         assert f"ALTER TABLE `{table_name}`" in sql
     assert upper.count("CONVERT TO CHARACTER SET UTF8MB4 COLLATE UTF8MB4_UNICODE_CI") == 3
+    for forbidden in ("INSERT INTO", "UPDATE ", "DELETE FROM", "DROP TABLE"):
+        assert forbidden not in upper
+
+
+def test_v006_adds_long_running_history_indexes_without_rewriting_the_baseline() -> None:
+    sql = V006_SQL.read_text(encoding="utf-8")
+    upper = sql.upper()
+    baseline = (REPO_ROOT / "scripts" / "sql" / "0001-complete-baseline-schema.sql").read_text(encoding="utf-8")
+    expected_indexes = {
+        "idx_biz_mq_latest_command": (
+            "direction, lab_code, message_type, created_at, message_log_id"
+        ),
+        "idx_biz_mq_status_created": "process_status, created_at, message_log_id",
+        "idx_biz_mq_task_exp_created": (
+            "task_no, experiment_no, created_at, message_log_id"
+        ),
+        "idx_biz_experiment_event_task_exp_time": (
+            "task_no, experiment_no, event_time, experiment_event_id"
+        ),
+        "idx_biz_experiment_event_lab_type_time": (
+            "lab_code, event_type, event_time, experiment_event_id"
+        ),
+    }
+
+    assert "FROM information_schema.STATISTICS" in sql
+    assert upper.count("CALL V6_ADD_INDEX_IF_MISSING") == len(expected_indexes)
+    for index_name, columns in expected_indexes.items():
+        assert f"ADD INDEX {index_name} ({columns})" in sql
+        assert index_name not in baseline
+    assert "DROP INDEX" not in upper
+    for forbidden in ("INSERT INTO", "UPDATE ", "DELETE FROM", "DROP TABLE"):
+        assert forbidden not in upper
+
+
+def test_v007_adds_retention_indexes_without_mutating_business_rows() -> None:
+    sql = V007_SQL.read_text(encoding="utf-8")
+    upper = sql.upper()
+    expected_indexes = {
+        "idx_biz_mq_retention_created": "created_at, message_log_id",
+        "idx_biz_mq_retention_state": (
+            "direction, lab_code, task_no, experiment_no, sub_experiment_code, "
+            "message_type, created_at, message_log_id"
+        ),
+        "idx_biz_experiment_event_retention_created": "created_at, experiment_event_id",
+        "idx_biz_experiment_event_retention_state": (
+            "task_no, experiment_no, sub_experiment_code, lab_code, event_type, "
+            "created_at, experiment_event_id"
+        ),
+    }
+
+    assert "USE `mes_single_branch`" in sql
+    assert "FROM information_schema.statistics" in sql
+    assert upper.count("CALL V7_ADD_INDEX_IF_MISSING") == len(expected_indexes)
+    for index_name, columns in expected_indexes.items():
+        assert f"ADD INDEX {index_name} ({columns})" in sql
     for forbidden in ("INSERT INTO", "UPDATE ", "DELETE FROM", "DROP TABLE"):
         assert forbidden not in upper

@@ -34,6 +34,18 @@ OPERATION_HISTORY_ACTION = {
     "ready": "实验确认",
 }
 LABORATORY_OPERATION_UPDATE_KEYS = ("mes.samples",)
+LABORATORY_TASK_SCOPE_KEYS = (
+    "mes.tasks",
+    "mes.samples",
+    "mes.schedules",
+    "mes.experiments",
+    "mes.experiment_runs",
+    "mes.experiment_run_trays",
+    "mes.experiment_run_steps",
+    "mes.experiment_trays",
+    "mes.experiment_samples",
+    "mes.staging_events",
+)
 FIXTURE_READY_KEYS = ("fixtureReady", "fixture_ready")
 APPEARANCE_PRE_DISPATCH_STATUSES = {
     APPEARANCE_INSPECTION_DISPATCH_STATUS,
@@ -101,6 +113,14 @@ def storage_snapshot(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]
         "experiment_samples": [dict(item) for item in as_list(normalized.get("mes.experiment_samples")) if isinstance(item, dict)],
         "staging_events": [dict(item) for item in as_list(normalized.get("mes.staging_events")) if isinstance(item, dict)],
     }
+
+
+def read_laboratory_task_payload(storage: Any, task_code: str) -> dict[str, Any]:
+    normalized_task_code = normalize_text(task_code)
+    scoped_reader = getattr(storage, "read_task_scope", None)
+    if normalized_task_code and callable(scoped_reader):
+        return scoped_reader({normalized_task_code}, LABORATORY_TASK_SCOPE_KEYS)
+    return storage.read_all()
 
 
 def sample_code(sample: dict[str, Any]) -> str:
@@ -448,7 +468,13 @@ def write_laboratory_updates(
     updates: dict[str, Any],
     *,
     scoped_samples: list[dict[str, Any]] | None = None,
+    task_codes: set[str] | None = None,
 ) -> None:
+    normalized_task_codes = {normalize_text(code) for code in (task_codes or set()) if normalize_text(code)}
+    task_writer = getattr(storage, "write_task_scope", None)
+    if normalized_task_codes and callable(task_writer):
+        task_writer(updates, task_codes=normalized_task_codes)
+        return
     scoped_writer = getattr(storage, "write_many_scoped", None)
     if callable(scoped_writer) and scoped_samples is not None and "mes.samples" in updates:
         all_samples = [sample for sample in as_list(updates["mes.samples"]) if isinstance(sample, dict)]
@@ -485,12 +511,13 @@ def run_atomic_laboratory_operation(
     publish_storage_update: Callable[[list[str]], None] | None,
     resource_keys: list[str],
     storage: Any,
+    task_code: str = "",
     updates_from_result: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     update_keys: tuple[str, ...] = LABORATORY_OPERATION_UPDATE_KEYS,
 ) -> dict[str, Any]:
     with acquire_laboratory_operation_locks(resource_keys):
         with acquire_laboratory_storage_commit_lock():
-            snapshot = storage_snapshot(storage.read_all())
+            snapshot = storage_snapshot(read_laboratory_task_payload(storage, task_code))
             result = operation(snapshot)
             updates = updates_from_result(result) if updates_from_result else {"mes.samples": result["samples"]}
             if updates_from_result is None:
@@ -506,6 +533,7 @@ def run_atomic_laboratory_operation(
                 storage,
                 updates,
                 scoped_samples=result.get("affectedSamples"),
+                task_codes={task_code} if normalize_text(task_code) else None,
             )
             if publish_storage_update:
                 publish_storage_update(list(dict.fromkeys([*update_keys, *updates.keys()])))

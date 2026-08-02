@@ -81,7 +81,7 @@ def test_phase1_migrations_on_disposable_real_mysql() -> None:
         # Fresh database and idempotent second run.
         reset_database()
         first = init_mysql_storage.initialize_mysql_storage(seed_demo=False)
-        assert first["applied_migrations"] == ["V001", "V002", "V003", "V004", "V005"]
+        assert first["applied_migrations"] == ["V001", "V002", "V003", "V004", "V005", "V006", "V007"]
         second = init_mysql_storage.initialize_mysql_storage(seed_demo=False)
         assert second["applied_migrations"] == []
         with connect(database=TEST_DATABASE) as connection:
@@ -96,10 +96,12 @@ def test_phase1_migrations_on_disposable_real_mysql() -> None:
                     ("V003", 1),
                     ("V004", 1),
                     ("V005", 1),
+                    ("V006", 1),
+                    ("V007", 1),
                 )
 
-        # Representative existing V004 database: preserve business rows while
-        # V005 normalizes the three historically drifted terminal tables.
+        # Representative existing V006 database: preserve business rows while
+        # V007 adds the bounded-retention indexes.
         reset_database()
         init_mysql_storage.iter_schema_migrations = lambda: list(
             init_mysql_storage.SCHEMA_MIGRATIONS[:-1]
@@ -109,6 +111,8 @@ def test_phase1_migrations_on_disposable_real_mysql() -> None:
             "V002",
             "V003",
             "V004",
+            "V005",
+            "V006",
         ]
         with connect(database=TEST_DATABASE) as connection:
             with connection.cursor() as cursor:
@@ -123,15 +127,6 @@ def test_phase1_migrations_on_disposable_real_mysql() -> None:
                     "'0000000000000000000000000000000000000000000000000000000000000000', "
                     "'phase1')"
                 )
-                for table_name in (
-                    "sys_fixed_terminal",
-                    "sys_terminal_runtime",
-                    "sys_terminal_command",
-                ):
-                    cursor.execute(
-                        f"ALTER TABLE `{table_name}` CONVERT TO CHARACTER SET utf8mb4 "
-                        "COLLATE utf8mb4_0900_ai_ci"
-                    )
                 cursor.execute("SELECT COUNT(*) FROM biz_task")
                 task_count_before = cursor.fetchone()[0]
                 cursor.execute("SELECT COUNT(*) FROM sys_fixed_terminal")
@@ -139,10 +134,30 @@ def test_phase1_migrations_on_disposable_real_mysql() -> None:
             connection.commit()
 
         init_mysql_storage.iter_schema_migrations = original_iter
-        assert init_mysql_storage.apply_pending_schema_migrations() == ["V005"]
+        assert init_mysql_storage.apply_pending_schema_migrations() == ["V007"]
         with connect(database=TEST_DATABASE) as connection:
             with connection.cursor() as cursor:
                 assert find_schema_contract_gaps(cursor, database=TEST_DATABASE) == []
+                cursor.execute(
+                    """
+                    SELECT index_name
+                    FROM information_schema.statistics
+                    WHERE table_schema = %s
+                      AND index_name IN (
+                        'idx_biz_mq_retention_created',
+                        'idx_biz_mq_retention_state',
+                        'idx_biz_experiment_event_retention_created',
+                        'idx_biz_experiment_event_retention_state'
+                      )
+                    """,
+                    (TEST_DATABASE,),
+                )
+                assert {row[0] for row in cursor.fetchall()} == {
+                    "idx_biz_mq_retention_created",
+                    "idx_biz_mq_retention_state",
+                    "idx_biz_experiment_event_retention_created",
+                    "idx_biz_experiment_event_retention_state",
+                }
                 cursor.execute("SELECT COUNT(*) FROM biz_task")
                 assert cursor.fetchone()[0] == task_count_before
                 cursor.execute("SELECT COUNT(*) FROM sys_fixed_terminal")

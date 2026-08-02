@@ -98,3 +98,5 @@ def test_data_profile_content_signature_is_stable_across_row_order_but_changes_w
 
     assert first["contentSha256"] == reordered["contentSha256"]
     assert first["contentSha256"] != changed["contentSha256"]
+    assert first["contentSha256ByKey"]["mes.tasks"] == reordered["contentSha256ByKey"]["mes.tasks"]
+    assert first["contentSha256ByKey"]["mes.tasks"] != changed["contentSha256ByKey"]["mes.tasks"]

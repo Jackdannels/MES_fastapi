@@ -45,6 +45,8 @@ SCHEMA_MIGRATIONS = (
     SchemaMigration("V003", "single branch schema alignment", SQL_DIR / "2026-03-17-mes-single-branch-schema-alignment.sql"),
     SchemaMigration("V004", "runtime schema finalization", SQL_DIR / "V004__runtime_schema_finalization.sql"),
     SchemaMigration("V005", "terminal collation alignment", SQL_DIR / "V005__terminal_collation_alignment.sql"),
+    SchemaMigration("V006", "long-running query indexes", SQL_DIR / "V006__long_running_query_indexes.sql"),
+    SchemaMigration("V007", "bounded event retention indexes", SQL_DIR / "V007__bounded_event_retention_indexes.sql"),
 )
 
 

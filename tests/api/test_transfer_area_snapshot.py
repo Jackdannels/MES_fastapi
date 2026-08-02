@@ -83,6 +83,33 @@ def test_snapshot_reader_falls_back_to_one_full_read_for_legacy_storage_backends
     assert storage.read_all_calls == 1
 
 
+def test_snapshot_reader_uses_task_scope_when_requested() -> None:
+    class TaskScopedStorage(TrackingStorage):
+        def __init__(self):
+            super().__init__()
+            self.scope_reads = []
+
+        def read_task_scope(self, task_codes, keys):
+            requested_keys = list(keys)
+            self.scope_reads.append((set(task_codes), requested_keys))
+            return {key: list(self.payloads.get(key, [])) for key in requested_keys}
+
+    storage = TaskScopedStorage()
+
+    snapshot = read_transfer_snapshot(
+        storage,
+        TRANSFER_WORKSPACE_READ_FIELDS,
+        task_codes={"TASK-SCOPED"},
+    )
+
+    assert tuple(snapshot) == TRANSFER_WORKSPACE_READ_FIELDS
+    assert storage.scope_reads == [
+        ({"TASK-SCOPED"}, [TRANSFER_SNAPSHOT_STORAGE_KEYS[field] for field in TRANSFER_WORKSPACE_READ_FIELDS])
+    ]
+    assert storage.read_many_calls == []
+    assert storage.read_all_calls == 0
+
+
 def test_hydration_reads_only_missing_fields_and_keeps_mutated_rows() -> None:
     storage = TrackingStorage()
     partial_snapshot = read_transfer_snapshot(storage, TRANSFER_BOOTSTRAP_READ_FIELDS)

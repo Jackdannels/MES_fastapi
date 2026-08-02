@@ -2,13 +2,11 @@ import { collectExperimentTypes, buildExperimentTypeSummary } from "@/lib/experi
 import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { serverNowMs } from "@/lib/serverClock";
 import { deleteTask as deleteTaskByApi, updateTask as updateTaskByApi } from "@/lib/tasksApi";
-import { STORAGE_KEYS } from "@/lib/storageKeys";
 import {
   deleteTaskSnapshot,
   normalizeTaskSampleCount,
   normalizeText,
   splitSampleCodeText,
-  syncTaskSamples,
   updateTaskRecord,
   validateSampleCodeDraft,
   validateTaskSampleCount,
@@ -25,23 +23,17 @@ function useTaskMutationWorkflow({
   closeTaskDrawer,
   editForm,
   editWarning,
-  experimentCodeOf,
   isTaskDetailLocked,
   loadError,
   loadTasksPage,
-  persistRelated,
   rawExperimentRuns,
   rawExperimentRunTrays,
   rawExperiments,
-  rawExperimentSamples,
-  rawExperimentTrays,
   rawSamples,
   rawSchedules,
   rawStreams,
   rawTasks,
-  readAllTasks,
   resolveScheduledExperimentRemoval,
-  resetSamplesForExperimentTypeChange,
   sampleCodesDraft,
   sampleCodesWarning,
   sampleCountChanged,
@@ -58,52 +50,21 @@ function useTaskMutationWorkflow({
   };
 
   const performTaskUpdate = async (draft, options = {}) => {
-    const { previousCode, tasks, updatedTask, affectedCodes = new Set(), experimentTypesChanged = false } = draft;
+    const { updatedTask } = draft;
     const confirmRemoval = Boolean(options.confirmRemoveScheduledExperiments);
     try {
       await updateTaskByApi(editForm.value.id, confirmRemoval
         ? { ...updatedTask, confirm_remove_scheduled_experiments: true }
         : updatedTask);
-      rawTasks.value = tasks;
+      rawTasks.value = rawTasks.value.map((task) => (
+        normalizeText(task?.id) === normalizeText(editForm.value.id) ? updatedTask : task
+      ));
     } catch (error) {
       editWarning.value = buildFailureMessage("任务更新失败，请稍后重试", error);
       return;
     }
-    const syncedSamples = syncTaskSamples(rawSamples.value, updatedTask, previousCode, { preserveExistingCodes: true });
-    const nextSamples = experimentTypesChanged
-      ? resetSamplesForExperimentTypeChange(syncedSamples, taskCodeOf(updatedTask))
-      : syncedSamples;
-    const relatedUpdates = { [STORAGE_KEYS.samples]: nextSamples };
-    if (experimentTypesChanged) {
-      const taskCodesToClean = new Set([previousCode, taskCodeOf(updatedTask)].map(normalizeText).filter(Boolean));
-      relatedUpdates[STORAGE_KEYS.schedules] = rawSchedules.value.filter(
-        (schedule) => !taskCodesToClean.has(taskCodeOf(schedule)),
-      );
-      relatedUpdates[STORAGE_KEYS.experiment_trays] = rawExperimentTrays.value.filter(
-        (entry) => !taskCodesToClean.has(taskCodeOf(entry)),
-      );
-      relatedUpdates[STORAGE_KEYS.experiment_samples] = rawExperimentSamples.value.filter(
-        (entry) => !taskCodesToClean.has(taskCodeOf(entry)),
-      );
-    } else if (affectedCodes.size > 0) {
-      const taskCodesToClean = new Set([previousCode, taskCodeOf(updatedTask)].map(normalizeText).filter(Boolean));
-      relatedUpdates[STORAGE_KEYS.schedules] = rawSchedules.value.filter(
-        (schedule) => !(taskCodesToClean.has(taskCodeOf(schedule)) && affectedCodes.has(experimentCodeOf(schedule))),
-      );
-      relatedUpdates[STORAGE_KEYS.experiment_trays] = rawExperimentTrays.value.filter(
-        (entry) => !(taskCodesToClean.has(taskCodeOf(entry)) && affectedCodes.has(experimentCodeOf(entry))),
-      );
-      relatedUpdates[STORAGE_KEYS.experiment_samples] = rawExperimentSamples.value.filter(
-        (entry) => !(taskCodesToClean.has(taskCodeOf(entry)) && affectedCodes.has(experimentCodeOf(entry))),
-      );
-    }
-    try {
-      await persistRelated(relatedUpdates);
-    } catch (error) {
-      closeTaskDrawer();
-      loadError.value = buildFailureMessage("任务已更新，但关联数据保存失败，请刷新后确认", error);
-      return;
-    }
+    // The task API owns all related sample/experiment cleanup atomically. Never
+    // write the currently loaded page subset through the generic snapshot API.
     closeTaskDrawer();
     closeScheduledExperimentRemovalConfirm();
     try {
@@ -284,20 +245,9 @@ function useTaskMutationWorkflow({
       editWarning.value = buildFailureMessage("任务删除失败，请稍后重试", error);
       return;
     }
-    try {
-      await persistRelated({
-        [STORAGE_KEYS.schedules]: nextSnapshot.schedules,
-        [STORAGE_KEYS.samples]: nextSnapshot.samples,
-        [STORAGE_KEYS.streams]: nextSnapshot.streams,
-      });
-    } catch (error) {
-      closeTaskDrawer();
-      loadError.value = buildFailureMessage("任务已删除，但关联数据保存失败，请刷新后确认", error);
-      return;
-    }
     closeTaskDrawer();
     try {
-      rawTasks.value = await readAllTasks();
+      await loadTasksPage();
       loadError.value = "";
     } catch (error) {
       loadError.value = buildFailureMessage("任务已删除，但任务列表刷新失败，请刷新后确认", error);

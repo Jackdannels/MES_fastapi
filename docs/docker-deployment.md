@@ -6,13 +6,17 @@
 
 ## 组成
 
-- `migrate`：使用独立 DDL 账号执行 V001–V005，成功退出后才允许 API 启动。
+- `migrate`：使用独立 DDL 账号执行 V001–V007，成功退出后才允许 API 启动。
 - `api`：FastAPI，非 root 用户、单进程、单 worker，仅使用 DML 账号。
 - `web`：Vue 静态文件和 Nginx，非 root 用户，通过同源路径代理 API/SSE。
 - `mysql`：隔离验收数据库。
 - `rabbitmq`：启用 AMQP、管理界面和 MQTT 插件。
 
-正式运行镜像不包含测试、`.env`、数据库备份、外部开发模拟器程序、截图、本地依赖目录或压测/演示脚本；API 镜像只保留迁移入口和 V001–V005 SQL。应用内仍保留被禁用的模拟器控制边界，以支持高低温湿热二室安装和夹具就绪的 hostless 例外。
+正式运行镜像不包含测试、`.env`、数据库备份、外部开发模拟器程序、截图、本地依赖目录或压测/演示脚本；API 镜像只保留迁移入口和 V001–V007 SQL。应用内仍保留被禁用的模拟器控制边界，以支持高低温湿热二室安装和夹具就绪的 hostless 例外。
+
+所有五个服务默认使用 Docker `json-file` 日志驱动，并按单文件 `10m`、最多 `5` 个文件轮转，避免长期运行时标准输出耗尽磁盘。可在环境文件中通过 `DOCKER_LOG_MAX_SIZE` 和 `DOCKER_LOG_MAX_FILE` 调整；修改后需重建容器才会应用新日志配置。
+
+容量告警阈值通过环境文件中的 `CAPACITY_WARN_*` 配置，并由 `/health/capacity` 返回当前阈值和告警原因。隔离栈启动完成后，按 `docs/stage4-long-running-acceptance.md` 执行 60 秒快速探针；默认 API 地址为 `http://127.0.0.1:18000`。
 
 ## 首次启动
 

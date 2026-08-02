@@ -676,31 +676,55 @@
             <span v-if="!runningModalExperiment.completed && runningModalExperiment.remainingSeconds <= 0">实验已超时，请在确认现场状态后完成实验。</span>
           </div>
           <div class="laboratory-running-actions">
+            <div
+              v-if="!runningModalExperiment.completed && (completionSubmitting || completionAwaitingConfirmation)"
+              class="laboratory-running-completion-pending"
+              data-testid="laboratory-completion-awaiting-confirmation"
+              role="status"
+              aria-live="polite"
+            >
+              <span class="laboratory-running-completion-pending__spinner" aria-hidden="true"></span>
+              <span>
+                <strong>{{ completionSubmitting ? "正在发送结束命令…" : "等待上位机确认…" }}</strong>
+                <small>{{ completionSubmitting ? "正在向设备接口发送请求" : "收到结束信号后将自动更新" }}</small>
+              </span>
+            </div>
+            <div
+              v-if="!runningModalExperiment.completed && completionConfirmationError"
+              class="laboratory-running-completion-error"
+              data-testid="laboratory-completion-confirmation-error"
+              role="alert"
+            >
+              <strong>未收到结束确认</strong>
+              <span>{{ completionConfirmationError }}</span>
+            </div>
             <button
-              v-if="!runningModalExperiment.completed && !currentAxisCompletion.enabled"
+              v-if="!runningModalExperiment.completed
+                && !completionSubmitting
+                && !completionAwaitingConfirmation
+                && !currentAxisCompletion.enabled"
               class="action-btn laboratory-running-complete-button"
               data-testid="laboratory-complete-experiment"
               type="button"
-              :disabled="completionSubmitting"
               @click="completeExperimentNow"
             >
-              {{ completionSubmitting ? "结束命令发送中…" : "实验完成" }}
+              实验完成
             </button>
             <button
-              v-if="!runningModalExperiment.completed && currentAxisCompletion.enabled"
+              v-if="!runningModalExperiment.completed
+                && !completionSubmitting
+                && !completionAwaitingConfirmation
+                && currentAxisCompletion.enabled"
               class="action-btn success"
               data-testid="laboratory-complete-axis-continue"
               type="button"
-              :disabled="completionSubmitting
-                || runningModalExperiment.axisContinuation?.isSubmittingReady
+              :disabled="runningModalExperiment.axisContinuation?.isSubmittingReady
                 || runningModalExperiment.axisContinuation?.isWaitingForStart
                 || (Boolean(runningModalExperiment.axisContinuation?.nextAxisCode) && !runningModalExperiment.axisContinuation?.canContinue)"
               @click="confirmCurrentAxisAction"
             >
               {{
-                completionSubmitting
-                  ? "结束命令发送中…"
-                  : runningModalExperiment.axisContinuation?.isWaitingForStart
+                runningModalExperiment.axisContinuation?.isWaitingForStart
                   ? `已准备就绪，等待 ${runningModalExperiment.axisContinuation.currentAxisCode} 轴向启动`
                   : runningModalExperiment.axisContinuation?.isAdjusting
                     ? `下一轴向调整完成，可继续 ${runningModalExperiment.axisContinuation.currentAxisCode} 试验`
@@ -760,6 +784,8 @@ const {
   checklist,
   closeAttendanceLogin,
   completeExperimentNow,
+  completionAwaitingConfirmation,
+  completionConfirmationError,
   completionSubmitting,
   compareFeedback,
   compareScanInputRef,

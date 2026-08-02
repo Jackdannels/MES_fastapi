@@ -12,6 +12,7 @@ from app.db.schema_contract import (
     find_schema_contract_gaps,
     validate_schema_contract,
 )
+from app.db.schema_version import LEGACY_REQUIRED_INDEXES
 from scripts.generate_schema_contract import render_contract
 from scripts import init_mysql_storage
 
@@ -167,17 +168,64 @@ def test_contract_validation_raises_actionable_error() -> None:
     cursor = _ContractCursor()
     cursor.tables.pop(0)
 
-    with pytest.raises(SchemaContractError, match="V005 release contract"):
+    with pytest.raises(SchemaContractError, match="V007 release contract"):
         validate_schema_contract(cursor, database="isolated_test_db")
 
 
 def test_checked_in_contract_is_fresh_and_covers_all_baseline_objects() -> None:
     assert CONTRACT_PATH.read_text(encoding="utf-8") == render_contract()
-    assert SCHEMA_CONTRACT["contract_version"] == "V005"
+    assert SCHEMA_CONTRACT["contract_version"] == "V007"
+    assert [source["source"] for source in SCHEMA_CONTRACT["index_sources"]] == [
+        "scripts/sql/V006__long_running_query_indexes.sql",
+        "scripts/sql/V007__bounded_event_retention_indexes.sql",
+    ]
     assert len(SCHEMA_CONTRACT["tables"]) == 39
     assert sum(len(table["columns"]) for table in SCHEMA_CONTRACT["tables"].values()) == 509
-    assert sum(len(table["indexes"]) for table in SCHEMA_CONTRACT["tables"].values()) == 149
+    assert sum(len(table["indexes"]) for table in SCHEMA_CONTRACT["tables"].values()) == 158
     assert sum(len(table["foreign_keys"]) for table in SCHEMA_CONTRACT["tables"].values()) == 38
+
+
+def test_v006_and_v007_indexes_are_part_of_the_runtime_contract() -> None:
+    expected_indexes = {
+        ("biz_mq_message_log", "idx_biz_mq_latest_command"): [
+            "direction", "lab_code", "message_type", "created_at", "message_log_id"
+        ],
+        ("biz_mq_message_log", "idx_biz_mq_status_created"): [
+            "process_status", "created_at", "message_log_id"
+        ],
+        ("biz_mq_message_log", "idx_biz_mq_task_exp_created"): [
+            "task_no", "experiment_no", "created_at", "message_log_id"
+        ],
+        ("biz_mq_message_log", "idx_biz_mq_retention_created"): [
+            "created_at", "message_log_id"
+        ],
+        ("biz_mq_message_log", "idx_biz_mq_retention_state"): [
+            "direction", "lab_code", "task_no", "experiment_no", "sub_experiment_code",
+            "message_type", "created_at", "message_log_id"
+        ],
+        ("biz_experiment_event", "idx_biz_experiment_event_task_exp_time"): [
+            "task_no", "experiment_no", "event_time", "experiment_event_id"
+        ],
+        ("biz_experiment_event", "idx_biz_experiment_event_lab_type_time"): [
+            "lab_code", "event_type", "event_time", "experiment_event_id"
+        ],
+        ("biz_experiment_event", "idx_biz_experiment_event_retention_created"): [
+            "created_at", "experiment_event_id"
+        ],
+        ("biz_experiment_event", "idx_biz_experiment_event_retention_state"): [
+            "task_no", "experiment_no", "sub_experiment_code", "lab_code", "event_type",
+            "created_at", "experiment_event_id"
+        ],
+    }
+
+    for (table_name, index_name), columns in expected_indexes.items():
+        definition = SCHEMA_CONTRACT["tables"][table_name]["indexes"][index_name]
+        assert definition == {
+            "unique": False,
+            "columns": columns,
+            "sub_parts": [None] * len(columns),
+        }
+        assert (table_name, index_name) in LEGACY_REQUIRED_INDEXES
 
 
 class _Connection:

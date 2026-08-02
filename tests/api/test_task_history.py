@@ -124,3 +124,62 @@ def test_task_history_page_filters_by_query_and_days(monkeypatch):
     payload = response.json()
     assert payload["totalCount"] == 1
     assert [task["code"] for task in payload["tasks"]] == ["TASK-NEW"]
+
+
+def test_task_history_mysql_path_pages_codes_before_loading_related_rows(monkeypatch):
+    from app.api.routes import task_history as task_history_route
+    from app.services.task_page_queries import TaskCodePage
+
+    class ScopedStorage:
+        def __init__(self):
+            self.calls = []
+
+        def read_all(self):
+            raise AssertionError("history hot path must not call read_all")
+
+        def read_task_scope(self, task_codes, keys):
+            self.calls.append((set(task_codes), tuple(keys)))
+            return {
+                "mes.tasks": [{"code": "TASK-B"}, {"code": "TASK-C"}],
+                "mes.samples": [returned_sample("TASK-C", "TP-C"), returned_sample("TASK-B", "TP-B")],
+                "mes.experiments": [{"task_code": "TASK-C"}],
+            }
+
+    class Repository:
+        def __init__(self):
+            self.page_options = None
+
+        def list_history_task_codes(self, **options):
+            self.page_options = options
+            return TaskCodePage(2, ("TASK-C", "TASK-B"), 5, 3)
+
+        def list_attendance_operations(self, task_codes):
+            assert task_codes == {"TASK-B", "TASK-C"}
+            return []
+
+    class Attendance:
+        def serialize_operation_log(self, row):
+            return row
+
+    storage = ScopedStorage()
+    repository = Repository()
+    monkeypatch.setattr(task_history_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(task_history_route, "get_task_page_query_repository", lambda: repository)
+    monkeypatch.setattr(task_history_route, "get_attendance_service", lambda: Attendance())
+    app = FastAPI()
+    app.include_router(task_history_route.router)
+
+    response = TestClient(app).get("/api/task-history?page=2&pageSize=2&query=TASK&days=30&now=2026-05-21T01:00:00Z")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert repository.page_options == {
+        "page": 2,
+        "page_size": 2,
+        "query": "TASK",
+        "days": 30,
+        "now": "2026-05-21T01:00:00Z",
+    }
+    assert [task["code"] for task in payload["tasks"]] == ["TASK-C", "TASK-B"]
+    assert payload["totalCount"] == 5
+    assert storage.calls == [({"TASK-B", "TASK-C"}, task_history_route.HISTORY_SCOPE_KEYS)]

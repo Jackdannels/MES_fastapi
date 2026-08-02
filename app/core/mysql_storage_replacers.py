@@ -94,14 +94,7 @@ def replace_experiment_run_trays(cursor, experiment_run_trays: list[dict[str, An
     _insert_experiment_run_tray_rows(cursor, rows)
 
 
-def replace_experiment_run_steps(cursor, experiment_run_steps: list[dict[str, Any]]) -> None:
-    rows = [
-        build_experiment_run_step_insert_row(step)
-        for step in experiment_run_steps
-        if normalize_text(step.get("run_no") or step.get("runNo"))
-        and normalize_text(step.get("axis_code") or step.get("axisCode"))
-    ]
-    cursor.execute("DELETE FROM biz_experiment_run_step")
+def _insert_experiment_run_step_rows(cursor, rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
     cursor.executemany(
@@ -125,6 +118,129 @@ def replace_experiment_run_steps(cursor, experiment_run_steps: list[dict[str, An
         """,
         rows,
     )
+
+
+def replace_experiment_run_steps(cursor, experiment_run_steps: list[dict[str, Any]]) -> None:
+    rows = [
+        build_experiment_run_step_insert_row(step)
+        for step in experiment_run_steps
+        if normalize_text(step.get("run_no") or step.get("runNo"))
+        and normalize_text(step.get("axis_code") or step.get("axisCode"))
+    ]
+    cursor.execute("DELETE FROM biz_experiment_run_step")
+    _insert_experiment_run_step_rows(cursor, rows)
+
+
+def _delete_task_rows(cursor, table_name: str, task_codes: set[str], *, extra_sql: str = "", extra_params=None) -> None:
+    normalized_task_codes = sorted({normalize_text(code) for code in task_codes if normalize_text(code)})
+    if not normalized_task_codes:
+        return
+    placeholders = ", ".join(["%s"] * len(normalized_task_codes))
+    cursor.execute(
+        f"DELETE FROM {table_name} WHERE task_no IN ({placeholders}){extra_sql}",
+        [*normalized_task_codes, *(extra_params or [])],
+    )
+
+
+def replace_task_workflow_relations(
+    cursor,
+    *,
+    task_codes: set[str],
+    schedules: list[dict[str, Any]] | None = None,
+    experiments: list[dict[str, Any]] | None = None,
+    experiment_runs: list[dict[str, Any]] | None = None,
+    experiment_run_trays: list[dict[str, Any]] | None = None,
+    experiment_run_steps: list[dict[str, Any]] | None = None,
+    experiment_trays: list[dict[str, Any]] | None = None,
+    experiment_samples: list[dict[str, Any]] | None = None,
+) -> None:
+    """Replace only the supplied workflow collections for the selected tasks."""
+    normalized_task_codes = {normalize_text(code) for code in task_codes if normalize_text(code)}
+    if not normalized_task_codes:
+        return
+
+    schedule_rows = None if schedules is None else [
+        build_schedule_insert_row(item)
+        for item in schedules
+        if normalize_text(item.get("id")) and normalize_text(item.get("task_code")) in normalized_task_codes
+    ]
+    experiment_rows = None if experiments is None else [
+        build_experiment_insert_row(item)
+        for item in experiments
+        if normalize_text(item.get("experiment_code"))
+        and normalize_text(item.get("task_code")) in normalized_task_codes
+    ]
+    run_rows = None if experiment_runs is None else [
+        build_experiment_run_insert_row(item)
+        for item in experiment_runs
+        if normalize_text(item.get("task_code")) in normalized_task_codes
+        and (normalize_text(item.get("run_no")) or normalize_text(item.get("id")))
+    ]
+    run_tray_rows = None if experiment_run_trays is None else [
+        build_experiment_run_tray_insert_row(item)
+        for item in experiment_run_trays
+        if normalize_text(item.get("task_code") or item.get("task_no")) in normalized_task_codes
+        and normalize_text(item.get("run_no") or item.get("runNo"))
+        and normalize_text(item.get("tray_code") or item.get("tray_no"))
+    ]
+    run_step_rows = None if experiment_run_steps is None else [
+        build_experiment_run_step_insert_row(item)
+        for item in experiment_run_steps
+        if normalize_text(item.get("task_code") or item.get("task_no")) in normalized_task_codes
+        and normalize_text(item.get("run_no") or item.get("runNo"))
+        and normalize_text(item.get("axis_code") or item.get("axisCode"))
+    ]
+    tray_rows = None if experiment_trays is None else [
+        build_experiment_tray_insert_row(item)
+        for item in experiment_trays
+        if normalize_text(item.get("task_code")) in normalized_task_codes
+        and normalize_text(item.get("experiment_code"))
+        and normalize_text(item.get("tray_code"))
+    ]
+    sample_rows = None if experiment_samples is None else [
+        build_experiment_sample_insert_row(item)
+        for item in experiment_samples
+        if normalize_text(item.get("task_code")) in normalized_task_codes
+        and normalize_text(item.get("experiment_code"))
+        and normalize_text(item.get("sample_code"))
+    ]
+
+    # Delete children before parents; insert parents before children.
+    if run_step_rows is not None:
+        _delete_task_rows(cursor, "biz_experiment_run_step", normalized_task_codes)
+    if run_tray_rows is not None:
+        _delete_task_rows(cursor, "biz_experiment_run_tray", normalized_task_codes)
+    if sample_rows is not None:
+        _delete_task_rows(cursor, "biz_experiment_sample", normalized_task_codes)
+    if tray_rows is not None:
+        _delete_task_rows(cursor, "biz_experiment_tray", normalized_task_codes)
+    if run_rows is not None:
+        _delete_task_rows(cursor, "biz_experiment_run", normalized_task_codes)
+    if experiment_rows is not None:
+        _delete_task_rows(cursor, "biz_experiment", normalized_task_codes)
+    if schedule_rows is not None:
+        _delete_task_rows(
+            cursor,
+            "biz_schedule",
+            normalized_task_codes,
+            extra_sql=" AND schedule_type = %s",
+            extra_params=[STORAGE_MARKER],
+        )
+
+    if experiment_rows is not None:
+        upsert_experiment_rows(cursor, experiment_rows)
+    if schedule_rows is not None:
+        _upsert_schedule_rows(cursor, schedule_rows)
+    if run_rows is not None:
+        _insert_experiment_run_rows(cursor, run_rows)
+    if tray_rows is not None:
+        _insert_experiment_tray_rows(cursor, tray_rows)
+    if sample_rows is not None:
+        _insert_experiment_sample_rows(cursor, sample_rows)
+    if run_tray_rows is not None:
+        _insert_experiment_run_tray_rows(cursor, run_tray_rows)
+    if run_step_rows is not None:
+        _insert_experiment_run_step_rows(cursor, run_step_rows)
 
 
 def upsert_experiment_rows(cursor, rows: list[dict[str, Any]]) -> None:
@@ -248,6 +364,10 @@ def replace_schedules(cursor, schedules: list[dict[str, Any]]) -> None:
         incoming_keys=[row["schedule_no"] for row in rows],
         marker_value=STORAGE_MARKER,
     )
+    _upsert_schedule_rows(cursor, rows)
+
+
+def _upsert_schedule_rows(cursor, rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
     task_nos = sorted({row["task_no"] for row in rows if row["task_no"]})
@@ -478,6 +598,46 @@ def replace_streams(cursor, streams: list[dict[str, Any]]) -> None:
         incoming_keys=[row["stream_no"] for row in rows],
         marker_value=STORAGE_MARKER,
     )
+    if not rows:
+        return
+    cursor.executemany(
+        """
+        INSERT INTO biz_data_stream (
+          stream_no, task_id, task_no, equipment_id, equipment_code, device_name,
+          last_packet_time, quality_value, stream_status, reported_flag, remark
+        ) VALUES (
+          %(stream_no)s, NULL, %(task_no)s, NULL, %(equipment_code)s, %(device_name)s,
+          %(last_packet_time)s, %(quality_value)s, %(stream_status)s, %(reported_flag)s, %(remark)s
+        )
+        ON DUPLICATE KEY UPDATE
+          task_no = VALUES(task_no),
+          equipment_code = VALUES(equipment_code),
+          device_name = VALUES(device_name),
+          last_packet_time = VALUES(last_packet_time),
+          quality_value = VALUES(quality_value),
+          stream_status = VALUES(stream_status),
+          reported_flag = VALUES(reported_flag),
+          remark = VALUES(remark)
+        """,
+        rows,
+    )
+
+
+def replace_task_streams(cursor, streams: list[dict[str, Any]], task_codes: set[str]) -> None:
+    normalized_task_codes = sorted({normalize_text(code) for code in task_codes if normalize_text(code)})
+    if not normalized_task_codes:
+        return
+    placeholders = ", ".join(["%s"] * len(normalized_task_codes))
+    cursor.execute(
+        f"DELETE FROM biz_data_stream WHERE task_no IN ({placeholders}) AND remark = %s",
+        [*normalized_task_codes, STORAGE_MARKER],
+    )
+    rows = [
+        build_stream_insert_row(stream)
+        for stream in streams
+        if normalize_text(stream.get("id"))
+        and normalize_text(stream.get("task_code")) in normalized_task_codes
+    ]
     if not rows:
         return
     cursor.executemany(

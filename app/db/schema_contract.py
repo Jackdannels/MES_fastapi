@@ -287,5 +287,6 @@ def validate_schema_contract(cursor: Any, *, database: str | None = None) -> Non
     suffix = f"; and {remainder} more" if remainder > 0 else ""
     raise SchemaContractError(
         f"MySQL schema does not match the {SCHEMA_CONTRACT['contract_version']} release contract. "
-        f"Drift: {preview}{suffix}. Run scripts/init_mysql_storage.py with the migration database account."
+        f"Drift: {preview}{suffix}. Restore the missing objects with a DBA-reviewed repair migration "
+        "or from a known-good backup, then rerun scripts/init_mysql_storage.py to validate the schema."
     )

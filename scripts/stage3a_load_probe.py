@@ -180,6 +180,12 @@ def build_data_profile(payload: dict[str, Any], *, response_bytes: int = 0) -> d
         for key in DATA_PROFILE_KEYS
         if isinstance(payload.get(key), list)
     }
+    per_key_content_signatures = {
+        key: hashlib.sha256(
+            json.dumps(values, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        for key, values in canonical_content.items()
+    }
     content_signature = hashlib.sha256(
         json.dumps(canonical_content, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
@@ -188,6 +194,7 @@ def build_data_profile(payload: dict[str, Any], *, response_bytes: int = 0) -> d
         "identitySha256": signature,
         "identitySha256ByKey": per_key_identity_signatures,
         "contentSha256": content_signature,
+        "contentSha256ByKey": per_key_content_signatures,
         "responseBytes": response_bytes,
     }
 

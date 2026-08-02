@@ -649,7 +649,7 @@ def test_shared_api_experiment_start_and_complete_updates_attendance_work_interv
         "experiment_samples": [],
         "staging_events": [],
     }
-    monkeypatch.setattr(laboratory_route, "read_snapshot", lambda: snapshot)
+    monkeypatch.setattr(laboratory_route, "read_snapshot", lambda *_args: snapshot)
     monkeypatch.setattr(laboratory_route, "start_lab_name", lambda *_args, **_kwargs: "高低温湿热二室")
     monkeypatch.setattr(laboratory_route, "scope_snapshot_samples_for_experiment", lambda scoped_snapshot, **_kwargs: scoped_snapshot)
     monkeypatch.setattr(
@@ -735,7 +735,7 @@ def test_shared_api_experiment_start_uses_storage_started_at_for_attendance_when
         "experiment_samples": [],
         "staging_events": [],
     }
-    monkeypatch.setattr(laboratory_route, "read_snapshot", lambda: snapshot)
+    monkeypatch.setattr(laboratory_route, "read_snapshot", lambda *_args: snapshot)
     monkeypatch.setattr(laboratory_route, "start_lab_name", lambda *_args, **_kwargs: "高低温湿热二室")
     monkeypatch.setattr(laboratory_route, "scope_snapshot_samples_for_experiment", lambda scoped_snapshot, **_kwargs: scoped_snapshot)
     monkeypatch.setattr(
@@ -813,7 +813,7 @@ def test_api_axis_continuation_does_not_finish_attendance_work_interval(monkeypa
         "experiment_samples": [],
         "staging_events": [],
     }
-    monkeypatch.setattr(laboratory_route, "read_snapshot", lambda: snapshot)
+    monkeypatch.setattr(laboratory_route, "read_snapshot", lambda *_args: snapshot)
     monkeypatch.setattr(
         laboratory_route,
         "complete_storage_laboratory_axis_step",

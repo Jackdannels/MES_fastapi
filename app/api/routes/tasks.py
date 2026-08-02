@@ -40,6 +40,7 @@ from app.services.external_task_intake_service import (
 )
 from app.services.lims_rabbitmq import EXTERNAL_INTAKE_LOCK
 from app.services.laboratory_operations import with_laboratory_storage_commit_lock
+from app.services.task_page_queries import get_task_page_query_repository
 from app.services.test_data_cleanup import clear_all_test_data_files, prepare_test_data_cleanup
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -69,10 +70,48 @@ COMPLETED_TASK_STATUSES = {"任务已完成", "任务完成", *COMPLETED_EXPERIM
 COMPLETED_TASK_EDITABLE_FIELDS = {"name"}
 TRANSFER_HISTORY_ACTIONS = {"样品分装托盘", "任务已确认入库", "任务重新载装", "任务重新入库"}
 AXIS_EXPERIMENT_TYPES = {"冲击试验", "振动试验"}
+TASK_PAGE_SCOPE_KEYS = ("mes.tasks", "mes.samples", "mes.experiments", "mes.schedules")
+TASK_DETAIL_SCOPE_KEYS = (
+    *TASK_PAGE_SCOPE_KEYS,
+    "mes.experiment_trays",
+    "mes.experiment_samples",
+    "mes.experiment_runs",
+    "mes.experiment_run_trays",
+    "mes.experiment_run_steps",
+)
+TASK_MUTATION_SCOPE_KEYS = (
+    *TASK_DETAIL_SCOPE_KEYS,
+    "mes.streams",
+    "mes.staging_events",
+)
 
 
 def load_snapshot(storage=None) -> dict[str, Any]:
     return load_external_task_snapshot(storage or get_storage_backend())
+
+
+def supports_task_scoped_mutations(storage: Any) -> bool:
+    return callable(getattr(storage, "read_task_scope", None)) and callable(getattr(storage, "write_task_scope", None))
+
+
+def load_task_mutation_snapshot(storage: Any, task_id: str) -> dict[str, Any]:
+    normalized_task_id = normalize_text(task_id)
+    if supports_task_scoped_mutations(storage) and normalized_task_id:
+        return storage.read_task_scope({normalized_task_id}, TASK_MUTATION_SCOPE_KEYS)
+    return load_snapshot(storage)
+
+
+def ensure_storage_task_code_available(storage: Any, code: str, *, exclude_task_code: str = "") -> None:
+    checker = getattr(storage, "task_code_exists", None)
+    if callable(checker) and checker(code, exclude_task_code=exclude_task_code):
+        raise HTTPException(status_code=400, detail="任务编号已存在")
+
+
+def existing_sample_code_conflicts(storage: Any, codes: list[str], *, exclude_task_code: str) -> set[str] | None:
+    finder = getattr(storage, "find_existing_sample_codes", None)
+    if not callable(finder):
+        return None
+    return set(finder(set(codes), exclude_task_code=exclude_task_code))
 
 
 def is_storage_confirmed_status(value: Any) -> bool:
@@ -254,20 +293,6 @@ def affected_experiment_codes(
     return affected
 
 
-def experiment_write_signature(experiments: list[dict[str, Any]]) -> list[tuple[str, str, str, str, str, tuple[str, ...]]]:
-    return sorted(
-        (
-            normalize_text(experiment.get("experiment_code")),
-            normalize_text(experiment.get("experiment_name")),
-            normalize_text(experiment.get("required_device")),
-            normalize_text(experiment.get("priority")),
-            normalize_text(experiment.get("planned_hours")),
-            tuple(normalize_axis_codes(experiment.get("axis_codes"))),
-        )
-        for experiment in experiments
-    )
-
-
 def schedule_requires_experiment_removal_confirmation(schedule: dict[str, Any], task_code_value: str, experiment_codes: set[str]) -> bool:
     return (
         normalize_text(schedule.get("task_code")) == task_code_value
@@ -354,10 +379,14 @@ def parse_int(value: Any) -> int:
     return parsed if parsed > 0 else 0
 
 
-def build_default_task_name(task_code_value: str, tasks: list[dict[str, Any]]) -> str:
+def default_task_name_base(task_code_value: str) -> str:
     digits = re.sub(r"\D", "", normalize_text(task_code_value))
     suffix = (digits or "00000")[-5:].zfill(5)
-    base_name = f"测试实验{suffix}"
+    return f"测试实验{suffix}"
+
+
+def build_default_task_name(task_code_value: str, tasks: list[dict[str, Any]]) -> str:
+    base_name = default_task_name_base(task_code_value)
     existing_names = {normalize_text(task.get("name")) for task in tasks if normalize_text(task.get("name"))}
     if base_name not in existing_names:
         return base_name
@@ -366,6 +395,14 @@ def build_default_task_name(task_code_value: str, tasks: list[dict[str, Any]]) -
         if candidate not in existing_names:
             return candidate
     return f"{base_name}-999"
+
+
+def build_storage_default_task_name(storage: Any, task_code_value: str) -> str:
+    finder = getattr(storage, "find_task_names_by_prefix", None)
+    if not callable(finder):
+        return build_default_task_name(task_code_value, [])
+    names = finder(default_task_name_base(task_code_value))
+    return build_default_task_name(task_code_value, [{"name": name} for name in names])
 
 
 def task_sample_code(task_code_value: str, index: int) -> str:
@@ -541,6 +578,24 @@ def build_task_sample_code_mapping(
     return mapping
 
 
+def build_task_code_rename_sample_mapping(
+    samples: list[dict[str, Any]],
+    previous_task_code: str,
+    next_task_code: str,
+) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for sample in samples:
+        source = dict(sample)
+        if sample_task_code(source) != previous_task_code:
+            continue
+        previous_sample_code = normalize_text(source.get("code"))
+        migrate_task_sample_code(source, previous_task_code, next_task_code)
+        next_sample_code = normalize_text(source.get("code"))
+        if previous_sample_code and next_sample_code:
+            mapping[previous_sample_code] = next_sample_code
+    return mapping
+
+
 def migrate_task_experiment_sample_codes(
     experiment_samples: list[dict[str, Any]],
     *,
@@ -561,6 +616,25 @@ def migrate_task_experiment_sample_codes(
         row["sample_code"] = next_sample_code
         migrated_rows.append(row)
     return migrated_rows
+
+
+def migrate_task_relation_codes(snapshot: dict[str, Any], previous_task_code: str, next_task_code: str) -> None:
+    if not previous_task_code or not next_task_code or previous_task_code == next_task_code:
+        return
+    for key in (
+        "mes.schedules",
+        "mes.streams",
+        "mes.experiment_trays",
+        "mes.experiment_samples",
+        "mes.experiment_runs",
+        "mes.experiment_run_trays",
+        "mes.experiment_run_steps",
+        "mes.staging_events",
+    ):
+        for row in as_list(snapshot.get(key)):
+            if row_task_code(row) != previous_task_code:
+                continue
+            row["task_code"] = next_task_code
 
 
 def collect_unique_texts(*values: Any) -> list[str]:
@@ -819,10 +893,126 @@ def list_tasks(include_archived: bool = Query(False, alias="includeArchived")) -
     return load_tasks(include_archived)
 
 
+@router.get("/page")
+def list_task_page(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=8, alias="pageSize", ge=1, le=100),
+    query: str = Query(default=""),
+    task_status: str = Query(default="", alias="status"),
+    test_type: str = Query(default="", alias="testType"),
+    sort_key: str = Query(default="code", alias="sortKey"),
+    sort_direction: str = Query(default="asc", alias="sortDirection"),
+) -> dict[str, Any]:
+    storage = get_storage_backend()
+    scope_reader = getattr(storage, "read_task_scope", None)
+    if callable(scope_reader):
+        repository = get_task_page_query_repository()
+        code_page = repository.list_active_task_codes(
+            page=page,
+            page_size=page_size,
+            query=query,
+            status=task_status,
+            test_type=test_type,
+            sort_key=sort_key,
+            sort_direction=sort_direction,
+        )
+        overview = repository.get_active_task_overview(test_type=test_type)
+        page_codes = set(code_page.task_codes)
+        snapshot = scope_reader(page_codes, TASK_PAGE_SCOPE_KEYS) if page_codes else {}
+        task_by_code = {
+            task_code(task): dict(task)
+            for task in as_list(snapshot.get("mes.tasks"))
+            if task_code(task)
+        }
+        return {
+            "currentPage": code_page.current_page,
+            "totalCount": code_page.total_count,
+            "totalPages": code_page.total_pages,
+            "tasks": [task_by_code.get(code, {"code": code}) for code in code_page.task_codes],
+            "samples": as_list(snapshot.get("mes.samples")),
+            "experiments": as_list(snapshot.get("mes.experiments")),
+            "schedules": as_list(snapshot.get("mes.schedules")),
+            **overview,
+        }
+
+    tasks = load_tasks(False)
+    normalized_query = normalize_text(query).lower()
+    if normalized_query:
+        tasks = [
+            task
+            for task in tasks
+            if normalized_query
+            in " ".join(
+                normalize_text(task.get(field))
+                for field in ("code", "name", "source", "test_type", "status", "transfer_status")
+            ).lower()
+        ]
+    if normalize_text(task_status):
+        tasks = [task for task in tasks if normalize_text(task.get("status") or task.get("transfer_status")) == normalize_text(task_status)]
+    if normalize_text(test_type):
+        tasks = [task for task in tasks if normalize_text(test_type) in normalize_text(task.get("test_type"))]
+    sort_fields = {
+        "code": "code",
+        "source": "source",
+        "sampleCount": "sample_count",
+        "testType": "test_type",
+        "dueAt": "due_at",
+        "displayStatus": "status",
+    }
+    sort_field = sort_fields.get(normalize_text(sort_key), "code")
+    tasks.sort(
+        key=lambda task: normalize_text(task.get(sort_field)),
+        reverse=normalize_text(sort_direction).lower() == "desc",
+    )
+    total_count = len(tasks)
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    current_page = min(max(page, 1), total_pages)
+    start = (current_page - 1) * page_size
+    page_tasks = tasks[start:start + page_size]
+    page_codes = {task_code(task) for task in page_tasks if task_code(task)}
+    snapshot = load_snapshot(storage)
+    return {
+        "currentPage": current_page,
+        "totalCount": total_count,
+        "totalPages": total_pages,
+        "tasks": page_tasks,
+        "samples": [row for row in as_list(snapshot.get("mes.samples")) if row_task_code(row) in page_codes],
+        "experiments": [row for row in as_list(snapshot.get("mes.experiments")) if row_task_code(row) in page_codes],
+        "schedules": [row for row in as_list(snapshot.get("mes.schedules")) if row_task_code(row) in page_codes],
+        "metrics": {},
+        "statusOptions": sorted({normalize_text(task.get("status")) for task in tasks if normalize_text(task.get("status"))}),
+        "testTypeOptions": sorted({normalize_text(task.get("test_type")) for task in tasks if normalize_text(task.get("test_type"))}),
+    }
+
+
+@router.get("/next-code")
+def read_next_task_code(reference: str = Query(default="")) -> dict[str, str]:
+    return {"code": get_task_page_query_repository().next_task_code(reference)}
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 @with_laboratory_storage_commit_lock
 def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     storage = get_storage_backend()
+    if supports_task_scoped_mutations(storage):
+        payload_dict = dict(payload)
+        normalized_task_code = normalize_text(payload_dict.get("code"))
+        ensure_storage_task_code_available(storage, normalized_task_code)
+        if normalized_task_code and not normalize_text(payload_dict.get("name")):
+            payload_dict["name"] = build_storage_default_task_name(storage, normalized_task_code)
+        snapshot = {key: [] for key in TASK_MUTATION_SCOPE_KEYS}
+        next_task = add_task_to_snapshot(snapshot, payload_dict, source=INTERNAL_SOURCE)
+        created_task_code = task_code(next_task)
+        storage.write_task_scope(
+            {
+                "mes.tasks": snapshot["mes.tasks"],
+                "mes.samples": snapshot["mes.samples"],
+                "mes.experiments": snapshot["mes.experiments"],
+            },
+            task_codes={created_task_code},
+        )
+        publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
+        return next_task
     snapshot = load_snapshot(storage)
     next_task = add_task_to_snapshot(snapshot, payload, source=INTERNAL_SOURCE)
     storage.write_many(snapshot)
@@ -875,38 +1065,20 @@ def persist_task_scoped_update(
     *,
     previous_task_code: str,
     next_task_code: str,
-    include_samples: bool,
-    include_experiments: bool,
-    include_experiment_samples: bool,
 ) -> bool:
     writer = getattr(storage, "write_task_scope", None)
-    if not callable(writer) or not previous_task_code or previous_task_code != next_task_code:
+    if not callable(writer) or not previous_task_code or not next_task_code:
         return False
     task_codes = {previous_task_code, next_task_code}
-    updates = {
-        "mes.tasks": [
-            dict(task)
-            for task in snapshot.get("mes.tasks", [])
-            if task_code(task) in task_codes
-        ],
-    }
-    if include_samples:
-        updates["mes.samples"] = [
-            dict(sample)
-            for sample in snapshot.get("mes.samples", [])
-            if sample_task_code(sample) in task_codes
-        ]
-    if include_experiments:
-        updates["mes.experiments"] = [
-            dict(experiment)
-            for experiment in snapshot.get("mes.experiments", [])
-            if row_task_code(experiment) in task_codes
-        ]
-    if include_experiment_samples:
-        updates["mes.experiment_samples"] = [
-            dict(relation)
-            for relation in snapshot.get("mes.experiment_samples", [])
-            if row_task_code(relation) in task_codes
+    updates = {}
+    for key in TASK_MUTATION_SCOPE_KEYS:
+        if key not in snapshot:
+            continue
+        rows = as_list(snapshot.get(key))
+        updates[key] = [
+            dict(row)
+            for row in rows
+            if (task_code(row) if key == "mes.tasks" else row_task_code(row)) in task_codes
         ]
     writer(updates, task_codes=task_codes)
     return True
@@ -924,11 +1096,49 @@ def reset_tasks() -> dict[str, int]:
     return result
 
 
+@router.get("/{task_id}")
+def read_task_detail(task_id: str) -> dict[str, Any]:
+    normalized_task_code = normalize_text(task_id)
+    if not normalized_task_code:
+        raise HTTPException(status_code=404, detail="Task not found")
+    storage = get_storage_backend()
+    scope_reader = getattr(storage, "read_task_scope", None)
+    if callable(scope_reader):
+        snapshot = scope_reader({normalized_task_code}, TASK_DETAIL_SCOPE_KEYS)
+    else:
+        snapshot = load_snapshot(storage)
+        snapshot = {
+            key: [
+                row
+                for row in as_list(snapshot.get(key))
+                if (task_code(row) if key == "mes.tasks" else row_task_code(row)) == normalized_task_code
+            ]
+            for key in TASK_DETAIL_SCOPE_KEYS
+        }
+    task = next(
+        (dict(row) for row in as_list(snapshot.get("mes.tasks")) if task_code(row) == normalized_task_code),
+        None,
+    )
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return {
+        "task": task,
+        "samples": as_list(snapshot.get("mes.samples")),
+        "experiments": as_list(snapshot.get("mes.experiments")),
+        "schedules": as_list(snapshot.get("mes.schedules")),
+        "experimentTrays": as_list(snapshot.get("mes.experiment_trays")),
+        "experimentSamples": as_list(snapshot.get("mes.experiment_samples")),
+        "experimentRuns": as_list(snapshot.get("mes.experiment_runs")),
+        "experimentRunTrays": as_list(snapshot.get("mes.experiment_run_trays")),
+        "experimentRunSteps": as_list(snapshot.get("mes.experiment_run_steps")),
+    }
+
+
 @router.put("/{task_id}")
 @with_laboratory_storage_commit_lock
 def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     storage = get_storage_backend()
-    snapshot = load_snapshot(storage)
+    snapshot = load_task_mutation_snapshot(storage, task_id)
     tasks = [dict(task) for task in snapshot.get("mes.tasks", [])]
     task_index = find_task_index(tasks, task_id)
     if task_index < 0:
@@ -942,6 +1152,9 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
     all_experiments = [dict(experiment) for experiment in snapshot.get("mes.experiments", [])]
     samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
     previous_task_code = task_code(previous_task)
+    next_task_code = task_code(updated_task)
+    if next_task_code != previous_task_code:
+        ensure_storage_task_code_available(storage, next_task_code, exclude_task_code=previous_task_code)
     existing_experiments = [experiment for experiment in all_experiments if normalize_text(experiment.get("task_code")) == previous_task_code]
     if task_is_completed(previous_task, existing_experiments):
         if not task_update_changes_only_completed_editable_fields(previous_task, payload_dict):
@@ -950,11 +1163,21 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         if "name" in payload_dict:
             completed_task["name"] = payload_dict.get("name")
         if not normalize_text(completed_task.get("name")):
-            completed_task["name"] = build_default_task_name(task_code(completed_task), tasks)
+            completed_task["name"] = (
+                build_storage_default_task_name(storage, task_code(completed_task))
+                if supports_task_scoped_mutations(storage)
+                else build_default_task_name(task_code(completed_task), tasks)
+            )
         validate_task_text_fields(completed_task)
         tasks[task_index] = completed_task
         snapshot["mes.tasks"] = tasks
-        storage.write_many(snapshot)
+        if not persist_task_scoped_update(
+            storage,
+            snapshot,
+            previous_task_code=previous_task_code,
+            next_task_code=task_code(completed_task),
+        ):
+            storage.write_many(snapshot)
         publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
         return completed_task
     if task_has_running_experiment(snapshot, previous_task):
@@ -964,11 +1187,21 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         if "name" in payload_dict:
             running_task["name"] = payload_dict.get("name")
         if not normalize_text(running_task.get("name")):
-            running_task["name"] = build_default_task_name(task_code(running_task), tasks)
+            running_task["name"] = (
+                build_storage_default_task_name(storage, task_code(running_task))
+                if supports_task_scoped_mutations(storage)
+                else build_default_task_name(task_code(running_task), tasks)
+            )
         validate_task_text_fields(running_task)
         tasks[task_index] = running_task
         snapshot["mes.tasks"] = tasks
-        storage.write_many(snapshot)
+        if not persist_task_scoped_update(
+            storage,
+            snapshot,
+            previous_task_code=previous_task_code,
+            next_task_code=task_code(running_task),
+        ):
+            storage.write_many(snapshot)
         publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
         return running_task
     if explicit_sample_codes_value is not None and task_storage_confirmed(previous_task, samples):
@@ -987,16 +1220,26 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
             if task_storage_confirmed(previous_task, samples):
                 raise HTTPException(status_code=400, detail=EXPERIMENT_TYPE_LOCKED_MESSAGE)
     if not normalize_text(updated_task.get("name")):
-        updated_task["name"] = build_default_task_name(task_code(updated_task), tasks)
+        updated_task["name"] = (
+            build_storage_default_task_name(storage, task_code(updated_task))
+            if supports_task_scoped_mutations(storage)
+            else build_default_task_name(task_code(updated_task), tasks)
+        )
     validate_task_text_fields(updated_task)
     next_sample_count = validate_sample_count(updated_task.get("sample_count"))
     explicit_sample_codes = validate_explicit_sample_codes(explicit_sample_codes_value, parse_int(next_sample_count))
     if explicit_sample_codes is not None:
-        other_sample_codes = {
-            normalize_text(sample.get("code"))
-            for sample in samples
-            if sample_task_code(sample) != previous_task_code and normalize_text(sample.get("code"))
-        }
+        other_sample_codes = existing_sample_code_conflicts(
+            storage,
+            explicit_sample_codes,
+            exclude_task_code=previous_task_code,
+        )
+        if other_sample_codes is None:
+            other_sample_codes = {
+                normalize_text(sample.get("code"))
+                for sample in samples
+                if sample_task_code(sample) != previous_task_code and normalize_text(sample.get("code"))
+            }
         duplicate_codes = [code for code in explicit_sample_codes if code in other_sample_codes]
         if duplicate_codes:
             raise HTTPException(status_code=400, detail=f"样品编号已被其他任务使用：{', '.join(duplicate_codes)}")
@@ -1014,7 +1257,6 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
     )
     if next_experiments is None:
         next_experiments = persist_task_experiments(updated_task, existing_experiments)
-    experiment_records_changed = experiment_write_signature(existing_experiments) != experiment_write_signature(next_experiments)
     removed_or_changed_codes = affected_experiment_codes(existing_experiments, next_experiments)
     schedules = [dict(schedule) for schedule in snapshot.get("mes.schedules", [])]
     current_samples = [dict(sample) for sample in snapshot.get("mes.samples", [])]
@@ -1046,7 +1288,11 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
             explicit_sample_codes,
         )
         if explicit_sample_codes is not None
-        else {}
+        else build_task_code_rename_sample_mapping(
+            snapshot.get("mes.samples", []),
+            previous_task_code,
+            task_code(updated_task),
+        )
     )
     snapshot["mes.samples"] = sync_task_samples(
         [dict(sample) for sample in snapshot.get("mes.samples", [])],
@@ -1054,7 +1300,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         previous_task_code,
         explicit_sample_codes,
     )
-    if explicit_sample_codes is not None:
+    if explicit_sample_codes is not None or previous_task_code != task_code(updated_task):
         snapshot["mes.experiment_samples"] = migrate_task_experiment_sample_codes(
             [dict(row) for row in snapshot.get("mes.experiment_samples", [])],
             previous_task_code=previous_task_code,
@@ -1126,15 +1372,12 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         current_experiment_trays,
         current_experiment_run_steps,
     )
-    can_use_task_scope = not experiment_types_changed and not removed_or_changed_codes
-    if not can_use_task_scope or not persist_task_scoped_update(
+    migrate_task_relation_codes(snapshot, previous_task_code, task_code(updated_task))
+    if not persist_task_scoped_update(
         storage,
         snapshot,
         previous_task_code=previous_task_code,
         next_task_code=task_code(updated_task),
-        include_samples=sample_count_changed or explicit_sample_codes is not None,
-        include_experiments=experiment_records_changed,
-        include_experiment_samples=explicit_sample_codes is not None,
     ):
         storage.write_many(snapshot)
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
@@ -1145,7 +1388,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
 @with_laboratory_storage_commit_lock
 def delete_task(task_id: str) -> None:
     storage = get_storage_backend()
-    snapshot = load_snapshot(storage)
+    snapshot = load_task_mutation_snapshot(storage, task_id)
     tasks = [dict(task) for task in snapshot.get("mes.tasks", [])]
     task_index = find_task_index(tasks, task_id)
     if task_index < 0:
@@ -1170,6 +1413,8 @@ def delete_task(task_id: str) -> None:
     snapshot["mes.experiment_samples"] = filter_related_rows(snapshot.get("mes.experiment_samples"), task_code)
     snapshot["mes.experiment_runs"] = filter_related_rows(snapshot.get("mes.experiment_runs"), task_code)
     snapshot["mes.experiment_run_trays"] = filter_related_rows(snapshot.get("mes.experiment_run_trays"), task_code)
+    snapshot["mes.experiment_run_steps"] = filter_related_rows(snapshot.get("mes.experiment_run_steps"), task_code)
+    snapshot["mes.staging_events"] = filter_related_rows(snapshot.get("mes.staging_events"), task_code)
     _validate_fixture_locked_schedules(
         current_schedules,
         snapshot.get("mes.schedules", []),
@@ -1179,6 +1424,12 @@ def delete_task(task_id: str) -> None:
         current_experiment_trays,
         current_experiment_run_steps,
     )
-    storage.write_many(snapshot)
+    if not persist_task_scoped_update(
+        storage,
+        snapshot,
+        previous_task_code=task_code,
+        next_task_code=task_code,
+    ):
+        storage.write_many(snapshot)
     publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
     return None

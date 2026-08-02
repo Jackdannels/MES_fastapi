@@ -6,9 +6,44 @@ import {
   resolveSubExperimentCode,
 } from "./pageHelpers";
 
+const completionRowRunNo = (row) => normalizeText(row?.run_no || row?.runNo || row?.id);
+const completionRowTaskCode = (row) => normalizeText(row?.task_code || row?.taskCode || row?.task_no || row?.taskNo);
+const completionRowExperimentCode = (row) => normalizeText(
+  row?.experiment_code || row?.experimentCode || row?.experiment_no || row?.experimentNo,
+);
+
+const completionRowMatchesRequest = (row, pending) => {
+  const pendingRunNo = normalizeText(pending?.runNo);
+  if (pendingRunNo) {
+    return completionRowRunNo(row) === pendingRunNo;
+  }
+  return completionRowTaskCode(row) === normalizeText(pending?.taskCode)
+    && completionRowExperimentCode(row) === normalizeText(pending?.experimentCode);
+};
+
+const completionConfirmationMatches = (pending, experimentRuns, experimentRunSteps) => {
+  if (!pending) {
+    return false;
+  }
+  const axisCode = normalizeText(pending.axisCode);
+  if (axisCode && (Array.isArray(experimentRunSteps) ? experimentRunSteps : []).some(
+    (step) => completionRowMatchesRequest(step, pending)
+      && normalizeText(step?.axis_code || step?.axisCode) === axisCode
+      && COMPLETED_EXPERIMENT_RUN_STATUSES.has(normalizeText(step?.status)),
+  )) {
+    return true;
+  }
+  return (Array.isArray(experimentRuns) ? experimentRuns : []).some(
+    (run) => completionRowMatchesRequest(run, pending)
+      && COMPLETED_EXPERIMENT_RUN_STATUSES.has(normalizeText(run?.status)),
+  );
+};
+
 function useLaboratoryCompletionFlow({
   axisContinuation,
   clearRunningModalRestoreTimer,
+  completionAwaitingConfirmation = { value: null },
+  completionConfirmationError = { value: "" },
   completionSubmitting,
   completedRunningExperiment,
   currentTask,
@@ -31,7 +66,7 @@ function useLaboratoryCompletionFlow({
   const completingRunningExperimentKeys = new Set();
 
   const completeRunningExperiment = async ({ axisCode = "", keepModal = false, nextAxisCode = "" } = {}) => {
-    if (!runningExperiment.value?.active) {
+    if (!runningExperiment.value?.active || completionAwaitingConfirmation.value) {
       return;
     }
     const effectiveAxisCode = normalizeText(axisCode);
@@ -43,6 +78,7 @@ function useLaboratoryCompletionFlow({
       return;
     }
     completingRunningExperimentKeys.add(completionKey);
+    completionConfirmationError.value = "";
     completionSubmitting.value = true;
     const completedAt = formatLocalDateTime();
     const runningRunNo = normalizeText(runningExperiment.value?.runNo);
@@ -60,6 +96,14 @@ function useLaboratoryCompletionFlow({
           task_code: taskCode,
         });
         if (published) {
+          completionAwaitingConfirmation.value = {
+            axisCode: effectiveAxisCode,
+            experimentCode,
+            nextAxisCode: normalizeText(nextAxisCode),
+            requestedAt: Date.now(),
+            runNo: runningRunNo,
+            taskCode,
+          };
           flushPendingRealtimeRefresh();
         }
         return;
@@ -125,7 +169,7 @@ function useLaboratoryCompletionFlow({
   };
 
   const completeExperimentNow = async () => {
-    if (!runningExperiment.value?.active) {
+    if (!runningExperiment.value?.active || completionAwaitingConfirmation.value) {
       return;
     }
     await runWithAttendance(async () => {
@@ -153,4 +197,4 @@ function useLaboratoryCompletionFlow({
   };
 }
 
-export { useLaboratoryCompletionFlow };
+export { completionConfirmationMatches, useLaboratoryCompletionFlow };

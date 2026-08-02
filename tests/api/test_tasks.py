@@ -87,6 +87,64 @@ class FakeTaskStorage:
             self.payloads[key] = retained + list(rows or [])
 
 
+class ScopedCrudTaskStorage(FakeTaskStorage):
+    def read_all(self):
+        raise AssertionError("scoped task CRUD must not call read_all")
+
+    def read_many(self, keys):
+        return {key: deepcopy(self.payloads.get(key, [])) for key in keys}
+
+    def read_task_scope(self, task_codes, keys):
+        normalized = {str(code or "").strip() for code in task_codes if str(code or "").strip()}
+        result = {}
+        for key in keys:
+            rows = self.payloads.get(key, [])
+
+            def row_task_code(row):
+                if key == "mes.tasks":
+                    return str(row.get("code") or row.get("id") or "").strip()
+                return str(row.get("task_code") or row.get("taskCode") or "").strip()
+
+            result[key] = [deepcopy(row) for row in rows if row_task_code(row) in normalized]
+        return result
+
+    def task_code_exists(self, task_code, *, exclude_task_code=""):
+        normalized = str(task_code or "").strip()
+        excluded = str(exclude_task_code or "").strip()
+        return any(
+            str(task.get("code") or task.get("id") or "").strip() == normalized
+            and str(task.get("code") or task.get("id") or "").strip() != excluded
+            for task in self.payloads["mes.tasks"]
+        )
+
+    def find_task_names_by_prefix(self, prefix):
+        return {
+            str(task.get("name") or "").strip()
+            for task in self.payloads["mes.tasks"]
+            if str(task.get("name") or "").strip().startswith(str(prefix or ""))
+        }
+
+    def find_existing_sample_codes(self, sample_codes, *, exclude_task_code=""):
+        normalized_codes = {str(code or "").strip() for code in sample_codes}
+        excluded = str(exclude_task_code or "").strip()
+        return {
+            str(sample.get("code") or "").strip()
+            for sample in self.payloads["mes.samples"]
+            if str(sample.get("task_code") or "").strip() != excluded
+            and str(sample.get("code") or "").strip() in normalized_codes
+        }
+
+
+def build_scoped_crud_client(monkeypatch, storage):
+    from app.api.routes import tasks as tasks_route
+
+    monkeypatch.setattr(tasks_route, "get_storage_backend", lambda: storage)
+    app = FastAPI()
+    app.state.storage = storage
+    app.include_router(tasks_route.router)
+    return TestClient(app)
+
+
 def build_client(
     monkeypatch,
     tasks=None,
@@ -186,6 +244,218 @@ def test_tasks_router_supports_full_lifecycle(monkeypatch):
     assert [item["code"] for item in remaining.json()] == ["SYLU-2026-03-003"]
     assert remaining.json()[0]["experiment_count"] == 2
     assert len(remaining.json()[0]["experiment_codes"]) == 2
+
+
+def test_scoped_task_create_preserves_unrelated_task_collections(monkeypatch):
+    unrelated_task = {"id": "TASK-OTHER", "code": "TASK-OTHER", "name": "其他任务"}
+    unrelated_sample = {"code": "TASK-OTHER-SP-001", "task_code": "TASK-OTHER"}
+    unrelated_experiment = {"experiment_code": "TASK-OTHER-A", "task_code": "TASK-OTHER"}
+    storage = ScopedCrudTaskStorage(
+        tasks=[unrelated_task],
+        samples=[unrelated_sample],
+        experiments=[unrelated_experiment],
+    )
+    client = build_scoped_crud_client(monkeypatch, storage)
+
+    response = client.post(
+        "/api/tasks",
+        json={
+            "code": "TASK-NEW",
+            "name": "新任务",
+            "contact": "张三",
+            "contact_info": "13800001234",
+            "sample_count": "2",
+            "test_types": ["盐雾试验"],
+        },
+    )
+
+    assert response.status_code == 201
+    assert unrelated_task in storage.payloads["mes.tasks"]
+    assert unrelated_sample in storage.payloads["mes.samples"]
+    assert unrelated_experiment in storage.payloads["mes.experiments"]
+    assert storage.write_many_calls == []
+    assert storage.write_task_scope_calls[-1]["task_codes"] == {"TASK-NEW"}
+
+
+def test_scoped_task_create_uses_global_task_code_uniqueness_check(monkeypatch):
+    storage = ScopedCrudTaskStorage(tasks=[{"id": "TASK-DUP", "code": "TASK-DUP", "name": "已有任务"}])
+    client = build_scoped_crud_client(monkeypatch, storage)
+
+    response = client.post(
+        "/api/tasks",
+        json={
+            "code": "TASK-DUP",
+            "name": "重复任务",
+            "contact": "张三",
+            "contact_info": "13800001234",
+            "sample_count": "1",
+            "test_types": ["盐雾试验"],
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "任务编号已存在"
+    assert storage.write_task_scope_calls == []
+
+
+def test_scoped_task_update_preserves_unrelated_task_and_relationships(monkeypatch):
+    unrelated_task = {"id": "TASK-OTHER", "code": "TASK-OTHER", "name": "其他任务", "status": "待排程"}
+    unrelated_schedule = {"id": "SCH-OTHER", "task_code": "TASK-OTHER", "experiment_code": "TASK-OTHER-A"}
+    unrelated_sample = {"code": "TASK-OTHER-SP-001", "task_code": "TASK-OTHER"}
+    storage = ScopedCrudTaskStorage(
+        tasks=[
+            unrelated_task,
+            {
+                "id": "TASK-TARGET",
+                "code": "TASK-TARGET",
+                "name": "待修改任务",
+                "contact": "张三",
+                "contact_info": "13800001234",
+                "sample_count": "1",
+                "test_type": "盐雾试验",
+                "test_types": ["盐雾试验"],
+                "status": "待排程",
+            },
+        ],
+        samples=[
+            unrelated_sample,
+            {"code": "TASK-TARGET-SP-001", "task_code": "TASK-TARGET", "trays": [], "history": []},
+        ],
+        schedules=[unrelated_schedule],
+        experiments=[
+            {"experiment_code": "TASK-OTHER-A", "task_code": "TASK-OTHER", "experiment_name": "冲击试验"},
+            {"experiment_code": "TASK-TARGET-A", "task_code": "TASK-TARGET", "experiment_name": "盐雾试验"},
+        ],
+    )
+    client = build_scoped_crud_client(monkeypatch, storage)
+
+    response = client.put(
+        "/api/tasks/TASK-TARGET",
+        json={"name": "已修改任务", "sample_count": "2"},
+    )
+
+    assert response.status_code == 200
+    assert unrelated_task in storage.payloads["mes.tasks"]
+    assert unrelated_schedule in storage.payloads["mes.schedules"]
+    assert unrelated_sample in storage.payloads["mes.samples"]
+    assert storage.write_many_calls == []
+    assert storage.write_task_scope_calls[-1]["task_codes"] == {"TASK-TARGET"}
+
+
+def test_scoped_complex_task_update_preserves_unrelated_schedules(monkeypatch):
+    unrelated_schedule = {"id": "SCH-OTHER", "task_code": "TASK-OTHER", "experiment_code": "TASK-OTHER-A"}
+    storage = ScopedCrudTaskStorage(
+        tasks=[
+            {"id": "TASK-OTHER", "code": "TASK-OTHER", "name": "其他任务", "status": "待排程"},
+            {
+                "id": "TASK-TARGET",
+                "code": "TASK-TARGET",
+                "name": "复杂修改任务",
+                "contact": "张三",
+                "contact_info": "13800001234",
+                "sample_count": "1",
+                "test_type": "盐雾试验",
+                "test_types": ["盐雾试验"],
+                "status": "已排程",
+            },
+        ],
+        samples=[{"code": "TASK-TARGET-SP-001", "task_code": "TASK-TARGET", "trays": [], "history": []}],
+        schedules=[
+            unrelated_schedule,
+            {"id": "SCH-TARGET", "task_code": "TASK-TARGET", "experiment_code": "TASK-TARGET-A", "device": "盐雾试验室"},
+        ],
+        experiments=[
+            {"experiment_code": "TASK-OTHER-A", "task_code": "TASK-OTHER", "experiment_name": "冲击试验"},
+            {"experiment_code": "TASK-TARGET-A", "task_code": "TASK-TARGET", "experiment_name": "盐雾试验"},
+        ],
+    )
+    client = build_scoped_crud_client(monkeypatch, storage)
+
+    response = client.put(
+        "/api/tasks/TASK-TARGET",
+        json={
+            "test_types": ["霉菌试验"],
+            "confirm_remove_scheduled_experiments": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert unrelated_schedule in storage.payloads["mes.schedules"]
+    assert not any(row.get("id") == "SCH-TARGET" for row in storage.payloads["mes.schedules"])
+    assert storage.write_many_calls == []
+    assert storage.write_task_scope_calls[-1]["task_codes"] == {"TASK-TARGET"}
+
+
+def test_scoped_task_code_rename_migrates_direct_relations_and_preserves_unrelated_rows(monkeypatch):
+    unrelated_stream = {"id": "STREAM-OTHER", "task_code": "TASK-OTHER"}
+    storage = ScopedCrudTaskStorage(
+        tasks=[
+            {"id": "TASK-OTHER", "code": "TASK-OTHER", "name": "其他任务", "status": "待排程"},
+            {
+                "id": "TASK-OLD",
+                "code": "TASK-OLD",
+                "name": "改号任务",
+                "contact": "张三",
+                "contact_info": "13800001234",
+                "sample_count": "1",
+                "test_type": "盐雾试验",
+                "test_types": ["盐雾试验"],
+                "status": "待排程",
+            },
+        ],
+        samples=[{"code": "TASK-OLD-SP-001", "task_code": "TASK-OLD", "trays": [], "history": []}],
+        schedules=[{"id": "SCH-OLD", "task_code": "TASK-OLD", "experiment_code": "TASK-OLD-A", "device": "暂存间"}],
+        streams=[unrelated_stream, {"id": "STREAM-OLD", "task_code": "TASK-OLD"}],
+        experiments=[{"experiment_code": "TASK-OLD-A", "task_code": "TASK-OLD", "experiment_name": "盐雾试验"}],
+        experiment_samples=[{
+            "experiment_code": "TASK-OLD-A",
+            "task_code": "TASK-OLD",
+            "sample_code": "TASK-OLD-SP-001",
+        }],
+    )
+    client = build_scoped_crud_client(monkeypatch, storage)
+
+    response = client.put("/api/tasks/TASK-OLD", json={"code": "TASK-NEW"})
+
+    assert response.status_code == 200
+    assert {task["code"] for task in storage.payloads["mes.tasks"]} == {"TASK-OTHER", "TASK-NEW"}
+    assert unrelated_stream in storage.payloads["mes.streams"]
+    assert next(row for row in storage.payloads["mes.streams"] if row["id"] == "STREAM-OLD")["task_code"] == "TASK-NEW"
+    assert next(row for row in storage.payloads["mes.schedules"] if row["id"] == "SCH-OLD")["task_code"] == "TASK-NEW"
+    assert storage.payloads["mes.experiment_samples"] == [{
+        "experiment_code": "TASK-OLD-A",
+        "task_code": "TASK-NEW",
+        "sample_code": "TASK-NEW-SP-001",
+    }]
+    assert storage.write_task_scope_calls[-1]["task_codes"] == {"TASK-OLD", "TASK-NEW"}
+
+
+def test_scoped_task_delete_removes_only_target_task_collections(monkeypatch):
+    unrelated_task = {"id": "TASK-OTHER", "code": "TASK-OTHER", "name": "其他任务", "status": "待排程"}
+    unrelated_sample = {"code": "TASK-OTHER-SP-001", "task_code": "TASK-OTHER"}
+    unrelated_step = {"run_no": "RUN-OTHER", "task_code": "TASK-OTHER", "axis_code": "x+"}
+    storage = ScopedCrudTaskStorage(
+        tasks=[unrelated_task, {"id": "TASK-TARGET", "code": "TASK-TARGET", "name": "删除任务", "status": "待排程"}],
+        samples=[unrelated_sample, {"code": "TASK-TARGET-SP-001", "task_code": "TASK-TARGET"}],
+        experiments=[
+            {"experiment_code": "TASK-OTHER-A", "task_code": "TASK-OTHER"},
+            {"experiment_code": "TASK-TARGET-A", "task_code": "TASK-TARGET"},
+        ],
+        experiment_run_steps=[
+            unrelated_step,
+            {"run_no": "RUN-TARGET", "task_code": "TASK-TARGET", "axis_code": "x+"},
+        ],
+    )
+    client = build_scoped_crud_client(monkeypatch, storage)
+
+    response = client.delete("/api/tasks/TASK-TARGET")
+
+    assert response.status_code == 204
+    assert storage.payloads["mes.tasks"] == [unrelated_task]
+    assert storage.payloads["mes.samples"] == [unrelated_sample]
+    assert storage.payloads["mes.experiment_run_steps"] == [unrelated_step]
+    assert storage.write_many_calls == []
+    assert storage.write_task_scope_calls[-1]["task_codes"] == {"TASK-TARGET"}
 
 
 def test_task_update_commit_lock_preserves_later_laboratory_progress(monkeypatch):
@@ -438,6 +708,34 @@ def test_lims_external_intake_rejects_duplicate_request_and_task_code(monkeypatc
     assert duplicate_code.value.status_code == 409
 
 
+def test_scoped_lims_intake_and_acceptance_avoid_full_snapshot_reads(monkeypatch):
+    from app.api.routes import tasks as tasks_route
+
+    unrelated_task = {"id": "TASK-OTHER", "code": "TASK-OTHER", "name": "其他任务"}
+    storage = ScopedCrudTaskStorage(tasks=[unrelated_task])
+    client = build_scoped_crud_client(monkeypatch, storage)
+    payload = {
+        "lims_request_id": "LIMS-SCOPED-001",
+        "code": "TASK-LIMS-001",
+        "name": "外部任务",
+        "client": "外部单位",
+        "contact": "张三",
+        "contact_info": "13800001234",
+        "sample_count": "2",
+        "test_types": ["盐雾试验"],
+    }
+
+    received = tasks_route.store_external_task_intake(payload, message_id="MSG-SCOPED-001")
+    accepted = client.post("/api/tasks/external-intakes/LIMS-SCOPED-001/accept")
+
+    assert received["acceptance_status"] == "pending"
+    assert accepted.status_code == 200
+    assert accepted.json()["task"]["code"] == "TASK-LIMS-001"
+    assert unrelated_task in storage.payloads["mes.tasks"]
+    assert storage.write_task_scope_calls[-1]["task_codes"] == {"TASK-LIMS-001"}
+    assert set(storage.write_many_calls[-1]) == {"mes.external_task_intakes", "mes.lims_outbox"}
+
+
 def test_list_tasks_reads_only_the_task_collection(monkeypatch):
     client = build_client(
         monkeypatch,
@@ -675,6 +973,163 @@ def test_tasks_list_hides_returned_tasks_unless_archived_are_requested(monkeypat
     assert [item["code"] for item in active.json()] == ["TASK-ACTIVE"]
     assert archived.status_code == 200
     assert [item["code"] for item in archived.json()] == ["TASK-ACTIVE", "TASK-RETURNED"]
+
+
+def test_task_page_mysql_path_loads_only_requested_task_scope(monkeypatch):
+    from app.api.routes import tasks as tasks_route
+    from app.services.task_page_queries import TaskCodePage
+
+    class ScopedStorage:
+        def __init__(self):
+            self.calls = []
+
+        def read(self, _key):
+            raise AssertionError("task page must not load the complete task collection")
+
+        def read_task_scope(self, task_codes, keys):
+            self.calls.append((set(task_codes), tuple(keys)))
+            return {
+                "mes.tasks": [{"code": "TASK-010"}, {"code": "TASK-009"}],
+                "mes.samples": [{"task_code": "TASK-009", "code": "SAMPLE-009"}],
+                "mes.experiments": [{"task_code": "TASK-010", "experiment_code": "EXP-010"}],
+                "mes.schedules": [],
+            }
+
+    class Repository:
+        def list_active_task_codes(self, **options):
+            assert options == {
+                "page": 2,
+                "page_size": 2,
+                "query": "TASK",
+                "sort_direction": "asc",
+                "sort_key": "code",
+                "status": "",
+                "test_type": "",
+            }
+            return TaskCodePage(2, ("TASK-009", "TASK-010"), 5, 3)
+
+        def get_active_task_overview(self, **options):
+            assert options == {"test_type": ""}
+            return {"metrics": {}, "statusOptions": [], "testTypeOptions": []}
+
+    storage = ScopedStorage()
+    monkeypatch.setattr(tasks_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(tasks_route, "get_task_page_query_repository", lambda: Repository())
+    app = FastAPI()
+    app.include_router(tasks_route.router)
+
+    response = TestClient(app).get("/api/tasks/page?page=2&pageSize=2&query=TASK")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert [task["code"] for task in payload["tasks"]] == ["TASK-009", "TASK-010"]
+    assert payload["totalCount"] == 5
+    assert storage.calls == [({"TASK-009", "TASK-010"}, tasks_route.TASK_PAGE_SCOPE_KEYS)]
+
+
+def test_task_page_forwards_filters_and_sort_to_repository(monkeypatch):
+    from app.api.routes import tasks as tasks_route
+    from app.services.task_page_queries import TaskCodePage
+
+    class ScopedStorage:
+        def read_task_scope(self, task_codes, keys):
+            assert set(task_codes) == {"TASK-FILTERED"}
+            assert tuple(keys) == tasks_route.TASK_PAGE_SCOPE_KEYS
+            return {"mes.tasks": [{"code": "TASK-FILTERED"}]}
+
+    class Repository:
+        def list_active_task_codes(self, **options):
+            assert options == {
+                "page": 3,
+                "page_size": 20,
+                "query": "样品A",
+                "status": "实验进行中",
+                "test_type": "盐雾试验",
+                "sort_key": "sampleCount",
+                "sort_direction": "desc",
+            }
+            return TaskCodePage(3, ("TASK-FILTERED",), 41, 3)
+
+        def get_active_task_overview(self, **options):
+            assert options == {"test_type": "盐雾试验"}
+            return {
+                "metrics": {"externalCount": 1},
+                "statusOptions": ["实验进行中"],
+                "testTypeOptions": ["盐雾试验"],
+            }
+
+    monkeypatch.setattr(tasks_route, "get_storage_backend", lambda: ScopedStorage())
+    monkeypatch.setattr(tasks_route, "get_task_page_query_repository", lambda: Repository())
+    app = FastAPI()
+    app.include_router(tasks_route.router)
+
+    response = TestClient(app).get(
+        "/api/tasks/page?page=3&pageSize=20&query=样品A&status=实验进行中"
+        "&testType=盐雾试验&sortKey=sampleCount&sortDirection=desc"
+    )
+
+    assert response.status_code == 200
+    assert response.json()["tasks"] == [{"code": "TASK-FILTERED"}]
+
+
+def test_next_task_code_delegates_to_query_repository(monkeypatch):
+    from app.api.routes import tasks as tasks_route
+
+    class Repository:
+        def next_task_code(self, reference):
+            assert reference == "2026-08-02T12:30:00+08:00"
+            return "SYLU-2026-08-042"
+
+    monkeypatch.setattr(tasks_route, "get_task_page_query_repository", lambda: Repository())
+    app = FastAPI()
+    app.include_router(tasks_route.router)
+
+    response = TestClient(app).get(
+        "/api/tasks/next-code?reference=2026-08-02T12%3A30%3A00%2B08%3A00"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"code": "SYLU-2026-08-042"}
+
+
+def test_task_detail_reads_only_requested_task_scope(monkeypatch):
+    from app.api.routes import tasks as tasks_route
+
+    class ScopedStorage:
+        def __init__(self):
+            self.calls = []
+
+        def read(self, _key):
+            raise AssertionError("task detail must not read a complete collection")
+
+        def read_all(self):
+            raise AssertionError("task detail must not load the complete snapshot")
+
+        def read_task_scope(self, task_codes, keys):
+            self.calls.append((set(task_codes), tuple(keys)))
+            return {
+                "mes.tasks": [{"id": "TASK-DETAIL", "code": "TASK-DETAIL"}],
+                "mes.samples": [{"task_code": "TASK-DETAIL", "code": "SAMPLE-1"}],
+                "mes.experiments": [{"task_code": "TASK-DETAIL", "experiment_code": "EXP-1"}],
+                "mes.schedules": [{"task_code": "TASK-DETAIL", "id": "SCHEDULE-1"}],
+                "mes.experiment_trays": [],
+                "mes.experiment_samples": [],
+                "mes.experiment_runs": [],
+                "mes.experiment_run_trays": [],
+                "mes.experiment_run_steps": [],
+            }
+
+    storage = ScopedStorage()
+    monkeypatch.setattr(tasks_route, "get_storage_backend", lambda: storage)
+    app = FastAPI()
+    app.include_router(tasks_route.router)
+
+    response = TestClient(app).get("/api/tasks/TASK-DETAIL")
+
+    assert response.status_code == 200
+    assert response.json()["task"]["code"] == "TASK-DETAIL"
+    assert response.json()["samples"] == [{"task_code": "TASK-DETAIL", "code": "SAMPLE-1"}]
+    assert storage.calls == [({"TASK-DETAIL"}, tasks_route.TASK_DETAIL_SCOPE_KEYS)]
 
 
 def test_tasks_list_keeps_task_visible_when_only_sample_trays_are_returned(monkeypatch):

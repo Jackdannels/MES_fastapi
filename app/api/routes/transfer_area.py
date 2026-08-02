@@ -145,14 +145,30 @@ def read_snapshot(
     fields: tuple[str, ...] | None = None,
     *,
     storage: Any | None = None,
+    task_codes: set[str] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
-    return read_transfer_snapshot(storage or get_storage_backend(), fields)
+    return read_transfer_snapshot(storage or get_storage_backend(), fields, task_codes=task_codes)
+
+
+def read_tray_snapshot(
+    tray_code: str,
+    fields: tuple[str, ...] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    storage = get_storage_backend()
+    task_resolver = getattr(storage, "find_task_code_by_tray", None)
+    task_code_value = normalize_text(task_resolver(tray_code)) if callable(task_resolver) else ""
+    return read_snapshot(
+        fields,
+        storage=storage,
+        task_codes={task_code_value} if task_code_value else None,
+    )
 
 
 def write_snapshot(
     snapshot: dict[str, list[dict[str, Any]]],
     *,
     replace_task_codes: set[str] | None = None,
+    task_codes: set[str] | None = None,
     update_source: str = "",
     update_request_id: str = "",
 ) -> None:
@@ -169,14 +185,25 @@ def write_snapshot(
         "mes.experiment_samples": snapshot["experiment_samples"],
         "mes.staging_events": snapshot["staging_events"],
     }
+    normalized_task_codes = {
+        normalize_text(code)
+        for code in (task_codes or replace_task_codes or set())
+        if normalize_text(code)
+    }
+    scoped_writer = getattr(storage, "write_task_scope", None)
     with acquire_laboratory_storage_commit_lock():
-        storage.write_many(
-            merge_concurrent_storage_updates(
-                storage.read_all(),
-                updates,
-                replace_task_codes=replace_task_codes,
+        if normalized_task_codes and callable(scoped_writer):
+            scoped_writer(updates, task_codes=normalized_task_codes)
+        else:
+            read_many = getattr(storage, "read_many", None)
+            current_snapshot = read_many(updates.keys()) if callable(read_many) else storage.read_all()
+            storage.write_many(
+                merge_concurrent_storage_updates(
+                    current_snapshot,
+                    updates,
+                    replace_task_codes=replace_task_codes,
+                )
             )
-        )
     source = normalize_text(update_source)
     request_id = normalize_text(update_request_id)
     if source or request_id:
@@ -545,7 +572,7 @@ def read_task_workspace(task_id: str) -> dict[str, Any]:
 @router.get("/trays/{tray_code}/dispatch")
 def read_tray_dispatch(tray_code: str) -> dict[str, Any]:
     tray_code = normalize_tray_scan_code(tray_code)
-    snapshot = read_snapshot()
+    snapshot = read_tray_snapshot(tray_code)
     task, _tray_samples = find_tray_samples(snapshot, tray_code)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
     if is_returned_task(task, task_samples):
@@ -564,7 +591,7 @@ def dispatch_tray(
     update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
 ) -> dict[str, Any]:
     tray_code = normalize_tray_scan_code(tray_code)
-    snapshot = read_snapshot()
+    snapshot = read_tray_snapshot(tray_code)
     task, tray_samples = find_tray_samples(snapshot, tray_code)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
     ensure_task_not_returned(task, task_samples)
@@ -594,7 +621,11 @@ def dispatch_tray(
         serialize_dispatch=serialize_tray_dispatch_payload,
         update_source=update_source,
         update_request_id=update_request_id,
-        write_snapshot=write_snapshot,
+        write_snapshot=lambda current_snapshot, **kwargs: write_snapshot(
+            current_snapshot,
+            task_codes={task_code(task)},
+            **kwargs,
+        ),
     )
     return {
         "ok": True,
@@ -606,7 +637,7 @@ def dispatch_tray(
 @router.get("/trays/{tray_code}/withdraw-dispatch")
 def read_tray_withdraw_dispatch(tray_code: str) -> dict[str, Any]:
     tray_code = normalize_tray_scan_code(tray_code)
-    snapshot = read_snapshot()
+    snapshot = read_tray_snapshot(tray_code)
     task, _tray_samples = find_tray_samples(snapshot, tray_code)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
     ensure_task_not_returned(task, task_samples)
@@ -617,12 +648,12 @@ def read_tray_withdraw_dispatch(tray_code: str) -> dict[str, Any]:
 @with_laboratory_storage_commit_lock
 def withdraw_dispatch_tray(tray_code: str, request: TrayWithdrawDispatchRequest = Body(...)) -> dict[str, Any]:
     tray_code = normalize_tray_scan_code(tray_code)
-    snapshot = read_snapshot()
+    snapshot = read_tray_snapshot(tray_code)
     task, _tray_samples = find_tray_samples(snapshot, tray_code)
     task_samples = build_task_sample_map(snapshot["samples"]).get(task_code(task), [])
     ensure_task_not_returned(task, task_samples)
     result = apply_tray_withdrawal_command(snapshot, task, task_samples, tray_code, request.reason)
-    write_snapshot(snapshot)
+    write_snapshot(snapshot, task_codes={task_code(task)})
     return {
         "ok": True,
         **result,
@@ -723,7 +754,7 @@ def print_task_barcodes(task_id: str, request: TrayPrintBarcodeRequest = Body(..
                 next_trays.append(normalized)
             sample["trays"] = next_trays
 
-    write_snapshot(snapshot)
+    write_snapshot(snapshot, task_codes={task_code(task)})
     workspace = serialize_workspace(
         task,
         task_samples,

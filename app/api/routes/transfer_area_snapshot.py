@@ -53,12 +53,23 @@ TRANSFER_ALLOCATION_READ_FIELDS = (
 def read_transfer_snapshot(
     storage: Any,
     fields: Iterable[str] | None = None,
+    *,
+    task_codes: set[str] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     selected_fields = tuple(dict.fromkeys(fields or TRANSFER_SNAPSHOT_STORAGE_KEYS))
     selected_fields = tuple(field for field in selected_fields if field in TRANSFER_SNAPSHOT_STORAGE_KEYS)
     storage_keys = [TRANSFER_SNAPSHOT_STORAGE_KEYS[field] for field in selected_fields]
+    normalized_task_codes = {
+        str(code or "").strip()
+        for code in (task_codes or set())
+        if str(code or "").strip()
+    }
+    scope_reader = getattr(storage, "read_task_scope", None)
     read_many = getattr(storage, "read_many", None)
-    raw_payload = read_many(storage_keys) if callable(read_many) else storage.read_all()
+    if normalized_task_codes and callable(scope_reader):
+        raw_payload = scope_reader(normalized_task_codes, storage_keys)
+    else:
+        raw_payload = read_many(storage_keys) if callable(read_many) else storage.read_all()
     payload = normalize_storage_payload(raw_payload)
     return {
         field: [

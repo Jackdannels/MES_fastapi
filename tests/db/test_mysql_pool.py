@@ -84,6 +84,26 @@ def test_mysql_pool_discards_failed_connections(monkeypatch) -> None:
     assert pool._created == 0
 
 
+def test_mysql_pool_diagnostics_tracks_available_and_in_use_connections(monkeypatch) -> None:
+    pool = MySQLConnectionPool(SimpleNamespace(pool_size=2, pool_timeout_seconds=0.25))
+    monkeypatch.setattr(pool, "_create_connection", FakeConnection)
+
+    first = pool.acquire()
+    second = pool.acquire()
+    assert pool.diagnostics() == {
+        "maxSize": 2,
+        "created": 2,
+        "available": 0,
+        "inUse": 2,
+        "timeoutSeconds": 0.25,
+    }
+
+    first.close()
+    assert pool.diagnostics()["available"] == 1
+    assert pool.diagnostics()["inUse"] == 1
+    second.close()
+
+
 def test_mysql_pool_keeps_tuple_and_dict_cursor_modes_separate(monkeypatch) -> None:
     settings = SimpleNamespace(
         host="127.0.0.1",

@@ -36,20 +36,22 @@ CI 或联网发布机必须先构建、测试并推送 API/Web 镜像，再记�
 
 ```text
 mysqldump --single-transaction --quick --routines --triggers --events --hex-blob \
-  --host=<host> --user=<backup_user> --databases mes_single_branch > mes-before-V005.sql
+  --host=<host> --user=<backup_user> --databases mes_single_branch > mes-before-V007.sql
 ```
 
 密码通过受限的 MySQL option file 提供，禁止放在命令行。对 SQL 文件生成 SHA-256，同时归档 `mes_reports` Docker 卷。不要通过热拷 MySQL 数据目录代替逻辑备份。
 
 恢复演练只能导入全新的隔离库（例如 `mes_single_branch_restore_test`），然后核对：
 
-- `schema_migrations` 为 V005 且 checksum 正确；
+- `schema_migrations` 为 V007 且 checksum 正确；
 - schema contract 缺口为 0；
 - 任务、样品、托盘、实验、排程等关键表行数与备份记录一致；
 - 报告卷文件数和 SHA-256 一致；
 - 隔离 API 的 `/health/ready` 和核心只读接口正常。
 
 在未完成恢复演练前，不执行正式迁移。
+
+事件留存由 API 后台任务执行，默认启动延迟 60 秒、每小时运行一次，并通过 MySQL 命名锁保证多实例中只有一个清理器工作。上线后应通过 `/health/capacity` 检查当前 `CAPACITY_WARN_*` 阈值、告警原因，以及 `retention` 的最近运行结果、累计删除量和错误信息；保留期、批次或容量阈值变更应先在隔离恢复库验证。长稳验收命令和判定规则见 `docs/stage4-long-running-acceptance.md`。
 
 仓库提供 `scripts/deploy/Backup-MesDatabase.ps1` 和 `Restore-MesRehearsal.ps1`。两者只接受固定 digest 的镜像和仓库外密码文件；恢复脚本只允许名称以 `_restore_test` 结尾的空数据库，并在导入后执行迁移记录和 schema contract 校验。正式数据库恢复仍必须由 DBA 在独立维护窗口执行，不能使用演练脚本覆盖非空库。
 
@@ -70,6 +72,8 @@ mysqldump --single-transaction --quick --routines --triggers --events --hex-blob
    ```
 
 5. 验证 HTTPS、`/health/ready`、登录、任务只读、报告下载、RabbitMQ 和 MQTT 状态，再恢复业务写入。
+
+迁移、API 与 Web 容器默认使用 Docker `json-file` 日志驱动，单文件上限 `10m`、最多保留 `5` 个文件。可通过生产环境文件中的 `DOCKER_LOG_MAX_SIZE` 和 `DOCKER_LOG_MAX_FILE` 调整，并在变更后重建容器；外部 MySQL 与消息代理的日志保留策略由各自运维平台独立配置。
 
 普通 `up -d api web` 不会执行 DDL；如果漏做迁移，API 的生产 readiness 会因版本或 schema contract 不满足而拒绝就绪。
 

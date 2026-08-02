@@ -11,6 +11,10 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = PROJECT_ROOT / "scripts" / "sql" / "0001-complete-baseline-schema.sql"
 DEFAULT_OUTPUT = PROJECT_ROOT / "app" / "db" / "schema_contract.json"
+DEFAULT_INDEX_SOURCES = (
+    PROJECT_ROOT / "scripts" / "sql" / "V006__long_running_query_indexes.sql",
+    PROJECT_ROOT / "scripts" / "sql" / "V007__bounded_event_retention_indexes.sql",
+)
 
 _CREATE_TABLE_RE = re.compile(
     r"CREATE TABLE IF NOT EXISTS\s+`?(?P<name>[a-zA-Z0-9_]+)`?\s*\("
@@ -29,6 +33,12 @@ _DEFAULT_RE = re.compile(
     re.IGNORECASE,
 )
 _TEXT_TYPES = {"char", "varchar", "tinytext", "text", "mediumtext", "longtext", "enum", "set"}
+_ADD_INDEX_RE = re.compile(
+    r"ALTER\s+TABLE\s+`?(?P<table>[a-zA-Z0-9_]+)`?\s+"
+    r"ADD\s+(?P<unique>UNIQUE\s+)?INDEX\s+`?(?P<name>[a-zA-Z0-9_]+)`?\s*"
+    r"\((?P<columns>[^)]+)\)",
+    re.IGNORECASE,
+)
 
 
 def _identifier_parts(fragment: str) -> tuple[list[str], list[int | None]]:
@@ -41,6 +51,20 @@ def _identifier_parts(fragment: str) -> tuple[list[str], list[int | None]]:
 
 def _identifier_list(fragment: str) -> list[str]:
     return _identifier_parts(fragment)[0]
+
+
+def _migration_index_parts(fragment: str) -> tuple[list[str], list[int | None]]:
+    columns: list[str] = []
+    sub_parts: list[int | None] = []
+    for raw_part in fragment.split(","):
+        part = raw_part.strip()
+        match = re.fullmatch(r"`?(?P<name>[a-zA-Z0-9_]+)`?(?:\((?P<sub_part>\d+)\))?", part)
+        if not match:
+            raise ValueError(f"Unsupported migration index column: {part}")
+        columns.append(match.group("name"))
+        sub_part = match.group("sub_part")
+        sub_parts.append(int(sub_part) if sub_part else None)
+    return columns, sub_parts
 
 
 def _base_type(column_type: str) -> str:
@@ -119,7 +143,49 @@ def _parse_foreign_key(line: str) -> tuple[str, dict[str, Any]] | None:
     }
 
 
-def build_contract(source: Path) -> dict[str, Any]:
+def _merge_migration_indexes(
+    tables: dict[str, Any],
+    index_sources: tuple[Path, ...],
+) -> list[dict[str, str]]:
+    source_metadata: list[dict[str, str]] = []
+    for index_source in index_sources:
+        source_bytes = index_source.read_bytes()
+        sql = source_bytes.decode("utf-8")
+        matches = list(_ADD_INDEX_RE.finditer(sql))
+        if not matches:
+            raise ValueError(f"No ADD INDEX definitions found in {index_source}")
+        for match in matches:
+            table_name = match.group("table")
+            if table_name not in tables:
+                raise ValueError(
+                    f"Migration index {match.group('name')} references unknown table {table_name}"
+                )
+            columns, sub_parts = _migration_index_parts(match.group("columns"))
+            definition = {
+                "unique": bool(match.group("unique")),
+                "columns": columns,
+                "sub_parts": sub_parts,
+            }
+            indexes = tables[table_name]["indexes"]
+            existing = indexes.get(match.group("name"))
+            if existing is not None and existing != definition:
+                raise ValueError(
+                    f"Conflicting definition for migration index {table_name}.{match.group('name')}"
+                )
+            indexes[match.group("name")] = definition
+        source_metadata.append(
+            {
+                "source": str(index_source.relative_to(PROJECT_ROOT)).replace("\\", "/"),
+                "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
+            }
+        )
+    return source_metadata
+
+
+def build_contract(
+    source: Path,
+    index_sources: tuple[Path, ...] = DEFAULT_INDEX_SOURCES,
+) -> dict[str, Any]:
     source_bytes = source.read_bytes()
     sql = source_bytes.decode("utf-8")
     tables: dict[str, Any] = {}
@@ -171,10 +237,12 @@ def build_contract(source: Path) -> dict[str, Any]:
         }
     if len(tables) != 39:
         raise ValueError(f"Expected 39 baseline tables, parsed {len(tables)}")
+    index_source_metadata = _merge_migration_indexes(tables, index_sources)
     return {
-        "contract_version": "V005",
+        "contract_version": "V007",
         "source": str(source.relative_to(PROJECT_ROOT)).replace("\\", "/"),
         "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
+        "index_sources": index_source_metadata,
         "tables": dict(sorted(tables.items())),
     }
 

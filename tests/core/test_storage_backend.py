@@ -1433,7 +1433,7 @@ def test_initialize_mysql_storage_validates_schema_only_after_migrations_are_app
     monkeypatch.setattr(
         module,
         "apply_pending_schema_migrations",
-        lambda: touched.append("migrations") or ["V001", "V002", "V003", "V004", "V005"],
+        lambda: touched.append("migrations") or ["V001", "V002", "V003", "V004", "V005", "V006", "V007"],
     )
 
     def _validate_after_migrations() -> None:
@@ -1474,7 +1474,7 @@ def test_initialize_mysql_storage_validates_schema_only_after_migrations_are_app
 
     assert touched == ["migrations", "validation"]
     assert summary["schema_initialized"] is True
-    assert summary["schema_version"] == "V005"
+    assert summary["schema_version"] == "V007"
 
 
 def test_initialize_mysql_storage_forbids_demo_seed_in_production(monkeypatch) -> None:
@@ -1501,6 +1501,8 @@ def test_init_mysql_storage_schema_order_starts_with_complete_baseline() -> None
         "2026-03-17-mes-single-branch-schema-alignment.sql",
         "V004__runtime_schema_finalization.sql",
         "V005__terminal_collation_alignment.sql",
+        "V006__long_running_query_indexes.sql",
+        "V007__bounded_event_retention_indexes.sql",
     ]
 
 

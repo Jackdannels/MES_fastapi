@@ -26,6 +26,8 @@ def test_api_image_only_copies_migration_runtime_scripts() -> None:
     assert "COPY --chown=mes:mes scripts /app/scripts" not in api
     assert "scripts/init_mysql_storage.py" in api
     assert "scripts/sql/V005__terminal_collation_alignment.sql" in api
+    assert "scripts/sql/V006__long_running_query_indexes.sql" in api
+    assert "scripts/sql/V007__bounded_event_retention_indexes.sql" in api
     for excluded in ("trial_run.py", "reset_demo_data.py", "run_p0_baselines.py"):
         assert excluded not in api
 
@@ -47,8 +49,48 @@ def test_compose_isolated_stack_migrates_before_api_and_preserves_hostless_excep
     assert '"127.0.0.1:${MES_WEB_PORT:-15173}:8080"' in compose
     assert "condition: service_completed_successfully" in compose
     assert 'MQTT_ENABLED: "true"' in compose
+    assert "MQTT_CONNECT_TIMEOUT_SECONDS" in compose
+    assert "MQTT_PUBLISH_TIMEOUT_SECONDS" in compose
+    assert "MQTT_PUBLISH_SLOW_MS" in compose
+    assert "CAPACITY_WARN_POOL_UTILIZATION" in compose
+    assert "CAPACITY_WARN_STAGING_EVENT_ITEMS" in compose
+    assert "CAPACITY_WARN_STAGING_EVENT_BYTES" in compose
+    assert "CAPACITY_WARN_MQ_MESSAGE_ROWS" in compose
+    assert "CAPACITY_WARN_EXPERIMENT_EVENT_ROWS" in compose
+    assert "RETENTION_ENABLED" in compose
+    assert "RETENTION_BATCH_SIZE" in compose
+    assert "MQ_MESSAGE_LOG_RETENTION_DAYS" in compose
+    assert "EXPERIMENT_EVENT_RETENTION_DAYS" in compose
+    assert "STAGING_EVENT_RETENTION_DAYS" in compose
     assert 'UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE: "false"' in compose
     assert 'UPPER_COMPUTER_SIMULATOR_AUTO_START: "false"' in compose
+
+
+def test_compose_services_use_bounded_json_file_logging() -> None:
+    packaging = (REPO_ROOT / "compose.packaging.yml").read_text(encoding="utf-8")
+    production = (REPO_ROOT / "compose.production.yml").read_text(encoding="utf-8")
+
+    for compose, service_count in ((packaging, 5), (production, 3)):
+        assert "x-json-logging: &json-logging" in compose
+        assert "driver: json-file" in compose
+        assert 'max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"' in compose
+        assert 'max-file: "${DOCKER_LOG_MAX_FILE:-5}"' in compose
+        assert compose.count("logging: *json-logging") == service_count
+
+
+def test_deployment_environment_examples_expose_capacity_and_log_limits() -> None:
+    for relative_path in ("deploy/.env.compose.example", "deploy/.env.production.example"):
+        example = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
+        for setting in (
+            "CAPACITY_WARN_POOL_UTILIZATION=0.8",
+            "CAPACITY_WARN_STAGING_EVENT_ITEMS=20000",
+            "CAPACITY_WARN_STAGING_EVENT_BYTES=16777216",
+            "CAPACITY_WARN_MQ_MESSAGE_ROWS=500000",
+            "CAPACITY_WARN_EXPERIMENT_EVENT_ROWS=500000",
+            "DOCKER_LOG_MAX_SIZE=10m",
+            "DOCKER_LOG_MAX_FILE=5",
+        ):
+            assert setting in example
 
 
 def test_mysql_bootstrap_restricts_runtime_account_to_dml() -> None:
@@ -72,6 +114,19 @@ def test_production_compose_uses_external_database_file_secrets_and_immutable_im
     assert "target: mysql_ca.pem" in compose
     assert 'MYSQL_SSL_VERIFY_IDENTITY: "true"' in compose
     assert 'MQTT_HTTP_EVENT_INGRESS_ENABLED: "false"' in compose
+    assert "MQTT_CONNECT_TIMEOUT_SECONDS" in compose
+    assert "MQTT_PUBLISH_TIMEOUT_SECONDS" in compose
+    assert "MQTT_PUBLISH_SLOW_MS" in compose
+    assert "CAPACITY_WARN_POOL_UTILIZATION" in compose
+    assert "CAPACITY_WARN_STAGING_EVENT_ITEMS" in compose
+    assert "CAPACITY_WARN_STAGING_EVENT_BYTES" in compose
+    assert "CAPACITY_WARN_MQ_MESSAGE_ROWS" in compose
+    assert "CAPACITY_WARN_EXPERIMENT_EVENT_ROWS" in compose
+    assert "RETENTION_ENABLED" in compose
+    assert "RETENTION_BATCH_SIZE" in compose
+    assert "MQ_MESSAGE_LOG_RETENTION_DAYS" in compose
+    assert "EXPERIMENT_EVENT_RETENTION_DAYS" in compose
+    assert "STAGING_EVENT_RETENTION_DAYS" in compose
     assert 'SESSION_COOKIE_SECURE: "true"' in compose
     assert 'FRONTEND_ORIGINS: https://${MES_DOMAIN' in compose
     assert "profiles: [migration]" in compose

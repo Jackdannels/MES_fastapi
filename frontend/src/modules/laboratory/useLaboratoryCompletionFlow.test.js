@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { useLaboratoryCompletionFlow } from "./useLaboratoryCompletionFlow";
+import { completionConfirmationMatches, useLaboratoryCompletionFlow } from "./useLaboratoryCompletionFlow";
 
 const ref = (value) => ({ value });
 
@@ -11,6 +11,8 @@ describe("useLaboratoryCompletionFlow completion action", () => {
       resolveEndRequest = resolve;
     }));
     const persistRunningExperimentCompletion = vi.fn();
+    const completionAwaitingConfirmation = ref(null);
+    const completionConfirmationError = ref("old confirmation error");
     const completionSubmitting = ref(false);
     const runningModalVisible = ref(true);
     const flushPendingRealtimeRefresh = vi.fn();
@@ -18,6 +20,8 @@ describe("useLaboratoryCompletionFlow completion action", () => {
     const flow = useLaboratoryCompletionFlow({
       axisContinuation: ref({}),
       clearRunningModalRestoreTimer: vi.fn(),
+      completionAwaitingConfirmation,
+      completionConfirmationError,
       completionSubmitting,
       completedRunningExperiment: ref(null),
       currentTask: ref({
@@ -51,6 +55,7 @@ describe("useLaboratoryCompletionFlow completion action", () => {
 
     expect(runWithAttendance).toHaveBeenCalledOnce();
     expect(completionSubmitting.value).toBe(true);
+    expect(completionConfirmationError.value).toBe("");
     expect(requestMqttExperimentEnd).toHaveBeenCalledWith({
       axis_code: "",
       experiment_code: "SYLU-2026-07-001-B",
@@ -65,7 +70,18 @@ describe("useLaboratoryCompletionFlow completion action", () => {
     expect(persistRunningExperimentCompletion).not.toHaveBeenCalled();
     expect(runningModalVisible.value).toBe(true);
     expect(completionSubmitting.value).toBe(false);
+    expect(completionAwaitingConfirmation.value).toMatchObject({
+      axisCode: "",
+      experimentCode: "SYLU-2026-07-001-B",
+      nextAxisCode: "",
+      runNo: "RUN-SALT-001",
+      taskCode: "SYLU-2026-07-001",
+    });
+    expect(completionAwaitingConfirmation.value.requestedAt).toEqual(expect.any(Number));
     expect(flushPendingRealtimeRefresh).toHaveBeenCalledOnce();
+
+    await flow.completeExperimentNow();
+    expect(requestMqttExperimentEnd).toHaveBeenCalledOnce();
   });
 
   test("routes hot humid laboratory two completion through the upper computer", async () => {
@@ -108,5 +124,34 @@ describe("useLaboratoryCompletionFlow completion action", () => {
     });
     expect(persistRunningExperimentCompletion).not.toHaveBeenCalled();
     expect(runningModalVisible.value).toBe(true);
+  });
+});
+
+describe("completionConfirmationMatches", () => {
+  const pending = {
+    axisCode: "",
+    experimentCode: "EXP-001",
+    runNo: "RUN-001",
+    taskCode: "TASK-001",
+  };
+
+  test("matches the completed experiment run by run number", () => {
+    expect(completionConfirmationMatches(pending, [
+      { run_no: "RUN-001", status: "实验已完成" },
+    ], [])).toBe(true);
+  });
+
+  test("matches the completed axis step by run number and axis", () => {
+    expect(completionConfirmationMatches(
+      { ...pending, axisCode: "X" },
+      [{ run_no: "RUN-001", status: "实验中" }],
+      [{ axis_code: "X", run_no: "RUN-001", status: "实验已完成" }],
+    )).toBe(true);
+  });
+
+  test("does not accept a completion from an unrelated run", () => {
+    expect(completionConfirmationMatches(pending, [
+      { run_no: "RUN-002", status: "实验已完成" },
+    ], [])).toBe(false);
   });
 });

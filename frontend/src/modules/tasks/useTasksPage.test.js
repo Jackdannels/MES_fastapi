@@ -7,6 +7,10 @@ const mocks = vi.hoisted(() => ({
   loadSnapshot: vi.fn(),
   persistSnapshot: vi.fn(),
   readMasterTestTypes: vi.fn(),
+  readExternalTaskIntakes: vi.fn(),
+  readNextTaskCode: vi.fn(),
+  readTaskDetail: vi.fn(),
+  readTaskPage: vi.fn(),
   readTasks: vi.fn(),
   createTask: vi.fn(),
   deleteTask: vi.fn(),
@@ -32,6 +36,10 @@ vi.mock("@/lib/masterDataApi", () => ({
 vi.mock("@/lib/tasksApi", () => ({
   createTask: mocks.createTask,
   deleteTask: mocks.deleteTask,
+  readExternalTaskIntakes: mocks.readExternalTaskIntakes,
+  readNextTaskCode: mocks.readNextTaskCode,
+  readTaskDetail: mocks.readTaskDetail,
+  readTaskPage: mocks.readTaskPage,
   readTasks: mocks.readTasks,
   resetTasks: mocks.resetTasks,
   updateTask: mocks.updateTask,
@@ -90,6 +98,41 @@ describe("useTasksPage", () => {
     routeState.hash = "";
     mocks.readTasks.mockResolvedValue([task]);
     mocks.loadSnapshot.mockResolvedValue(buildSnapshot());
+    mocks.readExternalTaskIntakes.mockResolvedValue([]);
+    mocks.readNextTaskCode.mockResolvedValue(task.code);
+    mocks.readTaskPage.mockImplementation(async () => {
+      const tasks = await mocks.readTasks();
+      const snapshot = await mocks.loadSnapshot();
+      return {
+        currentPage: 1,
+        totalCount: Array.isArray(tasks) ? tasks.length : 0,
+        totalPages: 1,
+        tasks: Array.isArray(tasks) ? tasks : [],
+        samples: snapshot?.[STORAGE_KEYS.samples],
+        experiments: snapshot?.[STORAGE_KEYS.experiments],
+        schedules: snapshot?.[STORAGE_KEYS.schedules],
+        metrics: {},
+        statusOptions: ["待排程"],
+        testTypeOptions: ["冲击试验"],
+      };
+    });
+    mocks.readTaskDetail.mockImplementation(async (taskCode) => {
+      const tasks = await mocks.readTasks();
+      const snapshot = await mocks.loadSnapshot();
+      const scoped = (key) => (Array.isArray(snapshot?.[key])
+        ? snapshot[key].filter((row) => String(row?.task_code ?? "") === String(taskCode))
+        : undefined);
+      return {
+        task: tasks.find((entry) => entry.code === taskCode || entry.id === taskCode),
+        samples: scoped(STORAGE_KEYS.samples),
+        experiments: scoped(STORAGE_KEYS.experiments),
+        schedules: scoped(STORAGE_KEYS.schedules),
+        experimentTrays: scoped(STORAGE_KEYS.experiment_trays),
+        experimentSamples: scoped(STORAGE_KEYS.experiment_samples),
+        experimentRuns: scoped(STORAGE_KEYS.experiment_runs),
+        experimentRunTrays: scoped(STORAGE_KEYS.experiment_run_trays),
+      };
+    });
     mocks.persistSnapshot.mockResolvedValue(undefined);
     mocks.readMasterTestTypes.mockResolvedValue([{ name: "冲击试验" }]);
   });

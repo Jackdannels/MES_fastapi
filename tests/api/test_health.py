@@ -178,3 +178,39 @@ def test_health_surfaces_storage_backend_unhealthy_details_without_failing_healt
             },
         },
     }
+
+
+def test_health_capacity_includes_retention_runtime_status(client, monkeypatch):
+    class RetentionRuntime:
+        def status(self):
+            return {"enabled": True, "running": False, "lastError": ""}
+
+    captured = {}
+
+    def collect(_connection_factory, *, retention_status=None, thresholds=None):
+        captured["retention"] = retention_status
+        captured["thresholds"] = thresholds
+        return {"status": "ok", "warnings": [], "retention": retention_status}
+
+    monkeypatch.setattr(health_routes, "collect_capacity_diagnostics", collect)
+    client.app.state.data_retention_runtime = RetentionRuntime()
+
+    response = client.get("/health/capacity")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert captured["retention"]["enabled"] is True
+    assert captured["thresholds"].pool_utilization == 0.8
+
+
+def test_health_capacity_returns_503_when_diagnostics_fail(client, monkeypatch):
+    monkeypatch.setattr(
+        health_routes,
+        "collect_capacity_diagnostics",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("capacity query failed")),
+    )
+
+    response = client.get("/health/capacity")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "unhealthy", "detail": "capacity query failed"}

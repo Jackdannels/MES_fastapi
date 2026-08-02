@@ -57,6 +57,7 @@ from app.core.mysql_storage_replacers import (
     replace_devices,
     replace_experiments,
     replace_task_experiments,
+    replace_task_workflow_relations,
     replace_experiment_runs,
     replace_experiment_run_trays,
     replace_experiment_run_steps,
@@ -64,6 +65,7 @@ from app.core.mysql_storage_replacers import (
     replace_experiment_trays,
     replace_schedules,
     replace_streams,
+    replace_task_streams,
     replace_task_allocation_relations,
     replace_tasks,
 )
@@ -198,6 +200,84 @@ class MySQLMesStorageBackend(StorageBackend):
 
     def list_labs(self) -> list[dict[str, Any]]:
         return list_master_labs(self)
+
+    def task_code_exists(self, task_code: str, *, exclude_task_code: str = "") -> bool:
+        normalized_task_code = normalize_text(task_code)
+        if not normalized_task_code:
+            return False
+        sql = "SELECT 1 FROM biz_task WHERE task_no = %s"
+        params: list[Any] = [normalized_task_code]
+        normalized_exclusion = normalize_text(exclude_task_code)
+        if normalized_exclusion:
+            sql += " AND task_no <> %s"
+            params.append(normalized_exclusion)
+        sql += " LIMIT 1"
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+                return cursor.fetchone() is not None
+
+    def find_task_names_by_prefix(self, prefix: str) -> set[str]:
+        normalized_prefix = normalize_text(prefix)
+        if not normalized_prefix:
+            return set()
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT task_name FROM biz_task WHERE source_system = %s AND task_name LIKE %s",
+                    (STORAGE_MARKER, f"{normalized_prefix}%"),
+                )
+                rows = cursor.fetchall()
+        return {
+            normalize_text(row.get("task_name") if isinstance(row, dict) else row[0] if row else "")
+            for row in rows
+            if normalize_text(row.get("task_name") if isinstance(row, dict) else row[0] if row else "")
+        }
+
+    def find_existing_sample_codes(self, sample_codes: set[str], *, exclude_task_code: str = "") -> set[str]:
+        normalized_codes = sorted({normalize_text(code) for code in sample_codes if normalize_text(code)})
+        if not normalized_codes:
+            return set()
+        placeholders = ", ".join(["%s"] * len(normalized_codes))
+        sql = f"""
+            SELECT sample.sample_no
+            FROM biz_sample AS sample
+            LEFT JOIN biz_task AS task ON task.task_id = sample.task_id
+            WHERE sample.sample_no IN ({placeholders})
+        """
+        params: list[Any] = list(normalized_codes)
+        normalized_exclusion = normalize_text(exclude_task_code)
+        if normalized_exclusion:
+            sql += " AND COALESCE(task.task_no, '') <> %s"
+            params.append(normalized_exclusion)
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
+        return {
+            normalize_text(row.get("sample_no") if isinstance(row, dict) else row[0] if row else "")
+            for row in rows
+            if normalize_text(row.get("sample_no") if isinstance(row, dict) else row[0] if row else "")
+        }
+
+    def find_task_code_by_tray(self, tray_code: str) -> str:
+        normalized_tray_code = normalize_text(tray_code)
+        if not normalized_tray_code:
+            return ""
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT task.task_no
+                    FROM biz_tray AS tray
+                    INNER JOIN biz_task AS task ON task.task_id = tray.task_id
+                    WHERE tray.tray_no = %s
+                    LIMIT 1
+                    """,
+                    (normalized_tray_code,),
+                )
+                row = cursor.fetchone()
+        return normalize_text(row.get("task_no") if isinstance(row, dict) else row[0] if row else "")
 
     def _ensure_schema_extensions(self) -> None:
         if self._schema_initialized:
@@ -334,35 +414,35 @@ class MySQLMesStorageBackend(StorageBackend):
             experiment_samples=experiment_samples,
         )
 
-    def _load_tasks(self, cursor) -> list[dict[str, Any]]:
-        return load_tasks(cursor)
+    def _load_tasks(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
+        return load_tasks(cursor, task_codes=task_codes)
 
-    def _load_schedules(self, cursor) -> list[dict[str, Any]]:
-        return load_schedules(cursor)
+    def _load_schedules(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
+        return load_schedules(cursor, task_codes=task_codes)
 
-    def _load_experiments(self, cursor) -> list[dict[str, Any]]:
-        return load_experiments(cursor)
+    def _load_experiments(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
+        return load_experiments(cursor, task_codes=task_codes)
 
-    def _load_experiment_trays(self, cursor) -> list[dict[str, Any]]:
-        return load_experiment_trays(cursor)
+    def _load_experiment_trays(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
+        return load_experiment_trays(cursor, task_codes=task_codes)
 
-    def _load_experiment_samples(self, cursor) -> list[dict[str, Any]]:
-        return load_experiment_samples(cursor)
+    def _load_experiment_samples(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
+        return load_experiment_samples(cursor, task_codes=task_codes)
 
-    def _load_experiment_runs(self, cursor) -> list[dict[str, Any]]:
-        return load_experiment_runs(cursor)
+    def _load_experiment_runs(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
+        return load_experiment_runs(cursor, task_codes=task_codes)
 
-    def _load_experiment_run_trays(self, cursor) -> list[dict[str, Any]]:
-        return load_experiment_run_trays(cursor)
+    def _load_experiment_run_trays(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
+        return load_experiment_run_trays(cursor, task_codes=task_codes)
 
-    def _load_experiment_run_steps(self, cursor) -> list[dict[str, Any]]:
-        return load_experiment_run_steps(cursor)
+    def _load_experiment_run_steps(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
+        return load_experiment_run_steps(cursor, task_codes=task_codes)
 
     def _load_devices(self, cursor) -> list[dict[str, Any]]:
         return load_devices(cursor)
 
-    def _load_streams(self, cursor) -> list[dict[str, Any]]:
-        return load_streams(cursor)
+    def _load_streams(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
+        return load_streams(cursor, task_codes=task_codes)
 
     def _load_samples(
         self,
@@ -370,13 +450,17 @@ class MySQLMesStorageBackend(StorageBackend):
         staging_event_rows: Iterable[Dict[str, Any]] | None = None,
         schedules: Iterable[Dict[str, Any]] | None = None,
         experiment_trays: Iterable[Dict[str, Any]] | None = None,
+        *,
+        task_codes: set[str] | None = None,
     ) -> list[dict[str, Any]]:
         return load_samples(
             cursor,
             staging_event_rows=staging_event_rows,
             schedules=schedules,
             experiment_trays=experiment_trays,
+            task_codes=task_codes,
         )
+
     def _update_experiment_unscheduled_since(
         self,
         cursor,
@@ -453,7 +537,12 @@ class MySQLMesStorageBackend(StorageBackend):
         if snapshot_updates:
             self._snapshot_repository.write_many(snapshot_updates)
 
-    def read_many(self, keys: Iterable[str]) -> Dict[str, Any]:
+    def _read_many(
+        self,
+        keys: Iterable[str],
+        *,
+        task_codes: set[str] | None = None,
+    ) -> Dict[str, Any]:
         requested_keys = list(dict.fromkeys(
             key for key in keys if key in STORAGE_KEYS or key == STORAGE_META_KEY
         ))
@@ -483,6 +572,18 @@ class MySQLMesStorageBackend(StorageBackend):
                         if key in all_snapshot_values
                     }
                 snapshot_values = self._deserialize_snapshot_payloads(raw_snapshot_values)
+                if task_codes and "mes.staging_events" in snapshot_values:
+                    snapshot_values["mes.staging_events"] = [
+                        event
+                        for event in snapshot_values["mes.staging_events"]
+                        if isinstance(event, dict)
+                        and normalize_text(
+                            event.get("task_code")
+                            or event.get("taskCode")
+                            or event.get("task_no")
+                            or event.get("taskNo")
+                        ) in task_codes
+                    ]
         else:
             snapshot_values = {}
         data: Dict[str, Any] = {
@@ -521,9 +622,15 @@ class MySQLMesStorageBackend(StorageBackend):
                                 snapshot_values.get("mes.staging_events"),
                                 schedules=load("mes.schedules"),
                                 experiment_trays=load("mes.experiment_trays"),
+                                task_codes=task_codes,
                             )
                         else:
-                            loaded[key] = loaders[key](cursor)
+                            loader = loaders[key]
+                            loaded[key] = (
+                                loader(cursor, task_codes=task_codes)
+                                if task_codes is not None and key != "mes.devices"
+                                else loader(cursor)
+                            )
                         return loaded[key]
 
                     for key in requested_keys:
@@ -531,6 +638,20 @@ class MySQLMesStorageBackend(StorageBackend):
                             data[key] = load(key)
 
         return {key: data.get(key, []) for key in requested_keys}
+
+    def read_many(self, keys: Iterable[str]) -> Dict[str, Any]:
+        return self._read_many(keys)
+
+    def read_task_scope(self, task_codes: set[str], keys: Iterable[str]) -> Dict[str, Any]:
+        normalized_task_codes = {
+            normalize_text(code)
+            for code in task_codes
+            if normalize_text(code)
+        }
+        if not normalized_task_codes:
+            raise ValueError("task_codes must not be empty")
+        with performance_span("storage.task_scope"):
+            return self._read_many(keys, task_codes=normalized_task_codes)
 
     def read_all(self) -> Dict[str, Any]:
         data = self.read_many([*STORAGE_KEYS, STORAGE_META_KEY])
@@ -583,7 +704,19 @@ class MySQLMesStorageBackend(StorageBackend):
             normalized_updates = {
                 key: _normalize_value(key, value if isinstance(value, list) else [])
                 for key, value in updates.items()
-                if key in {"mes.tasks", "mes.samples", "mes.experiments", "mes.experiment_samples"}
+                if key in {
+                    "mes.tasks",
+                    "mes.samples",
+                    "mes.schedules",
+                    "mes.experiments",
+                    "mes.experiment_runs",
+                    "mes.experiment_run_trays",
+                    "mes.experiment_run_steps",
+                    "mes.experiment_trays",
+                    "mes.experiment_samples",
+                    "mes.streams",
+                    "mes.staging_events",
+                }
             }
             if not normalized_updates:
                 return
@@ -594,23 +727,96 @@ class MySQLMesStorageBackend(StorageBackend):
                         if "mes.experiment_samples" in normalized_updates:
                             self._delete_task_experiment_samples(cursor, normalized_task_codes)
                         if "mes.tasks" in normalized_updates:
-                            self._replace_tasks(cursor, normalized_updates["mes.tasks"], prune=False)
+                            self._replace_tasks(
+                                cursor,
+                                [
+                                    row
+                                    for row in normalized_updates["mes.tasks"]
+                                    if normalize_text(row.get("code")) in normalized_task_codes
+                                ],
+                                prune=False,
+                            )
                         if "mes.samples" in normalized_updates:
                             self._replace_task_samples(cursor, normalized_updates["mes.samples"], normalized_task_codes)
                         if "mes.experiments" in normalized_updates:
-                            self._replace_task_experiments(cursor, normalized_updates["mes.experiments"], normalized_task_codes)
+                            self._replace_task_experiments(
+                                cursor,
+                                normalized_updates["mes.experiments"],
+                                normalized_task_codes,
+                            )
                         if "mes.experiment_samples" in normalized_updates:
                             self._insert_task_experiment_samples(
                                 cursor,
                                 normalized_updates["mes.experiment_samples"],
                                 normalized_task_codes,
                             )
+                        replace_task_workflow_relations(
+                            cursor,
+                            task_codes=normalized_task_codes,
+                            schedules=normalized_updates.get("mes.schedules"),
+                            experiment_runs=normalized_updates.get("mes.experiment_runs"),
+                            experiment_run_trays=normalized_updates.get("mes.experiment_run_trays"),
+                            experiment_run_steps=normalized_updates.get("mes.experiment_run_steps"),
+                            experiment_trays=normalized_updates.get("mes.experiment_trays"),
+                        )
+                        if "mes.streams" in normalized_updates:
+                            replace_task_streams(
+                                cursor,
+                                normalized_updates["mes.streams"],
+                                normalized_task_codes,
+                            )
+                        if "mes.tasks" in normalized_updates:
+                            incoming_task_codes = {
+                                normalize_text(row.get("code") or row.get("id"))
+                                for row in normalized_updates["mes.tasks"]
+                                if normalize_text(row.get("code") or row.get("id"))
+                            }
+                            removed_task_codes = sorted(normalized_task_codes - incoming_task_codes)
+                            if removed_task_codes:
+                                placeholders = ", ".join(["%s"] * len(removed_task_codes))
+                                cursor.execute(
+                                    f"DELETE FROM biz_task WHERE task_no IN ({placeholders}) AND source_system = %s",
+                                    [*removed_task_codes, STORAGE_MARKER],
+                                )
                         self._backfill_schedule_task_ids(cursor)
                         self._sync_progress_statuses(cursor)
                     connection.commit()
                 except Exception:
                     connection.rollback()
                     raise
+
+            if "mes.staging_events" in normalized_updates:
+                read_snapshot_many = getattr(self._snapshot_repository, "read_many", None)
+                raw_existing = (
+                    read_snapshot_many(["mes.staging_events"])
+                    if callable(read_snapshot_many)
+                    else self._snapshot_repository.read_all()
+                )
+                existing = self._deserialize_snapshot_payloads(raw_existing).get("mes.staging_events", [])
+
+                def event_task_code(event: Any) -> str:
+                    if not isinstance(event, dict):
+                        return ""
+                    return normalize_text(
+                        event.get("task_code")
+                        or event.get("taskCode")
+                        or event.get("task_no")
+                        or event.get("taskNo")
+                    )
+
+                merged_events = [
+                    event
+                    for event in existing
+                    if event_task_code(event) not in normalized_task_codes
+                ]
+                merged_events.extend(
+                    event
+                    for event in normalized_updates["mes.staging_events"]
+                    if event_task_code(event) in normalized_task_codes
+                )
+                self._snapshot_repository.write_many(
+                    self._serialize_snapshot_updates({"mes.staging_events": merged_events})
+                )
 
     def write_task_allocation_scope(self, task_code: str, updates: Dict[str, Any]) -> None:
         """Atomically persist only the allocation-owned rows for one task."""

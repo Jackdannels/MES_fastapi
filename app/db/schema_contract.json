@@ -1,5 +1,15 @@
 {
-  "contract_version": "V005",
+  "contract_version": "V007",
+  "index_sources": [
+    {
+      "source": "scripts/sql/V006__long_running_query_indexes.sql",
+      "source_sha256": "a697e6f62d32bb8eae188ecc0e36cc23da2b54023405f4be3331dfaaa7326e02"
+    },
+    {
+      "source": "scripts/sql/V007__bounded_event_retention_indexes.sql",
+      "source_sha256": "d64a0daa3968a5f89b8963ffda2453746da84152132a4588fcde9b6f310f80f1"
+    }
+  ],
   "source": "scripts/sql/0001-complete-baseline-schema.sql",
   "source_sha256": "fc7394d08733ba281a63602f7375786d3c8b3d996b722dc02d28b02eb5ff9c29",
   "tables": {
@@ -700,12 +710,74 @@
           ],
           "unique": true
         },
+        "idx_biz_experiment_event_lab_type_time": {
+          "columns": [
+            "lab_code",
+            "event_type",
+            "event_time",
+            "experiment_event_id"
+          ],
+          "sub_parts": [
+            null,
+            null,
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_event_retention_created": {
+          "columns": [
+            "created_at",
+            "experiment_event_id"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_event_retention_state": {
+          "columns": [
+            "task_no",
+            "experiment_no",
+            "sub_experiment_code",
+            "lab_code",
+            "event_type",
+            "created_at",
+            "experiment_event_id"
+          ],
+          "sub_parts": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "unique": false
+        },
         "idx_biz_experiment_event_task_exp": {
           "columns": [
             "task_no",
             "experiment_no"
           ],
           "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_event_task_exp_time": {
+          "columns": [
+            "task_no",
+            "experiment_no",
+            "event_time",
+            "experiment_event_id"
+          ],
+          "sub_parts": [
+            null,
+            null,
             null,
             null
           ],
@@ -2326,11 +2398,75 @@
           ],
           "unique": true
         },
+        "idx_biz_mq_latest_command": {
+          "columns": [
+            "direction",
+            "lab_code",
+            "message_type",
+            "created_at",
+            "message_log_id"
+          ],
+          "sub_parts": [
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_mq_retention_created": {
+          "columns": [
+            "created_at",
+            "message_log_id"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_mq_retention_state": {
+          "columns": [
+            "direction",
+            "lab_code",
+            "task_no",
+            "experiment_no",
+            "sub_experiment_code",
+            "message_type",
+            "created_at",
+            "message_log_id"
+          ],
+          "sub_parts": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "unique": false
+        },
         "idx_biz_mq_status": {
           "columns": [
             "process_status"
           ],
           "sub_parts": [
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_mq_status_created": {
+          "columns": [
+            "process_status",
+            "created_at",
+            "message_log_id"
+          ],
+          "sub_parts": [
+            null,
+            null,
             null
           ],
           "unique": false
@@ -2341,6 +2477,21 @@
             "experiment_no"
           ],
           "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_mq_task_exp_created": {
+          "columns": [
+            "task_no",
+            "experiment_no",
+            "created_at",
+            "message_log_id"
+          ],
+          "sub_parts": [
+            null,
+            null,
             null,
             null
           ],

@@ -24,6 +24,8 @@ COPY --chown=mes:mes scripts/sql/2026-03-17-app-storage-snapshot.sql /app/script
 COPY --chown=mes:mes scripts/sql/2026-03-17-mes-single-branch-schema-alignment.sql /app/scripts/sql/2026-03-17-mes-single-branch-schema-alignment.sql
 COPY --chown=mes:mes scripts/sql/V004__runtime_schema_finalization.sql /app/scripts/sql/V004__runtime_schema_finalization.sql
 COPY --chown=mes:mes scripts/sql/V005__terminal_collation_alignment.sql /app/scripts/sql/V005__terminal_collation_alignment.sql
+COPY --chown=mes:mes scripts/sql/V006__long_running_query_indexes.sql /app/scripts/sql/V006__long_running_query_indexes.sql
+COPY --chown=mes:mes scripts/sql/V007__bounded_event_retention_indexes.sql /app/scripts/sql/V007__bounded_event_retention_indexes.sql
 
 USER mes
 

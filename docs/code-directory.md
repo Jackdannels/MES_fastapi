@@ -48,6 +48,7 @@
 
 - `app/api/routes/tasks.py`：任务创建、编辑、删除和业务校验接口。
 - `app/api/routes/task_history.py`：任务历史查询接口。
+- `app/services/task_page_queries.py`：任务列表与历史的 SQL 计数、筛选、分页及页内考勤日志查询。
 - `app/services/external_task_intake_service.py`：外部任务接入和任务数据转换服务。
 - `frontend/src/modules/tasks/`：任务管理页面模块。
 - `frontend/src/modules/tasks/model.js`：任务列表、状态和筛选模型。
@@ -61,6 +62,7 @@
 - `frontend/src/modules/task-history/`：任务历史页面和模型。
 - `tests/api/test_tasks.py`：任务 API 测试。
 - `tests/api/test_task_history.py`：任务历史 API 测试。
+- `tests/services/test_task_page_queries.py`：任务分页 SQL 边界和页内查询测试。
 - `frontend/src/modules/tasks/*.test.js`：任务管理模型、运行时和结构测试。
 - `frontend/src/modules/task-overview/*.test.js`：任务总览逻辑和组件测试。
 - `frontend/src/modules/task-history/*.test.js`：任务历史测试。
@@ -268,6 +270,8 @@
 - `app/services/storage_schedule_lock_policy.py`：排程锁定和作用域判断。
 - `app/services/storage_schedule_patch.py`：排程数据补丁处理。
 - `app/services/storage_tray_actions.py`：托盘相关存储动作。
+- `app/services/data_retention.py`：MQTT、实验事件与暂存事件的小批量留存清理、跨实例互斥和运行状态。
+- `app/services/capacity_diagnostics.py`：重点表、快照体积和 MySQL 连接池容量诊断，供 `/health/capacity` 使用。
 - `app/core/storage_contract.py`：存储 key、运行后端常量和最小存储契约。
 - `app/core/storage_backend.py`：统一存储后端、快照规范化和后端选择。
 - `app/core/store.py`：本地存储入口。
@@ -363,6 +367,8 @@
 - `scripts/init_mysql_storage.py`：MySQL 存储初始化脚本。
 - `scripts/generate_schema_contract.py`：从最终基线生成可审计 Schema 合约。
 - `scripts/sql/V005__terminal_collation_alignment.sql`：历史终端表字符集对齐迁移。
+- `scripts/sql/V006__long_running_query_indexes.sql`：长期运行场景下 MQTT 消息与实验事件查询的复合索引迁移。
+- `scripts/sql/V007__bounded_event_retention_indexes.sql`：应用级小批量事件留存清理所需的时间与状态键索引。
 - `scripts/sql/mysql-production-grants.example.sql`：正式迁移/API 账号授权模板。
 - `compose.packaging.yml`：MySQL、迁移、API、Web、RabbitMQ/MQTT 的隔离验收编排。
 - `deploy/docker/`：后端/迁移与前端/Nginx 多阶段镜像定义。
@@ -370,6 +376,7 @@
 - `deploy/mysql/init-users.sh`：隔离 MySQL 的迁移/API 权限拆分。
 - `deploy/.env.compose.example`：不含真实密码的 Compose 环境模板。
 - `docs/docker-deployment.md`：Docker 打包、验收、停止和清理手册。
+- `docs/stage4-long-running-acceptance.md`：长期运行只读探针、容量阈值与 Docker 最终验收手册。
 - `frontend/scripts/legacy-fallback-snapshot-report.mjs`：旧数据兜底快照扫描报告脚本。
 - `docs/`：项目设计、计划、接口和代码目录文档。
 - `docs/code-directory.md`：当前代码目录。

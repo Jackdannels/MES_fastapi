@@ -50,12 +50,17 @@ def normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
 
-def load_snapshot(storage=None) -> dict[str, Any]:
+def load_snapshot(storage=None, *, keys: tuple[str, ...] | None = None) -> dict[str, Any]:
     storage_backend = storage or get_storage_backend()
-    snapshot = storage_backend.read_all() if hasattr(storage_backend, "read_all") else {}
+    requested_keys = tuple(dict.fromkeys(keys or (*SNAPSHOT_KEYS, *INTEGRATION_KEYS)))
+    read_many = getattr(storage_backend, "read_many", None)
+    if callable(read_many):
+        snapshot = read_many(requested_keys)
+    else:
+        snapshot = storage_backend.read_all() if hasattr(storage_backend, "read_all") else {}
     if not isinstance(snapshot, dict):
         snapshot = {}
-    for key in (*SNAPSHOT_KEYS, *INTEGRATION_KEYS):
+    for key in requested_keys:
         if key not in snapshot:
             value = storage_backend.read(key) if hasattr(storage_backend, "read") else []
             snapshot[key] = [dict(item) for item in value] if isinstance(value, list) else []
@@ -189,7 +194,11 @@ def store_external_task_intake(
     message_id: str,
     publish_update: Any,
 ) -> dict[str, Any]:
-    snapshot = load_snapshot(storage)
+    targeted_task_checker = getattr(storage, "task_code_exists", None)
+    store_keys = (EXTERNAL_INTAKES_KEY, LIMS_INBOX_KEY, LIMS_OUTBOX_KEY)
+    if not callable(targeted_task_checker):
+        store_keys = ("mes.tasks", *store_keys)
+    snapshot = load_snapshot(storage, keys=store_keys)
     tasks = [dict(task) for task in snapshot.get("mes.tasks", [])]
     intakes = [dict(item) for item in snapshot.get(EXTERNAL_INTAKES_KEY, [])]
     inbox = [dict(item) for item in snapshot.get(LIMS_INBOX_KEY, [])]
@@ -229,7 +238,11 @@ def store_external_task_intake(
             storage.write_many({LIMS_INBOX_KEY: snapshot[LIMS_INBOX_KEY], LIMS_OUTBOX_KEY: outbox})
         return existing
 
-    ensure_unique_task_code(tasks, task_code_value)
+    if callable(targeted_task_checker):
+        if targeted_task_checker(task_code_value):
+            raise HTTPException(status_code=400, detail="任务编号已存在")
+    else:
+        ensure_unique_task_code(tasks, task_code_value)
     ensure_unique_external_intake(intakes, intake_id=intake_id, task_code_value=task_code_value)
     next_intake.update(
         {
@@ -265,7 +278,14 @@ def accept_external_task_intake(
     publish_update: Any,
     task_storage_update_keys: list[str] | tuple[str, ...],
 ) -> dict[str, Any]:
-    snapshot = load_snapshot(storage)
+    scope_reader = getattr(storage, "read_task_scope", None)
+    scope_writer = getattr(storage, "write_task_scope", None)
+    supports_task_scope = callable(scope_reader) and callable(scope_writer)
+    if supports_task_scope:
+        snapshot = {key: [] for key in SNAPSHOT_KEYS}
+        snapshot.update(load_snapshot(storage, keys=(EXTERNAL_INTAKES_KEY, LIMS_OUTBOX_KEY)))
+    else:
+        snapshot = load_snapshot(storage)
     intakes = [dict(item) for item in snapshot.get(EXTERNAL_INTAKES_KEY, [])]
     intake_index = find_external_intake_index(intakes, intake_id)
     if intake_index < 0:
@@ -273,8 +293,13 @@ def accept_external_task_intake(
     current_intake = dict(intakes[intake_index])
     if external_intake_status(current_intake) == EXTERNAL_INTAKE_ACCEPTED:
         accepted_code = normalize_text(current_intake.get("accepted_task_code")) or task_code(current_intake)
+        if supports_task_scope and accepted_code:
+            scoped = scope_reader({accepted_code}, ("mes.tasks",))
+            accepted_tasks = scoped.get("mes.tasks", []) if isinstance(scoped, dict) else []
+        else:
+            accepted_tasks = snapshot.get("mes.tasks", [])
         accepted_task = next(
-            (dict(item) for item in snapshot.get("mes.tasks", []) if task_code(dict(item)) == accepted_code),
+            (dict(item) for item in accepted_tasks if task_code(dict(item)) == accepted_code),
             None,
         )
         return {"intake": current_intake, "task": accepted_task}
@@ -287,6 +312,10 @@ def accept_external_task_intake(
     }
     task_payload["id"] = task_code(current_intake)
     task_payload["accepted_at"] = accepted_at
+    task_code_value = task_code(task_payload)
+    task_checker = getattr(storage, "task_code_exists", None)
+    if supports_task_scope and callable(task_checker) and task_checker(task_code_value):
+        raise HTTPException(status_code=400, detail="任务编号已存在")
     accepted_task = add_task_to_snapshot(snapshot, task_payload, source=EXTERNAL_SOURCE)
     current_intake.update(
         {
@@ -300,6 +329,22 @@ def accept_external_task_intake(
     outbox = [dict(item) for item in snapshot.get(LIMS_OUTBOX_KEY, [])]
     outbox.append(build_lims_status_event(current_intake, "accepted"))
     snapshot[LIMS_OUTBOX_KEY] = outbox
-    storage.write_many(snapshot)
+    if supports_task_scope:
+        scope_writer(
+            {
+                "mes.tasks": snapshot["mes.tasks"],
+                "mes.samples": snapshot["mes.samples"],
+                "mes.experiments": snapshot["mes.experiments"],
+            },
+            task_codes={task_code(accepted_task)},
+        )
+        storage.write_many(
+            {
+                EXTERNAL_INTAKES_KEY: snapshot[EXTERNAL_INTAKES_KEY],
+                LIMS_OUTBOX_KEY: snapshot[LIMS_OUTBOX_KEY],
+            }
+        )
+    else:
+        storage.write_many(snapshot)
     publish_update(list(task_storage_update_keys))
     return {"intake": current_intake, "task": accepted_task}

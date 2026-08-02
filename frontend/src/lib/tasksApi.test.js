@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
-import { acceptExternalTaskIntake, createTask, deleteTask, readExternalTaskIntakes, readTasks, resetTasks, updateTask } from "./tasksApi";
+import { acceptExternalTaskIntake, createTask, deleteTask, readExternalTaskIntakes, readTaskPage, readTasks, resetTasks, updateTask } from "./tasksApi";
 
 const TASKS_ENDPOINT = buildApiUrl("/api/tasks", getFrontendApiBaseUrl());
 const TASKS_WITH_ARCHIVED_ENDPOINT = buildApiUrl("/api/tasks?includeArchived=true", getFrontendApiBaseUrl());
@@ -65,6 +65,22 @@ describe("tasksApi", () => {
       expect.objectContaining({
         credentials: "include",
       }),
+    );
+  });
+
+  test("reads a server-paginated task scope", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ currentPage: 2, totalCount: 12, tasks: [{ code: "TASK-009" }] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const payload = await readTaskPage({ page: 2, pageSize: 8, query: " TASK/009 " });
+
+    expect(payload.totalCount).toBe(12);
+    expect(fetchMock).toHaveBeenCalledWith(
+      buildApiUrl("/api/tasks/page?page=2&pageSize=8&query=TASK%2F009", getFrontendApiBaseUrl()),
+      expect.objectContaining({ credentials: "include" }),
     );
   });
 

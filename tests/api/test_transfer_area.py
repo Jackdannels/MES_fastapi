@@ -303,6 +303,105 @@ def test_transfer_area_write_snapshot_merges_without_reverting_concurrent_lab_pr
     assert [event["id"] for event in storage.read("mes.staging_events")] == ["event-existing", "event-new"]
 
 
+def test_transfer_area_write_reads_only_transfer_keys_when_task_scope_is_unavailable(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    storage = TrackingReadManyTransferStorage(create_payloads())
+    monkeypatch.setattr(transfer_area_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(transfer_area_route, "publish_storage_update", lambda *_args, **_kwargs: None)
+    snapshot = transfer_area_route.read_snapshot()
+    storage.read_many_calls.clear()
+
+    transfer_area_route.write_snapshot(snapshot)
+
+    assert storage.read_all_calls == 0
+    assert storage.read_many_calls == [list(transfer_area_route.TRANSFER_STORAGE_UPDATE_KEYS)]
+
+
+def test_transfer_area_tray_read_and_write_use_task_scope_and_preserve_unrelated_task(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+
+    class TaskScopedStorage(FakeTransferStorage):
+        def __init__(self, payloads):
+            super().__init__(payloads)
+            self.scope_reads = []
+            self.scope_writes = []
+
+        @staticmethod
+        def row_task_code(key, row):
+            if key == "mes.tasks":
+                return str(row.get("code") or row.get("id") or "").strip()
+            return str(row.get("task_code") or row.get("task_no") or "").strip()
+
+        def read_all(self):
+            raise AssertionError("task-scoped tray operations must not call read_all")
+
+        def read_many(self, _keys):
+            raise AssertionError("task-scoped tray operations must not call unscoped read_many")
+
+        def find_task_code_by_tray(self, tray_code):
+            return "TASK-TARGET" if tray_code == "TRAY-TARGET" else ""
+
+        def read_task_scope(self, task_codes, keys):
+            normalized = {str(code or "").strip() for code in task_codes}
+            self.scope_reads.append((normalized, tuple(keys)))
+            return {
+                key: [
+                    deepcopy(row)
+                    for row in self.payloads.get(key, [])
+                    if key == "mes.devices" or self.row_task_code(key, row) in normalized
+                ]
+                for key in keys
+            }
+
+        def write_many(self, _updates):
+            raise AssertionError("task-scoped tray operations must not call write_many")
+
+        def write_task_scope(self, updates, *, task_codes):
+            normalized = {str(code or "").strip() for code in task_codes}
+            self.scope_writes.append((normalized, deepcopy(dict(updates))))
+            for key, rows in updates.items():
+                retained = [
+                    deepcopy(row)
+                    for row in self.payloads.get(key, [])
+                    if self.row_task_code(key, row) not in normalized
+                ]
+                replacements = [
+                    deepcopy(row)
+                    for row in rows
+                    if self.row_task_code(key, row) in normalized
+                ]
+                self.payloads[key] = [*retained, *replacements]
+
+    unrelated_sample = {"code": "SP-OTHER", "task_code": "TASK-OTHER", "trays": []}
+    storage = TaskScopedStorage(
+        {
+            "mes.tasks": [{"code": "TASK-TARGET"}, {"code": "TASK-OTHER"}],
+            "mes.samples": [
+                {
+                    "code": "SP-TARGET",
+                    "task_code": "TASK-TARGET",
+                    "status": "到货",
+                    "trays": [{"tray_code": "TRAY-TARGET", "status": "到货"}],
+                },
+                unrelated_sample,
+            ],
+        }
+    )
+    monkeypatch.setattr(transfer_area_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(transfer_area_route, "publish_storage_update", lambda *_args, **_kwargs: None)
+
+    snapshot = transfer_area_route.read_tray_snapshot("TRAY-TARGET")
+    snapshot["samples"][0]["status"] = "送至实验室"
+    transfer_area_route.write_snapshot(snapshot, task_codes={"TASK-TARGET"})
+
+    assert storage.scope_reads[0][0] == {"TASK-TARGET"}
+    assert storage.scope_writes[0][0] == {"TASK-TARGET"}
+    assert unrelated_sample in storage.payloads["mes.samples"]
+    target_sample = next(row for row in storage.payloads["mes.samples"] if row["code"] == "SP-TARGET")
+    assert target_sample["status"] == "送至实验室"
+
+
 def test_transfer_area_serializes_conflicting_dispatches_before_business_validation(monkeypatch):
     from app.api.routes import transfer_area as transfer_area_route
 

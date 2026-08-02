@@ -17,18 +17,31 @@ def load_samples(
     staging_event_rows: Iterable[Dict[str, Any]] | None = None,
     schedules: Iterable[Dict[str, Any]] | None = None,
     experiment_trays: Iterable[Dict[str, Any]] | None = None,
+    *,
+    task_codes: set[str] | None = None,
 ) -> list[dict[str, Any]]:
+    normalized_task_codes = sorted({
+        normalize_text(code)
+        for code in (task_codes or set())
+        if normalize_text(code)
+    })
+    task_scope = ""
+    query_params: list[Any] = [f"{SAMPLE_META_PREFIX}%"]
+    if normalized_task_codes:
+        placeholders = ", ".join(["%s"] * len(normalized_task_codes))
+        task_scope = f" AND t.task_no IN ({placeholders})"
+        query_params.extend(normalized_task_codes)
     cursor.execute(
-        """
+        f"""
         SELECT s.sample_id, s.sample_no, t.task_no, s.sample_type, s.batch_no, s.arrival_time,
                s.quantity, s.storage_condition, s.barcode_no, s.location_desc, s.sample_status,
                s.flow_status, s.remark, s.created_at, s.updated_at
         FROM biz_sample s
         LEFT JOIN biz_task t ON t.task_id = s.task_id
-        WHERE s.remark LIKE %s
+        WHERE s.remark LIKE %s{task_scope}
         ORDER BY s.created_at DESC, s.sample_no DESC
         """,
-        (f"{SAMPLE_META_PREFIX}%",),
+        query_params,
     )
     sample_rows = cursor.fetchall()
     if not sample_rows:

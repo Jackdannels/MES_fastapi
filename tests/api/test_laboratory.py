@@ -2021,6 +2021,111 @@ def test_atomic_laboratory_operation_uses_scoped_sample_persistence_when_availab
     assert "fixture_ready" not in samples["SP-B"]["trays"][0]
 
 
+def test_atomic_laboratory_operation_uses_task_scoped_read_and_write_when_available():
+    class TaskScopedStorage:
+        def __init__(self):
+            self.reads = []
+            self.writes = []
+            self.payload = {
+                "mes.tasks": [{"code": "TASK-SCOPED"}],
+                "mes.samples": [{"code": "SP-1", "task_code": "TASK-SCOPED"}],
+            }
+
+        def read_all(self):
+            raise AssertionError("task-scoped laboratory operation must not call read_all")
+
+        def read_task_scope(self, task_codes, keys):
+            self.reads.append((set(task_codes), tuple(keys)))
+            return self.payload
+
+        def write_many(self, _updates):
+            raise AssertionError("task-scoped snapshot must not be written with write_many")
+
+        def write_task_scope(self, updates, *, task_codes):
+            self.writes.append((dict(updates), set(task_codes)))
+
+    storage = TaskScopedStorage()
+    result = run_atomic_laboratory_operation(
+        operation=lambda snapshot: {
+            "samples": snapshot["samples"],
+            "affectedSamples": snapshot["samples"],
+        },
+        publish_storage_update=None,
+        resource_keys=["task:TASK-SCOPED"],
+        storage=storage,
+        task_code="TASK-SCOPED",
+    )
+
+    assert result["samples"] == [{"code": "SP-1", "task_code": "TASK-SCOPED"}]
+    assert storage.reads[0][0] == {"TASK-SCOPED"}
+    assert "mes.experiment_runs" in storage.reads[0][1]
+    assert storage.writes == [
+        ({"mes.samples": [{"code": "SP-1", "task_code": "TASK-SCOPED"}]}, {"TASK-SCOPED"})
+    ]
+
+
+def test_legacy_laboratory_snapshot_helpers_use_task_scope_when_available(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    class TaskScopedStorage:
+        def __init__(self):
+            self.reads = []
+            self.writes = []
+
+        def read_all(self):
+            raise AssertionError("task-scoped laboratory routes must not call read_all")
+
+        def read_many(self, _keys):
+            raise AssertionError("task-scoped laboratory routes must not call unscoped read_many")
+
+        def read_task_scope(self, task_codes, keys):
+            self.reads.append((set(task_codes), tuple(keys)))
+            return {
+                "mes.tasks": [{"code": "TASK-SCOPED"}],
+                "mes.samples": [{"code": "SP-1", "task_code": "TASK-SCOPED"}],
+                "mes.staging_events": [{"id": "EVENT-1", "task_code": "TASK-SCOPED"}],
+            }
+
+        def write_many(self, _updates):
+            raise AssertionError("task-scoped laboratory routes must not call write_many")
+
+        def write_task_scope(self, updates, *, task_codes):
+            self.writes.append((dict(updates), set(task_codes)))
+
+    storage = TaskScopedStorage()
+    monkeypatch.setattr(laboratory_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(laboratory_route, "publish_storage_update", lambda _keys: None)
+
+    snapshot = laboratory_route.read_snapshot("TASK-SCOPED")
+    laboratory_route.write_snapshot(snapshot, "TASK-SCOPED")
+    laboratory_route.write_completion_snapshot(
+        {
+            "samples": snapshot["samples"],
+            "experiments": [],
+            "schedules": [],
+            "experimentRuns": [],
+            "experimentRunTrays": [],
+        },
+        "TASK-SCOPED",
+    )
+
+    assert [task["code"] for task in snapshot["tasks"]] == ["TASK-SCOPED"]
+    assert storage.reads[0][0] == {"TASK-SCOPED"}
+    assert "mes.experiment_run_steps" in storage.reads[0][1]
+    assert [task_codes for _updates, task_codes in storage.writes] == [
+        {"TASK-SCOPED"},
+        {"TASK-SCOPED"},
+    ]
+    assert set(storage.writes[0][0]) == {"mes.samples", "mes.staging_events"}
+    assert set(storage.writes[1][0]) == {
+        "mes.samples",
+        "mes.experiments",
+        "mes.schedules",
+        "mes.experiment_runs",
+        "mes.experiment_run_trays",
+    }
+
+
 def test_laboratory_withdraw_current_ignores_stale_staging_history_after_prior_withdraw(monkeypatch):
     client, storage = build_client(
         monkeypatch,

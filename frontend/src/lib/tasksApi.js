@@ -31,6 +31,66 @@ async function readTasks(options = {}) {
   return Array.isArray(tasks) ? tasks : [];
 }
 
+async function readTaskPage(options = {}) {
+  const params = new URLSearchParams();
+  params.set("page", String(Number(options.page) > 0 ? Number(options.page) : 1));
+  params.set("pageSize", String(Number(options.pageSize) > 0 ? Number(options.pageSize) : 8));
+  const query = String(options.query ?? "").trim();
+  if (query) {
+    params.set("query", query);
+  }
+  [
+    ["status", options.status],
+    ["testType", options.testType],
+    ["sortKey", options.sortKey],
+    ["sortDirection", options.sortDirection],
+  ].forEach(([key, value]) => {
+    const text = String(value ?? "").trim();
+    if (text) {
+      params.set(key, text);
+    }
+  });
+  const response = await fetch(buildApiUrl(`/api/tasks/page?${params.toString()}`, API_BASE_URL), {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await throwApiError(response, "Failed to read task page");
+  }
+  const payload = await response.json();
+  return payload && typeof payload === "object" ? payload : {};
+}
+
+async function readTaskDetail(taskId) {
+  const response = await fetch(buildApiUrl(`/api/tasks/${encodeURIComponent(taskId)}`, API_BASE_URL), {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await throwApiError(response, `Failed to read task ${taskId}`);
+  }
+  const payload = await response.json();
+  return payload && typeof payload === "object" ? payload : {};
+}
+
+async function readNextTaskCode(reference = "") {
+  const params = new URLSearchParams();
+  const normalizedReference = String(reference ?? "").trim();
+  if (normalizedReference) {
+    params.set("reference", normalizedReference);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const response = await fetch(buildApiUrl(`/api/tasks/next-code${suffix}`, API_BASE_URL), {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await throwApiError(response, "Failed to read next task code");
+  }
+  const payload = await response.json();
+  return String(payload?.code ?? "").trim();
+}
+
 async function createTask(task) {
   const payload = task ?? {};
   const response = await fetch(buildApiUrl("/api/tasks", API_BASE_URL), {
@@ -118,6 +178,9 @@ export {
   createTask,
   deleteTask,
   readExternalTaskIntakes,
+  readNextTaskCode,
+  readTaskDetail,
+  readTaskPage,
   readTasks,
   resetTasks,
   updateTask,

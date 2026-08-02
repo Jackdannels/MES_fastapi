@@ -54,6 +54,62 @@ class CountingStorage(FakeStorage):
         return super().read_all()
 
 
+class ScopedTrayActionStorage(FakeStorage):
+    def __init__(self, payloads=None, *, tray_task_codes=None):
+        super().__init__(payloads)
+        self.tray_task_codes = dict(tray_task_codes or {})
+        self.scope_reads = []
+        self.scope_writes = []
+
+    def read_all(self):
+        raise AssertionError("scoped tray actions must not read the full snapshot")
+
+    def find_task_code_by_tray(self, tray_code):
+        return self.tray_task_codes.get(tray_code, "")
+
+    def read_task_scope(self, task_codes, keys):
+        normalized = {str(code or "").strip() for code in task_codes}
+        self.scope_reads.append((normalized, tuple(keys)))
+        result = {}
+        for key in keys:
+            rows = self.payloads.get(key, [])
+            if key == "mes.devices":
+                result[key] = deepcopy(rows)
+                continue
+            result[key] = [
+                deepcopy(row)
+                for row in rows
+                if str(row.get("code") if key == "mes.tasks" else row.get("task_code") or "").strip() in normalized
+            ]
+        return result
+
+    def write_task_scope(self, updates, *, task_codes):
+        normalized = {str(code or "").strip() for code in task_codes}
+        self.scope_writes.append((normalized, deepcopy(updates)))
+        for key, rows in updates.items():
+            current = self.payloads.get(key, [])
+            retained = [
+                row
+                for row in current
+                if str(row.get("code") if key == "mes.tasks" else row.get("task_code") or "").strip() not in normalized
+            ]
+            self.payloads[key] = retained + deepcopy(rows)
+
+
+class ReadManyStorage(FakeStorage):
+    def __init__(self, payloads=None):
+        super().__init__(payloads)
+        self.read_many_calls = []
+
+    def read_all(self):
+        raise AssertionError("targeted storage updates must not read the full snapshot")
+
+    def read_many(self, keys):
+        requested = tuple(keys)
+        self.read_many_calls.append(requested)
+        return {key: deepcopy(self.payloads.get(key, [])) for key in requested}
+
+
 class DelayedThreadSafeStorage(FakeStorage):
     def __init__(self, payloads=None, delay_first_write=True):
         super().__init__(payloads)
@@ -103,6 +159,77 @@ def test_storage_persists_device_maintenance_records(monkeypatch):
 
     assert response.status_code == 200
     assert storage.read("mes.maintenance_records") == records
+
+
+def test_generic_storage_update_reads_only_updated_key_and_validation_dependencies(monkeypatch):
+    storage = ReadManyStorage({"mes.maintenance_records": [{"id": "OLD"}]})
+    client, _storage = build_client_with_storage(monkeypatch, storage)
+
+    response = client.put("/api/storage", json={"mes.maintenance_records": [{"id": "NEW"}]})
+
+    assert response.status_code == 200
+    assert storage.payloads["mes.maintenance_records"] == [{"id": "NEW"}]
+    assert storage.read_many_calls == [("mes.maintenance_records",)]
+
+
+def test_sample_storage_update_reads_bounded_validation_key_set(monkeypatch):
+    sample = {"code": "SP-001", "task_code": "TASK-001", "status": "运输中", "trays": []}
+    storage = ReadManyStorage({"mes.tasks": [{"code": "TASK-001", "sample_count": 1}], "mes.samples": [sample]})
+    client, _storage = build_client_with_storage(monkeypatch, storage)
+
+    response = client.put("/api/storage", json={"mes.samples": [sample]})
+
+    assert response.status_code == 200
+    assert set(storage.read_many_calls[-1]) == {
+        "mes.devices",
+        "mes.experiment_run_steps",
+        "mes.experiment_run_trays",
+        "mes.experiment_runs",
+        "mes.experiment_trays",
+        "mes.experiments",
+        "mes.samples",
+        "mes.schedules",
+        "mes.staging_events",
+        "mes.tasks",
+    }
+
+
+def test_storage_tray_action_uses_task_scope_and_preserves_unrelated_samples(monkeypatch):
+    task_code = "TASK-SCOPED"
+    tray_code = "TRAY-SCOPED"
+    unrelated = {
+        "code": "OTHER-SP-001",
+        "task_code": "TASK-OTHER",
+        "status": "运输中",
+        "trays": [],
+    }
+    storage = ScopedTrayActionStorage(
+        {
+            "mes.tasks": [{"code": task_code}, {"code": "TASK-OTHER"}],
+            "mes.samples": [
+                unrelated,
+                {
+                    "code": "TASK-SCOPED-SP-001",
+                    "task_code": task_code,
+                    "status": "送至暂存间",
+                    "flow_status": "送至暂存间",
+                    "location": "接驳区",
+                    "trays": [{"tray_code": tray_code, "status": "送至暂存间"}],
+                },
+            ],
+            "mes.staging_events": [],
+        },
+        tray_task_codes={tray_code: task_code},
+    )
+    client, _storage = build_client_with_storage(monkeypatch, storage)
+
+    response = client.post(f"/api/storage/rooms/staging/trays/{tray_code}/stock-in", json={"operator": "操作员"})
+
+    assert response.status_code == 200
+    assert unrelated in storage.payloads["mes.samples"]
+    assert storage.scope_reads[-1][0] == {task_code}
+    assert storage.scope_writes[-1][0] == {task_code}
+    assert set(storage.scope_writes[-1][1]) == {"mes.samples", "mes.staging_events"}
 
 
 def test_running_device_repair_atomically_completes_experiment_before_entering_repair(monkeypatch):
@@ -3436,6 +3563,49 @@ def test_storage_schedule_patch_upserts_changed_rows_without_replacing_full_snap
     assert response.status_code == 200
     assert storage.read("mes.schedules") == [existing_schedule, new_schedule]
     assert storage.read("mes.tasks") == [{"code": "TASK-NEW", "status": "已排程"}]
+
+
+def test_storage_schedule_patch_reads_bounded_key_set_without_full_snapshot(monkeypatch):
+    existing_schedule = {
+        "id": "schedule-existing",
+        "task_code": "TASK-OLD",
+        "experiment_code": "EXP-OLD",
+        "device": "冲击一室",
+        "start_at": "2026-06-23 08:00",
+        "end_at": "2026-06-23 10:00",
+    }
+    new_schedule = {
+        "id": "schedule-new",
+        "task_code": "TASK-NEW",
+        "experiment_code": "EXP-NEW",
+        "device": "冲击二室",
+        "start_at": "2026-06-23 10:30",
+        "end_at": "2026-06-23 12:00",
+    }
+    storage = ReadManyStorage({"mes.schedules": [existing_schedule]})
+    client, _storage = build_client_with_storage(monkeypatch, storage)
+
+    response = client.post(
+        "/api/storage/schedules/patch",
+        json={"upserts": {"mes.schedules": [new_schedule]}},
+    )
+
+    assert response.status_code == 200
+    assert storage.payloads["mes.schedules"] == [existing_schedule, new_schedule]
+    assert len(storage.read_many_calls) == 1
+    assert set(storage.read_many_calls[0]) == {
+        "mes.conflicts",
+        "mes.devices",
+        "mes.experiment_run_steps",
+        "mes.experiment_run_trays",
+        "mes.experiment_runs",
+        "mes.experiment_trays",
+        "mes.experiments",
+        "mes.samples",
+        "mes.schedules",
+        "mes.streams",
+        "mes.tasks",
+    }
 
 
 def test_storage_schedule_patch_rejects_concurrent_overlapping_schedule(monkeypatch):

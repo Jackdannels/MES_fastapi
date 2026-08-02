@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from app.core.storage_backend import get_storage_health_report
 from app.db.session import get_connection
 from app.db.schema_version import require_schema_version
+from app.services.capacity_diagnostics import CapacityThresholds, collect_capacity_diagnostics
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -100,3 +101,26 @@ def health_rabbitmq(request: Request):
     status = runtime.status() if runtime is not None else {"enabled": False, "connected": False, "last_error": "runtime unavailable"}
     response_status = 200 if not status.get("enabled") or status.get("connected") else 503
     return JSONResponse(status_code=response_status, content={"status": "ok" if response_status == 200 else "unhealthy", **status})
+
+
+@router.get("/capacity")
+def health_capacity(request: Request):
+    retention_runtime = getattr(request.app.state, "data_retention_runtime", None)
+    retention_status = None
+    if retention_runtime is not None:
+        status_reader = getattr(retention_runtime, "status", None)
+        if callable(status_reader):
+            retention_status = status_reader()
+    try:
+        app_settings = getattr(request.app.state, "settings", None)
+        report = collect_capacity_diagnostics(
+            get_connection,
+            retention_status=retention_status if isinstance(retention_status, dict) else None,
+            thresholds=CapacityThresholds.from_settings(app_settings) if app_settings is not None else None,
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "unhealthy", "detail": str(exc)},
+        )
+    return report
