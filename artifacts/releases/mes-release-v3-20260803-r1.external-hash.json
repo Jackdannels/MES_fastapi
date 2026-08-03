@@ -1,0 +1,21 @@
+{
+  "format": "mes-offline-release-external-hash",
+  "format_version": 1,
+  "created_at_utc": "2026-08-03T05:59:15.5965670Z",
+  "release_directory": "mes-release-v3-20260803-r1",
+  "release_version": "2026.08.03-rc3-r1",
+  "release_manifest": {
+    "path": "mes-release-v3-20260803-r1/release-manifest.json",
+    "bytes": 8751,
+    "sha256": "44f8caf8eabad691a2a79cbb3d3aa2f2562154b735db4ee793a1bec279f789bb"
+  },
+  "image_archive": {
+    "path": "mes-release-v3-20260803-r1/mes-images.tar",
+    "bytes": 523600384,
+    "sha256": "4466bf493c4e4fbf1b83320bd895021e90446b74d4a9645856c60c7c4c385eb0"
+  },
+  "verification": {
+    "trusted_importer_verify_only": "passed",
+    "packaged_importer_verify_only": "passed"
+  }
+}

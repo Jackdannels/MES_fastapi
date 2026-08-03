@@ -6,6 +6,7 @@ __pycache__/
 artifacts/performance/
 artifacts/p0-runtime/
 artifacts/db-backups/
+artifacts/releases/**/mes-images.tar
 
 frontend/node_modules/
 frontend/.vite/
@@ -14,6 +15,9 @@ app/static/dist/
 .worktrees/
 .superpowers/
 .tmp/*.env
+.tmp/*.yml
+.tmp/*password*.txt
+.tmp/backup-*/
 .tmp/production-secrets/
 *.stdout.log
 *.stderr.log

@@ -1,0 +1,170 @@
+﻿{
+    "format":  "mes-offline-release",
+    "format_version":  3,
+    "release_version":  "2026.08.03-rc3-r1",
+    "created_at_utc":  "2026-08-03T03:53:02.0932546Z",
+    "archive":  {
+                    "path":  "mes-images.tar",
+                    "bytes":  523600384,
+                    "sha256":  "4466bf493c4e4fbf1b83320bd895021e90446b74d4a9645856c60c7c4c385eb0"
+                },
+    "images":  [
+                   {
+                       "role":  "api",
+                       "reference":  "mes-api:2026.08.02-rc2@sha256:e14e38c26d964910adced0ba4b655b2c1c25c05593f6179ef9a7c0b05fd7858c",
+                       "image_id":  "sha256:e14e38c26d964910adced0ba4b655b2c1c25c05593f6179ef9a7c0b05fd7858c",
+                       "os":  "linux",
+                       "architecture":  "amd64"
+                   },
+                   {
+                       "role":  "web",
+                       "reference":  "mes-web:2026.08.02-rc2@sha256:06025016c0b896cafc93cb1222f24d33e3ac876c8b1ac9284846e567ede9384d",
+                       "image_id":  "sha256:06025016c0b896cafc93cb1222f24d33e3ac876c8b1ac9284846e567ede9384d",
+                       "os":  "linux",
+                       "architecture":  "amd64"
+                   },
+                   {
+                       "role":  "mysql-client",
+                       "reference":  "public.ecr.aws/docker/library/mysql:9.6@sha256:c5df04bee1a42b74a5841c6409e669cf62126cd0416f00c1cea8ab933b9361b9",
+                       "image_id":  "sha256:c5df04bee1a42b74a5841c6409e669cf62126cd0416f00c1cea8ab933b9361b9",
+                       "os":  "linux",
+                       "architecture":  "amd64"
+                   },
+                   {
+                       "role":  "rabbitmq",
+                       "reference":  "public.ecr.aws/docker/library/rabbitmq:4.1-management@sha256:1c6fbf0d6cd61b3deff3eeb66cc50cf57c8bf429dd67252d80c9fa3d3484d067",
+                       "image_id":  "sha256:1c6fbf0d6cd61b3deff3eeb66cc50cf57c8bf429dd67252d80c9fa3d3484d067",
+                       "os":  "linux",
+                       "architecture":  "amd64"
+                   },
+                   {
+                       "role":  "reports-tool",
+                       "reference":  "public.ecr.aws/docker/library/python:3.12-slim-bookworm@sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b",
+                       "image_id":  "sha256:d50fb7611f86d04a3b0471b46d7557818d88983fc3136726336b2a4c657aa30b",
+                       "os":  "linux",
+                       "architecture":  "amd64"
+                   }
+               ],
+    "files":  [
+                  {
+                      "path":  "compose.packaging.yml",
+                      "bytes":  6317,
+                      "sha256":  "c0eeacedb81a03c37b975f485c10b9460fa93ca11744a60c51433adfd4346768"
+                  },
+                  {
+                      "path":  "compose.production.yml",
+                      "bytes":  5510,
+                      "sha256":  "02b73283625876f7ea5753848823fb4b7ec50349f0095c6addd706332a8b77a0"
+                  },
+                  {
+                      "path":  "compose.stage4.yml",
+                      "bytes":  1319,
+                      "sha256":  "edfaa0820caab2b587b4e212fa44bca240fb64d9896dc6210b259bd6eb0dc9a3"
+                  },
+                  {
+                      "path":  "deploy/.env.production.example",
+                      "bytes":  2038,
+                      "sha256":  "fa926ec93006db88037c2343895ddb392d34e911f12f6d0d736a296cfbbda65e"
+                  },
+                  {
+                      "path":  "deploy/.env.stage4.example",
+                      "bytes":  2101,
+                      "sha256":  "84fe8c9750a809a2667e3b6825acab76eb81283b82d8b3a0f9bda26fed6410d9"
+                  },
+                  {
+                      "path":  "deploy/mysql/init-users.sh",
+                      "bytes":  1021,
+                      "sha256":  "442d64fddd8ceed0384dd85d052a259a2b6399fe07d7edc811d1af92101afcc6"
+                  },
+                  {
+                      "path":  "deploy/nginx/production-https.conf",
+                      "bytes":  1799,
+                      "sha256":  "6f056eed791c7f29598b0b40ee6fbb427b067e7228376c6fc9286aaeda831d3d"
+                  },
+                  {
+                      "path":  "docs/production-deployment.md",
+                      "bytes":  9543,
+                      "sha256":  "737ad7e423937e2dc6e62d57b4f7428f92f8141597c002307368b589d1e73a58"
+                  },
+                  {
+                      "path":  "docs/stage4-long-running-acceptance.md",
+                      "bytes":  6977,
+                      "sha256":  "f953860f8debae8f2f1cac544a726081dfdb0e42840c4234aae621d0bb7881cf"
+                  },
+                  {
+                      "path":  "docs/stage4-new-host-codex-handoff.md",
+                      "bytes":  10840,
+                      "sha256":  "73829279747a1c252f025ab871b7cc0345966ab967b9edd719709d61163f98ed"
+                  },
+                  {
+                      "path":  "mes-images.tar",
+                      "bytes":  523600384,
+                      "sha256":  "4466bf493c4e4fbf1b83320bd895021e90446b74d4a9645856c60c7c4c385eb0"
+                  },
+                  {
+                      "path":  "scripts/deploy/Backup-MesDatabase.ps1",
+                      "bytes":  3094,
+                      "sha256":  "940fc42fb02c9e359b2ac4b7e23145e15fb423fa3f572badc178077923650358"
+                  },
+                  {
+                      "path":  "scripts/deploy/Backup-MesReports.ps1",
+                      "bytes":  3032,
+                      "sha256":  "09422d1b679a51985f7794a55e57c33ccdaec31194107716d80a7659ecb41731"
+                  },
+                  {
+                      "path":  "scripts/deploy/Import-MesRelease.ps1",
+                      "bytes":  14579,
+                      "sha256":  "410d6d345c189eeb9bca8bc43eebb536d2d40d0c43a31d081075d8e0ef5bbd23"
+                  },
+                  {
+                      "path":  "scripts/deploy/Invoke-Stage4Acceptance.ps1",
+                      "bytes":  20673,
+                      "sha256":  "4aa4c6f4151dbc10cb4a79f4dfd483bbc74d336492778ae8e92ca00bc653b79c"
+                  },
+                  {
+                      "path":  "scripts/deploy/New-MesDeploymentOperation.ps1",
+                      "bytes":  10318,
+                      "sha256":  "f1d03e9a2ce007d2c8ba0fa004ac8cca3feeb4b859d7ebc64d2e84d099ace2ee"
+                  },
+                  {
+                      "path":  "scripts/deploy/Restore-MesRehearsal.ps1",
+                      "bytes":  4077,
+                      "sha256":  "45c8da4df94bda62bcc05a090b9566819f2dbab75883ff99fddd82334d324272"
+                  },
+                  {
+                      "path":  "scripts/deploy/Restore-MesReportsRehearsal.ps1",
+                      "bytes":  2858,
+                      "sha256":  "d4fcdd05b819ccde3ccf6c305b22f7593806fab058ef0be6df80a3b2709dd19d"
+                  },
+                  {
+                      "path":  "scripts/deploy/Test-ProductionDeployment.ps1",
+                      "bytes":  1590,
+                      "sha256":  "c41d2f9d793f1f925e6656d0f2a5f3f37bd2a24e4aedfc90ccc626a262d00c3b"
+                  },
+                  {
+                      "path":  "scripts/deploy/mysql-backup-restore.sh",
+                      "bytes":  1351,
+                      "sha256":  "325031029afb057c3d67730933776bb03114a46ddf5daaa0db757a5b3e71254e"
+                  },
+                  {
+                      "path":  "scripts/deploy/reports-backup-restore.py",
+                      "bytes":  19840,
+                      "sha256":  "70616f4a602decac2a17c4d8f7335c9ee18d63c5ad0c692387ece269170ec3f4"
+                  },
+                  {
+                      "path":  "scripts/generate_p0_capacity_fixture.py",
+                      "bytes":  14488,
+                      "sha256":  "51cb6cec2bce39d0d7ab4e5a7eaebda39dc6cea0433e807ffc82fcffb6146891"
+                  },
+                  {
+                      "path":  "scripts/stage3a_load_probe.py",
+                      "bytes":  14943,
+                      "sha256":  "6dd03ea4f384212dd00dacb9564039847e2b4f40b847060120eb182b720e950c"
+                  },
+                  {
+                      "path":  "scripts/stage4_soak_probe.py",
+                      "bytes":  27428,
+                      "sha256":  "9eb602cfb00358e2f3572415094a75b55a83672d3da0d50019f86066c7eaf120"
+                  }
+              ]
+}

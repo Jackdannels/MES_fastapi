@@ -1,0 +1,39 @@
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:?MYSQL_IMAGE with an immutable digest is required}
+    pull_policy: never
+    restart: "no"
+    cpus: ${STAGE4_MYSQL_CPUS:-1.0}
+    mem_limit: ${STAGE4_MYSQL_MEMORY_LIMIT:-1536m}
+    pids_limit: ${STAGE4_MYSQL_PIDS_LIMIT:-256}
+
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:?RABBITMQ_IMAGE with an immutable digest is required}
+    pull_policy: never
+    restart: "no"
+    cpus: ${STAGE4_RABBITMQ_CPUS:-0.5}
+    mem_limit: ${STAGE4_RABBITMQ_MEMORY_LIMIT:-768m}
+    pids_limit: ${STAGE4_RABBITMQ_PIDS_LIMIT:-512}
+
+  migrate:
+    image: ${MES_API_IMAGE:?MES_API_IMAGE with an immutable digest is required}
+    pull_policy: never
+    cpus: ${STAGE4_MIGRATE_CPUS:-0.5}
+    mem_limit: ${STAGE4_MIGRATE_MEMORY_LIMIT:-512m}
+    pids_limit: ${STAGE4_MIGRATE_PIDS_LIMIT:-128}
+
+  api:
+    image: ${MES_API_IMAGE:?MES_API_IMAGE with an immutable digest is required}
+    pull_policy: never
+    restart: "no"
+    cpus: ${STAGE4_API_CPUS:-0.5}
+    mem_limit: ${STAGE4_API_MEMORY_LIMIT:-768m}
+    pids_limit: ${STAGE4_API_PIDS_LIMIT:-128}
+
+  web:
+    image: ${MES_WEB_IMAGE:?MES_WEB_IMAGE with an immutable digest is required}
+    pull_policy: never
+    restart: "no"
+    cpus: ${STAGE4_WEB_CPUS:-0.25}
+    mem_limit: ${STAGE4_WEB_MEMORY_LIMIT:-128m}
+    pids_limit: ${STAGE4_WEB_PIDS_LIMIT:-64}

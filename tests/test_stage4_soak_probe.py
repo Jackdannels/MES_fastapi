@@ -121,3 +121,195 @@ def test_soak_probe_script_can_be_invoked_directly_from_repository_root():
 
     assert result.returncode == 0
     assert "--duration" in result.stdout
+    assert "--window-seconds" in result.stdout
+    assert "--docker-project" in result.stdout
+
+
+def _window(*, requests=120, p95=50, errors=0, duration=60):
+    endpoints = {
+        name: {
+            "requests": requests,
+            "successful": requests - errors,
+            "errors": errors,
+            "p95Ms": p95,
+            "maxMs": p95 + 10,
+        }
+        for name, _path in stage4.DEFAULT_ENDPOINTS
+    }
+    total = requests * len(endpoints)
+    return {
+        "durationSeconds": duration,
+        "load": {
+            "passed": errors == 0 and p95 <= 500,
+            "failures": [],
+            "overall": {
+                "requests": total,
+                "successful": total - errors * len(endpoints),
+                "errors": errors * len(endpoints),
+            },
+            "endpoints": endpoints,
+        },
+    }
+
+
+def test_window_aggregation_is_bounded_and_enforces_minimum_samples_and_p95():
+    report = stage4.aggregate_window_reports(
+        [_window(requests=60), _window(requests=60)],
+        p95_limit_ms=500,
+        min_requests_per_endpoint=100,
+        max_throughput_drop=0.3,
+    )
+
+    assert report["passed"] is True
+    assert report["overall"]["requests"] == 720
+    assert report["endpoints"]["health"]["requests"] == 120
+    assert "samples" not in report
+
+    failed = stage4.aggregate_window_reports(
+        [_window(requests=10, p95=501)],
+        p95_limit_ms=500,
+        min_requests_per_endpoint=100,
+        max_throughput_drop=0.3,
+    )
+    assert failed["passed"] is False
+    assert any("样本不足" in failure for failure in failed["failures"])
+    assert any("窗口P95" in failure for failure in failed["failures"])
+
+
+def test_docker_assessment_rejects_oom_restart_memory_and_missing_log_rotation():
+    sample = {
+        "containers": {
+            "api": {
+                "service": "api",
+                "running": True,
+                "health": "healthy",
+                "oomKilled": True,
+                "restartCount": 1,
+                "dead": False,
+                "logConfig": {"Type": "json-file", "Config": {}},
+                "stats": {"memoryPercent": 85},
+            },
+            "migrate": {
+                "service": "migrate",
+                "running": False,
+                "exitCode": 0,
+                "oomKilled": False,
+                "restartCount": 0,
+                "dead": False,
+                "logConfig": {"Type": "json-file", "Config": {"max-size": "10m", "max-file": "5"}},
+            },
+        }
+    }
+
+    failures = stage4.assess_docker_samples([sample], max_memory_percent=80)
+
+    assert any("OOM" in failure for failure in failures)
+    assert any("重启" in failure for failure in failures)
+    assert any("内存" in failure for failure in failures)
+    assert any("日志轮转" in failure for failure in failures)
+
+
+def test_formal_soak_can_require_retention_completion_to_advance():
+    before = capacity()
+    before["retention"]["lastFinishedAt"] = "2026-08-02 00:00:00"
+    after = capacity()
+    after["retention"]["lastFinishedAt"] = "2026-08-02 00:00:00"
+
+    report = stage4.finalize_soak_report(
+        {"passed": True, "failures": []},
+        profile_before={"contentSha256": "same"},
+        profile_after={"contentSha256": "same"},
+        capacity_before=before,
+        capacity_after=after,
+        max_event_row_growth=0,
+        max_staging_event_growth=0,
+        require_retention_run=True,
+    )
+
+    assert report["passed"] is False
+    assert any("留存清理器" in failure for failure in report["failures"])
+
+
+def test_formal_soak_rejects_a_finished_retention_run_that_did_not_acquire_the_lock() -> None:
+    before = capacity()
+    before["retention"]["lastFinishedAt"] = "2026-08-02 00:00:00"
+    after = capacity()
+    after["retention"].update({
+        "lastFinishedAt": "2026-08-02 00:01:00",
+        "lastResult": {"acquired": False, "skippedReason": "database-lock-active", "deleted": {}},
+    })
+
+    report = stage4.finalize_soak_report(
+        {"passed": True, "failures": []},
+        profile_before={"contentSha256": "same"},
+        profile_after={"contentSha256": "same"},
+        capacity_before=before,
+        capacity_after=after,
+        capacity_samples=[after],
+        max_event_row_growth=0,
+        max_staging_event_growth=0,
+        require_retention_run=True,
+    )
+
+    assert report["passed"] is False
+    assert any("获得数据库锁且结果完整" in failure for failure in report["failures"])
+
+
+def test_formal_soak_records_complete_successful_retention_evidence() -> None:
+    before = capacity()
+    before["retention"].update({"lastFinishedAt": "2026-08-02 00:00:00", "totalDeleted": {}})
+    after = capacity()
+    deleted = {key: 0 for key in stage4.RETENTION_RESULT_KEYS}
+    after["retention"].update({
+        "lastFinishedAt": "2026-08-02 00:01:00",
+        "lastResult": {"acquired": True, "deleted": deleted},
+        "totalDeleted": deleted,
+    })
+
+    report = stage4.finalize_soak_report(
+        {"passed": True, "failures": []},
+        profile_before={"contentSha256": "same"},
+        profile_after={"contentSha256": "same"},
+        capacity_before=before,
+        capacity_after=after,
+        capacity_samples=[after],
+        max_event_row_growth=0,
+        max_staging_event_growth=0,
+        require_retention_run=True,
+    )
+
+    assert report["passed"] is True
+    assert report["soak"]["retentionEvidence"]["successfulRuns"][0]["deleted"] == deleted
+
+
+def test_formal_soak_enforces_the_loaded_business_scale_before_and_after() -> None:
+    expected = {
+        "mes.tasks": 33,
+        "mes.samples": 3200,
+        "mes.experiments": 132,
+        "mes.experiment_samples": 4800,
+    }
+    expected_identity = "d" * 64
+    before = {"contentSha256": "same", "counts": dict(expected), "identitySha256": expected_identity}
+    after = {
+        "contentSha256": "same",
+        "counts": {**expected, "mes.samples": 3199},
+        "identitySha256": "e" * 64,
+    }
+
+    report = stage4.finalize_soak_report(
+        {"passed": True, "failures": []},
+        profile_before=before,
+        profile_after=after,
+        capacity_before=capacity(),
+        capacity_after=capacity(),
+        max_event_row_growth=0,
+        max_staging_event_growth=0,
+        expected_profile_counts=expected,
+        expected_identity_sha256=expected_identity,
+    )
+
+    assert report["passed"] is False
+    assert any("结束时业务规模不匹配: mes.samples=3199, expected=3200" in failure for failure in report["failures"])
+    assert any("结束时业务身份签名不匹配" in failure for failure in report["failures"])
+    assert report["soak"]["limits"]["expectedProfileCounts"] == expected

@@ -5085,7 +5085,7 @@ describe("LaboratoryPage runtime", () => {
     expect(attendanceLogoutCalls()).toHaveLength(1);
   });
 
-  test("hides the completion button while waiting for delayed MQTT confirmation", async () => {
+  test("shows a retry after MQTT confirmation timeout and clears it after a confirmed retry", async () => {
     snapshotState = createSnapshot();
     snapshotState[STORAGE_KEYS.experiments] = snapshotState[STORAGE_KEYS.experiments].map((experiment) =>
       experiment.experiment_code === "SYLU-2026-04-101-A"
@@ -5152,6 +5152,26 @@ describe("LaboratoryPage runtime", () => {
     await vi.advanceTimersByTimeAsync(500);
     await flushPageUpdates();
     expect(document.body.querySelector('[data-testid="laboratory-complete-experiment"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-completion-awaiting-confirmation"]')?.textContent || "")
+      .toContain("等待上位机确认");
+
+    await vi.advanceTimersByTimeAsync(9_500);
+    await flushPageUpdates();
+    expect(document.body.querySelector('[data-testid="laboratory-completion-awaiting-confirmation"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-completion-confirmation-error"]')?.textContent || "")
+      .toContain("10 秒内未收到上位机结束确认");
+    expect(document.body.querySelector('[data-testid="laboratory-complete-experiment"]')).not.toBeNull();
+
+    document.body.querySelector('[data-testid="laboratory-complete-experiment"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPageUpdates(10);
+    expect(laboratoryEndRequestCalls()).toHaveLength(2);
+    expect(document.body.querySelector('[data-testid="laboratory-completion-confirmation-error"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-complete-experiment"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="laboratory-completion-awaiting-confirmation"]')?.textContent || "")
+      .toContain("正在发送结束命令");
+
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPageUpdates();
     expect(document.body.querySelector('[data-testid="laboratory-completion-awaiting-confirmation"]')?.textContent || "")
       .toContain("等待上位机确认");
 

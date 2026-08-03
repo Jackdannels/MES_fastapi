@@ -91,6 +91,8 @@ def test_deployment_environment_examples_expose_capacity_and_log_limits() -> Non
             "DOCKER_LOG_MAX_FILE=5",
         ):
             assert setting in example
+    production_example = (REPO_ROOT / "deploy/.env.production.example").read_text(encoding="utf-8")
+    assert "MES_REPORTS_VOLUME_NAME=mes-production-reports" in production_example
 
 
 def test_mysql_bootstrap_restricts_runtime_account_to_dml() -> None:
@@ -130,6 +132,7 @@ def test_production_compose_uses_external_database_file_secrets_and_immutable_im
     assert 'SESSION_COOKIE_SECURE: "true"' in compose
     assert 'FRONTEND_ORIGINS: https://${MES_DOMAIN' in compose
     assert "profiles: [migration]" in compose
+    assert "name: ${MES_REPORTS_VOLUME_NAME:?MES_REPORTS_VOLUME_NAME is required}" in compose
     assert "depends_on:" not in compose.split("  api:", 1)[1].split("  web:", 1)[0]
 
 
@@ -146,28 +149,155 @@ def test_production_https_proxy_uses_secret_certificate_and_secure_headers() -> 
 def test_offline_release_tools_verify_checksums_and_never_start_services() -> None:
     export_script = (REPO_ROOT / "scripts" / "deploy" / "Export-MesRelease.ps1").read_text(encoding="utf-8")
     import_script = (REPO_ROOT / "scripts" / "deploy" / "Import-MesRelease.ps1").read_text(encoding="utf-8")
+    operation_script = (REPO_ROOT / "scripts" / "deploy" / "New-MesDeploymentOperation.ps1").read_text(encoding="utf-8")
 
     assert "docker save" in export_script
+    assert "MySqlClientImage" in export_script
+    assert "RabbitMqImage" in export_script
+    assert "ReportsToolImage" in export_script
+    assert 'format = "mes-offline-release"' in export_script
+    assert "format_version = 3" in export_script
+    assert "$relativePaths.Sort([System.StringComparer]::Ordinal)" in export_script
+    assert "image_id" in export_script + import_script
+    assert "Assert-ArchiveImageContract" in export_script + import_script
+    assert 'tar -xOf $ArchivePath index.json' in export_script + import_script
+    assert "io.containerd.image.name" in export_script + import_script
+    assert "org.opencontainers.image.ref.name" in export_script + import_script
+    assert "Get-ArchiveReference" in export_script + import_script
+    assert "& docker save --output $archive @archiveReferences" in export_script
+    assert "docker save --output $archive @references" not in export_script
+    assert "Loaded image tag reference is unavailable or conflicting" in import_script
     assert "Get-Sha256" in export_script
     assert "System.Security.Cryptography.SHA256" in export_script
     assert "System.Security.Cryptography.SHA256" in import_script
     assert "Get-FileHash" not in export_script + import_script
     assert "GetRelativePath" not in export_script
     assert "Release file escaped the output directory" in export_script
+    assert "Release path escaped the release directory" in import_script
+    assert "Release paths must not contain reparse points" in import_script
+    assert "Release package contains missing or untracked extra files" in import_script
+    assert "Only the current release manifest v3 format is supported" in import_script
+    assert "AllowLegacyV1" not in import_script
+    assert "VerifyOnly" in import_script
     assert "docker load" in import_script
     assert "Checksum mismatch" in import_script
     assert "docker compose up" not in export_script + import_script
+    for required in (
+        "Backup-MesDatabase.ps1",
+        "Restore-MesRehearsal.ps1",
+        "mysql-backup-restore.sh",
+        "Backup-MesReports.ps1",
+        "Restore-MesReportsRehearsal.ps1",
+        "reports-backup-restore.py",
+        "New-MesDeploymentOperation.ps1",
+        "Invoke-Stage4Acceptance.ps1",
+        "stage4_soak_probe.py",
+        "generate_p0_capacity_fixture.py",
+        "stage4-new-host-codex-handoff.md",
+        "init-users.sh",
+        "compose.stage4.yml",
+    ):
+        assert required in export_script
+
+    assert 'format = "mes-deployment-operation"' in operation_script
+    assert "live_best_effort" in operation_script
+    assert "Database backup client image does not match" in operation_script
+    assert "Reports backup tool image does not match" in operation_script
 
 
 def test_backup_and_restore_rehearsal_scripts_are_fail_closed() -> None:
     backup = (REPO_ROOT / "scripts" / "deploy" / "Backup-MesDatabase.ps1").read_text(encoding="utf-8")
     restore = (REPO_ROOT / "scripts" / "deploy" / "Restore-MesRehearsal.ps1").read_text(encoding="utf-8")
+    helper = (REPO_ROOT / "scripts" / "deploy" / "mysql-backup-restore.sh").read_text(encoding="utf-8")
 
-    assert "--single-transaction" in backup
-    assert "--routines --triggers --events --hex-blob" in backup
+    assert "--single-transaction" in helper
+    for option in ("--quick", "--routines", "--triggers", "--events", "--hex-blob", "--set-gtid-purged=OFF", "--no-tablespaces"):
+        assert option in helper
     assert "ClientImage must use an immutable @sha256 digest" in backup
+    assert "mysql-backup-restore.sh,readonly" in backup + restore
+    assert "sh /opt/mes/mysql-backup-restore.sh backup" in backup
+    assert "sh /opt/mes/mysql-backup-restore.sh prepare" in restore
+    assert "sh /opt/mes/mysql-backup-restore.sh restore" in restore
+    assert "sh -ec" not in backup + restore
     assert "TargetDatabase must be an isolated name ending in _restore_test" in restore
     assert "Target database is not empty" in restore
     assert "Backup checksum mismatch" in restore
+    assert "Backup dump file must be a single file name" in restore
+    assert "type=bind,source=$dumpPath,target=/backup/database.sql,readonly" in restore
     assert "python scripts/init_mysql_storage.py" in restore
-    assert "DROP DATABASE" not in backup + restore
+    assert "set -eu" in helper
+    assert "MYSQL_PWD=\"$(cat /run/secrets/mysql_password)\"" in helper
+    assert "*_restore_test" in helper
+    assert "DROP DATABASE" not in backup + restore + helper
+
+
+def test_report_volume_backup_and_restore_tools_are_isolated_and_fail_closed() -> None:
+    backup = (REPO_ROOT / "scripts" / "deploy" / "Backup-MesReports.ps1").read_text(encoding="utf-8")
+    restore = (REPO_ROOT / "scripts" / "deploy" / "Restore-MesReportsRehearsal.ps1").read_text(encoding="utf-8")
+    helper = (REPO_ROOT / "scripts" / "deploy" / "reports-backup-restore.py").read_text(encoding="utf-8")
+
+    assert "ToolImage must use an immutable @sha256 digest" in backup + restore
+    assert "Source Docker volume does not exist; refusing to create it implicitly" in backup
+    assert '"--network", "none"' in backup + restore
+    assert "readonly,volume-nocopy" in backup
+    assert "target=/restore,volume-nocopy" in restore
+    assert "Target volume already exists; restore rehearsal requires a brand-new volume" in restore
+    assert "-restore-test" in restore
+    assert "io.mes.purpose=reports-restore-rehearsal" in restore
+    assert "reports-backup-restore.py,readonly" in backup + restore
+    assert "sh -c" not in backup + restore
+    assert "Invoke-Expression" not in backup + restore
+
+    assert 'FORMAT_NAME = "mes-reports-backup"' in helper
+    assert "validate_relative_path" in helper
+    assert "Duplicate archive member" in helper
+    assert "Archive links and special members are not allowed" in helper
+    assert "Hard-linked report file is not supported" in helper
+    assert "Target report volume is not empty" in helper
+    assert "Report archive contents do not match the manifest" in helper
+    assert "Restored report volume does not match the manifest" in helper
+
+
+def test_stage4_compose_override_uses_fixed_images_resource_limits_and_no_restart() -> None:
+    override = (REPO_ROOT / "compose.stage4.yml").read_text(encoding="utf-8")
+    env_example = (REPO_ROOT / "deploy" / ".env.stage4.example").read_text(encoding="utf-8")
+
+    assert "MES_API_IMAGE:?" in override
+    assert "MES_WEB_IMAGE:?" in override
+    assert "MYSQL_IMAGE:?" in override
+    assert "RABBITMQ_IMAGE:?" in override
+    assert override.count("pull_policy: never") == 5
+    assert override.count('restart: "no"') == 4
+    assert override.count("cpus:") == 5
+    assert override.count("mem_limit:") == 5
+    assert override.count("pids_limit:") == 5
+
+    assert "COMPOSE_PROJECT_NAME=mes-stage4-rc2-20260802" in env_example
+    assert "MYSQL_DATABASE=mes_stage4_test" in env_example
+    for port in ("MES_WEB_PORT=25173", "MES_API_PORT=28000", "MES_MYSQL_PORT=23306", "MES_MQTT_PORT=21883"):
+        assert port in env_example
+    assert env_example.count("@sha256:") == 4
+
+
+def test_stage4_runner_requires_new_labeled_project_and_exact_cleanup() -> None:
+    runner = (REPO_ROOT / "scripts" / "deploy" / "Invoke-Stage4Acceptance.ps1").read_text(encoding="utf-8")
+
+    assert "-stage4-soak" in runner
+    assert "_stage4_test" in runner
+    assert '"--no-build", "--pull", "never"' not in runner  # native arguments remain explicit tokens
+    assert "up -d --no-build --pull never" in runner
+    assert "com.docker.compose.project" in runner
+    assert "Assert-ProjectLabels" in runner
+    assert "Test-Stage4SteadyState" in runner
+    assert "Test-Stage4BootstrapState" in runner
+    assert "LoadP0CapacityFixture" in runner
+    assert '"--expected-host", "mysql"' in runner
+    assert '"--expected-port", "3306"' in runner
+    assert "REPLACE_CAPACITY_DATABASE" in runner
+    assert "stage4-evidence-manifest.json" in runner
+    assert runner.index("up -d --no-build --pull never mysql rabbitmq migrate") < runner.index("up -d --no-build --pull never api web")
+    assert "migrateState" in runner
+    assert "down --volumes --remove-orphans" in runner
+    assert "Protected local port" in runner
+    assert "docker system prune" not in runner
+    assert "docker volume prune" not in runner

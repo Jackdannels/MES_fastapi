@@ -371,10 +371,15 @@
 - `scripts/sql/V007__bounded_event_retention_indexes.sql`：应用级小批量事件留存清理所需的时间与状态键索引。
 - `scripts/sql/mysql-production-grants.example.sql`：正式迁移/API 账号授权模板。
 - `compose.packaging.yml`：MySQL、迁移、API、Web、RabbitMQ/MQTT 的隔离验收编排。
+- `compose.stage4.yml`：Stage4固定digest镜像、资源上限和禁止自动重启的隔离覆盖层。
 - `deploy/docker/`：后端/迁移与前端/Nginx 多阶段镜像定义。
 - `deploy/nginx/`：非 root Nginx 主配置、SPA 和 API/SSE 代理配置。
 - `deploy/mysql/init-users.sh`：隔离 MySQL 的迁移/API 权限拆分。
 - `deploy/.env.compose.example`：不含真实密码的 Compose 环境模板。
+- `deploy/.env.stage4.example`：Stage4独立项目、端口、固定镜像和资源上限模板。
+- `scripts/deploy/Invoke-Stage4Acceptance.ps1`：Stage4预检、启动、分段探针、证据采集和按项目标签精确清理入口。
+- `docs/stage4-new-host-codex-handoff.md`：交给局域网独立Windows主机上Codex执行v3离线导入和正式8小时Stage4验收的操作交接单。
+- `scripts/stage4_soak_probe.py`：有界分段长稳探针，采集业务签名、容量、readiness和Docker资源状态。
 - `docs/docker-deployment.md`：Docker 打包、验收、停止和清理手册。
 - `docs/stage4-long-running-acceptance.md`：长期运行只读探针、容量阈值与 Docker 最终验收手册。
 - `frontend/scripts/legacy-fallback-snapshot-report.mjs`：旧数据兜底快照扫描报告脚本。

@@ -16,7 +16,7 @@
 
 所有五个服务默认使用 Docker `json-file` 日志驱动，并按单文件 `10m`、最多 `5` 个文件轮转，避免长期运行时标准输出耗尽磁盘。可在环境文件中通过 `DOCKER_LOG_MAX_SIZE` 和 `DOCKER_LOG_MAX_FILE` 调整；修改后需重建容器才会应用新日志配置。
 
-容量告警阈值通过环境文件中的 `CAPACITY_WARN_*` 配置，并由 `/health/capacity` 返回当前阈值和告警原因。隔离栈启动完成后，按 `docs/stage4-long-running-acceptance.md` 执行 60 秒快速探针；默认 API 地址为 `http://127.0.0.1:18000`。
+容量告警阈值通过环境文件中的 `CAPACITY_WARN_*` 配置，并由 `/health/capacity` 返回当前阈值和告警原因。普通隔离栈启动完成后可对`http://127.0.0.1:18000`执行快速探针。Stage4应叠加`compose.stage4.yml`并使用`deploy/.env.stage4.example`，固定镜像digest、资源上限和`restart: no`；完整命令见`docs/stage4-long-running-acceptance.md`。
 
 ## 首次启动
 

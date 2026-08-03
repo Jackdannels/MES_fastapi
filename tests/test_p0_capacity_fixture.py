@@ -79,3 +79,15 @@ def test_capacity_fixture_requires_the_exact_confirmed_host_port_and_database() 
             expected_port=3337,
             expected_database="mes_p0_capacity",
         )
+
+
+def test_stage4_fixture_target_is_fixed_to_the_internal_isolated_database() -> None:
+    capacity_fixture.validate_stage4_target(host="mysql", port=3306, database="mes_rc2_stage4_test")
+
+    for target in (
+        {"host": "127.0.0.1", "port": 3306, "database": "mes_rc2_stage4_test"},
+        {"host": "mysql", "port": 23306, "database": "mes_rc2_stage4_test"},
+        {"host": "mysql", "port": 3306, "database": "mes_prod_test"},
+    ):
+        with pytest.raises(RuntimeError, match="Stage4容量夹具"):
+            capacity_fixture.validate_stage4_target(**target)

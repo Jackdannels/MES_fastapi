@@ -1,0 +1,177 @@
+name: ${COMPOSE_PROJECT_NAME:-mes-packaging}
+
+x-backend-environment: &backend-environment
+  APP_ENV: prod
+  DEBUG: "false"
+  SERVE_WEB_APP: "false"
+  STORAGE_BACKEND: mysql
+  MYSQL_HOST: mysql
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: ${MYSQL_DATABASE:-mes_packaging_test}
+  MYSQL_USER: ${MYSQL_API_USER:-mes_api}
+  MYSQL_PASSWORD: ${MYSQL_API_PASSWORD:?MYSQL_API_PASSWORD is required}
+  MYSQL_AUTO_INIT_SCHEMA: "false"
+  MYSQL_AUTO_SEED_DEMO: "false"
+  CAPACITY_WARN_POOL_UTILIZATION: ${CAPACITY_WARN_POOL_UTILIZATION:-0.8}
+  CAPACITY_WARN_STAGING_EVENT_ITEMS: ${CAPACITY_WARN_STAGING_EVENT_ITEMS:-20000}
+  CAPACITY_WARN_STAGING_EVENT_BYTES: ${CAPACITY_WARN_STAGING_EVENT_BYTES:-16777216}
+  CAPACITY_WARN_MQ_MESSAGE_ROWS: ${CAPACITY_WARN_MQ_MESSAGE_ROWS:-500000}
+  CAPACITY_WARN_EXPERIMENT_EVENT_ROWS: ${CAPACITY_WARN_EXPERIMENT_EVENT_ROWS:-500000}
+  RETENTION_ENABLED: ${RETENTION_ENABLED:-true}
+  RETENTION_STARTUP_DELAY_SECONDS: ${RETENTION_STARTUP_DELAY_SECONDS:-60}
+  RETENTION_INTERVAL_SECONDS: ${RETENTION_INTERVAL_SECONDS:-3600}
+  RETENTION_BATCH_SIZE: ${RETENTION_BATCH_SIZE:-500}
+  RETENTION_MAX_BATCHES_PER_RUN: ${RETENTION_MAX_BATCHES_PER_RUN:-10}
+  MQ_MESSAGE_LOG_RETENTION_DAYS: ${MQ_MESSAGE_LOG_RETENTION_DAYS:-90}
+  EXPERIMENT_EVENT_RETENTION_DAYS: ${EXPERIMENT_EVENT_RETENTION_DAYS:-365}
+  STAGING_EVENT_RETENTION_DAYS: ${STAGING_EVENT_RETENTION_DAYS:-365}
+  RABBITMQ_ENABLED: "true"
+  RABBITMQ_REQUIRED: "true"
+  RABBITMQ_URL: amqp://${RABBITMQ_USER:-mes_app}:${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}@rabbitmq:5672/
+  MQTT_ENABLED: "true"
+  MQTT_HOST: rabbitmq
+  MQTT_PORT: "1883"
+  MQTT_USERNAME: ${RABBITMQ_USER:-mes_app}
+  MQTT_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+  MQTT_CONNECT_TIMEOUT_SECONDS: ${MQTT_CONNECT_TIMEOUT_SECONDS:-10}
+  MQTT_PUBLISH_TIMEOUT_SECONDS: ${MQTT_PUBLISH_TIMEOUT_SECONDS:-10}
+  MQTT_PUBLISH_SLOW_MS: ${MQTT_PUBLISH_SLOW_MS:-250}
+  UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE: "false"
+  UPPER_COMPUTER_SIMULATOR_AUTO_START: "false"
+  SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?SESSION_SECRET_KEY is required}
+  SESSION_COOKIE_SECURE: "false"
+  FRONTEND_ORIGINS: http://127.0.0.1:${MES_WEB_PORT:-15173},http://localhost:${MES_WEB_PORT:-15173}
+  TEST_DATA_PUBLIC_BASE_URL: http://127.0.0.1:${MES_WEB_PORT:-15173}
+  TEST_DATA_SAVE_PATH: /data/reports
+
+x-json-logging: &json-logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+    max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:-mysql:9.6}
+    restart: unless-stopped
+    logging: *json-logging
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-mes_packaging_test}
+      MYSQL_USER: ${MYSQL_API_USER:-mes_api}
+      MYSQL_PASSWORD: ${MYSQL_API_PASSWORD:?MYSQL_API_PASSWORD is required}
+      MYSQL_MIGRATION_USER: ${MYSQL_MIGRATION_USER:-mes_migrator}
+      MYSQL_MIGRATION_PASSWORD: ${MYSQL_MIGRATION_PASSWORD:?MYSQL_MIGRATION_PASSWORD is required}
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:${MES_MYSQL_PORT:-13306}:3306"
+    volumes:
+      - mes_mysql_data:/var/lib/mysql
+      - ./deploy/mysql/init-users.sh:/docker-entrypoint-initdb.d/20-init-users.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks: [mes_internal]
+
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:4.1-management}
+    restart: unless-stopped
+    logging: *json-logging
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-mes_app}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      TZ: Asia/Shanghai
+    command: ["sh", "-c", "rabbitmq-plugins enable --offline rabbitmq_mqtt && exec rabbitmq-server"]
+    ports:
+      - "127.0.0.1:${MES_RABBITMQ_MANAGEMENT_PORT:-15673}:15672"
+      - "127.0.0.1:${MES_MQTT_PORT:-11883}:1883"
+    volumes:
+      - mes_rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    networks: [mes_internal]
+
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim-bookworm}
+    logging: *json-logging
+    environment:
+      <<: *backend-environment
+      MYSQL_MIGRATION_USER: ${MYSQL_MIGRATION_USER:-mes_migrator}
+      MYSQL_MIGRATION_PASSWORD: ${MYSQL_MIGRATION_PASSWORD:?MYSQL_MIGRATION_PASSWORD is required}
+      RABBITMQ_ENABLED: "false"
+      MQTT_ENABLED: "false"
+    command: ["python", "scripts/init_mysql_storage.py"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"
+    networks: [mes_internal]
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim-bookworm}
+    restart: unless-stopped
+    logging: *json-logging
+    environment:
+      <<: *backend-environment
+    ports:
+      - "127.0.0.1:${MES_API_PORT:-18000}:8000"
+    volumes:
+      - mes_reports:/data/reports
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"]
+      interval: 10s
+      timeout: 6s
+      retries: 18
+      start_period: 20s
+    networks: [mes_internal]
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.web
+      args:
+        VITE_API_BASE_URL: ""
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:1.28-alpine}
+    restart: unless-stopped
+    logging: *json-logging
+    ports:
+      - "127.0.0.1:${MES_WEB_PORT:-15173}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [mes_internal]
+
+volumes:
+  mes_mysql_data:
+  mes_rabbitmq_data:
+  mes_reports:
+
+networks:
+  mes_internal:
+    driver: bridge
