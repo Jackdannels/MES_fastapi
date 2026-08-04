@@ -161,7 +161,7 @@ def test_window_aggregation_is_bounded_and_enforces_minimum_samples_and_p95():
     )
 
     assert report["passed"] is True
-    assert report["overall"]["requests"] == 720
+    assert report["overall"]["requests"] == 60 * 2 * len(stage4.DEFAULT_ENDPOINTS)
     assert report["endpoints"]["health"]["requests"] == 120
     assert "samples" not in report
 

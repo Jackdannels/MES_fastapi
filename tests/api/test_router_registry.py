@@ -17,6 +17,7 @@ def test_api_router_registry_exposes_expected_prefixes():
         "/yt_file",
         "/yt_timesheet",
         "/yt_log",
+        "/api/samples",
         "/warehouse",
         "/productcatalog",
         "/yt_report",

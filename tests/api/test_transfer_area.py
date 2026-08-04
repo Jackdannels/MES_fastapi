@@ -629,6 +629,107 @@ def test_transfer_area_bootstrap_cache_hits_and_invalidates_after_published_upda
     assert len(storage.read_many_calls) == 2
 
 
+def test_transfer_area_bootstrap_prefers_narrow_mysql_read_model(monkeypatch):
+    from app.api.routes import transfer_area as transfer_area_route
+    from app.services.read_through_cache import read_snapshot_cache
+
+    class NarrowBootstrapStorage:
+        def __init__(self):
+            self.calls = 0
+
+        def read_transfer_bootstrap_snapshot(self):
+            self.calls += 1
+            return {
+                "tasks": [{
+                    "id": "TASK-001",
+                    "code": "TASK-001",
+                    "name": "任务一",
+                    "sample_count": 1,
+                    "transfer_status": "未入库",
+                    "arrival_at": "2026-08-04T08:00:00+08:00",
+                }],
+                "samples": [{
+                    "id": "TASK-001-SP-001",
+                    "code": "TASK-001-SP-001",
+                    "task_code": "TASK-001",
+                    "status": "到货",
+                    "flow_status": "到货",
+                    "trays": [],
+                    "history": [],
+                }],
+                "experiments": [],
+            }
+
+    read_snapshot_cache.invalidate()
+    storage = NarrowBootstrapStorage()
+    monkeypatch.setattr(transfer_area_route, "get_storage_backend", lambda: storage)
+    app = FastAPI()
+    app.include_router(transfer_area_route.router)
+
+    response = TestClient(app).get("/api/transfer-area/bootstrap")
+
+    assert response.status_code == 200
+    assert response.json()["taskOverview"][0]["sampleCount"] == 1
+    assert storage.calls == 1
+
+
+def test_narrow_bootstrap_sample_shape_preserves_overview_business_result():
+    from app.api.routes.transfer_area import build_bootstrap_response
+
+    task = {
+        "id": "TASK-001",
+        "code": "TASK-001",
+        "name": "任务一",
+        "test_type": "冲击试验",
+        "sample_count": 1,
+        "transfer_status": "未入库",
+        "arrival_at": "2026-08-04T08:00:00+08:00",
+    }
+    experiment = {
+        "task_code": "TASK-001",
+        "experiment_code": "TASK-001-A",
+        "experiment_name": "冲击试验",
+        "status": "实验进行中",
+    }
+    full_sample = {
+        "id": "TASK-001-SP-001",
+        "code": "TASK-001-SP-001",
+        "task_code": "TASK-001",
+        "sample_type": "零件",
+        "location": "冲击一室",
+        "owner": "张三",
+        "status": "实验进行中",
+        "flow_status": "实验进行中",
+        "trays": [{
+            "id": "TASK-001-TP-001",
+            "tray_code": "TASK-001-TP-001",
+            "sample_code": "TASK-001-SP-001",
+            "quantity": 1,
+            "status": "实验进行中",
+            "target_lab": "冲击一室",
+        }],
+        "history": [{"action": "实验确认", "detail": "不属于接驳区摘要的历史明细"}],
+    }
+    narrow_sample = {
+        key: full_sample[key]
+        for key in ("id", "code", "task_code", "status", "flow_status", "trays", "history")
+    }
+    narrow_sample["trays"] = [{
+        key: full_sample["trays"][0][key]
+        for key in ("id", "tray_code", "sample_code", "quantity", "status")
+    }]
+    narrow_sample["history"] = []
+
+    full_response, _ = build_bootstrap_response({
+        "tasks": [task], "samples": [full_sample], "experiments": [experiment]
+    })
+    narrow_response, _ = build_bootstrap_response({
+        "tasks": [task], "samples": [narrow_sample], "experiments": [experiment]
+    })
+
+    assert narrow_response == full_response
+
+
 def test_transfer_area_bootstrap_is_read_only_when_planned_and_stored_sample_counts_differ(monkeypatch):
     from app.api.routes import transfer_area as transfer_area_route
 

@@ -76,6 +76,38 @@ def test_report_summarizes_server_timing_phases_and_response_size() -> None:
     assert summary["averageResponseBytes"] == 2000
     assert summary["serverTimings"]["db.query"]["p95Ms"] == 80
     assert summary["readCache"] == {"hit": 1, "miss": 1}
+    assert summary["readCacheLatency"] == {
+        "hit": {"requests": 1, "p50Ms": 200, "p95Ms": 200, "maxMs": 200},
+        "miss": {"requests": 1, "p50Ms": 100, "p95Ms": 100, "maxMs": 100},
+    }
+
+
+def test_default_endpoints_follow_current_page_read_contracts() -> None:
+    endpoints = dict(stage3a_load_probe.DEFAULT_ENDPOINTS)
+
+    assert endpoints["samples"] == "/api/samples/page?page=1&pageSize=8"
+    assert "mes.samples" not in endpoints["samples_context"]
+    assert "mes.experiment_run_steps" in endpoints["samples_context"]
+    assert "mes.experiment_runs" in endpoints["dashboard"]
+    assert "mes.experiment_run_trays" in endpoints["dashboard"]
+    assert "mes.experiment_trays" in endpoints["dashboard"]
+
+
+def test_request_failure_keeps_path_and_utc_start(monkeypatch) -> None:
+    def fail_request(*_args, **_kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(stage3a_load_probe.urllib.request, "urlopen", fail_request)
+
+    sample = stage3a_load_probe.execute_request(
+        "http://127.0.0.1:8000",
+        ("samples", "/api/samples/page?page=1&pageSize=8"),
+        5,
+    )
+
+    assert sample.ok is False
+    assert sample.path == "/api/samples/page?page=1&pageSize=8"
+    assert sample.started_at_utc.endswith("+00:00")
 
 
 def test_parse_server_timing_ignores_unknown_parameters() -> None:

@@ -17,7 +17,7 @@
       :class="{ active: activePageTab === 'trays' }"
       data-testid="samples-page-tab-trays"
       type="button"
-      @click="setActivePageTab('trays')"
+      @click="openPageTab('trays')"
     >
       <span>
         <strong>托盘信息</strong>
@@ -61,6 +61,7 @@ const {
   detailSampleTrayCode: samplesFlowDetailTrayCode,
   detailSampleTrayFlow: samplesFlowDetailTrayFlow,
   detailStatusOptions: samplesFlowDetailStatusOptions,
+  ensureFullSamples,
   locationOptions: samplesFlowLocationOptions,
   openBatchModal,
   openDetailDrawer: openSampleDetail,
@@ -126,6 +127,7 @@ const samplesFlow = reactive({
   detailSampleTrayCode: samplesFlowDetailTrayCode,
   detailSampleTrayFlow: samplesFlowDetailTrayFlow,
   detailStatusOptions: samplesFlowDetailStatusOptions,
+  ensureFullSamples,
   locationOptions: samplesFlowLocationOptions,
   openBatchModal,
   openSampleDetail,
@@ -177,4 +179,11 @@ const samplesFlow = reactive({
   warning: samplesFlowWarning,
   resetStaging,
 });
+
+const openPageTab = (tab) => {
+  setActivePageTab(tab);
+  if (tab === "trays") {
+    void ensureFullSamples();
+  }
+};
 </script>

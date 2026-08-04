@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -20,11 +21,12 @@ DEFAULT_ENDPOINTS = (
     ("health", "/health"),
     (
         "dashboard",
-        "/api/storage?keys=mes.conflicts%2Cmes.devices%2Cmes.experiments%2Cmes.samples%2Cmes.schedules%2Cmes.streams%2Cmes.tasks",
+        "/api/storage?keys=mes.tasks%2Cmes.schedules%2Cmes.conflicts%2Cmes.devices%2Cmes.samples%2Cmes.streams%2Cmes.experiments%2Cmes.experiment_runs%2Cmes.experiment_run_trays%2Cmes.experiment_trays",
     ),
+    ("samples", "/api/samples/page?page=1&pageSize=8"),
     (
-        "samples",
-        "/api/storage?keys=mes.experiment_run_steps%2Cmes.experiment_run_trays%2Cmes.experiment_runs%2Cmes.experiment_samples%2Cmes.experiment_trays%2Cmes.experiments%2Cmes.samples%2Cmes.schedules%2Cmes.staging_events%2Cmes.streams%2Cmes.tasks",
+        "samples_context",
+        "/api/storage?keys=mes.experiments%2Cmes.experiment_runs%2Cmes.experiment_run_steps%2Cmes.experiment_run_trays%2Cmes.experiment_trays%2Cmes.schedules",
     ),
     ("transfer_bootstrap", "/api/transfer-area/bootstrap"),
     (
@@ -59,6 +61,8 @@ class RequestSample:
     response_bytes: int
     status: int
     error: str = ""
+    path: str = ""
+    started_at_utc: str = ""
     request_id: str = ""
     read_cache_status: str = ""
     db_query_count: int = 0
@@ -90,10 +94,12 @@ def summarize_samples(samples: list[RequestSample]) -> dict[str, Any]:
     response_bytes = [sample.response_bytes for sample in successful]
     db_query_counts = [sample.db_query_count for sample in successful]
     read_cache_counts: dict[str, int] = defaultdict(int)
+    cache_latency_values: dict[str, list[float]] = defaultdict(list)
     for sample in successful:
         status = str(sample.read_cache_status or "").strip().lower()
         if status:
             read_cache_counts[status] += 1
+            cache_latency_values[status].append(sample.elapsed_ms)
     summary = {
         "requests": len(samples),
         "successful": len(successful),
@@ -107,6 +113,15 @@ def summarize_samples(samples: list[RequestSample]) -> dict[str, Any]:
             "max": max(db_query_counts, default=0),
         },
         "readCache": dict(sorted(read_cache_counts.items())),
+        "readCacheLatency": {
+            status: {
+                "requests": len(values),
+                "p50Ms": round(percentile(values, 50), 2),
+                "p95Ms": round(percentile(values, 95), 2),
+                "maxMs": round(max(values, default=0.0), 2),
+            }
+            for status, values in sorted(cache_latency_values.items())
+        },
         "p50Ms": round(percentile(elapsed_values, 50), 2),
         "p95Ms": round(percentile(elapsed_values, 95), 2),
         "p99Ms": round(percentile(elapsed_values, 99), 2),
@@ -259,6 +274,7 @@ def build_report(
 
 def execute_request(base_url: str, endpoint: tuple[str, str], timeout_seconds: float) -> RequestSample:
     endpoint_name, path = endpoint
+    started_at_utc = datetime.now(timezone.utc).isoformat()
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}{path}",
         headers={"Accept": "application/json", "User-Agent": "MES-Stage3A-Probe/1.0"},
@@ -278,6 +294,8 @@ def execute_request(base_url: str, endpoint: tuple[str, str], timeout_seconds: f
             ok=200 <= status < 400,
             response_bytes=len(payload),
             status=status,
+            path=path,
+            started_at_utc=started_at_utc,
             request_id=request_id,
             read_cache_status=read_cache_status,
             db_query_count=db_query_count,
@@ -291,6 +309,9 @@ def execute_request(base_url: str, endpoint: tuple[str, str], timeout_seconds: f
             response_bytes=0,
             status=int(error.code),
             error=str(error),
+            path=path,
+            started_at_utc=started_at_utc,
+            request_id=error.headers.get("X-Request-ID", "") if error.headers else "",
         )
     except Exception as error:  # pragma: no cover - exercised by live probe failures
         return RequestSample(
@@ -300,6 +321,8 @@ def execute_request(base_url: str, endpoint: tuple[str, str], timeout_seconds: f
             response_bytes=0,
             status=0,
             error=str(error),
+            path=path,
+            started_at_utc=started_at_utc,
         )
 
 

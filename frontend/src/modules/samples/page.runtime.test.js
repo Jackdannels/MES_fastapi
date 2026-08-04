@@ -107,6 +107,15 @@ const settle = async (wrapper) => {
   await wrapper.vm.$nextTick();
 };
 
+const samplePageResponse = (samples = [], taskOptions = []) => ({
+  currentPage: 1,
+  samples,
+  statusOptions: Array.from(new Set(samples.map((sample) => sample.status).filter(Boolean))),
+  taskOptions,
+  totalCount: samples.length,
+  totalPages: 1,
+});
+
 describe("SamplesPage runtime", () => {
   beforeEach(() => {
     storageState = {};
@@ -120,6 +129,9 @@ describe("SamplesPage runtime", () => {
       }
       if (url.includes("/api/transfer-area/tasks/101/workspace")) {
         return { ok: true, status: 200, json: async () => workspacePayload };
+      }
+      if (url.includes("/api/samples/page")) {
+        return { ok: true, status: 200, json: async () => samplePageResponse() };
       }
       if (url.includes("/api/storage")) {
         return { ok: true, status: 200, json: async () => ({}) };
@@ -184,6 +196,23 @@ describe("SamplesPage runtime", () => {
       if (url.includes("/api/transfer-area/tasks/101/workspace")) {
         return { ok: true, status: 200, json: async () => workspacePayload };
       }
+      if (url.includes("/api/samples/page")) {
+        const samples = url.includes("view=staging") ? [] : [
+          {
+            id: "current-1",
+            code: "SYLU-2026-03-002-SP-001",
+            task_code: "SYLU-2026-03-002",
+            location: "接驳区",
+            status: "到货",
+            trayCodes: [],
+          },
+        ];
+        return {
+          ok: true,
+          status: 200,
+          json: async () => samplePageResponse(samples, ["SYLU-2026-03-002"]),
+        };
+      }
       if (url.includes("/api/storage")) {
         return {
           ok: true,
@@ -242,6 +271,19 @@ describe("SamplesPage runtime", () => {
       }
       if (url.includes("/api/transfer-area/tasks/101/workspace")) {
         return { ok: true, status: 200, json: async () => createWorkspacePayload() };
+      }
+      if (url.includes("/api/samples/page")) {
+        const samples = url.includes("view=staging") ? [] : [
+          {
+            id: `${taskCode}-SP-001`,
+            code: `${taskCode}-SP-001`,
+            task_code: taskCode,
+            location: "冲击一室",
+            status: "实验进行中",
+            trayCodes: [trayCode],
+          },
+        ];
+        return { ok: true, status: 200, json: async () => samplePageResponse(samples, [taskCode]) };
       }
       if (url.includes("/api/storage")) {
         return {

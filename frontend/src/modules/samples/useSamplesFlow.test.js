@@ -1,10 +1,12 @@
-import { enableAutoUnmount, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { defineComponent } from "vue";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   loadSnapshot: vi.fn(),
   persistSnapshot: vi.fn(),
+  readSampleDetail: vi.fn(),
+  readSamplePage: vi.fn(),
   readTasks: vi.fn(),
   requestedSnapshotKeys: [],
   updateTask: vi.fn(),
@@ -25,6 +27,11 @@ vi.mock("@/lib/tasksApi", () => ({
   updateTask: mocks.updateTask,
 }));
 
+vi.mock("@/lib/samplesApi.js", () => ({
+  readSampleDetail: mocks.readSampleDetail,
+  readSamplePage: mocks.readSamplePage,
+}));
+
 import { useSamplesFlow } from "./useSamplesFlow";
 
 const TestHarness = defineComponent({
@@ -37,16 +44,43 @@ const TestHarness = defineComponent({
 });
 
 const settle = async (wrapper) => {
-  await Promise.resolve();
-  await Promise.resolve();
+  await flushPromises();
   await wrapper.vm.$nextTick();
-  await wrapper.vm.$nextTick();
+};
+
+const mockSampleReadModels = (samples = []) => {
+  const rows = Array.isArray(samples) ? samples : [];
+  mocks.readSamplePage.mockImplementation(async ({ view } = {}) => {
+    const selected = view === "staging"
+      ? rows.filter((sample) => String(sample?.location || "").includes("暂存间"))
+      : rows.filter((sample) => String(sample?.status || "") !== "厂家收回");
+    return {
+      currentPage: 1,
+      samples: selected.map((sample) => ({
+        ...sample,
+        trayCodes: (Array.isArray(sample?.trays) ? sample.trays : []).map((tray) => tray?.tray_code).filter(Boolean),
+      })),
+      statusOptions: Array.from(new Set(selected.map((sample) => sample?.status).filter(Boolean))),
+      taskOptions: Array.from(new Set(selected.map((sample) => sample?.task_code).filter(Boolean))),
+      totalCount: selected.length,
+      totalPages: 1,
+    };
+  });
+  mocks.readSampleDetail.mockImplementation(async (identifier) => rows.find(
+    (sample) => String(sample?.id || sample?.code) === String(identifier),
+  ));
+};
+
+const mockSnapshotOnce = (snapshot) => {
+  mockSampleReadModels(snapshot?.["mes.samples"]);
+  mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
 };
 
 describe("useSamplesFlow", () => {
   beforeEach(() => {
     mocks.requestedSnapshotKeys.length = 0;
     mocks.readTasks.mockResolvedValue([]);
+    mockSampleReadModels([]);
     mocks.loadSnapshot.mockResolvedValue({
       "mes.samples": [],
       "mes.experiments": [],
@@ -62,6 +96,8 @@ describe("useSamplesFlow", () => {
     vi.useRealTimers();
     mocks.loadSnapshot.mockReset();
     mocks.persistSnapshot.mockReset();
+    mocks.readSampleDetail.mockReset();
+    mocks.readSamplePage.mockReset();
     mocks.readTasks.mockReset();
     mocks.updateTask.mockReset();
   });
@@ -79,7 +115,7 @@ describe("useSamplesFlow", () => {
 
   test("keeps archived task samples in storage while hiding them from the active sample flow", async () => {
     mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-ACTIVE", name: "活动任务" }]);
-    mocks.loadSnapshot.mockResolvedValueOnce({
+    mockSnapshotOnce({
       "mes.samples": [
         {
           code: "TASK-ACTIVE-SP-001",
@@ -104,17 +140,14 @@ describe("useSamplesFlow", () => {
     await settle(wrapper);
 
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
-    expect(wrapper.vm.rawSamples.map((sample) => sample.code)).toEqual([
-      "TASK-ACTIVE-SP-001",
-      "TASK-RETURNED-SP-001",
-    ]);
+    expect(wrapper.vm.rawSamples.map((sample) => sample.code)).toEqual(["TASK-ACTIVE-SP-001"]);
     expect(wrapper.vm.sampleRows.map((sample) => sample.code)).toEqual(["TASK-ACTIVE-SP-001"]);
     expect(wrapper.vm.taskOptions).toEqual(["TASK-ACTIVE"]);
   });
 
   test("opens sample detail with the same tray flow data as the bound tray", async () => {
     mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-001", name: "任务A", test_type: "盐雾试验" }]);
-    mocks.loadSnapshot.mockResolvedValueOnce({
+    mockSnapshotOnce({
       "mes.samples": [
         {
           code: "SP-001",
@@ -149,7 +182,7 @@ describe("useSamplesFlow", () => {
       { code: "TASK-OLD", name: "旧任务", test_type: "盐雾试验" },
       { code: "TASK-CURRENT", name: "当前任务", test_type: "冲击试验" },
     ]);
-    mocks.loadSnapshot.mockResolvedValueOnce({
+    mockSnapshotOnce({
       "mes.samples": [
         {
           code: "SP-OLD",
@@ -183,7 +216,7 @@ describe("useSamplesFlow", () => {
 
   test("opens sample detail without falling back to sample-level status for tray flow", async () => {
     mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-SAMPLE-STATUS", name: "样品状态任务" }]);
-    mocks.loadSnapshot.mockResolvedValueOnce({
+    mockSnapshotOnce({
       "mes.samples": [
         {
           code: "SP-SAMPLE-STATUS",
@@ -213,7 +246,7 @@ describe("useSamplesFlow", () => {
 
   test("loads experiment runs for tray flow runtime times", async () => {
     mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-RUN", name: "运行任务" }]);
-    mocks.loadSnapshot.mockResolvedValueOnce({
+    mockSnapshotOnce({
       "mes.samples": [
         {
           code: "SP-RUN-001",
@@ -268,7 +301,7 @@ describe("useSamplesFlow", () => {
 
   test("uses completed experiment run steps to keep an axis experiment tray flow completed in detail view", async () => {
     mocks.readTasks.mockResolvedValueOnce([{ code: "TASK-AXIS", name: "轴向任务" }]);
-    mocks.loadSnapshot.mockResolvedValueOnce({
+    mockSnapshotOnce({
       "mes.samples": [
         {
           code: "SP-AXIS-001",
@@ -343,6 +376,14 @@ describe("useSamplesFlow", () => {
   test("keeps sample rows visible without blocking loading while realtime refresh is pending", async () => {
     let resolveRefresh = null;
     mocks.readTasks.mockResolvedValue([{ code: "TASK-LIVE", name: "实时任务" }]);
+    mockSampleReadModels([
+      {
+        code: "SP-LIVE-001",
+        task_code: "TASK-LIVE",
+        status: "到货",
+        trays: [{ tray_code: "TP-LIVE-001", status: "到货", quantity: 1 }],
+      },
+    ]);
     mocks.loadSnapshot
       .mockResolvedValueOnce({
         "mes.samples": [
@@ -376,10 +417,21 @@ describe("useSamplesFlow", () => {
     expect(wrapper.vm.loading).toBe(false);
     expect(wrapper.vm.sampleRows.map((row) => row.code)).toEqual(["SP-LIVE-001"]);
 
+    mocks.readSamplePage.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRefresh = () => resolve({
+        currentPage: 1,
+        samples: [{ code: "SP-LIVE-001", task_code: "TASK-LIVE", status: "到货", trayCodes: ["TP-LIVE-001"] }],
+        statusOptions: ["到货"],
+        taskOptions: ["TASK-LIVE"],
+        totalCount: 1,
+        totalPages: 1,
+      });
+    }));
+
     window.dispatchEvent(new CustomEvent("mes:samples-updated"));
     await settle(wrapper);
 
-    expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(mocks.loadSnapshot).toHaveBeenCalledTimes(1);
     expect(wrapper.vm.loading).toBe(false);
     expect(wrapper.vm.sampleRows.map((row) => row.code)).toEqual(["SP-LIVE-001"]);
 
@@ -391,6 +443,14 @@ describe("useSamplesFlow", () => {
     vi.useFakeTimers();
     let resolveRefresh = null;
     mocks.readTasks.mockResolvedValue([{ code: "TASK-STORAGE", name: "存储任务" }]);
+    mockSampleReadModels([
+      {
+        code: "SP-STORAGE-001",
+        task_code: "TASK-STORAGE",
+        status: "到货",
+        trays: [{ tray_code: "TP-STORAGE-001", status: "到货", quantity: 1 }],
+      },
+    ]);
     mocks.loadSnapshot
       .mockResolvedValueOnce({
         "mes.samples": [
@@ -424,11 +484,22 @@ describe("useSamplesFlow", () => {
     expect(wrapper.vm.loading).toBe(false);
     expect(wrapper.vm.sampleRows.map((row) => row.code)).toEqual(["SP-STORAGE-001"]);
 
+    mocks.readSamplePage.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRefresh = () => resolve({
+        currentPage: 1,
+        samples: [{ code: "SP-STORAGE-001", task_code: "TASK-STORAGE", status: "到货", trayCodes: ["TP-STORAGE-001"] }],
+        statusOptions: ["到货"],
+        taskOptions: ["TASK-STORAGE"],
+        totalCount: 1,
+        totalPages: 1,
+      });
+    }));
+
     window.dispatchEvent(new CustomEvent("mes:snapshot-updated", { detail: { keys: ["mes.samples"] } }));
     vi.advanceTimersByTime(100);
     await settle(wrapper);
 
-    expect(mocks.loadSnapshot).toHaveBeenCalledTimes(2);
+    expect(mocks.loadSnapshot).toHaveBeenCalledTimes(1);
     expect(wrapper.vm.loading).toBe(false);
     expect(wrapper.vm.sampleRows.map((row) => row.code)).toEqual(["SP-STORAGE-001"]);
 
@@ -465,7 +536,6 @@ describe("useSamplesFlow", () => {
     expect(mocks.readTasks).toHaveBeenCalledTimes(1);
     expect(mocks.requestedSnapshotKeys).toEqual(expect.arrayContaining([
       [
-        "mes.samples",
         "mes.experiments",
         "mes.experiment_runs",
         "mes.experiment_run_steps",
@@ -481,6 +551,7 @@ describe("useSamplesFlow", () => {
   });
 
   test("preserves current raw data when a background refresh omits keys or returns non-arrays", async () => {
+    mockSampleReadModels([{ code: "SP-KEEP-001", task_code: "TASK-KEEP", status: "到货" }]);
     mocks.readTasks
       .mockResolvedValueOnce([{ code: "TASK-KEEP", name: "保留任务" }])
       .mockResolvedValueOnce({ error: "bad tasks" });
@@ -506,6 +577,7 @@ describe("useSamplesFlow", () => {
 
     expect(wrapper.vm.rawTasks).toEqual([{ code: "TASK-KEEP", name: "保留任务" }]);
     expect(wrapper.vm.rawSamples.map((sample) => sample.code)).toEqual(["SP-KEEP-001"]);
+    expect(wrapper.vm.sampleRows.map((sample) => sample.code)).toEqual(["SP-KEEP-001"]);
     expect(wrapper.vm.rawExperiments).toEqual([{ task_code: "TASK-KEEP", experiment_code: "EXP-KEEP" }]);
     expect(wrapper.vm.rawExperimentRuns).toEqual([{ run_no: "RUN-KEEP", task_code: "TASK-KEEP" }]);
     expect(wrapper.vm.rawExperimentRunTrays).toEqual([{ run_no: "RUN-KEEP", tray_code: "TP-KEEP-001" }]);

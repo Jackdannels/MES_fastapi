@@ -23,6 +23,7 @@ def test_module_registry_preserves_expected_route_surfaces():
         "/yt_file",
         "/yt_timesheet",
         "/yt_log",
+        "/api/samples",
         "/warehouse",
         "/productcatalog",
         "/yt_report",

@@ -18,6 +18,7 @@ from app.api.routes.person import router as person_router
 from app.api.routes.productcatalog import router as productcatalog_router
 from app.api.routes.quality import router as quality_router
 from app.api.routes.report import router as report_router
+from app.api.routes.samples import router as samples_router
 from app.api.routes.storage import router as storage_router
 from app.api.routes.system_time import router as system_time_router
 from app.api.routes.task_history import router as task_history_router
@@ -60,7 +61,7 @@ MODULES = (
     ),
     AppModule(
         key="samples",
-        api_routers=(warehouse_router, productcatalog_router, yt_report_router, quality_router),
+        api_routers=(samples_router, warehouse_router, productcatalog_router, yt_report_router, quality_router),
         spa_routes=("/samples",),
     ),
     AppModule(key="handover-system", api_routers=(transfer_area_router,), spa_routes=("/handover-system",)),

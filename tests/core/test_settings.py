@@ -34,6 +34,7 @@ def test_settings_enable_slow_request_observability_without_logging_every_reques
     monkeypatch.delenv("PERFORMANCE_LOG_ALL_REQUESTS", raising=False)
     monkeypatch.delenv("PERFORMANCE_SLOW_REQUEST_MS", raising=False)
     monkeypatch.delenv("READ_SNAPSHOT_CACHE_TTL_SECONDS", raising=False)
+    monkeypatch.delenv("READ_SNAPSHOT_CACHE_STALE_SECONDS", raising=False)
 
     settings = Settings(_env_file=None)
 
@@ -41,6 +42,7 @@ def test_settings_enable_slow_request_observability_without_logging_every_reques
     assert settings.PERFORMANCE_LOG_ALL_REQUESTS is False
     assert settings.PERFORMANCE_SLOW_REQUEST_MS == 500.0
     assert settings.READ_SNAPSHOT_CACHE_TTL_SECONDS == 5.0
+    assert settings.READ_SNAPSHOT_CACHE_STALE_SECONDS == 30.0
 
 
 def test_settings_enable_bounded_event_retention_with_conservative_defaults(monkeypatch):

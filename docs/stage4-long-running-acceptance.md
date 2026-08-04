@@ -8,17 +8,17 @@
 
 ## 验收命令
 
-本机隔离快速验收使用固定RC2镜像、全新项目卷和资源上限。先复制临时配置并替换密码，再执行统一入口；脚本完成后会核验项目标签并只删除本次项目的容器、卷和网络：
+本机隔离快速验收使用固定r3镜像、全新项目卷和资源上限。先复制临时配置，把API/Web占位摘要替换为r3发布清单中的不可变引用并替换密码，再执行统一入口；脚本完成后会核验项目标签并只删除本次项目的容器、卷和网络：
 
 ```powershell
 Copy-Item deploy\.env.stage4.example .tmp\stage4-soak.env
 .\scripts\deploy\Invoke-Stage4Acceptance.ps1 `
   -EnvFile .tmp\stage4-soak.env `
-  -ProjectName mes-rc2-20260802-stage4-soak `
+  -ProjectName mes-r3-20260804-stage4-soak `
   -DurationSeconds 60 -Users 2 -WindowSeconds 15 `
   -MinRequestsPerEndpoint 5 `
   -PythonPath .venv\Scripts\python.exe `
-  -OutputDirectory artifacts\performance\stage4-rc2-short
+  -OutputDirectory artifacts\performance\stage4-r3-short
 ```
 
 正式长稳验收建议至少运行8小时，并在独立主机上要求留存任务至少成功推进一次：
@@ -26,7 +26,7 @@ Copy-Item deploy\.env.stage4.example .tmp\stage4-soak.env
 ```powershell
 .\scripts\deploy\Invoke-Stage4Acceptance.ps1 `
   -EnvFile D:\mes-stage4\stage4.env `
-  -ProjectName mes-rc2-20260802-stage4-soak `
+  -ProjectName mes-r3-20260804-stage4-soak `
   -DurationSeconds 28800 -Users 5 -WindowSeconds 60 `
   -MinRequestsPerEndpoint 100 -LoadP0CapacityFixture -RequireRetentionRun `
   -PythonPath "C:\Python312\python.exe" `
@@ -72,7 +72,7 @@ Copy-Item deploy\.env.stage4.example .tmp\stage4-soak.env
 
 ## Docker 验收
 
-Stage4使用`compose.packaging.yml`叠加`compose.stage4.yml`，固定本机已有的RC2/API/Web/MySQL/RabbitMQ digest，并通过`--no-build --pull never`禁止构建和下载。所有服务配置CPU、内存、PID上限及`restart: no`，避免自动重启掩盖失败。启动后依次确认：
+Stage4使用`compose.packaging.yml`叠加`compose.stage4.yml`，固定本机已有的r3 API/Web及发布清单中的MySQL/RabbitMQ digest，并通过`--no-build --pull never`禁止构建和下载。所有服务配置CPU、内存、PID上限及`restart: no`，避免自动重启掩盖失败。启动后依次确认：
 
 1. `/health/ready` 返回 `ready`。
 2. `/health/capacity` 返回 `ok`，且 `retention.scheduled=true`。
@@ -86,7 +86,7 @@ Stage4使用`compose.packaging.yml`叠加`compose.stage4.yml`，固定本机已�
 rtk proxy .\.venv\Scripts\python.exe scripts\stage4_soak_probe.py `
   --base-url http://127.0.0.1:28000 --duration 60 --users 2 `
   --window-seconds 15 --min-requests-per-endpoint 5 `
-  --docker-project mes-rc2-20260802-stage4-soak `
+  --docker-project mes-r3-20260804-stage4-soak `
   --output artifacts\performance\stage4-soak-packaging-60s.json
 ```
 

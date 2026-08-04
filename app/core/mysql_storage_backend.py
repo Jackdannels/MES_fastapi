@@ -91,6 +91,7 @@ from app.core.mysql_storage_sample_write import (
     upsert_sample_rows,
 )
 from app.core.mysql_storage_sample_load import load_samples
+from app.core.mysql_transfer_bootstrap import load_transfer_bootstrap_samples
 from app.core.mysql_storage_mappers import (
     build_experiment_insert_row,
     build_experiment_run_insert_row,
@@ -641,6 +642,18 @@ class MySQLMesStorageBackend(StorageBackend):
 
     def read_many(self, keys: Iterable[str]) -> Dict[str, Any]:
         return self._read_many(keys)
+
+    def read_transfer_bootstrap_snapshot(self) -> Dict[str, Any]:
+        """Return the narrow read model consumed by the transfer overview."""
+        with performance_span("storage.schema"):
+            self._ensure_schema_extensions()
+        with performance_span("storage.relational"), self._connect() as connection:
+            with connection.cursor() as cursor:
+                return {
+                    "tasks": self._load_tasks(cursor),
+                    "samples": load_transfer_bootstrap_samples(cursor),
+                    "experiments": self._load_experiments(cursor),
+                }
 
     def read_task_scope(self, task_codes: set[str], keys: Iterable[str]) -> Dict[str, Any]:
         normalized_task_codes = {

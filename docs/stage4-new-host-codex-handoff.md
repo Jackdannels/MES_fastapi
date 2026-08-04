@@ -78,7 +78,7 @@ D:\MES-Stage4\
 预检输出保存到本次批次的 `preflight` 目录。批次目录示例：
 
 ```text
-D:\MES-Stage4\runs\20260803-rc3\
+D:\MES-Stage4\runs\20260804-r3\
 ├─ preflight\
 ├─ import\
 └─ evidence\   # 执行器创建；开始前必须不存在
@@ -117,7 +117,7 @@ $Release = "D:\MES-Stage4\incoming\mes-release-v3"
 
 ```powershell
 $Release = "D:\MES-Stage4\incoming\mes-release-v3"
-$EnvFile = "D:\MES-Stage4\config\stage4-rc3.env"
+$EnvFile = "D:\MES-Stage4\config\stage4-r3.env"
 Copy-Item "$Release\deploy\.env.stage4.example" $EnvFile
 ```
 
@@ -139,19 +139,19 @@ Copy-Item "$Release\deploy\.env.stage4.example" $EnvFile
 本次项目名必须唯一、全小写并以 `-stage4-soak` 结尾，例如：
 
 ```text
-mes-rc3-20260803-stage4-soak
+mes-r3-20260804-stage4-soak
 ```
 
 执行命令：
 
 ```powershell
 $Release = "D:\MES-Stage4\incoming\mes-release-v3"
-$EnvFile = "D:\MES-Stage4\config\stage4-rc3.env"
-$Evidence = "D:\MES-Stage4\runs\20260803-rc3\evidence"
+$EnvFile = "D:\MES-Stage4\config\stage4-r3.env"
+$Evidence = "D:\MES-Stage4\runs\20260804-r3\evidence"
 
 & "$Release\scripts\deploy\Invoke-Stage4Acceptance.ps1" `
   -EnvFile $EnvFile `
-  -ProjectName "mes-rc3-20260803-stage4-soak" `
+  -ProjectName "mes-r3-20260804-stage4-soak" `
   -ComposeFile "$Release\compose.packaging.yml" `
   -Stage4ComposeFile "$Release\compose.stage4.yml" `
   -PythonPath "C:\Python312\python.exe" `

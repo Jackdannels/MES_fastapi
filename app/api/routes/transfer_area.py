@@ -524,8 +524,14 @@ def read_bootstrap() -> Response:
     storage = get_storage_backend()
 
     def load_bootstrap() -> bytes:
+        bootstrap_reader = getattr(storage, "read_transfer_bootstrap_snapshot", None)
+        snapshot = (
+            bootstrap_reader()
+            if callable(bootstrap_reader)
+            else read_snapshot(TRANSFER_BOOTSTRAP_READ_FIELDS, storage=storage)
+        )
         response, _snapshot_changed = build_bootstrap_response(
-            read_snapshot(TRANSFER_BOOTSTRAP_READ_FIELDS, storage=storage),
+            snapshot,
         )
         return JSONResponse(content=jsonable_encoder(response)).body
 

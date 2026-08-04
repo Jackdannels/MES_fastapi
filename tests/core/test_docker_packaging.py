@@ -146,6 +146,34 @@ def test_production_https_proxy_uses_secret_certificate_and_secure_headers() -> 
     assert "proxy_pass http://api:8000" in nginx
 
 
+def test_web_access_log_keeps_upstream_timing_and_request_correlation() -> None:
+    nginx = (REPO_ROOT / "deploy" / "nginx" / "nginx.conf").read_text(encoding="utf-8")
+    stage4_env = (REPO_ROOT / "deploy" / ".env.stage4.example").read_text(encoding="utf-8")
+
+    assert "request_time=$request_time" in nginx
+    assert "upstream_response_time=$upstream_response_time" in nginx
+    assert "request_id=$upstream_http_x_request_id" in nginx
+    assert "DOCKER_LOG_MAX_SIZE=50m" in stage4_env
+    assert "DOCKER_LOG_MAX_FILE=10" in stage4_env
+
+
+def test_compose_exposes_bounded_stale_while_refresh_cache_settings() -> None:
+    production = (REPO_ROOT / "compose.production.yml").read_text(encoding="utf-8")
+    packaging = (REPO_ROOT / "compose.packaging.yml").read_text(encoding="utf-8")
+    local_env = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    compose_env = (REPO_ROOT / "deploy" / ".env.compose.example").read_text(encoding="utf-8")
+    production_env = (REPO_ROOT / "deploy" / ".env.production.example").read_text(encoding="utf-8")
+    stage4_env = (REPO_ROOT / "deploy" / ".env.stage4.example").read_text(encoding="utf-8")
+
+    for compose in (production, packaging):
+        assert "READ_SNAPSHOT_CACHE_TTL_SECONDS:-5.0" in compose
+        assert "READ_SNAPSHOT_CACHE_STALE_SECONDS:-30.0" in compose
+
+    for env_example in (local_env, compose_env, production_env, stage4_env):
+        assert "READ_SNAPSHOT_CACHE_TTL_SECONDS=5.0" in env_example
+        assert "READ_SNAPSHOT_CACHE_STALE_SECONDS=30.0" in env_example
+
+
 def test_offline_release_tools_verify_checksums_and_never_start_services() -> None:
     export_script = (REPO_ROOT / "scripts" / "deploy" / "Export-MesRelease.ps1").read_text(encoding="utf-8")
     import_script = (REPO_ROOT / "scripts" / "deploy" / "Import-MesRelease.ps1").read_text(encoding="utf-8")
@@ -272,7 +300,10 @@ def test_stage4_compose_override_uses_fixed_images_resource_limits_and_no_restar
     assert override.count("mem_limit:") == 5
     assert override.count("pids_limit:") == 5
 
-    assert "COMPOSE_PROJECT_NAME=mes-stage4-rc2-20260802" in env_example
+    assert "COMPOSE_PROJECT_NAME=mes-stage4-r3-20260804" in env_example
+    assert "2026.08.04-r3@sha256:<replace-with-r3-api-digest>" in env_example
+    assert "2026.08.04-r3@sha256:<replace-with-r3-web-digest>" in env_example
+    assert "rc2" not in env_example.lower()
     assert "MYSQL_DATABASE=mes_stage4_test" in env_example
     for port in ("MES_WEB_PORT=25173", "MES_API_PORT=28000", "MES_MYSQL_PORT=23306", "MES_MQTT_PORT=21883"):
         assert port in env_example

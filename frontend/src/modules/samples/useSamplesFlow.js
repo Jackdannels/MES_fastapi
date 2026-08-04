@@ -7,6 +7,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { formatLocalDateTime } from "@/lib/dateTime.js";
 import { serverNowDate } from "@/lib/serverClock.js";
+import { readSampleDetail, readSamplePage } from "@/lib/samplesApi.js";
 import { readTasks, updateTask as updateTaskByApi } from "@/lib/tasksApi";
 import {
   DETAIL_STATUS_OPTIONS,
@@ -62,7 +63,6 @@ const parseCodeList = (value) =>
   );
 
 const SAMPLES_SNAPSHOT_KEYS = [
-  STORAGE_KEYS.samples,
   STORAGE_KEYS.experiments,
   STORAGE_KEYS.experiment_runs,
   STORAGE_KEYS.experiment_run_steps,
@@ -70,7 +70,7 @@ const SAMPLES_SNAPSHOT_KEYS = [
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.schedules,
 ];
-const SAMPLES_REFRESH_KEYS = [STORAGE_KEYS.tasks, ...SAMPLES_SNAPSHOT_KEYS];
+const SAMPLES_REFRESH_KEYS = [STORAGE_KEYS.tasks, STORAGE_KEYS.samples, ...SAMPLES_SNAPSHOT_KEYS];
 
 const normalizeSamplesRefreshKeys = (keys) => {
   if (!Array.isArray(keys) || keys.length === 0) {
@@ -83,9 +83,20 @@ const normalizeSamplesRefreshKeys = (keys) => {
 // 输出样品流转表格和暂存派发动作所需的响应式状态。
 function useSamplesFlow() {
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot(SAMPLES_SNAPSHOT_KEYS);
+  const { loadSnapshot: loadFullSampleSnapshot } = useStorageSnapshot([STORAGE_KEYS.samples]);
 
   const rawTasks = ref([]);
   const rawSamples = ref([]);
+  const pageSamples = ref([]);
+  const samplePageCount = ref(1);
+  const sampleStatusOptions = ref([]);
+  const sampleTaskOptions = ref([]);
+  const stagingPageSamples = ref([]);
+  const stagingPageTotalCount = ref(0);
+  const stagingPageTotalPages = ref(1);
+  const stagingStatusOptionItems = ref([]);
+  const stagingTaskOptionItems = ref([]);
+  const fullSamplesLoaded = ref(false);
   const rawExperiments = ref([]);
   const rawExperimentRuns = ref([]);
   const rawExperimentRunSteps = ref([]);
@@ -112,6 +123,9 @@ function useSamplesFlow() {
   const detailDrawer = useDialogState();
   let flushPendingStorageRefresh = () => false;
   let hasPendingSamplesRefresh = false;
+  let samplePageRequestVersion = 0;
+  let stagingPageRequestVersion = 0;
+  let fullSamplesLoadPromise = null;
 
   const batchForm = reactive({
     location: DEFAULT_LABELS.intakeLocation,
@@ -133,18 +147,14 @@ function useSamplesFlow() {
 
   const view = computed(() =>
     buildSamplesFlowView({
-      samples: rawSamples.value,
-      tasks: rawTasks.value,
-      filters: {
-        query: query.value,
-        taskCode: selectedTaskCode.value,
-        status: selectedStatus.value,
-      },
+      samples: pageSamples.value,
+      tasks: [],
+      filters: {},
       sort: {
         key: sortKey.value,
         direction: sortDirection.value,
       },
-      page: currentPage.value,
+      page: 1,
       pageSize,
     }),
   );
@@ -158,28 +168,24 @@ function useSamplesFlow() {
     }),
   );
   const trayRows = computed(() => trayOverviewView.value.rows);
-  const pageCount = computed(() => view.value.totalPages);
-  const taskOptions = computed(() => view.value.taskOptions);
-  const statusOptions = computed(() => view.value.statusOptions);
+  const pageCount = computed(() => samplePageCount.value);
+  const taskOptions = computed(() => sampleTaskOptions.value);
+  const statusOptions = computed(() => sampleStatusOptions.value);
   const stagingView = computed(() =>
     buildSamplesStagingView({
       labels: DEFAULT_LABELS,
-      filters: {
-        query: stagingQuery.value,
-        taskCode: stagingSelectedTaskCode.value,
-        status: stagingSelectedStatus.value,
-      },
-      page: stagingCurrentPage.value,
+      filters: {},
+      page: 1,
       pageSize,
-      samples: rawSamples.value,
+      samples: stagingPageSamples.value,
       selectedCodes: stagingSelectedCodes.value,
     }),
   );
   const stagingRows = computed(() => stagingView.value.rows);
-  const stagingCount = computed(() => stagingView.value.count);
-  const stagingPageCount = computed(() => stagingView.value.totalPages);
-  const stagingTaskOptions = computed(() => stagingView.value.taskOptions);
-  const stagingStatusOptions = computed(() => stagingView.value.statusOptions);
+  const stagingCount = computed(() => stagingPageTotalCount.value);
+  const stagingPageCount = computed(() => stagingPageTotalPages.value);
+  const stagingTaskOptions = computed(() => stagingTaskOptionItems.value);
+  const stagingStatusOptions = computed(() => stagingStatusOptionItems.value);
   const stagingLabOptions = computed(() => stagingView.value.labOptions);
   const detailSample = computed(() => detailDrawer.payload.value || null);
   const detailSampleTray = computed(() => getSampleTrayList(detailSample.value)[0] || null);
@@ -246,12 +252,85 @@ function useSamplesFlow() {
     return preserveExisting ? currentValue : [];
   };
 
+  const loadSamplePage = async () => {
+    const requestVersion = ++samplePageRequestVersion;
+    const payload = await readSamplePage({
+      page: currentPage.value,
+      pageSize,
+      query: query.value,
+      taskCode: selectedTaskCode.value,
+      status: selectedStatus.value,
+      sortKey: sortKey.value || "code",
+      sortDirection: sortDirection.value,
+    });
+    if (requestVersion !== samplePageRequestVersion) {
+      return;
+    }
+    const summaries = Array.isArray(payload?.samples) ? payload.samples : [];
+    pageSamples.value = summaries.map((sample) => ({
+      ...sample,
+      trays: (Array.isArray(sample?.trayCodes) ? sample.trayCodes : []).map((trayCode) => ({ tray_code: trayCode })),
+    }));
+    if (!fullSamplesLoaded.value) {
+      rawSamples.value = pageSamples.value;
+    }
+    samplePageCount.value = Math.max(1, Number(payload?.totalPages) || 1);
+    currentPage.value = Math.min(Math.max(Number(payload?.currentPage) || 1, 1), samplePageCount.value);
+    sampleStatusOptions.value = Array.isArray(payload?.statusOptions) ? payload.statusOptions : [];
+    sampleTaskOptions.value = Array.isArray(payload?.taskOptions) ? payload.taskOptions : [];
+  };
+
+  const loadStagingPage = async () => {
+    const requestVersion = ++stagingPageRequestVersion;
+    const payload = await readSamplePage({
+      page: stagingCurrentPage.value,
+      pageSize,
+      query: stagingQuery.value,
+      taskCode: stagingSelectedTaskCode.value,
+      status: stagingSelectedStatus.value,
+      sortKey: "code",
+      sortDirection: "asc",
+      view: "staging",
+    });
+    if (requestVersion !== stagingPageRequestVersion) {
+      return;
+    }
+    const summaries = Array.isArray(payload?.samples) ? payload.samples : [];
+    stagingPageSamples.value = summaries.map((sample) => ({
+      ...sample,
+      trays: (Array.isArray(sample?.trayCodes) ? sample.trayCodes : []).map((trayCode) => ({ tray_code: trayCode })),
+    }));
+    stagingPageTotalCount.value = Math.max(0, Number(payload?.totalCount) || 0);
+    stagingPageTotalPages.value = Math.max(1, Number(payload?.totalPages) || 1);
+    stagingCurrentPage.value = Math.min(Math.max(Number(payload?.currentPage) || 1, 1), stagingPageTotalPages.value);
+    stagingStatusOptionItems.value = Array.isArray(payload?.statusOptions) ? payload.statusOptions : [];
+    stagingTaskOptionItems.value = Array.isArray(payload?.taskOptions) ? payload.taskOptions : [];
+  };
+
+  const ensureFullSamples = async () => {
+    if (fullSamplesLoaded.value) {
+      return rawSamples.value;
+    }
+    if (!fullSamplesLoadPromise) {
+      fullSamplesLoadPromise = (async () => {
+        const snapshot = await loadFullSampleSnapshot();
+        rawSamples.value = normalizeSamplesSnapshot(snapshot?.[STORAGE_KEYS.samples], DEFAULT_LABELS);
+        fullSamplesLoaded.value = true;
+        return rawSamples.value;
+      })().finally(() => {
+        fullSamplesLoadPromise = null;
+      });
+    }
+    return fullSamplesLoadPromise;
+  };
+
   const load = async ({ silent = false, keys } = {}) => {
     // 托盘流程需要同时读取实验、排程和运行记录，保持中控与试验间/可视化口径一致。
-    const showBlockingLoading = !silent || (rawTasks.value.length === 0 && rawSamples.value.length === 0);
+    const showBlockingLoading = !silent || (rawTasks.value.length === 0 && pageSamples.value.length === 0);
     const refreshKeys = normalizeSamplesRefreshKeys(keys);
     const refreshKeySet = new Set(refreshKeys);
-    const snapshotKeys = refreshKeys.filter((key) => key !== STORAGE_KEYS.tasks);
+    const refreshSamples = refreshKeySet.has(STORAGE_KEYS.samples);
+    const snapshotKeys = refreshKeys.filter((key) => key !== STORAGE_KEYS.tasks && key !== STORAGE_KEYS.samples);
     if (showBlockingLoading) {
       loading.value = true;
     }
@@ -262,18 +341,15 @@ function useSamplesFlow() {
       const [tasks, snapshot] = await Promise.all([
         refreshKeySet.has(STORAGE_KEYS.tasks) ? readTasks() : Promise.resolve(rawTasks.value),
         snapshotKeys.length ? snapshotLoader() : Promise.resolve({}),
+        refreshSamples ? Promise.all([loadSamplePage(), loadStagingPage()]) : Promise.resolve(),
       ]);
       const preserveExisting = Boolean(silent);
       if (refreshKeySet.has(STORAGE_KEYS.tasks)) {
         rawTasks.value = selectArraySnapshot(tasks, rawTasks.value, preserveExisting);
       }
-      if (refreshKeySet.has(STORAGE_KEYS.samples)) {
-        rawSamples.value = selectArraySnapshot(
-          snapshot?.[STORAGE_KEYS.samples],
-          rawSamples.value,
-          preserveExisting,
-          (items) => normalizeSamplesSnapshot(items, DEFAULT_LABELS),
-        );
+      if (refreshSamples && fullSamplesLoaded.value) {
+        fullSamplesLoaded.value = false;
+        await ensureFullSamples();
       }
       if (refreshKeySet.has(STORAGE_KEYS.experiments)) {
         rawExperiments.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.experiments], rawExperiments.value, preserveExisting);
@@ -324,16 +400,19 @@ function useSamplesFlow() {
   const setQuery = (value) => {
     query.value = String(value ?? "");
     resetPage();
+    void loadSamplePage();
   };
 
   const setTaskFilter = (value) => {
     selectedTaskCode.value = String(value ?? "");
     resetPage();
+    void loadSamplePage();
   };
 
   const setStatusFilter = (value) => {
     selectedStatus.value = String(value ?? "");
     resetPage();
+    void loadSamplePage();
   };
 
   const toggleSort = (key) => {
@@ -348,6 +427,7 @@ function useSamplesFlow() {
       sortDirection.value = "asc";
     }
     resetPage();
+    void loadSamplePage();
   };
 
   const setPage = (page) => {
@@ -356,21 +436,25 @@ function useSamplesFlow() {
       return;
     }
     currentPage.value = Math.min(Math.max(nextPage, 1), pageCount.value);
+    void loadSamplePage();
   };
 
   const setStagingQuery = (value) => {
     stagingQuery.value = String(value ?? "");
     stagingCurrentPage.value = 1;
+    void loadStagingPage();
   };
 
   const setStagingTaskFilter = (value) => {
     stagingSelectedTaskCode.value = String(value ?? "");
     stagingCurrentPage.value = 1;
+    void loadStagingPage();
   };
 
   const setStagingStatusFilter = (value) => {
     stagingSelectedStatus.value = String(value ?? "");
     stagingCurrentPage.value = 1;
+    void loadStagingPage();
   };
 
   const setStagingPage = (page) => {
@@ -379,6 +463,7 @@ function useSamplesFlow() {
       return;
     }
     stagingCurrentPage.value = Math.min(Math.max(nextPage, 1), stagingPageCount.value);
+    void loadStagingPage();
   };
 
   const resetStaging = () => {
@@ -416,6 +501,7 @@ function useSamplesFlow() {
   };
 
   const submitStagingDispatch = async () => {
+    await ensureFullSamples();
     const result = dispatchStagingSamples({
       labels: DEFAULT_LABELS,
       now: formatLocalDateTime(),
@@ -441,6 +527,7 @@ function useSamplesFlow() {
   };
 
   const openBatchModal = () => {
+    void ensureFullSamples();
     batchForm.location = DEFAULT_LABELS.intakeLocation;
     batchForm.owner = "";
     batchForm.codes = "";
@@ -454,6 +541,7 @@ function useSamplesFlow() {
   };
 
   const submitBatch = async () => {
+    await ensureFullSamples();
     const now = serverNowDate();
     const nowIso = formatLocalDateTime(now);
     const arrivalTime = formatLocalDateTime(now);
@@ -497,17 +585,21 @@ function useSamplesFlow() {
     flushPendingRealtimeRefresh();
   };
 
-  const openDetailDrawer = (sampleId) => {
-    const selected = rawSamples.value.find((sample) => String(sample?.id ?? sample?.code) === String(sampleId));
-    if (!selected) {
-      return;
+  const openDetailDrawer = async (sampleId) => {
+    try {
+      const selected = await readSampleDetail(sampleId);
+      if (!selected || typeof selected !== "object") {
+        return;
+      }
+      // 详情只在用户打开抽屉时读取完整托盘和历史数据。
+      detailForm.code = selected.code || "";
+      detailForm.status = selected.status || "\u5230\u8D27";
+      detailForm.remark = "";
+      detailDrawer.openWith(selected);
+      warning.value = "";
+    } catch (error) {
+      warning.value = buildFailureMessage("样品详情加载失败，请稍后重试", error);
     }
-    // 明细抽屉默认展示当前样品状态，备注从空白开始录入。
-    detailForm.code = selected.code || "";
-    detailForm.status = selected.status || "\u5230\u8D27";
-    detailForm.remark = "";
-    detailDrawer.openWith(selected);
-    warning.value = "";
   };
 
   const closeDetailDrawer = () => {
@@ -520,6 +612,7 @@ function useSamplesFlow() {
     if (!currentSample) {
       return;
     }
+    await ensureFullSamples();
     const result = updateSampleDetail({
       sample: currentSample,
       payload: {
@@ -548,6 +641,7 @@ function useSamplesFlow() {
   };
 
   const updateTrayStatusInline = async (trayCode, status) => {
+    await ensureFullSamples();
     const result = updateTrayStatus({
       trayCode,
       status,
@@ -566,15 +660,6 @@ function useSamplesFlow() {
     window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT));
     warning.value = "";
   };
-
-  watch(
-    () => view.value.currentPage,
-    (nextPage) => {
-      if (currentPage.value !== nextPage) {
-        currentPage.value = nextPage;
-      }
-    },
-  );
 
   watch(
     stagingRows,
@@ -649,6 +734,7 @@ function useSamplesFlow() {
     detailSampleTrayCode,
     detailSampleTrayFlow,
     detailStatusOptions: DETAIL_STATUS_OPTIONS,
+    ensureFullSamples,
     loading,
     locationOptions,
     openBatchModal,

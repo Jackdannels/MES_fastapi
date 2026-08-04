@@ -11,6 +11,7 @@ PERFORMANCE_MONITOR_ENABLED=true
 PERFORMANCE_LOG_ALL_REQUESTS=false
 PERFORMANCE_SLOW_REQUEST_MS=500
 READ_SNAPSHOT_CACHE_TTL_SECONDS=5.0
+READ_SNAPSHOT_CACHE_STALE_SECONDS=30.0
 ```
 
 每个 HTTP 响应包含：
@@ -23,8 +24,10 @@ READ_SNAPSHOT_CACHE_TTL_SECONDS=5.0
 超过阈值或返回 5xx 的请求写入 `mes.performance` JSON 日志。临时诊断所有请求时可设置
 `PERFORMANCE_LOG_ALL_REQUESTS=true`，完成诊断后应恢复为 `false`。
 
-只读快照响应使用5秒进程内单飞缓存；任何MQTT、hostless模拟或HTTP业务写入发布存储更新时都会立即递增版本并失效缓存，
-浏览器若检测到事件版本跳号或EventSource重连则执行全量校准。
+只读快照响应使用5秒进程内单飞缓存。缓存到期但数据版本未变化时，可在30秒有界窗口内立即返回旧快照，
+并由单个后台线程刷新；后台刷新失败会保留旧值并允许后续请求重试。任何MQTT、hostless模拟或HTTP业务写入
+发布存储更新时都会立即递增版本并清空旧快照，因此写入后不会继续返回stale数据。浏览器若检测到事件版本跳号
+或EventSource重连则执行全量校准。
 
 ## 前端观测
 
@@ -134,3 +137,22 @@ rtk proxy C:\ProgramData\anaconda3\envs\fastapi\python.exe scripts\run_p0_mixed_
 缓存稳定命中时，5用户总体P50为21.11ms，10用户总体P50为23.36ms；P95仍由缓存失效后的首次全量关系重建决定，
 因此本轮未通过最终阈值。下一阶段应实现样品列表服务端分页、样品详情/历史按需读取，以及接驳区数据库摘要读取器，
 而不应继续延长缓存TTL来掩盖首次加载成本。
+
+## 2026-08-04 Stage4 r2长测结论与r3修复
+
+r2离线部署、容器健康、数据库完整性和迁移均通过。8小时内共记录373286个请求，客户端出现24次5秒超时：
+样品接口23次、可视化接口1次。对应慢请求最终均返回HTTP 200，未发现500、连接池耗尽、OOM或数据库异常。
+失败时样品、可视化和总览仍分别周期性读取约4.85MB、3.97MB和3.37MB的高度重叠完整快照。
+
+r3代码修复以减少读取规模为主，不依赖延长缓存时间掩盖问题：
+
+- 样品主列表和暂存列表改用`/api/samples/page`服务端分页，默认每页8条；筛选、排序、计数和暂存位置条件下推SQL；
+- 列表不读取样品事件历史，不返回完整托盘对象；用户打开详情时才通过`/api/samples/{sample_identifier}`读取单个完整样品；
+- 接驳区bootstrap在MySQL路径改用任务、窄样品和实验三类专用读取，继续复用原业务状态计算；
+- 5秒缓存TTL保留，新增30秒stale-while-revalidate仅平滑“版本未变化”的周期刷新；业务写入仍立即版本失效；
+- Stage4探针改为请求真实分页接口并分别统计hit、miss、coalesced和stale延迟，500ms验收线不放宽；
+- Nginx访问日志新增请求总耗时、上游耗时、上游状态和请求ID，Stage4日志保留提高为50MB乘10份。
+
+当前完整后端回归已通过，但Stage4仍未正式判定PASS。Docker守护进程可用后，必须先使用独立项目名、独立端口和
+一次性数据卷完成60秒5用户测试，再完成10分钟测试；两级均通过后才生成r3离线包，并在空Docker镜像库上做实际导入，
+最后执行8小时复验。所有容量测试只允许连接名称符合隔离规则的测试数据库，不得连接正式数据库。
