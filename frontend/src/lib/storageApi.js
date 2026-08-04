@@ -48,9 +48,17 @@ function ensureStorageEventSource() {
   });
 }
 
-async function fetchStorageSnapshot(keys = []) {
+async function fetchStorageSnapshot(keys = [], profile = "") {
   const requestedKeys = Array.from(new Set((Array.isArray(keys) ? keys : []).filter(Boolean))).sort();
-  const query = requestedKeys.length ? `?keys=${encodeURIComponent(requestedKeys.join(","))}` : "";
+  const normalizedProfile = String(profile || "").trim().toLowerCase();
+  const queryParts = [];
+  if (requestedKeys.length) {
+    queryParts.push(`keys=${encodeURIComponent(requestedKeys.join(","))}`);
+  }
+  if (normalizedProfile) {
+    queryParts.push(`profile=${encodeURIComponent(normalizedProfile)}`);
+  }
+  const query = queryParts.length ? `?${queryParts.join("&")}` : "";
   const requestStartedAt = performanceNow();
   let response;
   try {
@@ -121,6 +129,11 @@ async function flushSnapshotReadBatch() {
 function readStorageSnapshot(keys, options = {}) {
   const requestedKeys = Array.from(new Set(Array.isArray(keys) ? keys.filter(Boolean) : []));
   const normalizeMissing = options.normalizeMissing !== false;
+  const profile = String(options.profile || "").trim().toLowerCase();
+  if (profile) {
+    return fetchStorageSnapshot(requestedKeys, profile)
+      .then((payload) => projectSnapshot(payload, requestedKeys, normalizeMissing));
+  }
   requestedKeys.forEach((key) => queuedSnapshotReadKeys.add(key));
   const result = new Promise((resolve, reject) => {
     queuedSnapshotReads.push({ normalizeMissing, reject, requestedKeys, resolve });

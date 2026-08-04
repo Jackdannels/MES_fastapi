@@ -115,6 +115,20 @@ describe("storageApi", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  test("requests an isolated operational profile without joining the default snapshot batch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ [STORAGE_KEYS.samples]: [{ code: "S-NARROW" }] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const snapshot = await readStorageSnapshot([STORAGE_KEYS.samples], { profile: "visualization" });
+
+    expect(snapshot).toEqual({ [STORAGE_KEYS.samples]: [{ code: "S-NARROW" }] });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("keys=mes.samples&profile=visualization");
+  });
+
   test("coalesces different same-tick key sets into one scoped remote request", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

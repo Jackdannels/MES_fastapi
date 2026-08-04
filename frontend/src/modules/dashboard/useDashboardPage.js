@@ -69,7 +69,7 @@ const crossedDeviceMaintenanceBoundary = (devices, previousNow, currentNow) => {
 
 // 读取持久化快照数据，并输出可直接渲染的总览页视图状态。
 function useDashboardPage() {
-  const { loadSnapshot } = useStorageSnapshot(DASHBOARD_SNAPSHOT_KEYS);
+  const { loadSnapshot } = useStorageSnapshot(DASHBOARD_SNAPSHOT_KEYS, { profile: "dashboard" });
 
   const currentPage = ref(1);
   const now = ref(serverNowMs());
@@ -168,7 +168,7 @@ function useDashboardPage() {
       const refreshKeySet = new Set(refreshKeys);
       const snapshotLoader = refreshKeys.length === DASHBOARD_SNAPSHOT_KEYS.length
         ? loadSnapshot
-        : useStorageSnapshot(refreshKeys).loadSnapshot;
+        : useStorageSnapshot(refreshKeys, { profile: "dashboard" }).loadSnapshot;
       const snapshot = await snapshotLoader({ fallbackSnapshot: buildSnapshotFallback() });
       modelReferenceNow = alignToSecond(now.value);
       const applyRequestedSnapshotArray = (key, target) => {

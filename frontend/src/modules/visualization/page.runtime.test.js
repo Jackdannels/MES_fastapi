@@ -252,6 +252,7 @@ describe("VisualizationPage runtime", () => {
       .split(",")
       .sort();
     expect(requestedKeys).toEqual(["mes.samples", "mes.schedules"]);
+    expect(new URL(storageReadUrl, "http://localhost").searchParams.get("profile")).toBe("visualization");
   });
 
   test("keeps the visible board data when a background refresh omits array snapshot keys", async () => {

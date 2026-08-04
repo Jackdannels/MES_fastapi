@@ -73,8 +73,9 @@ const buildScheduleExceptionPatch = (snapshot, reconciled) => {
   };
 };
 
-function useStorageSnapshot(keys) {
+function useStorageSnapshot(keys, readOptions = {}) {
   const requestedKeys = Array.isArray(keys) ? keys : [];
+  const profile = String(readOptions?.profile || "").trim().toLowerCase();
 
   return {
     loadSnapshot: async (options = {}) => {
@@ -85,7 +86,7 @@ function useStorageSnapshot(keys) {
       ]));
       const fallbackSnapshot = options?.fallbackSnapshot || {};
       const markerBeforeRead = readSnapshotUpdateMarker();
-      const rawSnapshot = await readStorageSnapshot(loadedKeys, { normalizeMissing: false });
+      const rawSnapshot = await readStorageSnapshot(loadedKeys, { normalizeMissing: false, profile });
       const snapshot = Object.fromEntries(
         loadedKeys.map((key) => [
           key,

@@ -746,21 +746,27 @@ def _validate_storage_update(
 
 
 @router.get("")
-def read_all(keys: str = Query(default="")) -> Response:
+def read_all(keys: str = Query(default=""), profile: str = Query(default="")) -> Response:
     storage = get_storage_backend()
+    normalized_profile = profile.strip().lower()
+    if normalized_profile not in {"", "dashboard", "visualization"}:
+        raise HTTPException(status_code=400, detail="Unsupported storage read profile")
     requested_keys = list(dict.fromkeys(
         key.strip() for key in keys.split(",") if key.strip() in STORAGE_KEYS
     ))
     if requested_keys:
         def load_requested() -> bytes:
-            if hasattr(storage, "read_many"):
+            operational_reader = getattr(storage, "read_operational_snapshot", None)
+            if normalized_profile and callable(operational_reader):
+                payload = operational_reader(requested_keys)
+            elif hasattr(storage, "read_many"):
                 payload = storage.read_many(requested_keys)
             else:
                 payload = {key: storage.read(key) for key in requested_keys}
             return JSONResponse(content=jsonable_encoder(payload)).body
 
         body, cache_status = read_snapshot_cache.get_or_load(
-            ("storage", storage_cache_identity(storage), tuple(requested_keys)),
+            ("storage", storage_cache_identity(storage), normalized_profile, tuple(requested_keys)),
             load_requested,
         )
         return Response(content=body, media_type="application/json", headers={"X-MES-Read-Cache": cache_status})

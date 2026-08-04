@@ -21,7 +21,7 @@ DEFAULT_ENDPOINTS = (
     ("health", "/health"),
     (
         "dashboard",
-        "/api/storage?keys=mes.tasks%2Cmes.schedules%2Cmes.conflicts%2Cmes.devices%2Cmes.samples%2Cmes.streams%2Cmes.experiments%2Cmes.experiment_runs%2Cmes.experiment_run_trays%2Cmes.experiment_trays",
+        "/api/storage?keys=mes.tasks%2Cmes.schedules%2Cmes.conflicts%2Cmes.devices%2Cmes.samples%2Cmes.streams%2Cmes.experiments%2Cmes.experiment_runs%2Cmes.experiment_run_trays%2Cmes.experiment_trays&profile=dashboard",
     ),
     ("samples", "/api/samples/page?page=1&pageSize=8"),
     (
@@ -31,7 +31,7 @@ DEFAULT_ENDPOINTS = (
     ("transfer_bootstrap", "/api/transfer-area/bootstrap"),
     (
         "visualization",
-        "/api/storage?keys=mes.devices%2Cmes.experiment_run_steps%2Cmes.experiment_run_trays%2Cmes.experiment_runs%2Cmes.experiment_trays%2Cmes.experiments%2Cmes.samples%2Cmes.schedules%2Cmes.staging_events%2Cmes.tasks",
+        "/api/storage?keys=mes.devices%2Cmes.experiment_run_steps%2Cmes.experiment_run_trays%2Cmes.experiment_runs%2Cmes.experiment_trays%2Cmes.experiments%2Cmes.samples%2Cmes.schedules%2Cmes.staging_events%2Cmes.tasks&profile=visualization",
     ),
     ("mqtt_status", "/api/mq/interface-mode"),
 )

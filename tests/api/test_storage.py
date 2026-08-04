@@ -411,6 +411,48 @@ def test_storage_reads_only_requested_snapshot_keys(monkeypatch):
     assert response.json() == {"mes.tasks": [{"code": "TASK-001"}]}
 
 
+def test_storage_operational_profile_uses_narrow_reader_and_has_an_independent_cache_key(monkeypatch):
+    from app.services.read_through_cache import read_snapshot_cache
+
+    class OperationalStorage(FakeStorage):
+        def __init__(self):
+            super().__init__({"mes.samples": [{"code": "FULL", "history": [{"action": "full"}]}]})
+            self.full_reads = 0
+            self.operational_reads = 0
+
+        def read_many(self, keys):
+            self.full_reads += 1
+            return {key: self.read(key) for key in keys}
+
+        def read_operational_snapshot(self, keys):
+            self.operational_reads += 1
+            return {"mes.samples": [{"code": "NARROW", "history": []}]}
+
+    read_snapshot_cache.invalidate()
+    storage = OperationalStorage()
+    client, _storage = build_client_with_storage(monkeypatch, storage)
+
+    profiled = client.get("/api/storage?keys=mes.samples&profile=dashboard")
+    profiled_hit = client.get("/api/storage?keys=mes.samples&profile=dashboard")
+    full = client.get("/api/storage?keys=mes.samples")
+
+    assert profiled.json() == profiled_hit.json() == {"mes.samples": [{"code": "NARROW", "history": []}]}
+    assert full.json() == {"mes.samples": [{"code": "FULL", "history": [{"action": "full"}]}]}
+    assert profiled.headers["X-MES-Read-Cache"] == "miss"
+    assert profiled_hit.headers["X-MES-Read-Cache"] == "hit"
+    assert storage.operational_reads == 1
+    assert storage.full_reads == 1
+
+
+def test_storage_rejects_unknown_operational_profile(monkeypatch):
+    client, _storage = build_client(monkeypatch)
+
+    response = client.get("/api/storage?keys=mes.samples&profile=unknown")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Unsupported storage read profile"
+
+
 def test_storage_read_cache_hits_and_invalidates_after_published_update(monkeypatch):
     from app.api.routes import storage as storage_route
     from app.services.read_through_cache import read_snapshot_cache

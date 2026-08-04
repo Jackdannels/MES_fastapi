@@ -91,6 +91,7 @@ from app.core.mysql_storage_sample_write import (
     upsert_sample_rows,
 )
 from app.core.mysql_storage_sample_load import load_samples
+from app.core.mysql_operational_samples import load_operational_samples
 from app.core.mysql_transfer_bootstrap import load_transfer_bootstrap_samples
 from app.core.mysql_storage_mappers import (
     build_experiment_insert_row,
@@ -543,6 +544,7 @@ class MySQLMesStorageBackend(StorageBackend):
         keys: Iterable[str],
         *,
         task_codes: set[str] | None = None,
+        operational_samples: bool = False,
     ) -> Dict[str, Any]:
         requested_keys = list(dict.fromkeys(
             key for key in keys if key in STORAGE_KEYS or key == STORAGE_META_KEY
@@ -558,7 +560,7 @@ class MySQLMesStorageBackend(StorageBackend):
             for key in requested_keys
             if key in SNAPSHOT_STORAGE_KEYS or key == STORAGE_META_KEY
         ]
-        if "mes.samples" in requested_set and "mes.staging_events" not in snapshot_keys:
+        if not operational_samples and "mes.samples" in requested_set and "mes.staging_events" not in snapshot_keys:
             snapshot_keys.append("mes.staging_events")
         if snapshot_keys:
             with performance_span("storage.snapshot"):
@@ -618,13 +620,16 @@ class MySQLMesStorageBackend(StorageBackend):
                             "mes.experiment_samples": self._load_experiment_samples,
                         }
                         if key == "mes.samples":
-                            loaded[key] = self._load_samples(
-                                cursor,
-                                snapshot_values.get("mes.staging_events"),
-                                schedules=load("mes.schedules"),
-                                experiment_trays=load("mes.experiment_trays"),
-                                task_codes=task_codes,
-                            )
+                            if operational_samples:
+                                loaded[key] = load_operational_samples(cursor, task_codes=task_codes)
+                            else:
+                                loaded[key] = self._load_samples(
+                                    cursor,
+                                    snapshot_values.get("mes.staging_events"),
+                                    schedules=load("mes.schedules"),
+                                    experiment_trays=load("mes.experiment_trays"),
+                                    task_codes=task_codes,
+                                )
                         else:
                             loader = loaders[key]
                             loaded[key] = (
@@ -642,6 +647,10 @@ class MySQLMesStorageBackend(StorageBackend):
 
     def read_many(self, keys: Iterable[str]) -> Dict[str, Any]:
         return self._read_many(keys)
+
+    def read_operational_snapshot(self, keys: Iterable[str]) -> Dict[str, Any]:
+        """Return dashboard/visualization keys with samples projected to active workflow fields."""
+        return self._read_many(keys, operational_samples=True)
 
     def read_transfer_bootstrap_snapshot(self) -> Dict[str, Any]:
         """Return the narrow read model consumed by the transfer overview."""

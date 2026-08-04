@@ -360,7 +360,7 @@ const VISUALIZATION_SNAPSHOT_KEYS = [
   STORAGE_KEYS.schedules,
   STORAGE_KEYS.staging_events,
 ];
-const { loadSnapshot: loadInitialSnapshot } = useStorageSnapshot(VISUALIZATION_SNAPSHOT_KEYS);
+const { loadSnapshot: loadInitialSnapshot } = useStorageSnapshot(VISUALIZATION_SNAPSHOT_KEYS, { profile: "visualization" });
 const rawSnapshot = ref({});
 const attendanceSessions = ref([]);
 const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
@@ -374,7 +374,7 @@ const normalizeVisualizationRefreshKeys = (keys) => {
 };
 
 const readRawStorageSnapshot = (keys = VISUALIZATION_SNAPSHOT_KEYS) =>
-  readStorageSnapshot(keys, { normalizeMissing: false });
+  readStorageSnapshot(keys, { normalizeMissing: false, profile: "visualization" });
 
 const mergeArraySnapshot = (previousSnapshot, nextSnapshot, keys) => {
   const source = nextSnapshot && typeof nextSnapshot === "object" ? nextSnapshot : {};

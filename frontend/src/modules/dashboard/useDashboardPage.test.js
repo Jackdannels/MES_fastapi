@@ -5,12 +5,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   dashboardModelBuild: vi.fn(),
   loadSnapshot: vi.fn(),
+  requestedProfiles: [],
   requestedSnapshotKeys: [],
 }));
 
 vi.mock("@/composables/useStorageSnapshot", () => ({
-  useStorageSnapshot: (keys) => {
+  useStorageSnapshot: (keys, options = {}) => {
     mocks.requestedSnapshotKeys.push(keys);
+    mocks.requestedProfiles.push(options.profile || "");
     return { loadSnapshot: mocks.loadSnapshot };
   },
 }));
@@ -49,6 +51,7 @@ describe("useDashboardPage", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-17T10:00:00.000Z"));
     mocks.dashboardModelBuild.mockClear();
+    mocks.requestedProfiles.length = 0;
     mocks.requestedSnapshotKeys.length = 0;
     mocks.loadSnapshot.mockResolvedValue({
       "mes.tasks": [{ code: "SYLU-2026-04-109", source: "外部委托", status: "待排程", transfer_status: "已入库" }],
@@ -104,6 +107,8 @@ describe("useDashboardPage", () => {
   test("reloads only samples when sample state changes in another work area", async () => {
     const wrapper = mount(TestHarness);
     await settle(wrapper);
+
+    expect(mocks.requestedProfiles).toContain("dashboard");
     mocks.loadSnapshot.mockResolvedValueOnce({
       "mes.samples": [
         {
