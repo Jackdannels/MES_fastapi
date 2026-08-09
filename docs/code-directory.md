@@ -369,6 +369,7 @@
 - `scripts/sql/V005__terminal_collation_alignment.sql`：历史终端表字符集对齐迁移。
 - `scripts/sql/V006__long_running_query_indexes.sql`：长期运行场景下 MQTT 消息与实验事件查询的复合索引迁移。
 - `scripts/sql/V007__bounded_event_retention_indexes.sql`：应用级小批量事件留存清理所需的时间与状态键索引。
+- `scripts/sql/V008__fixture_install_schedule_identity.sql`：为夹具安装待确认记录补充精确排程身份，并清理无法安全映射的旧待确认数据。
 - `scripts/sql/mysql-production-grants.example.sql`：正式迁移/API 账号授权模板。
 - `compose.packaging.yml`：MySQL、迁移、API、Web、RabbitMQ/MQTT 的隔离验收编排。
 - `compose.stage4.yml`：Stage4固定digest镜像、资源上限和禁止自动重启的隔离覆盖层。

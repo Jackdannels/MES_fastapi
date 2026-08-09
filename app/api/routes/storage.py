@@ -17,6 +17,10 @@ from app.services.appearance_inspection import (
 )
 from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
 from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
+from app.services.experiment_schedule_sequence import (
+    ExperimentScheduleSequenceError,
+    assert_expected_next_scheduled_step,
+)
 from app.services.storage_atomic import merge_concurrent_storage_updates
 from app.services.storage_tray_actions import (
     SAMPLES_KEY,
@@ -100,6 +104,14 @@ APPEARANCE_SOURCE_REQUIRED_DETAIL = "当前试验类型不支持进入外观检�
 APPEARANCE_REPEAT_STOCK_IN_BLOCKED_DETAIL = "该托盘已完成实验前外观检测并出库，不能重复入库外观检测间。"
 APPEARANCE_DISPATCH_TARGET_REQUIRED_DETAIL = "目标实验室与当前托盘不匹配"
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
+LAB_SEQUENCE_CONTROLLED_STATUSES = {
+    LAB_DISPATCHED_STATUS,
+    LAB_ARRIVED_STATUS,
+    "工装夹具安装",
+    "实验准备就绪",
+    "实验进行中",
+    "实验中",
+}
 TRAY_ACTION_SCOPE_KEYS = (
     "mes.tasks",
     "mes.samples",
@@ -516,6 +528,70 @@ def _index_trays(sample: Any) -> dict[str, dict[str, Any]]:
     }
 
 
+def _tray_sequence_signature(sample: Any, tray: Any) -> tuple[str, ...]:
+    sample_value = sample if isinstance(sample, dict) else {}
+    tray_value = tray if isinstance(tray, dict) else {}
+    return (
+        _status(tray_value) or _status(sample_value),
+        _normalize_text(tray_value.get("target_schedule_id") or tray_value.get("targetScheduleId")),
+        _normalize_text(tray_value.get("target_experiment_code") or tray_value.get("targetExperimentCode")),
+        _normalize_text(tray_value.get("target_sub_experiment_code") or tray_value.get("targetSubExperimentCode")),
+        _normalize_text(tray_value.get("target_axis_batch_no") or tray_value.get("targetAxisBatchNo")),
+        _normalize_text(tray_value.get("target_lab_id") or tray_value.get("targetLabId")),
+        _normalize_text(tray_value.get("target_lab_code") or tray_value.get("targetLabCode")),
+        _normalize_text(tray_value.get("target_lab") or tray_value.get("targetLab")),
+        str(bool(tray_value.get("fixture_ready") or tray_value.get("fixtureReady"))),
+    )
+
+
+def _validate_samples_experiment_sequence(
+    current_snapshot: dict[str, Any],
+    current_samples: Any,
+    next_samples: Any,
+) -> None:
+    if not isinstance(next_samples, list):
+        return
+    current_by_code = _index_samples(current_samples)
+    for next_sample in next_samples:
+        if not isinstance(next_sample, dict):
+            continue
+        current_sample = current_by_code.get(_sample_code(next_sample), {})
+        current_trays = _index_trays(current_sample)
+        sample_status_changed = _status(next_sample) != _status(current_sample)
+        for next_tray in _as_list(next_sample.get("trays")):
+            if not isinstance(next_tray, dict):
+                continue
+            tray_code = _tray_code(next_tray)
+            current_tray = current_trays.get(tray_code, {})
+            next_signature = _tray_sequence_signature(next_sample, next_tray)
+            if next_signature[0] not in LAB_SEQUENCE_CONTROLLED_STATUSES:
+                continue
+            tray_has_own_status = bool(_status(next_tray) or _status(current_tray))
+            if next_signature == _tray_sequence_signature(current_sample, current_tray) and (
+                tray_has_own_status or not sample_status_changed
+            ):
+                continue
+            task_code = _task_code(next_sample) or _task_code(current_sample)
+            schedule_id = next_signature[1]
+            if not task_code or not tray_code or not schedule_id:
+                raise HTTPException(status_code=409, detail="实验流程变更缺少当前排程标识，请刷新后重试")
+            try:
+                assert_expected_next_scheduled_step(
+                    current_snapshot,
+                    task_code=task_code,
+                    tray_code=tray_code,
+                    schedule_id=schedule_id,
+                    experiment_code=next_signature[2],
+                    sub_experiment_code=next_signature[3],
+                    axis_batch_no=next_signature[4],
+                    lab_id=next_signature[5],
+                    lab_code=next_signature[6],
+                    lab_name=next_signature[7],
+                )
+            except ExperimentScheduleSequenceError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 def _validate_samples_staging_reentry_transition(
     current_samples: Any,
     next_samples: Any,
@@ -743,6 +819,7 @@ def _validate_storage_update(
         updates["mes.samples"],
         _read_current_storage_value(storage, current_snapshot, "mes.devices"),
     )
+    _validate_samples_experiment_sequence(current_snapshot or {}, current_samples, updates["mes.samples"])
 
 
 @router.get("")

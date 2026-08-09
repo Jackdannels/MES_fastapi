@@ -377,9 +377,22 @@ def apply_dispatch(
         next_status, next_location, detail = "送至暂存间", STAGING_LOCATION, normalize_text(tray_code)
     elif target_type == "lab":
         payload = serialize_dispatch(snapshot, task, tray_code)
-        matched = next((item for item in payload["destinations"] if item["targetType"] == "lab" and normalize_text(item.get("targetName")) == target_name and normalize_text(item.get("experimentCode")) == normalize_text(request.experiment_code) and bool(item.get("scheduled"))), None)
+        matched = next(
+            (
+                item
+                for item in payload["destinations"]
+                if item["targetType"] == "lab"
+                and normalize_text(item.get("targetName")) == target_name
+                and normalize_text(item.get("experimentCode")) == normalize_text(request.experiment_code)
+                and normalize_text(item.get("scheduleId")) == normalize_text(request.schedule_id)
+                and normalize_text(item.get("subExperimentCode")) == normalize_text(request.sub_experiment_code)
+                and normalize_text(item.get("axisBatchNo")) == normalize_text(request.axis_batch_no)
+                and bool(item.get("scheduled"))
+            ),
+            None,
+        )
         if matched is None:
-            raise HTTPException(status_code=400, detail="目标实验室与当前托盘不匹配")
+            raise HTTPException(status_code=409, detail="只能执行当前排程顺序中的下一实验，请刷新后重试")
         unavailable = find_unavailable_device(snapshot, target_name)
         if unavailable:
             raise HTTPException(status_code=400, detail=f"{normalize_text(unavailable.get('code')) or target_name}设备维修中，禁止送至该实验室")
@@ -403,17 +416,30 @@ def apply_dispatch(
                 item["updated_at"] = timestamp
                 clear_fixture_ready_marker(item)
                 if target_type == "lab":
-                    item["target_lab"] = target_name
-                    item["target_experiment_code"] = normalize_text(request.experiment_code)
+                    item["target_lab"] = normalize_text(matched.get("targetName"))
+                    item["target_lab_code"] = normalize_text(matched.get("targetLabCode"))
+                    item["target_lab_id"] = matched.get("targetLabId", "")
+                    item["target_experiment_code"] = normalize_text(matched.get("experimentCode"))
+                    item["target_schedule_id"] = normalize_text(matched.get("scheduleId"))
+                    item["target_sub_experiment_code"] = normalize_text(matched.get("subExperimentCode"))
+                    item["target_axis_batch_no"] = normalize_text(matched.get("axisBatchNo"))
                 else:
-                    item.pop("target_lab", None)
-                    item.pop("target_experiment_code", None)
+                    for key in (
+                        "target_lab",
+                        "target_lab_code",
+                        "target_lab_id",
+                        "target_experiment_code",
+                        "target_schedule_id",
+                        "target_sub_experiment_code",
+                        "target_axis_batch_no",
+                    ):
+                        item.pop(key, None)
             next_trays.append(item)
         sample["trays"] = next_trays
         append_history(sample, next_status, detail)
     if dispatched_from_pre_appearance:
         normalized = normalize_text(tray_code)
-        snapshot["staging_events"].append({"id": f"staging-event-{normalized}-{len(snapshot['staging_events']) + 1}", "tray_code": normalized, "task_code": task_code(task), "room": APPEARANCE_EVENT_ROOM, "action": APPEARANCE_STOCK_OUT_ACTION, "target_lab": target_name, "target_experiment_code": normalize_text(request.experiment_code), "target_type": "lab", "time": timestamp})
+        snapshot["staging_events"].append({"id": f"staging-event-{normalized}-{len(snapshot['staging_events']) + 1}", "tray_code": normalized, "task_code": task_code(task), "room": APPEARANCE_EVENT_ROOM, "action": APPEARANCE_STOCK_OUT_ACTION, "target_lab": target_name, "target_experiment_code": normalize_text(matched.get("experimentCode")), "target_schedule_id": normalize_text(matched.get("scheduleId")), "target_sub_experiment_code": normalize_text(matched.get("subExperimentCode")), "target_axis_batch_no": normalize_text(matched.get("axisBatchNo")), "target_type": "lab", "time": timestamp})
     write_snapshot(snapshot, update_source=update_source, update_request_id=update_request_id)
     return {"message": f"{normalize_text(tray_code)}已标记为{next_status}", "affectedSampleCount": len(tray_samples)}
 

@@ -168,24 +168,41 @@ def test_contract_validation_raises_actionable_error() -> None:
     cursor = _ContractCursor()
     cursor.tables.pop(0)
 
-    with pytest.raises(SchemaContractError, match="V007 release contract"):
+    with pytest.raises(SchemaContractError, match="V008 release contract"):
         validate_schema_contract(cursor, database="isolated_test_db")
 
 
 def test_checked_in_contract_is_fresh_and_covers_all_baseline_objects() -> None:
     assert CONTRACT_PATH.read_text(encoding="utf-8") == render_contract()
-    assert SCHEMA_CONTRACT["contract_version"] == "V007"
+    assert SCHEMA_CONTRACT["contract_version"] == "V008"
     assert [source["source"] for source in SCHEMA_CONTRACT["index_sources"]] == [
         "scripts/sql/V006__long_running_query_indexes.sql",
         "scripts/sql/V007__bounded_event_retention_indexes.sql",
+        "scripts/sql/V008__fixture_install_schedule_identity.sql",
     ]
     assert len(SCHEMA_CONTRACT["tables"]) == 39
-    assert sum(len(table["columns"]) for table in SCHEMA_CONTRACT["tables"].values()) == 509
-    assert sum(len(table["indexes"]) for table in SCHEMA_CONTRACT["tables"].values()) == 158
+    assert sum(len(table["columns"]) for table in SCHEMA_CONTRACT["tables"].values()) == 511
+    assert sum(len(table["indexes"]) for table in SCHEMA_CONTRACT["tables"].values()) == 159
     assert sum(len(table["foreign_keys"]) for table in SCHEMA_CONTRACT["tables"].values()) == 38
 
+    pending_table = SCHEMA_CONTRACT["tables"]["biz_fixture_install_pending"]
+    assert pending_table["columns"]["schedule_no"] == {
+        "auto_increment": False,
+        "charset": "utf8mb4",
+        "collation": "utf8mb4_unicode_ci",
+        "default": None,
+        "nullable": False,
+        "type": "varchar(80)",
+    }
+    assert pending_table["columns"]["sub_experiment_code"]["nullable"] is True
+    assert pending_table["indexes"]["idx_biz_fixture_install_pending_task_tray_status"]["columns"] == [
+        "task_no",
+        "tray_no",
+        "status",
+    ]
 
-def test_v006_and_v007_indexes_are_part_of_the_runtime_contract() -> None:
+
+def test_v006_v007_and_v008_extensions_are_part_of_the_runtime_contract() -> None:
     expected_indexes = {
         ("biz_mq_message_log", "idx_biz_mq_latest_command"): [
             "direction", "lab_code", "message_type", "created_at", "message_log_id"

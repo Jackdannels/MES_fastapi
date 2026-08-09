@@ -17,10 +17,83 @@ const isAxisContinuationRow = (row) => {
     && Number(axisProgress?.completedCount || 0) === 0;
 };
 
-const isFutureAxisContinuationRow = (row, nowTime) =>
-  (toTime(row?.startAt) || 0) > nowTime && isAxisContinuationRow(row);
+const applyStrictScheduleSequence = (rows = []) => {
+  const entries = asArray(rows).map((row, index) => {
+    const completedTrayCodes = new Set(
+      asArray(row?.allTrayRows)
+        .filter((trayRow) => trayRow?.completedForCurrentExperiment === true)
+        .map((trayRow) => normalizeText(trayRow?.trayCode))
+        .filter(Boolean),
+    );
+    return {
+      index,
+      row,
+      scheduledTrayCodes: asArray(row?.allTrayCodes)
+        .map(normalizeText)
+        .filter((trayCode) => trayCode && !completedTrayCodes.has(trayCode)),
+    };
+  });
+  const claimedTrayCodes = new Set();
+  const annotations = new Map();
+  const forcedEligibleByIndex = new Map();
+  entries.forEach(({ index, row, scheduledTrayCodes }) => {
+    if (!normalizeText(row?.runNo)) {
+      return;
+    }
+    const forcedTrayCodes = asArray(row?.activeRunTrayCodes)
+      .map(normalizeText)
+      .filter((trayCode) => trayCode && scheduledTrayCodes.includes(trayCode));
+    forcedEligibleByIndex.set(index, forcedTrayCodes);
+    forcedTrayCodes.forEach((trayCode) => claimedTrayCodes.add(trayCode));
+  });
+  entries.forEach(({ index, row, scheduledTrayCodes }) => {
+    const forcedTrayCodes = forcedEligibleByIndex.get(index) || [];
+    const eligibleTrayCodes = [
+      ...forcedTrayCodes,
+      ...scheduledTrayCodes.filter((trayCode) => !claimedTrayCodes.has(trayCode)),
+    ];
+    scheduledTrayCodes.forEach((trayCode) => claimedTrayCodes.add(trayCode));
+    const eligibleTrayCodeSet = new Set(eligibleTrayCodes);
+    annotations.set(index, {
+      ...row,
+      sequenceBlockedTrayCodes: scheduledTrayCodes.filter((trayCode) => !eligibleTrayCodeSet.has(trayCode)),
+      sequenceEligible: scheduledTrayCodes.length === 0 || eligibleTrayCodes.length > 0,
+      sequenceEligibleTrayCodes: eligibleTrayCodes,
+    });
+  });
+  return entries.map(({ index, row }) => annotations.get(index) || row);
+};
+
+const scopeScheduleRowToEligibleTrays = (row) => {
+  if (
+    normalizeText(row?.runNo)
+    || asArray(row?.axisCodes).length > 0
+    || asArray(row?.sequenceBlockedTrayCodes).length === 0
+  ) {
+    return row;
+  }
+  const eligibleTrayCodeSet = new Set(asArray(row?.sequenceEligibleTrayCodes).map(normalizeText).filter(Boolean));
+  if (!eligibleTrayCodeSet.size) {
+    return row;
+  }
+  const trayRows = asArray(row?.trayRows).filter((trayRow) => eligibleTrayCodeSet.has(normalizeText(trayRow?.trayCode)));
+  const allTrayRows = asArray(row?.allTrayRows).filter((trayRow) => (
+    eligibleTrayCodeSet.has(normalizeText(trayRow?.trayCode))
+    || trayRow?.completedForCurrentExperiment === true
+  ));
+  return {
+    ...row,
+    allTrayCodes: Array.from(new Set(allTrayRows.map((trayRow) => normalizeText(trayRow?.trayCode)).filter(Boolean))),
+    allTrayRows,
+    trayCodes: asArray(row?.sequenceEligibleTrayCodes),
+    trayRows,
+  };
+};
 
 const rowCanBeCurrentLaboratoryTask = (row) => {
+  if (row?.sequenceEligible === false) {
+    return false;
+  }
   if (!isAxisContinuationRow(row)) {
     return true;
   }
@@ -46,9 +119,9 @@ const findTrayFlowContextTask = (scheduleRows, currentTask, selectedTrayCode) =>
   ) || asArray(scheduleRows)[0] || null;
 };
 
-const selectLaboratoryOperationTask = ({ currentCandidateRows = [], nowTime = 0 }) =>
+const selectLaboratoryOperationTask = ({ currentCandidateRows = [] }) =>
   asArray(currentCandidateRows).find((row) => normalizeText(row?.runNo))
-  || asArray(currentCandidateRows).find((row) => !isFutureAxisContinuationRow(row, nowTime) && laboratoryRowHasStartedOperation(row))
+  || asArray(currentCandidateRows).find((row) => laboratoryRowHasStartedOperation(row))
   || null;
 
 function buildLaboratorySummary(scheduleRows = [], now = serverNowDate()) {
@@ -65,8 +138,10 @@ function buildLaboratorySummary(scheduleRows = [], now = serverNowDate()) {
 }
 
 export {
+  applyStrictScheduleSequence,
   buildLaboratorySummary,
   findTrayFlowContextTask,
   rowCanBeCurrentLaboratoryTask,
+  scopeScheduleRowToEligibleTrays,
   selectLaboratoryOperationTask,
 };

@@ -98,9 +98,11 @@ import {
 } from "./laboratoryAxisEvidence";
 import { buildLaboratoryScheduleRow } from "./laboratoryScheduleRow";
 import {
+  applyStrictScheduleSequence,
   buildLaboratorySummary,
   findTrayFlowContextTask,
   rowCanBeCurrentLaboratoryTask,
+  scopeScheduleRowToEligibleTrays,
   selectLaboratoryOperationTask,
 } from "./laboratoryWorkbenchSelection";
 const normalizeText = (value) => String(value ?? "").trim();
@@ -143,14 +145,21 @@ function buildLaboratoryWorkbenchView({
   const activeSchedules = scheduleCompletionEntries
     .filter((entry) => !entry.completed)
     .map((entry) => entry.schedule);
-  const allScheduleRows = activeSchedules
-    .map((schedule) => buildLaboratoryScheduleRow({ ...rowBuilderInput, schedule }))
-    .sort((left, right) => (toTime(left.startAt) || 0) - (toTime(right.startAt) || 0));
+  const allScheduleRows = applyStrictScheduleSequence(
+    activeSchedules
+      .map((schedule) => buildLaboratoryScheduleRow({ ...rowBuilderInput, schedule }))
+      .sort((left, right) => {
+        const timeDifference = (toTime(left.startAt) || 0) - (toTime(right.startAt) || 0);
+        return timeDifference || normalizeText(left.id).localeCompare(normalizeText(right.id));
+      }),
+  );
 
   const labRef = { code: labCode, name: labName };
   const nowTime = now instanceof Date ? now.getTime() : toTime(now) || serverNowMs();
   const scheduleRows = allScheduleRows.filter((row) => scheduleMatchesLab(row, labRef));
-  const currentCandidateRows = scheduleRows.filter((row) => rowCanBeCurrentLaboratoryTask(row));
+  const currentCandidateRows = scheduleRows
+    .filter((row) => rowCanBeCurrentLaboratoryTask(row))
+    .map((row) => scopeScheduleRowToEligibleTrays(row));
   const operationTask = selectLaboratoryOperationTask({ currentCandidateRows, nowTime });
   const defaultCandidate = currentCandidateRows[0] || null;
   const defaultTask = operationTask || defaultCandidate;
@@ -169,7 +178,9 @@ function buildLaboratoryWorkbenchView({
   const currentTask = selectedKey && selectedDisplayTask ? selectedCurrentTask : defaultTask;
   const flowContextTask = findTrayFlowContextTask(scheduleRows, currentTask || selectedDisplayTask, selectedTrayCode);
   const trayFlowTask = currentTask || selectedDisplayTask || flowContextTask;
-  const selectedTask = selectedDisplayTask || currentTask || trayFlowTask;
+  const selectedTask = (
+    selectedDisplayTask?.sequenceEligible === false ? null : selectedDisplayTask
+  ) || currentTask || (trayFlowTask?.sequenceEligible === false ? null : trayFlowTask);
   const currentExperimentTrayRows = asArray(trayFlowTask?.trayRows);
   const flowContextTrayRows = asArray(flowContextTask?.trayRows);
   const selectedTrayRow =
@@ -871,6 +882,17 @@ function validateLaboratoryTrayScan({ currentTask = null, scheduleRows = [], all
     uniqueValues([...asArray(row.trayCodes), ...asArray(row.allTrayCodes)]).includes(normalizedScanCode),
   );
   if (matchedRows.length > 0) {
+    const activeOtherExperimentRun = matchedRows
+      .flatMap((row) => [...asArray(row?.trayRows), ...asArray(row?.allTrayRows)])
+      .filter((trayRow) => normalizeText(trayRow?.trayCode) === normalizedScanCode)
+      .flatMap((trayRow) => [
+        ...asArray(trayRow?.activeOtherExperimentRuns),
+        trayRow?.activeOtherExperimentRun,
+      ])
+      .find(Boolean);
+    if (activeOtherExperimentRun) {
+      return buildActiveOtherExperimentComparisonResult(normalizedScanCode, activeOtherExperimentRun);
+    }
     const destinationLabels = uniqueValues(matchedRows.map((row) => row.device));
     return {
       guidance: `当前任务并非优先所选任务。该托盘可前往：${destinationLabels.join("、")}`,

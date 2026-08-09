@@ -47,6 +47,7 @@ SCHEMA_MIGRATIONS = (
     SchemaMigration("V005", "terminal collation alignment", SQL_DIR / "V005__terminal_collation_alignment.sql"),
     SchemaMigration("V006", "long-running query indexes", SQL_DIR / "V006__long_running_query_indexes.sql"),
     SchemaMigration("V007", "bounded event retention indexes", SQL_DIR / "V007__bounded_event_retention_indexes.sql"),
+    SchemaMigration("V008", "fixture install schedule identity", SQL_DIR / "V008__fixture_install_schedule_identity.sql"),
 )
 
 

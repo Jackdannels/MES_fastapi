@@ -7,6 +7,7 @@ import {
   EXPERIMENTS_KEY,
   EXPERIMENT_RUN_STEPS_KEY,
   EXPERIMENT_RUN_TRAYS_KEY,
+  EXPERIMENT_RUNS_KEY,
   EXPERIMENT_TRAYS_KEY,
   SAMPLES_KEY,
   SCHEDULES_KEY,
@@ -156,6 +157,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
   const experimentTrays = asArray(snapshot[EXPERIMENT_TRAYS_KEY]);
   const experimentRunTrays = asArray(snapshot[EXPERIMENT_RUN_TRAYS_KEY]);
   const experimentRunSteps = asArray(snapshot[EXPERIMENT_RUN_STEPS_KEY]);
+  const experimentRuns = asArray(snapshot[EXPERIMENT_RUNS_KEY]);
   const samples = asArray(snapshot[SAMPLES_KEY]);
   const stagingEvents = asArray(snapshot[STAGING_EVENTS_KEY]);
   const taskMap = buildTaskMap(tasks);
@@ -186,8 +188,8 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         quantity: 0,
         sampleType: trayExperimentTypeText || fallbackSampleType,
         source: normalizeText(task?.source) || "待确认来源",
-        originalTargetExperimentCode: "",
-        originalTargetLab: "",
+        inboundTargetExperimentCode: "",
+        inboundTargetLab: "",
         withdrawalRestoreStatuses: [],
         statuses: [],
         taskCode,
@@ -205,8 +207,8 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       current.testType = current.testType || normalizeText(task?.test_type);
       const trayTargetExperimentCode = normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
       const trayTargetLab = normalizeText(tray?.target_lab || tray?.targetLab);
-      current.originalTargetExperimentCode = current.originalTargetExperimentCode || trayTargetExperimentCode;
-      current.originalTargetLab = current.originalTargetLab || trayTargetLab;
+      current.inboundTargetExperimentCode = current.inboundTargetExperimentCode || trayTargetExperimentCode;
+      current.inboundTargetLab = current.inboundTargetLab || trayTargetLab;
       current.targetExperimentCode = current.targetExperimentCode || trayTargetExperimentCode;
       current.targetLab = current.targetLab || trayTargetLab;
       current.quantity += Number(tray?.quantity) || 1;
@@ -236,8 +238,8 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         source: "待确认来源",
         statuses: [],
         taskCode: normalizeText(latestEvent?.task_code),
-        originalTargetExperimentCode: "",
-        originalTargetLab: "",
+        inboundTargetExperimentCode: "",
+        inboundTargetLab: "",
         withdrawalRestoreStatuses: [],
         testType: "",
         trayCode,
@@ -427,6 +429,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         experiments,
         experimentRunSteps,
         experimentRunTrays,
+        experimentRuns,
         experimentTrays,
         row: { ...row, isPartialAxisInbound },
         room: config.key,
@@ -435,8 +438,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         now: options.now || serverNowDate(),
       });
       const targetDestination =
-        targetDestinations.find((destination) => destination.originalPlanned)
-        || targetDestinations.find((destination) => destination.preferred)
+        targetDestinations.find((destination) => destination.preferred)
         || targetDestinations.find((destination) => destination.scheduled)
         || targetDestinations[0]
         || null;
@@ -474,8 +476,8 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         isPostExperimentInbound,
         isPostExperimentAppearanceInbound,
         isPreExperimentAppearanceInbound: isPreExperimentAppearanceLabDispatch,
-        originalTargetExperimentCode: normalizeText(row.originalTargetExperimentCode || row.targetExperimentCode),
-        originalTargetLab: normalizeText(row.originalTargetLab || row.targetLab),
+        inboundTargetExperimentCode: normalizeText(row.inboundTargetExperimentCode || row.targetExperimentCode),
+        inboundTargetLab: normalizeText(row.inboundTargetLab || row.targetLab),
         targetExperimentCode: targetDestination?.targetExperimentCode || "",
         targetExperimentName: targetDestination?.targetExperimentName || "",
         targetIsFallback: Boolean(targetDestination?.targetIsFallback),

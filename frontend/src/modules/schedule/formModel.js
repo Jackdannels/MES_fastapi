@@ -16,14 +16,14 @@ const HALF_DAY_HOURS = 12;
 const PLANNED_DURATION_MAX_DAYS = 99;
 const PLANNED_DURATION_MAX_HOURS = 9999;
 
-// 计划时长以 0.5 小时为最小粒度，其他输入都会归一化到这个精度。
+// 小时时长支持 0.1 小时精度；天数仍保持 0.5 天精度。
 const parsePlannedHours = (value) => {
   const rawValue = Number.parseFloat(String(value ?? "").trim());
   if (!Number.isFinite(rawValue)) {
     return null;
   }
-  const normalized = Math.round(rawValue * 2) / 2;
-  return normalized >= 0.5 ? Math.min(normalized, PLANNED_DURATION_MAX_HOURS) : null;
+  const normalized = Math.round(rawValue * 10) / 10;
+  return normalized >= 0.1 ? Math.min(normalized, PLANNED_DURATION_MAX_HOURS) : null;
 };
 
 const parsePlannedDays = (value) => {
@@ -92,17 +92,42 @@ const resolveLegalManualScheduleState = (now = serverNowDate()) => {
   };
 };
 
-function buildManualTimeSlotOptions({ device = "", now = serverNowDate(), scheduleDate = "", schedules = [] } = {}) {
+function buildManualTimeSlotOptions({
+  device = "",
+  labCode = "",
+  labId = "",
+  now = serverNowDate(),
+  plannedDuration = "",
+  plannedDurationUnit = "hours",
+  scheduleDate = "",
+  schedules = [],
+} = {}) {
   const selectedDate = normalizeText(scheduleDate) || toLocalDateValue(now);
+  const durationHours = resolvePlannedHours({
+    planned_duration_unit: plannedDurationUnit,
+    planned_hours: plannedDuration,
+  }) || 0;
+  const optionFor = (slot) => {
+    const options = {
+      dateValue: selectedDate,
+      device,
+      durationHours,
+      labCode,
+      labId,
+      now,
+      schedules,
+      slot,
+    };
+    const startAt = resolveFixedSlotStartAt(options);
+    return {
+      disabled: !startAt,
+      label: buildFixedSlotLabel(options),
+      value: slot,
+    };
+  };
   return [
-    {
-      value: "morning",
-      label: buildFixedSlotLabel({ dateValue: selectedDate, device, now, schedules, slot: "morning" }),
-    },
-    {
-      value: "afternoon",
-      label: buildFixedSlotLabel({ dateValue: selectedDate, device, now, schedules, slot: "afternoon" }),
-    },
+    optionFor("morning"),
+    optionFor("afternoon"),
     {
       value: "custom",
       label: "自定义",
@@ -148,7 +173,7 @@ function createManualScheduleForm(now = serverNowDate()) {
     experiment_code: "",
     lab_code: "",
     lab_id: "",
-    planned_hours: 3.5,
+    planned_hours: 1,
     planned_duration_unit: "hours",
     schedule_date: legalState.schedule_date,
     task_code: "",
@@ -167,7 +192,7 @@ function createScheduleEditForm() {
     id: "",
     lab_code: "",
     lab_id: "",
-    planned_hours: 3.5,
+    planned_hours: 1,
     planned_duration_unit: "hours",
     schedule_date: "",
     task_code: "",
@@ -292,7 +317,20 @@ function resolveScheduleTimes(form, now = serverNowDate(), schedules = []) {
   } else {
     // 上午/下午快捷时段直接复用预设时间窗。
     const range = SLOT_RANGES[slot] || SLOT_RANGES.morning;
-    const slotStartAt = resolveFixedSlotStartAt({ dateValue, device: form?.device, now, schedules, slot });
+    const slotStartAt = resolveFixedSlotStartAt({
+      dateValue,
+      device: form?.device,
+      durationHours: plannedHours,
+      ignoreId: form?.id,
+      labCode: form?.lab_code ?? form?.labCode,
+      labId: form?.lab_id ?? form?.labId,
+      now,
+      schedules,
+      slot,
+    });
+    if (!slotStartAt) {
+      return { error: "当前时段没有足够的可用时间" };
+    }
     startTime = toLocalTimeValue(slotStartAt) || range.start;
     plannedHours ||= inferPlannedHours(
       slotStartAt,
@@ -301,7 +339,7 @@ function resolveScheduleTimes(form, now = serverNowDate(), schedules = []) {
   }
 
   if (!plannedHours) {
-    return { error: "Planned hours must be at least 0.5" };
+    return { error: "Planned hours must be at least 0.1" };
   }
 
   const startAt = parseDate(`${dateValue}T${startTime}:00`);

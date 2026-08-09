@@ -20,6 +20,7 @@ V004_SQL = REPO_ROOT / "scripts" / "sql" / "V004__runtime_schema_finalization.sq
 V005_SQL = REPO_ROOT / "scripts" / "sql" / "V005__terminal_collation_alignment.sql"
 V006_SQL = REPO_ROOT / "scripts" / "sql" / "V006__long_running_query_indexes.sql"
 V007_SQL = REPO_ROOT / "scripts" / "sql" / "V007__bounded_event_retention_indexes.sql"
+V008_SQL = REPO_ROOT / "scripts" / "sql" / "V008__fixture_install_schedule_identity.sql"
 
 
 class _VersionCursor:
@@ -73,7 +74,7 @@ class _VersionCursor:
         return []
 
 
-@pytest.mark.parametrize("row", [("V007", 1), {"version": "V007", "success": 1}])
+@pytest.mark.parametrize("row", [("V008", 1), {"version": "V008", "success": 1}])
 def test_runtime_accepts_successful_required_schema_version(row, monkeypatch) -> None:
     cursor = _VersionCursor(row, history_exists=True)
     contract_checks = []
@@ -83,16 +84,16 @@ def test_runtime_accepts_successful_required_schema_version(row, monkeypatch) ->
 
     assert cursor.statements[-1] == (
         "SELECT version, success FROM schema_migrations WHERE version = %s",
-        ("V007",),
+        ("V008",),
     )
     assert contract_checks == [cursor]
 
 
-@pytest.mark.parametrize("row", [None, ("V006", 1), ("V007", 0)])
+@pytest.mark.parametrize("row", [None, ("V007", 1), ("V008", 0)])
 def test_runtime_rejects_missing_old_or_failed_schema_version(row) -> None:
     cursor = _VersionCursor(row, history_exists=True)
 
-    with pytest.raises(RuntimeError, match="V007"):
+    with pytest.raises(RuntimeError, match="V008"):
         require_schema_version(cursor)
 
 
@@ -102,7 +103,7 @@ def test_runtime_accepts_complete_legacy_schema_without_migration_history(caplog
 
     require_schema_version(cursor, app_env="dev")
 
-    assert "allowing a complete V007 legacy schema" in caplog.text
+    assert "allowing a complete V008 legacy schema" in caplog.text
 
 
 def test_runtime_rejects_incomplete_legacy_schema_without_migration_history(monkeypatch) -> None:
@@ -129,8 +130,8 @@ def test_runtime_rejects_historyless_schema_in_production_before_compatibility_c
         require_schema_version(cursor, app_env="prod")
 
 
-def test_runtime_rejects_schema_drift_even_when_v007_is_recorded(monkeypatch) -> None:
-    cursor = _VersionCursor(("V007", 1), history_exists=True)
+def test_runtime_rejects_schema_drift_even_when_v008_is_recorded(monkeypatch) -> None:
+    cursor = _VersionCursor(("V008", 1), history_exists=True)
     monkeypatch.setattr(
         schema_version,
         "validate_schema_contract",
@@ -258,4 +259,28 @@ def test_v007_adds_retention_indexes_without_mutating_business_rows() -> None:
     for index_name, columns in expected_indexes.items():
         assert f"ADD INDEX {index_name} ({columns})" in sql
     for forbidden in ("INSERT INTO", "UPDATE ", "DELETE FROM", "DROP TABLE"):
+        assert forbidden not in upper
+
+
+def test_v008_adds_fixture_schedule_identity_and_discards_unscoped_pending_rows() -> None:
+    sql = V008_SQL.read_text(encoding="utf-8")
+    upper = sql.upper()
+    baseline = (REPO_ROOT / "scripts" / "sql" / "0001-complete-baseline-schema.sql").read_text(encoding="utf-8")
+    pending_baseline = baseline.split("-- biz_fixture_install_pending", 1)[1].split("-- biz_experiment_result", 1)[0]
+
+    assert "USE `mes_single_branch`" in sql
+    assert "DELETE FROM biz_fixture_install_pending" in sql
+    assert upper.count("CALL V8_ADD_COLUMN_IF_MISSING") == 2
+    assert upper.count("CALL V8_ADD_INDEX_IF_MISSING") == 1
+    assert "ADD COLUMN schedule_no VARCHAR(80) NOT NULL AFTER experiment_no" in sql
+    assert "ADD COLUMN sub_experiment_code VARCHAR(80) NULL AFTER schedule_no" in sql
+    assert (
+        "ADD INDEX idx_biz_fixture_install_pending_task_tray_status "
+        "(task_no, tray_no, status)"
+    ) in sql
+    assert upper.count("DELETE FROM") == 1
+    assert "`schedule_no`" not in pending_baseline
+    assert "`sub_experiment_code`" not in pending_baseline
+    assert "idx_biz_fixture_install_pending_task_tray_status" not in pending_baseline
+    for forbidden in ("INSERT INTO", "UPDATE ", "DROP TABLE"):
         assert forbidden not in upper

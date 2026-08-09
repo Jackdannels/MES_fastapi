@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -34,11 +33,10 @@ from app.api.routes.transfer_area_views import (
     task_key,
 )
 from app.core.storage_backend import normalize_experiment_status_text
-from app.core.time_utils import parse_business_datetime
 from app.services.appearance_inspection import (
     PRE_EXPERIMENT_APPEARANCE_STATUS,
-    experiment_requires_appearance_inspection,
 )
+from app.services.experiment_schedule_sequence import resolve_next_scheduled_step
 
 TASK_STATUS_RETURNED = "厂家收回"
 RETURNED_REENTRY_BLOCK_REASON = "该任务已厂家收回，不能重新入库。"
@@ -92,12 +90,6 @@ STORED_OR_DISPATCHED_SAMPLE_STATUSES = {
 
 def is_handover_stored_status(value: Any) -> bool:
     return normalize_text(value) == TASK_STATUS_STORED
-
-def parse_datetime_value(value: Any) -> datetime | None:
-    return parse_business_datetime(value)
-
-def schedule_is_completed(schedule: dict[str, Any]) -> bool:
-    return normalize_experiment_status_text(schedule.get("status")) in {"实验已完成", "实验完成", "实验已经完成"}
 
 def task_has_schedule(snapshot: dict[str, list[dict[str, Any]]], task_code_value: str) -> bool:
     normalized_task_code = normalize_text(task_code_value)
@@ -415,6 +407,9 @@ def serialize_tray_dispatch_payload(snapshot: dict[str, list[dict[str, Any]]], t
             snapshot["experiment_trays"],
             snapshot["schedules"],
             actual_tray_status,
+            experiment_runs=snapshot.get("experiment_runs", []),
+            experiment_run_trays=snapshot.get("experiment_run_trays", []),
+            experiment_run_steps=snapshot.get("experiment_run_steps", []),
         ),
     }
 
@@ -449,84 +444,52 @@ def build_tray_dispatch_destinations(
     experiment_trays: list[dict[str, Any]],
     schedules: list[dict[str, Any]],
     current_tray_status: str = "",
+    *,
+    experiment_runs: list[dict[str, Any]] | None = None,
+    experiment_run_trays: list[dict[str, Any]] | None = None,
+    experiment_run_steps: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     task_experiments = [
         row for row in build_task_experiment_rows(task, experiments, experiment_trays)
         if tray["trayNo"] in row["assignedTrayNos"]
     ]
+    next_step = resolve_next_scheduled_step(
+        {
+            "schedules": schedules,
+            "experiments": experiments,
+            "experiment_trays": experiment_trays,
+            "experiment_runs": experiment_runs or [],
+            "experiment_run_trays": experiment_run_trays or [],
+            "experiment_run_steps": experiment_run_steps or [],
+        },
+        task_code=task_code(task),
+        tray_code=normalize_text(tray.get("trayNo")),
+    )
+    experiment_by_code = {
+        normalize_text(item.get("experimentCode")): item
+        for item in task_experiments
+    }
     scheduled_candidates = []
-    unscheduled_candidates = []
-    restrict_to_appearance_destinations = normalize_text(current_tray_status) == PRE_EXPERIMENT_APPEARANCE_STATUS
-
-    for experiment in task_experiments:
-        if restrict_to_appearance_destinations and not experiment_requires_appearance_inspection(
-            experiment.get("experimentName"),
-            {
-                "experiment_name": experiment.get("experimentName"),
-                "required_device": experiment.get("requiredDevice"),
-            },
-        ):
-            continue
-        matching_schedules = [
-            entry for entry in schedules
-            if normalize_text(entry.get("task_code")) == task_code(task)
-            and normalize_text(entry.get("experiment_code")) == experiment["experimentCode"]
-            and normalize_text(entry.get("device"))
-        ]
-        matching_schedules = [entry for entry in matching_schedules if not schedule_is_completed(entry)]
-        matching_schedules.sort(
-            key=lambda item: (
-                parse_datetime_value(item.get("start_at")) or datetime.max,
-                normalize_text(item.get("device")),
-            )
-        )
-
-        if matching_schedules:
-            schedule = matching_schedules[0]
-            scheduled_candidates.append(
-                {
-                    "targetType": "lab",
-                    "targetName": normalize_text(schedule.get("device")),
-                    "experimentCode": experiment["experimentCode"],
-                    "experimentName": experiment["experimentName"],
-                    "scheduled": True,
-                    "preferred": False,
-                    "scheduleStartAt": normalize_text(schedule.get("start_at")),
-                    "scheduleEndAt": normalize_text(schedule.get("end_at")),
-                }
-            )
-            continue
-
-        experiment_label = normalize_text(experiment.get("experimentName")) or normalize_text(experiment.get("requiredDevice"))
-        unscheduled_candidates.append(
+    if next_step:
+        experiment = experiment_by_code.get(next_step["experiment_code"], {})
+        scheduled_candidates.append(
             {
                 "targetType": "lab",
-                "targetName": f"{experiment_label}（待排程）",
-                "experimentCode": experiment["experimentCode"],
-                "experimentName": experiment["experimentName"],
-                "scheduled": False,
-                "preferred": False,
-                "scheduleStartAt": "",
-                "scheduleEndAt": "",
+                "targetName": next_step["lab_name"],
+                "targetLabCode": next_step["lab_code"],
+                "targetLabId": next_step["lab_id"],
+                "experimentCode": next_step["experiment_code"],
+                "experimentName": normalize_text(experiment.get("experimentName")) or next_step["experiment_code"],
+                "scheduleId": next_step["schedule_id"],
+                "subExperimentCode": next_step["sub_experiment_code"],
+                "axisBatchNo": next_step["axis_batch_no"],
+                "axisCodes": next_step["axis_codes"],
+                "scheduled": True,
+                "preferred": True,
+                "scheduleStartAt": next_step["start_at"],
+                "scheduleEndAt": next_step["end_at"],
             }
         )
-
-    scheduled_candidates.sort(
-        key=lambda item: (
-            parse_datetime_value(item.get("scheduleStartAt")) or datetime.max,
-            normalize_text(item.get("targetName")),
-        )
-    )
-    if len(scheduled_candidates) >= 1:
-        earliest = parse_datetime_value(scheduled_candidates[0].get("scheduleStartAt"))
-        if earliest is not None:
-            earliest_count = sum(
-                1
-                for item in scheduled_candidates
-                if parse_datetime_value(item.get("scheduleStartAt")) == earliest
-            )
-            if earliest_count == 1:
-                scheduled_candidates[0]["preferred"] = True
 
     return [
         {
@@ -540,7 +503,6 @@ def build_tray_dispatch_destinations(
             "scheduleEndAt": "",
         },
         *scheduled_candidates,
-        *unscheduled_candidates,
     ]
 
 

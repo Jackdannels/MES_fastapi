@@ -351,6 +351,34 @@ const scheduleAxisBatchIsCompleted = ({ experimentCode, experimentRunSteps, expe
   return scheduleAxisCodes.every((axisCode) => completedAxisCodes.has(normalizeText(axisCode)));
 };
 
+const scheduleRunIsCompletedForTray = ({ experimentRuns, experimentRunTrays, schedule, taskCode, trayCode }) => {
+  const scheduleId = normalizeText(schedule?.id || schedule?.schedule_id || schedule?.scheduleId);
+  const experimentCode = normalizeText(schedule?.experiment_code || schedule?.experimentCode);
+  if (!scheduleId || !experimentCode) {
+    return false;
+  }
+  const runByNo = new Map(asArray(experimentRuns).map((run) => [
+    normalizeText(run?.run_no || run?.runNo || run?.id),
+    run,
+  ]));
+  return asArray(experimentRunTrays).some((relation) => {
+    const runNo = normalizeText(relation?.run_no || relation?.runNo);
+    const run = runByNo.get(runNo);
+    const relationScheduleId = normalizeText(
+      relation?.schedule_id
+      || relation?.scheduleId
+      || run?.schedule_id
+      || run?.scheduleId
+      || run?.schedule_no,
+    );
+    return normalizeText(relation?.task_code || relation?.taskCode || relation?.task_no) === taskCode
+      && normalizeText(relation?.tray_code || relation?.trayCode || relation?.tray_no) === trayCode
+      && normalizeText(relation?.experiment_code || relation?.experimentCode || relation?.experiment_no) === experimentCode
+      && COMPLETED_RUN_TRAY_STATUSES.has(normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status))
+      && relationScheduleId === scheduleId;
+  });
+};
+
 const trayAssignedExperimentsAreCompleted = ({ taskCode, trayCode, experimentTrays, experimentRunSteps, experimentRunTrays, experiments, schedules }) => {
   const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
   if (trayExperimentCodes.size === 0) {
@@ -549,7 +577,7 @@ const hasRemainingMappedExperiment = ({ samples, taskCode, trayCode, experiments
   });
 };
 
-const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, experimentTrays, experimentRunSteps, experimentRunTrays, devices = [], now = serverNowDate(), room = "staging" }) => {
+const resolveTrayTargetDestinations = ({ row, schedules, experiments, experimentTrays, experimentRuns, experimentRunTrays, devices = [], now = serverNowDate(), room = "staging" }) => {
   const config = resolveStorageRoomConfig(room);
   const taskCode = normalizeText(row?.taskCode);
   const trayCode = normalizeText(row?.trayCode);
@@ -559,29 +587,9 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
 
   const experimentMap = buildExperimentMap(experiments);
   const trayExperimentCodes = collectTrayExperimentCodes({ taskCode, trayCode, experimentTrays });
-  const completedExperimentNames = collectCompletedExperimentNames({ samples, taskCode, trayCode });
   const restrictToAppearanceDestinations =
     config.key === "appearance"
     && asArray(row?.statuses).some((status) => normalizeText(status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS);
-  const originalTargetExperimentCode = normalizeText(row?.originalTargetExperimentCode || row?.targetExperimentCode);
-  const originalTargetLab = normalizeText(row?.originalTargetLab || row?.targetLab);
-  const destinationMatchesOriginalPlan = (destination) => {
-    if (!restrictToAppearanceDestinations || (!originalTargetExperimentCode && !originalTargetLab)) {
-      return false;
-    }
-    const experimentMatches = !originalTargetExperimentCode
-      || normalizeText(destination?.targetExperimentCode) === originalTargetExperimentCode;
-    const labMatches = !originalTargetLab || normalizeText(destination?.targetLab) === originalTargetLab;
-    return experimentMatches && labMatches;
-  };
-  const markOriginalPlan = (destination) => {
-    const originalPlanned = destinationMatchesOriginalPlan(destination);
-    return {
-      ...destination,
-      originalPlanned,
-      preferred: originalPlanned,
-    };
-  };
   const deviceMatchesDestination = (device, destination) => {
     const target = {
       labCode: destination?.targetLabCode,
@@ -599,179 +607,96 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
     ];
     return identities.some((identity) => labIdentityMatches(identity, target));
   };
-  const finalizeDestinations = (destinations) => {
-    const annotated = asArray(destinations).map((destination) => {
-      if (normalizeText(destination?.targetType) === "staging") {
-        return { ...destination, targetAvailable: true };
+  const acceptsExperimentCode = (experimentCode) => trayExperimentCodes.has(normalizeText(experimentCode));
+  const scheduledCandidates = asArray(schedules)
+    .filter((schedule) => {
+      const experimentCode = normalizeText(schedule?.experiment_code);
+      const device = normalizeText(schedule?.device);
+      return (
+        normalizeText(schedule?.task_code) === taskCode
+        && acceptsExperimentCode(experimentCode)
+        && device
+        && !isStagingDestination(device)
+        && !scheduleRunIsCompletedForTray({
+          experimentRuns,
+          experimentRunTrays,
+          schedule,
+          taskCode,
+          trayCode,
+        })
+      );
+    })
+    .sort((left, right) => {
+      const timeDifference = parseTimeValue(left?.start_at) - parseTimeValue(right?.start_at);
+      if (timeDifference) {
+        return timeDifference;
       }
-      const device = asArray(devices).find((candidate) => deviceMatchesDestination(candidate, destination));
-      const maintenance = resolveActiveDeviceMaintenance(device, now);
-      if (!maintenance) {
-        return { ...destination, targetAvailable: true };
-      }
-      const endLabel = maintenance.endAt ? `，预计结束：${formatLocalDateTime(maintenance.endAt)}` : "";
-      return {
-        ...destination,
-        preferred: Boolean(destination.originalPlanned),
-        targetAvailable: false,
-        targetUnavailableReason: `${destination.targetLab}正在${maintenance.status}，暂不可送入${endLabel}`,
-      };
+      return normalizeText(left?.id || left?.schedule_id || left?.scheduleId).localeCompare(
+        normalizeText(right?.id || right?.schedule_id || right?.scheduleId),
+      );
     });
-    if (
-      !restrictToAppearanceDestinations
-      && !annotated.some((destination) => destination.preferred && destination.targetAvailable !== false)
-    ) {
-      const nextPreferred = annotated.find((destination) => destination.scheduled && destination.targetAvailable !== false);
-      if (nextPreferred) {
-        nextPreferred.preferred = true;
-      }
-    }
-    return annotated;
-  };
-  const acceptsExperimentCode = (experimentCode) => trayExperimentCodes.size === 0 || trayExperimentCodes.has(normalizeText(experimentCode));
-  const appearanceAcceptsExperiment = (experiment, fallbackName = "") =>
-    !restrictToAppearanceDestinations
-    || requiresPreExperimentAppearanceStorage(
-      resolveExperimentName(experiment, fallbackName),
-      experiment?.required_device,
-      experiment?.experiment_name,
-      experiment?.experiment_type,
-      experiment?.test_type,
-    );
-  const isUnfinishedExperiment = (experimentCode, fallbackName = "") => {
-    if (trayExperimentRunIsCompleted({
-      experimentCode: normalizeText(experimentCode),
-      experimentRunSteps,
-      experimentRunTrays,
-      experiments,
-      schedules,
-      taskCode,
-      trayCode,
-    })) {
-      return false;
-    }
-    const experiment = experimentMap.get(normalizeText(experimentCode));
-    const experimentName = resolveExperimentName(experiment, fallbackName);
-    return !experimentName || !completedExperimentNames.has(experimentName);
-  };
 
-  const candidateExperiments = asArray(experiments).filter((experiment) => {
-    const experimentCode = normalizeText(experiment?.experiment_code);
-    return (
-      normalizeText(experiment?.task_code) === taskCode
-      && acceptsExperimentCode(experimentCode)
-      && appearanceAcceptsExperiment(experiment)
-      && isUnfinishedExperiment(experimentCode, experiment?.experiment_name)
-    );
-  });
-
-  const scheduledCandidates = [];
-  candidateExperiments.forEach((experiment) => {
-    const nextExperimentCode = normalizeText(experiment?.experiment_code);
-    const scheduledDestinations = asArray(schedules)
-      .filter((schedule) => {
-        const device = normalizeText(schedule?.device);
-        return (
-          normalizeText(schedule?.task_code) === taskCode
-          && normalizeText(schedule?.experiment_code) === nextExperimentCode
-          && device
-          && !isStagingDestination(device)
-          && !scheduleAxisBatchIsCompleted({
-            experimentCode: nextExperimentCode,
-            experimentRunSteps,
-            experimentRunTrays,
-            experiments,
-            schedule,
-            taskCode,
-            trayCode,
-          })
-        );
-      })
-      .sort((left, right) => parseTimeValue(left?.start_at) - parseTimeValue(right?.start_at));
-
-    const scheduled = scheduledDestinations[0];
-    if (scheduled) {
-      scheduledCandidates.push(markOriginalPlan({
-        preferred: false,
-        scheduled: true,
-        targetExperimentCode: nextExperimentCode,
-        targetExperimentName: resolveExperimentName(experiment, scheduled?.experiment_name),
-        targetIsFallback: false,
-        targetLab: normalizeText(scheduled?.device),
-        targetLabCode: resolveScheduleLabCode(scheduled),
-        targetLabId: resolveScheduleLabId(scheduled),
-        targetScheduleStartAt: normalizeText(scheduled?.start_at),
-        targetScheduleEndAt: normalizeText(scheduled?.end_at),
-        targetUnavailableReason: "",
-      }));
-      return;
-    }
-
-  });
-
-  scheduledCandidates.sort(
-    (left, right) =>
-      Number(Boolean(right?.originalPlanned)) - Number(Boolean(left?.originalPlanned))
-      || parseTimeValue(left?.targetScheduleStartAt) - parseTimeValue(right?.targetScheduleStartAt)
-      || normalizeText(left?.targetLab).localeCompare(normalizeText(right?.targetLab), "zh-Hans-CN"),
+  const nextSchedule = scheduledCandidates[0] || null;
+  const nextExperimentCode = normalizeText(nextSchedule?.experiment_code);
+  const nextExperiment = experimentMap.get(nextExperimentCode);
+  const nextTargetLab = normalizeText(nextSchedule?.device);
+  const nextRequiresAppearance = !nextSchedule || requiresPreExperimentAppearanceStorage(
+    resolveExperimentName(nextExperiment, nextSchedule?.experiment_name),
+    nextExperiment?.required_device,
+    nextExperiment?.experiment_name,
+    nextExperiment?.experiment_type,
+    nextExperiment?.test_type,
   );
-  if (!restrictToAppearanceDestinations && scheduledCandidates.length) {
-    const earliest = parseTimeValue(scheduledCandidates[0]?.targetScheduleStartAt);
-    const earliestCount = scheduledCandidates.filter((item) => parseTimeValue(item?.targetScheduleStartAt) === earliest).length;
-    if (earliestCount === 1) {
-      scheduledCandidates[0].preferred = true;
+  let nextDestination = nextSchedule
+    ? {
+        axisBatchNo: normalizeText(nextSchedule?.axis_batch_no ?? nextSchedule?.axisBatchNo),
+        axisCodes: normalizeAxisCodes(nextSchedule?.axis_codes ?? nextSchedule?.axisCodes),
+        preferred: true,
+        scheduleId: normalizeText(nextSchedule?.id || nextSchedule?.schedule_id || nextSchedule?.scheduleId),
+        scheduled: true,
+        subExperimentCode: normalizeText(
+          nextSchedule?.sub_experiment_code
+          || nextSchedule?.subExperimentCode
+          || nextSchedule?.sub_experiment_no
+          || nextSchedule?.subExperimentNo,
+        ),
+        targetExperimentCode: nextExperimentCode,
+        targetExperimentName: resolveExperimentName(nextExperiment, nextSchedule?.experiment_name),
+        targetIsFallback: false,
+        targetLab: nextTargetLab,
+        targetLabCode: resolveScheduleLabCode(nextSchedule),
+        targetLabId: resolveScheduleLabId(nextSchedule),
+        targetScheduleStartAt: normalizeText(nextSchedule?.start_at),
+        targetScheduleEndAt: normalizeText(nextSchedule?.end_at),
+        targetType: "lab",
+        targetUnavailableReason: "",
+      }
+    : null;
+
+  if (nextDestination) {
+    const device = asArray(devices).find((candidate) => deviceMatchesDestination(candidate, nextDestination));
+    const maintenance = resolveActiveDeviceMaintenance(device, now);
+    if (restrictToAppearanceDestinations && !nextRequiresAppearance) {
+      nextDestination = {
+        ...nextDestination,
+        targetAvailable: false,
+        targetUnavailableReason: "当前下一排程不需要实验前外观检查，请先确认托盘状态。",
+      };
+    } else if (maintenance) {
+      const endLabel = maintenance.endAt ? `，预计结束：${formatLocalDateTime(maintenance.endAt)}` : "";
+      nextDestination = {
+        ...nextDestination,
+        targetAvailable: false,
+        targetUnavailableReason: `${nextDestination.targetLab}正在${maintenance.status}，暂不可送入${endLabel}`,
+      };
+    } else {
+      nextDestination = { ...nextDestination, targetAvailable: true };
     }
   }
-  const directScheduledCandidates = scheduledCandidates.length || trayExperimentCodes.size > 0
-    ? []
-    : asArray(schedules)
-      .filter((schedule) => {
-        const experimentCode = normalizeText(schedule?.experiment_code);
-        const device = normalizeText(schedule?.device);
-        return (
-          normalizeText(schedule?.task_code) === taskCode
-          && device
-          && !isStagingDestination(device)
-          && acceptsExperimentCode(experimentCode)
-          && appearanceAcceptsExperiment(experimentMap.get(experimentCode), schedule?.experiment_name)
-          && isUnfinishedExperiment(experimentCode, schedule?.experiment_name)
-          && !scheduleAxisBatchIsCompleted({
-            experimentCode,
-            experimentRunSteps,
-            experimentRunTrays,
-            experiments,
-            schedule,
-            taskCode,
-            trayCode,
-          })
-        );
-      })
-      .map((schedule) => {
-        const experimentCode = normalizeText(schedule?.experiment_code);
-        const experiment = experimentMap.get(experimentCode);
-        return markOriginalPlan({
-          preferred: false,
-          scheduled: true,
-          targetExperimentCode: experimentCode,
-          targetExperimentName: resolveExperimentName(experiment, schedule?.experiment_name),
-          targetIsFallback: false,
-          targetLab: normalizeText(schedule?.device),
-          targetLabCode: resolveScheduleLabCode(schedule),
-          targetLabId: resolveScheduleLabId(schedule),
-          targetScheduleStartAt: normalizeText(schedule?.start_at),
-          targetScheduleEndAt: normalizeText(schedule?.end_at),
-          targetUnavailableReason: "",
-        });
-      })
-    .sort((left, right) => (
-      Number(Boolean(right?.originalPlanned)) - Number(Boolean(left?.originalPlanned))
-      || parseTimeValue(left?.targetScheduleStartAt) - parseTimeValue(right?.targetScheduleStartAt)
-    ));
 
   const appearanceStagingDestination = config.key === "appearance"
     ? [{
-        originalPlanned: false,
-        preferred: !restrictToAppearanceDestinations && directScheduledCandidates.length === 0 && scheduledCandidates.length === 0,
+        preferred: !nextDestination,
         scheduled: true,
         targetExperimentCode: "",
         targetExperimentName: "暂存间存放",
@@ -784,22 +709,7 @@ const resolveTrayTargetDestinations = ({ row, samples, schedules, experiments, e
       }]
     : [];
 
-  if (directScheduledCandidates.length) {
-    if (!restrictToAppearanceDestinations) {
-      const earliest = parseTimeValue(directScheduledCandidates[0]?.targetScheduleStartAt);
-      const earliestCount = directScheduledCandidates.filter((item) => parseTimeValue(item?.targetScheduleStartAt) === earliest).length;
-      if (earliestCount === 1) {
-        directScheduledCandidates[0].preferred = true;
-      }
-    }
-    return finalizeDestinations([...directScheduledCandidates, ...appearanceStagingDestination]);
-  }
-
-  if (scheduledCandidates.length || trayExperimentCodes.size > 0) {
-    return finalizeDestinations([...scheduledCandidates, ...appearanceStagingDestination]);
-  }
-
-  return finalizeDestinations(appearanceStagingDestination);
+  return [...(nextDestination ? [nextDestination] : []), ...appearanceStagingDestination];
 };
 
 

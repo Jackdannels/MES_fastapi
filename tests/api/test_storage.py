@@ -372,6 +372,24 @@ def build_client_with_storage(monkeypatch, storage):
     return TestClient(app), storage
 
 
+def sequence_dependencies(task_code, tray_code, experiment_code, lab_name, *, schedule_id="SCH-NEXT", lab_code=""):
+    return {
+        "mes.schedules": [
+            {
+                "id": schedule_id,
+                "task_code": task_code,
+                "experiment_code": experiment_code,
+                "device": lab_name,
+                "lab_code": lab_code,
+                "start_at": "2099-01-01 09:00:00",
+            }
+        ],
+        "mes.experiment_trays": [
+            {"task_code": task_code, "experiment_code": experiment_code, "tray_code": tray_code}
+        ],
+    }
+
+
 def test_storage_write_does_not_resurrect_renamed_samples_from_a_stale_client(monkeypatch):
     task_code = "TASK-RENAMED-SAMPLES"
     current_samples = [
@@ -1081,10 +1099,26 @@ def test_storage_allows_lab_arrival_after_transfer_area_dispatch(monkeypatch):
             "status": "送至实验室",
             "flow_status": "送至实验室",
             "task_code": "SYLU-2026-05-702",
-            "trays": [{"tray_code": "TP-DISPATCHED", "status": "送至实验室", "quantity": 1}],
+            "trays": [{
+                "tray_code": "TP-DISPATCHED",
+                "status": "送至实验室",
+                "quantity": 1,
+                "target_schedule_id": "SCH-DISPATCHED",
+                "target_experiment_code": "EXP-DISPATCHED",
+                "target_lab": "盐雾试验室",
+            }],
         }
-    ]
-    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+        ]
+    client, storage = build_client(monkeypatch, {
+        "mes.samples": samples,
+        **sequence_dependencies(
+            "SYLU-2026-05-702",
+            "TP-DISPATCHED",
+            "EXP-DISPATCHED",
+            "盐雾试验室",
+            schedule_id="SCH-DISPATCHED",
+        ),
+    })
 
     updated = deepcopy(samples)
     updated[0]["location"] = "盐雾试验室"
@@ -1231,8 +1265,95 @@ def test_storage_staging_stock_out_rejects_lab_without_active_schedule(monkeypat
         },
     )
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "目标实验室没有当前有效排程。"
+    assert response.status_code == 409
+    assert response.json()["detail"] == "出库请求缺少当前排程标识，请刷新后重试。"
+
+
+@pytest.mark.parametrize(
+    ("room", "location", "status"),
+    [
+        ("staging", "恒温恒湿间（暂存间）", "已到达暂存间"),
+        ("appearance", "外观检测间", "实验前外观检测间存放"),
+    ],
+)
+def test_storage_room_stock_out_rejects_later_scheduled_experiment(monkeypatch, room, location, status):
+    task_code = "TASK-ORDERED-STOCK-OUT"
+    tray_code = "TP-ORDERED-STOCK-OUT"
+    samples = [{
+        "code": "SP-ORDERED-STOCK-OUT",
+        "location": location,
+        "status": status,
+        "flow_status": status,
+        "task_code": task_code,
+        "trays": [{"tray_code": tray_code, "status": status, "quantity": 1}],
+    }]
+    client, _storage = build_client(monkeypatch, {
+        "mes.samples": samples,
+        "mes.schedules": [
+            {"id": "SCH-A", "task_code": task_code, "experiment_code": "EXP-A", "device": "盐雾试验室", "start_at": "2099-01-01 09:00:00"},
+            {"id": "SCH-B", "task_code": task_code, "experiment_code": "EXP-B", "device": "冲击一室", "start_at": "2099-01-01 10:00:00"},
+        ],
+        "mes.experiment_trays": [
+            {"task_code": task_code, "experiment_code": code, "tray_code": tray_code}
+            for code in ("EXP-A", "EXP-B")
+        ],
+    })
+
+    response = client.post(
+        f"/api/storage/rooms/{room}/trays/{tray_code}/stock-out",
+        json={
+            "targetLab": "冲击一室",
+            "targetExperimentCode": "EXP-B",
+            "scheduleId": "SCH-B",
+            "targetType": "lab",
+        },
+    )
+
+    assert response.status_code == 409
+    assert "必须先执行排程 SCH-A" in response.json()["detail"]
+
+
+def test_storage_generic_put_rejects_later_schedule_target_change(monkeypatch):
+    task_code = "TASK-GENERIC-ORDER"
+    tray_code = "TP-GENERIC-ORDER"
+    samples = [{
+        "code": "SP-GENERIC-ORDER",
+        "location": "盐雾试验室",
+        "status": "送至实验室",
+        "flow_status": "送至实验室",
+        "task_code": task_code,
+        "trays": [{
+            "tray_code": tray_code,
+            "status": "送至实验室",
+            "target_schedule_id": "SCH-A",
+            "target_experiment_code": "EXP-A",
+            "target_lab": "盐雾试验室",
+        }],
+    }]
+    client, storage = build_client(monkeypatch, {
+        "mes.samples": samples,
+        "mes.schedules": [
+            {"id": "SCH-A", "task_code": task_code, "experiment_code": "EXP-A", "device": "盐雾试验室", "start_at": "2099-01-01 09:00:00"},
+            {"id": "SCH-B", "task_code": task_code, "experiment_code": "EXP-B", "device": "冲击一室", "start_at": "2099-01-01 10:00:00"},
+        ],
+        "mes.experiment_trays": [
+            {"task_code": task_code, "experiment_code": code, "tray_code": tray_code}
+            for code in ("EXP-A", "EXP-B")
+        ],
+    })
+    attempted = deepcopy(samples)
+    attempted[0]["location"] = "冲击一室"
+    attempted[0]["trays"][0].update({
+        "target_schedule_id": "SCH-B",
+        "target_experiment_code": "EXP-B",
+        "target_lab": "冲击一室",
+    })
+
+    response = client.put("/api/storage", json={"mes.samples": attempted})
+
+    assert response.status_code == 409
+    assert "必须先执行排程 SCH-A" in response.json()["detail"]
+    assert storage.read("mes.samples") == samples
     assert storage.read("mes.staging_events") == []
 
 
@@ -1400,8 +1521,8 @@ def test_storage_allows_completed_appearance_dispatch_to_post_staging(monkeypatc
                     "run_tray_status": "实验已完成",
                 },
             ],
-        },
-    )
+            },
+        )
 
     attempted = deepcopy(samples)
     attempted[0]["location"] = "恒温恒湿间（暂存间）"
@@ -1554,6 +1675,13 @@ def test_storage_allows_post_appearance_dispatch_to_scheduled_non_whitelist_lab(
                     "status": "实验已完成",
                 },
             ],
+            **sequence_dependencies(
+                "SYLU-2026-06-027",
+                "SYLU-2026-06-027-TP-001",
+                "SYLU-2026-06-027-A",
+                "冲击一室",
+                schedule_id="SCH-IMPACT-NEXT",
+            ),
         },
     )
 
@@ -1564,6 +1692,7 @@ def test_storage_allows_post_appearance_dispatch_to_scheduled_non_whitelist_lab(
     attempted[0]["trays"][0]["status"] = "送至实验室"
     attempted[0]["trays"][0]["target_lab"] = "冲击一室"
     attempted[0]["trays"][0]["target_experiment_code"] = "SYLU-2026-06-027-A"
+    attempted[0]["trays"][0]["target_schedule_id"] = "SCH-IMPACT-NEXT"
     next_events = [
         *staging_events,
         {
@@ -1625,7 +1754,14 @@ def test_storage_allows_laboratory_progress_after_maintenance_window_ends(monkey
             "status": "送至实验室",
             "flow_status": "送至实验室",
             "task_code": "SYLU-2026-05-705",
-            "trays": [{"tray_code": "TP-MAINTENANCE-ENDED", "status": "送至实验室", "quantity": 1}],
+                "trays": [{
+                    "tray_code": "TP-MAINTENANCE-ENDED",
+                    "status": "送至实验室",
+                    "quantity": 1,
+                    "target_schedule_id": "SCH-MAINTENANCE-ENDED",
+                    "target_experiment_code": "EXP-MAINTENANCE-ENDED",
+                    "target_lab": "盐雾试验室",
+                }],
         }
     ]
     client, storage = build_client(
@@ -1638,10 +1774,17 @@ def test_storage_allows_laboratory_progress_after_maintenance_window_ends(monkey
                     "maintenance_start_at": "2000-01-01T08:00:00",
                     "status": "保养",
                 }
-            ],
-            "mes.samples": samples,
-        },
-    )
+                ],
+                "mes.samples": samples,
+                **sequence_dependencies(
+                    "SYLU-2026-05-705",
+                    "TP-MAINTENANCE-ENDED",
+                    "EXP-MAINTENANCE-ENDED",
+                    "盐雾试验室",
+                    schedule_id="SCH-MAINTENANCE-ENDED",
+                ),
+            },
+        )
 
     updated = deepcopy(samples)
     updated[0]["status"] = "已到达实验室"
@@ -1711,13 +1854,32 @@ def test_storage_allows_next_experiment_arrival_after_previous_experiment_comple
             ],
         }
     ]
-    client, storage = build_client(monkeypatch, {"mes.samples": samples})
+    client, storage = build_client(monkeypatch, {
+        "mes.samples": samples,
+        "mes.schedules": [
+            {"id": "SCH-PREVIOUS-A", "task_code": "SYLU-2026-05-707", "experiment_code": "EXP-PREVIOUS-A", "device": "盐雾试验室", "start_at": "2099-01-01 09:00:00"},
+            {"id": "SCH-NEXT-B", "task_code": "SYLU-2026-05-707", "experiment_code": "EXP-NEXT-B", "device": "温度冲击一室", "start_at": "2099-01-01 10:00:00"},
+        ],
+        "mes.experiment_trays": [
+            {"task_code": "SYLU-2026-05-707", "experiment_code": code, "tray_code": "TP-PREVIOUS-COMPLETED"}
+            for code in ("EXP-PREVIOUS-A", "EXP-NEXT-B")
+        ],
+        "mes.experiment_runs": [
+            {"run_no": "RUN-PREVIOUS-A", "schedule_id": "SCH-PREVIOUS-A", "task_code": "SYLU-2026-05-707", "experiment_code": "EXP-PREVIOUS-A"}
+        ],
+        "mes.experiment_run_trays": [
+            {"run_no": "RUN-PREVIOUS-A", "task_code": "SYLU-2026-05-707", "experiment_code": "EXP-PREVIOUS-A", "tray_code": "TP-PREVIOUS-COMPLETED", "run_tray_status": "实验已完成"}
+        ],
+    })
 
     updated = deepcopy(samples)
     updated[0]["location"] = "温度冲击一室"
     updated[0]["status"] = "已到达实验室"
     updated[0]["flow_status"] = "已到达实验室"
     updated[0]["trays"][0]["status"] = "已到达实验室"
+    updated[0]["trays"][0]["target_schedule_id"] = "SCH-NEXT-B"
+    updated[0]["trays"][0]["target_experiment_code"] = "EXP-NEXT-B"
+    updated[0]["trays"][0]["target_lab"] = "温度冲击一室"
     updated[0]["history"].insert(
         0,
         {
@@ -1858,12 +2020,17 @@ def test_storage_tray_stock_out_action_updates_only_target_tray_and_publishes_me
             "mes.staging_events": [],
             "mes.schedules": [
                 {
+                    "id": "SCH-STAGING-A",
                     "task_code": "TASK-STAGING-A",
                     "experiment_code": "TASK-STAGING-A-A",
                     "device": "冲击一室",
                     "lab_code": "LAB_IMPACT_1",
                     "status": "已排程",
+                    "start_at": "2099-01-01 09:00:00",
                 }
+            ],
+            "mes.experiment_trays": [
+                {"task_code": "TASK-STAGING-A", "experiment_code": "TASK-STAGING-A-A", "tray_code": "TP-STAGING-A"}
             ],
         },
     )
@@ -1876,6 +2043,7 @@ def test_storage_tray_stock_out_action_updates_only_target_tray_and_publishes_me
             "targetLabCode": "LAB_IMPACT_1",
             "targetExperimentCode": "TASK-STAGING-A-A",
             "targetExperimentName": "冲击试验",
+            "scheduleId": "SCH-STAGING-A",
             "targetType": "lab",
         },
         headers={
@@ -1925,15 +2093,19 @@ def test_storage_tray_action_validates_against_single_loaded_snapshot(monkeypatc
         "mes.experiments": [],
         "mes.experiment_runs": [],
         "mes.experiment_run_steps": [],
-        "mes.experiment_trays": [],
+        "mes.experiment_trays": [
+            {"task_code": "TASK-READ-COUNT", "experiment_code": "TASK-READ-COUNT-A", "tray_code": "TP-READ-COUNT"}
+        ],
         "mes.experiment_run_trays": [],
         "mes.schedules": [
             {
+                "id": "SCH-READ-COUNT",
                 "task_code": "TASK-READ-COUNT",
                 "experiment_code": "TASK-READ-COUNT-A",
                 "device": "冲击一室",
                 "lab_code": "LAB_IMPACT_1",
                 "status": "已排程",
+                "start_at": "2099-01-01 09:00:00",
             }
         ],
         "mes.devices": [],
@@ -1948,6 +2120,7 @@ def test_storage_tray_action_validates_against_single_loaded_snapshot(monkeypatc
             "targetLabCode": "LAB_IMPACT_1",
             "targetExperimentCode": "TASK-READ-COUNT-A",
             "targetExperimentName": "冲击试验",
+            "scheduleId": "SCH-READ-COUNT",
             "targetType": "lab",
         },
     )
@@ -2421,17 +2594,23 @@ def test_storage_tray_stock_out_action_rejects_repeat_operation_from_latest_stat
             "mes.staging_events": [],
             "mes.schedules": [
                 {
+                    "id": "SCH-STAGING-REPEAT",
                     "task_code": "TASK-STAGING-REPEAT",
                     "experiment_code": "TASK-STAGING-REPEAT-A",
                     "device": "冲击一室",
                     "status": "已排程",
+                    "start_at": "2099-01-01 09:00:00",
                 }
+            ],
+            "mes.experiment_trays": [
+                {"task_code": "TASK-STAGING-REPEAT", "experiment_code": "TASK-STAGING-REPEAT-A", "tray_code": "TP-STAGING-REPEAT"}
             ],
         },
     )
     payload = {
         "targetLab": "冲击一室",
         "targetExperimentCode": "TASK-STAGING-REPEAT-A",
+        "scheduleId": "SCH-STAGING-REPEAT",
         "targetType": "lab",
     }
 
@@ -2798,11 +2977,16 @@ def test_storage_tray_actions_serialize_same_tray_stock_out_conflict(monkeypatch
         "mes.staging_events": [],
         "mes.schedules": [
             {
+                "id": "SCH-CONCURRENT",
                 "task_code": "TASK-CONCURRENT",
                 "experiment_code": "TASK-CONCURRENT-A",
                 "device": "冲击一室",
                 "status": "已排程",
+                "start_at": "2099-01-01 09:00:00",
             }
+        ],
+        "mes.experiment_trays": [
+            {"task_code": "TASK-CONCURRENT", "experiment_code": "TASK-CONCURRENT-A", "tray_code": "TP-CONCURRENT"}
         ],
     })
     client, storage = build_client_with_storage(monkeypatch, storage)
@@ -2812,7 +2996,7 @@ def test_storage_tray_actions_serialize_same_tray_stock_out_conflict(monkeypatch
         responses.append(
             client.post(
                 "/api/storage/rooms/staging/trays/TP-CONCURRENT/stock-out",
-                json={"targetLab": "冲击一室", "targetExperimentCode": "TASK-CONCURRENT-A", "targetType": "lab"},
+                json={"targetLab": "冲击一室", "targetExperimentCode": "TASK-CONCURRENT-A", "scheduleId": "SCH-CONCURRENT", "targetType": "lab"},
             )
         )
 
@@ -2854,11 +3038,16 @@ def test_storage_tray_actions_keep_distinct_tray_updates_when_requests_overlap(m
         "mes.staging_events": [],
         "mes.schedules": [
             {
+                "id": "SCH-CONCURRENT-A",
                 "task_code": "TASK-CONCURRENT-A",
                 "experiment_code": "TASK-CONCURRENT-A-A",
                 "device": "冲击一室",
                 "status": "已排程",
+                "start_at": "2099-01-01 09:00:00",
             }
+        ],
+        "mes.experiment_trays": [
+            {"task_code": "TASK-CONCURRENT-A", "experiment_code": "TASK-CONCURRENT-A-A", "tray_code": "TP-CONCURRENT-A"}
         ],
     })
     client, storage = build_client_with_storage(monkeypatch, storage)
@@ -2867,7 +3056,7 @@ def test_storage_tray_actions_keep_distinct_tray_updates_when_requests_overlap(m
     def stock_out():
         responses["stock_out"] = client.post(
             "/api/storage/rooms/staging/trays/TP-CONCURRENT-A/stock-out",
-            json={"targetLab": "冲击一室", "targetExperimentCode": "TASK-CONCURRENT-A-A", "targetType": "lab"},
+            json={"targetLab": "冲击一室", "targetExperimentCode": "TASK-CONCURRENT-A-A", "scheduleId": "SCH-CONCURRENT-A", "targetType": "lab"},
         )
 
     def manufacturer_return():

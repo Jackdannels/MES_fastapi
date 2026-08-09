@@ -188,9 +188,9 @@ def test_final_migration_is_not_recorded_successful_when_contract_validation_fai
     monkeypatch,
     tmp_path,
 ) -> None:
-    path = tmp_path / "V007.sql"
+    path = tmp_path / "V008.sql"
     path.write_text("SELECT 1;", encoding="utf-8")
-    migration = _migration("V007", path)
+    migration = _migration("V008", path)
     records: dict[str, tuple[Any, ...]] = {}
     control_cursor = _MigrationCursor(records)
     validation_cursor = _MigrationCursor({})
@@ -207,11 +207,11 @@ def test_final_migration_is_not_recorded_successful_when_contract_validation_fai
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("schema drift")),
     )
 
-    with pytest.raises(RuntimeError, match="V007 failed.*schema drift"):
+    with pytest.raises(RuntimeError, match="V008 failed.*schema drift"):
         init_mysql_storage.apply_pending_schema_migrations()
 
-    assert records["V007"][2] == 0
-    assert records["V007"][3] == "schema drift"
+    assert records["V008"][2] == 0
+    assert records["V008"][3] == "schema drift"
 
 
 def test_migration_stops_when_database_lock_cannot_be_acquired(monkeypatch) -> None:

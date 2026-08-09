@@ -28,6 +28,7 @@ def test_api_image_only_copies_migration_runtime_scripts() -> None:
     assert "scripts/sql/V005__terminal_collation_alignment.sql" in api
     assert "scripts/sql/V006__long_running_query_indexes.sql" in api
     assert "scripts/sql/V007__bounded_event_retention_indexes.sql" in api
+    assert "scripts/sql/V008__fixture_install_schedule_identity.sql" in api
     for excluded in ("trial_run.py", "reset_demo_data.py", "run_p0_baselines.py"):
         assert excluded not in api
 

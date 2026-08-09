@@ -81,7 +81,16 @@ def test_phase1_migrations_on_disposable_real_mysql() -> None:
         # Fresh database and idempotent second run.
         reset_database()
         first = init_mysql_storage.initialize_mysql_storage(seed_demo=False)
-        assert first["applied_migrations"] == ["V001", "V002", "V003", "V004", "V005", "V006", "V007"]
+        assert first["applied_migrations"] == [
+            "V001",
+            "V002",
+            "V003",
+            "V004",
+            "V005",
+            "V006",
+            "V007",
+            "V008",
+        ]
         second = init_mysql_storage.initialize_mysql_storage(seed_demo=False)
         assert second["applied_migrations"] == []
         with connect(database=TEST_DATABASE) as connection:
@@ -98,10 +107,12 @@ def test_phase1_migrations_on_disposable_real_mysql() -> None:
                     ("V005", 1),
                     ("V006", 1),
                     ("V007", 1),
+                    ("V008", 1),
                 )
 
-        # Representative existing V006 database: preserve business rows while
-        # V007 adds the bounded-retention indexes.
+        # Representative existing V007 database: preserve durable business rows
+        # while V008 adds exact fixture-install schedule identity. Pending fixture
+        # rows are intentionally reset because they cannot be mapped safely.
         reset_database()
         init_mysql_storage.iter_schema_migrations = lambda: list(
             init_mysql_storage.SCHEMA_MIGRATIONS[:-1]
@@ -127,6 +138,12 @@ def test_phase1_migrations_on_disposable_real_mysql() -> None:
                     "'0000000000000000000000000000000000000000000000000000000000000000', "
                     "'phase1')"
                 )
+                cursor.execute(
+                    "INSERT INTO biz_fixture_install_pending "
+                    "(fixture_install_id, tray_no, task_no, experiment_no, lab_code, status) "
+                    "VALUES ('phase1-fixture', 'phase1-tray', 'PHASE1-TASK', "
+                    "'PHASE1-EXPERIMENT', 'PHASE1-LAB', 'PENDING')"
+                )
                 cursor.execute("SELECT COUNT(*) FROM biz_task")
                 task_count_before = cursor.fetchone()[0]
                 cursor.execute("SELECT COUNT(*) FROM sys_fixed_terminal")
@@ -134,10 +151,32 @@ def test_phase1_migrations_on_disposable_real_mysql() -> None:
             connection.commit()
 
         init_mysql_storage.iter_schema_migrations = original_iter
-        assert init_mysql_storage.apply_pending_schema_migrations() == ["V007"]
+        assert init_mysql_storage.apply_pending_schema_migrations() == ["V008"]
         with connect(database=TEST_DATABASE) as connection:
             with connection.cursor() as cursor:
                 assert find_schema_contract_gaps(cursor, database=TEST_DATABASE) == []
+                cursor.execute(
+                    "SELECT column_name, is_nullable "
+                    "FROM information_schema.columns "
+                    "WHERE table_schema = %s "
+                    "AND table_name = 'biz_fixture_install_pending' "
+                    "AND column_name IN ('schedule_no', 'sub_experiment_code')",
+                    (TEST_DATABASE,),
+                )
+                assert set(cursor.fetchall()) == {
+                    ("schedule_no", "NO"),
+                    ("sub_experiment_code", "YES"),
+                }
+                cursor.execute(
+                    "SELECT COUNT(*) FROM information_schema.statistics "
+                    "WHERE table_schema = %s "
+                    "AND table_name = 'biz_fixture_install_pending' "
+                    "AND index_name = 'idx_biz_fixture_install_pending_task_tray_status'",
+                    (TEST_DATABASE,),
+                )
+                assert cursor.fetchone()[0] == 3
+                cursor.execute("SELECT COUNT(*) FROM biz_fixture_install_pending")
+                assert cursor.fetchone()[0] == 0
                 cursor.execute(
                     """
                     SELECT index_name

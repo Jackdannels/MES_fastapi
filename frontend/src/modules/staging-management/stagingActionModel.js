@@ -207,6 +207,8 @@ function applyZancunInventoryAction(input = {}) {
   const selectedTargetLabId = payload.targetLabId ?? payload.target_lab_id ?? "";
   const selectedTargetExperimentCode = normalizeText(payload.targetExperimentCode);
   const selectedTargetType = normalizeText(payload.targetType);
+  const selectedScheduleId = normalizeText(payload.scheduleId || payload.schedule_id);
+  const selectedSubExperimentCode = normalizeText(payload.subExperimentCode || payload.sub_experiment_code);
   const targetDestinations = asArray(matchedRow.targetDestinations);
   const destinationMatchesSelectedLab = (destination) => {
     const destinationCode = normalizeText(destination?.targetLabCode || destination?.target_lab_code);
@@ -219,10 +221,16 @@ function applyZancunInventoryAction(input = {}) {
     destinationMatchesSelectedLab(destination)
     && (!selectedTargetExperimentCode || normalizeText(destination?.targetExperimentCode) === selectedTargetExperimentCode)
     && (!selectedTargetType || normalizeText(destination?.targetType) === selectedTargetType)
+    && (!selectedScheduleId || normalizeText(destination?.scheduleId || destination?.schedule_id) === selectedScheduleId)
+    && (!selectedSubExperimentCode || normalizeText(destination?.subExperimentCode || destination?.sub_experiment_code) === selectedSubExperimentCode)
   )) || null;
   const resolvedTargetLab = normalizeText(selectedDestination?.targetLab) || selectedTargetLab;
   const resolvedTargetLabCode = normalizeText(selectedDestination?.targetLabCode || selectedDestination?.target_lab_code) || selectedTargetLabCode;
   const resolvedTargetLabId = selectedDestination?.targetLabId ?? selectedDestination?.target_lab_id ?? selectedTargetLabId;
+  const resolvedScheduleId = normalizeText(selectedDestination?.scheduleId || selectedDestination?.schedule_id) || selectedScheduleId;
+  const resolvedSubExperimentCode = normalizeText(
+    selectedDestination?.subExperimentCode || selectedDestination?.sub_experiment_code,
+  ) || selectedSubExperimentCode;
   if (actionMode === "stockOut" && !selectedTargetLab && !selectedTargetLabCode) {
     return {
       error: "请选择目标实验室后再出库。",
@@ -298,7 +306,7 @@ function applyZancunInventoryAction(input = {}) {
       : "";
   const appearanceStockInTargetExperimentCode =
     appearanceStockInPhase
-      ? normalizeText(matchedRow.originalTargetExperimentCode) || normalizeText(matchedRow.targetExperimentCode)
+      ? normalizeText(matchedRow.inboundTargetExperimentCode) || normalizeText(matchedRow.targetExperimentCode)
       : "";
 
   nextSnapshot[STAGING_EVENTS_KEY].push({
@@ -326,6 +334,8 @@ function applyZancunInventoryAction(input = {}) {
           target_lab_code: resolvedTargetLabCode,
           target_lab_id: resolvedTargetLabId,
           target_type: stockOutEventTargetType,
+          ...(resolvedScheduleId ? { schedule_id: resolvedScheduleId } : {}),
+          ...(resolvedSubExperimentCode ? { sub_experiment_code: resolvedSubExperimentCode } : {}),
           ...(appearanceStockOutPhase ? { appearance_phase: appearanceStockOutPhase } : {}),
         }
       : {
@@ -346,10 +356,10 @@ function applyZancunInventoryAction(input = {}) {
       samples: nextSnapshot[SAMPLES_KEY],
       status: nextStockInStatus,
       targetExperimentCode: matchedRow.isPreExperimentAppearanceInbound
-        ? normalizeText(matchedRow.originalTargetExperimentCode) || normalizeText(matchedRow.targetExperimentCode)
+        ? normalizeText(matchedRow.inboundTargetExperimentCode) || normalizeText(matchedRow.targetExperimentCode)
         : "",
       targetLab: matchedRow.isPreExperimentAppearanceInbound
-        ? normalizeText(matchedRow.originalTargetLab) || normalizeText(matchedRow.targetLab)
+        ? normalizeText(matchedRow.inboundTargetLab) || normalizeText(matchedRow.targetLab)
         : "",
       trayCodes: [matchedRow.trayCode],
     });
@@ -395,6 +405,8 @@ function applyZancunInventoryAction(input = {}) {
                     target_lab_code: resolvedTargetLabCode,
                     target_lab_id: resolvedTargetLabId,
                     target_type: "lab",
+                    ...(resolvedScheduleId ? { schedule_id: resolvedScheduleId } : {}),
+                    ...(resolvedSubExperimentCode ? { sub_experiment_code: resolvedSubExperimentCode } : {}),
                   }),
             }
           : tray,

@@ -49,7 +49,7 @@ Exporter 生成严格的 `release-manifest.json` v3，记录 API、Web、MySQL �
 
 ```text
 mysqldump --single-transaction --quick --routines --triggers --events --hex-blob \
-  --host=<host> --user=<backup_user> --databases mes_single_branch > mes-before-V007.sql
+  --host=<host> --user=<backup_user> --databases mes_single_branch > mes-before-V008.sql
 ```
 
 密码通过受限的 MySQL option file 提供，禁止放在命令行。对 SQL 文件生成 SHA-256，同时归档 `mes_reports` Docker 卷。不要通过热拷 MySQL 数据目录代替逻辑备份。
@@ -79,7 +79,7 @@ mysqldump --single-transaction --quick --routines --triggers --events --hex-blob
 
 恢复演练只能导入全新的隔离库（例如 `mes_single_branch_restore_test`），然后核对：
 
-- `schema_migrations` 为 V007 且 checksum 正确；
+- `schema_migrations` 为 V008 且 checksum 正确；
 - schema contract 缺口为 0；
 - 任务、样品、托盘、实验、排程等关键表行数与备份记录一致；
 - 报告卷文件数和 SHA-256 一致；

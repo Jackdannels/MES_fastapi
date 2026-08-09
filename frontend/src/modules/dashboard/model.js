@@ -421,7 +421,10 @@ function buildDashboardViewModel({ tasks, schedules, devices, streams, experimen
       if (hasFormalScheduleForExperiment(scheduleList, experiment?.task_code, experiment?.experiment_code)) {
         return null;
       }
-      const startedAt = confirmedAt?.getTime() ?? Number.NaN;
+      // dashboard 使用精简样品投影时不会携带入库历史；排程异常恢复为待排程后，
+      // 以实验记录中持久化的未排程起点兜底，避免计时项被错误过滤。
+      const persistedUnscheduledAt = Date.parse(normalizeText(experiment?.unscheduled_since));
+      const startedAt = confirmedAt?.getTime() ?? persistedUnscheduledAt;
       if (!Number.isFinite(startedAt)) {
         return null;
       }

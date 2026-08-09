@@ -26,6 +26,7 @@ COPY --chown=mes:mes scripts/sql/V004__runtime_schema_finalization.sql /app/scri
 COPY --chown=mes:mes scripts/sql/V005__terminal_collation_alignment.sql /app/scripts/sql/V005__terminal_collation_alignment.sql
 COPY --chown=mes:mes scripts/sql/V006__long_running_query_indexes.sql /app/scripts/sql/V006__long_running_query_indexes.sql
 COPY --chown=mes:mes scripts/sql/V007__bounded_event_retention_indexes.sql /app/scripts/sql/V007__bounded_event_retention_indexes.sql
+COPY --chown=mes:mes scripts/sql/V008__fixture_install_schedule_identity.sql /app/scripts/sql/V008__fixture_install_schedule_identity.sql
 
 USER mes
 

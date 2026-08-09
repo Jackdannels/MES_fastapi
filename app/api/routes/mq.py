@@ -5,6 +5,7 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from app.core.axis_codes import sort_axis_codes
 from app.core.config import settings
+from app.core.storage_backend import get_storage_backend
 from app.core.master_data import (
     LAB_INTERFACE_MQTT,
     LAB_INTERFACE_OPERATION_EXPERIMENT_END_REQUEST,
@@ -15,8 +16,19 @@ from app.core.master_data import (
     LAB_INTERFACE_OPERATION_SAMPLE_INSTALL,
     require_laboratory_interface,
 )
-from app.services.mq_event_processor import MySQLMqEventRepository, generated_run_no, now_iso, process_laboratory_event
+from app.services.experiment_schedule_sequence import (
+    ExperimentScheduleSequenceError,
+    assert_common_next_scheduled_step,
+)
 from app.services.fixture_installations import mark_fixture_installation_failed, normalize_tray_codes, register_pending_fixture_installation
+from app.services.laboratory_operations import read_laboratory_task_payload
+from app.services.mq_event_processor import (
+    MySQLMqEventRepository,
+    generated_run_no,
+    now_iso,
+    process_laboratory_event,
+    storage_completion_snapshot,
+)
 from app.services.mq_publisher import publish_laboratory_command
 from app.services.mq_runtime import default_mq_runtime
 from app.services.storage_update_bus import publish_storage_update
@@ -30,12 +42,14 @@ class FixtureInstallRequest(BaseModel):
     task_code: str = Field(min_length=1)
     lab_code: str = Field(min_length=1)
     experiment_code: str = ""
+    sub_experiment_code: str = Field(default="", validation_alias=AliasChoices("sub_experiment_code", "subExperimentCode"))
+    schedule_id: str = Field(default="", validation_alias=AliasChoices("schedule_id", "scheduleId", "schedule_no", "scheduleNo"))
     sample_type: str = ""
     sample_count: int = Field(ge=0, le=MAX_SAMPLE_COUNT)
     fixture_install_id: str = Field(default="", validation_alias=AliasChoices("fixture_install_id", "fixtureInstallId"))
     tray_codes: list[str] = Field(default_factory=list, validation_alias=AliasChoices("tray_codes", "trayCodes"))
 
-    @field_validator("task_code", "lab_code", "experiment_code", "sample_type", mode="before")
+    @field_validator("task_code", "lab_code", "experiment_code", "sub_experiment_code", "schedule_id", "sample_type", mode="before")
     @classmethod
     def trim_text(cls, value: Any) -> str:
         return str(value or "").strip()
@@ -57,6 +71,7 @@ class ReadyRequest(BaseModel):
     axis_codes: list[str] = Field(default_factory=list, validation_alias=AliasChoices("axis_codes", "axisCodes"))
     axis_batch_no: str = Field(default="", validation_alias=AliasChoices("axis_batch_no", "axisBatchNo"))
     current_axis_code: str = Field(default="", validation_alias=AliasChoices("current_axis_code", "currentAxisCode", "axis_code", "axisCode"))
+    tray_codes: list[str] = Field(default_factory=list, validation_alias=AliasChoices("tray_codes", "trayCodes"))
     axis_adjustment_ready: bool = Field(
         default=False,
         validation_alias=AliasChoices("axis_adjustment_ready", "axisAdjustmentReady"),
@@ -81,6 +96,12 @@ class ReadyRequest(BaseModel):
             if axis_code and axis_code not in axis_codes:
                 axis_codes.append(axis_code)
         return sort_axis_codes(axis_codes)
+
+    @field_validator("tray_codes", mode="before")
+    @classmethod
+    def normalize_trays(cls, value: Any) -> list[str]:
+        raw_values = value.replace("，", ",").split(",") if isinstance(value, str) else value
+        return normalize_tray_codes(raw_values)
 
 
 class ExperimentEndRequest(BaseModel):
@@ -127,6 +148,37 @@ def require_mqtt_laboratory(lab_code: str, *, operation: str = "") -> None:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def assert_mq_next_schedule(
+    *,
+    task_code: str,
+    tray_codes: list[str],
+    schedule_id: str,
+    experiment_code: str,
+    sub_experiment_code: str = "",
+    axis_batch_no: str = "",
+    axis_codes: list[str] | None = None,
+    lab_code: str = "",
+) -> dict[str, Any]:
+    if not schedule_id or not tray_codes:
+        raise HTTPException(status_code=422, detail="实验命令必须携带 schedule_id 和 tray_codes，请刷新实验室页面后重试")
+    storage = get_storage_backend()
+    snapshot = storage_completion_snapshot(read_laboratory_task_payload(storage, task_code))
+    try:
+        return assert_common_next_scheduled_step(
+            snapshot,
+            task_code=task_code,
+            tray_codes=tray_codes,
+            schedule_id=schedule_id,
+            experiment_code=experiment_code,
+            sub_experiment_code=sub_experiment_code,
+            axis_batch_no=axis_batch_no,
+            axis_codes=axis_codes,
+            lab_code=lab_code,
+        )
+    except ExperimentScheduleSequenceError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.get("/interface-mode")
 def get_interface_mode(request: Request) -> dict[str, Any]:
     return get_mq_runtime(request).status()
@@ -168,11 +220,25 @@ def publish_fixture_install(request: FixtureInstallRequest) -> dict[str, Any]:
             status_code=422,
             detail=f"夹具安装命令缺少：{', '.join(missing_fields)}。请刷新实验室页面后重新下发。",
         )
+    assert_mq_next_schedule(
+        task_code=request.task_code,
+        tray_codes=request.tray_codes,
+        schedule_id=request.schedule_id,
+        experiment_code=request.experiment_code,
+        sub_experiment_code=request.sub_experiment_code,
+        lab_code=request.lab_code,
+    )
+    if request.schedule_id:
+        payload["schedule_id"] = request.schedule_id
+    if request.sub_experiment_code:
+        payload["sub_experiment_code"] = request.sub_experiment_code
     try:
         register_pending_fixture_installation(
             fixture_install_id=request.fixture_install_id,
             task_code=request.task_code,
             experiment_code=request.experiment_code,
+            schedule_id=request.schedule_id,
+            sub_experiment_code=request.sub_experiment_code,
             lab_code=request.lab_code,
             tray_codes=request.tray_codes,
         )
@@ -204,6 +270,17 @@ def publish_ready(request: ReadyRequest) -> dict[str, Any]:
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+    else:
+        assert_mq_next_schedule(
+            task_code=request.task_code,
+            tray_codes=request.tray_codes,
+            schedule_id=request.schedule_id,
+            experiment_code=request.experiment_code,
+            sub_experiment_code=request.sub_experiment_code,
+            axis_batch_no=request.axis_batch_no,
+            axis_codes=request.axis_codes,
+            lab_code=request.lab_code,
+        )
     payload = {
         "task_code": request.task_code,
         "lab_code": request.lab_code,

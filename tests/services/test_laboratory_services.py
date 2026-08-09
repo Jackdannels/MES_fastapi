@@ -259,7 +259,7 @@ def test_laboratory_compare_rejects_partial_axis_tray_targeted_to_another_experi
     assert snapshot["samples"][0]["trays"][0]["target_lab"] == "霉菌试验室"
 
 
-def test_start_scopes_requested_trays_to_current_experiment_assignment():
+def test_start_rejects_requested_tray_whose_next_schedule_is_not_current_experiment():
     snapshot = {
         "tasks": [{"code": "TASK-1", "status": "任务进行中"}],
         "experiments": [{"task_code": "TASK-1", "experiment_code": "EXP-A", "experiment_name": "盐雾试验"}],
@@ -277,21 +277,74 @@ def test_start_scopes_requested_trays_to_current_experiment_assignment():
         ],
     }
 
-    result = start_storage_laboratory_experiment(
+    with pytest.raises(ValueError, match="当前托盘没有可执行的下一排程实验"):
+        start_storage_laboratory_experiment(
+            snapshot,
+            task_code="TASK-1",
+            experiment_code="EXP-A",
+            run_no="RUN-A",
+            lab_name="盐雾试验室",
+            schedule_id="SCH-A",
+            tray_codes=["TP-A", "TP-B"],
+            started_at="2026-06-06 09:00:00",
+        )
+
+
+def test_after_a_completes_only_b_can_be_used_for_direct_continuation():
+    task_code = "TASK-ORDER"
+    tray_code = "TP-ORDER"
+    snapshot = {
+        "tasks": [{"code": task_code}],
+        "experiments": [
+            {"task_code": task_code, "experiment_code": code, "experiment_name": code}
+            for code in ("EXP-A", "EXP-B", "EXP-C")
+        ],
+        "schedules": [
+            {"id": "SCH-A", "task_code": task_code, "experiment_code": "EXP-A", "device": "盐雾试验室", "start_at": "2099-01-01 09:00:00"},
+            {"id": "SCH-B", "task_code": task_code, "experiment_code": "EXP-B", "device": "霉菌试验室", "start_at": "2099-01-01 10:00:00"},
+            {"id": "SCH-C", "task_code": task_code, "experiment_code": "EXP-C", "device": "冲击一室", "start_at": "2099-01-01 11:00:00"},
+        ],
+        "experiment_trays": [
+            {"task_code": task_code, "experiment_code": code, "tray_code": tray_code}
+            for code in ("EXP-A", "EXP-B", "EXP-C")
+        ],
+        "experiment_runs": [
+            {"run_no": "RUN-A", "schedule_id": "SCH-A", "task_code": task_code, "experiment_code": "EXP-A"}
+        ],
+        "experiment_run_trays": [
+            {"run_no": "RUN-A", "task_code": task_code, "experiment_code": "EXP-A", "tray_code": tray_code, "run_tray_status": "实验已完成"}
+        ],
+        "experiment_samples": [
+            {"task_code": task_code, "experiment_code": code, "sample_code": "SP-ORDER"}
+            for code in ("EXP-A", "EXP-B", "EXP-C")
+        ],
+        "samples": [_sample("SP-ORDER", task_code, tray_code, "实验已完成", "盐雾试验室")],
+    }
+
+    with pytest.raises(ValueError, match="必须先执行排程 SCH-B"):
+        apply_laboratory_task_operation(
+            snapshot,
+            operation_type="compare",
+            task_code=task_code,
+            experiment_code="EXP-C",
+            schedule_id="SCH-C",
+            lab_name="冲击一室",
+            tray_codes=[tray_code],
+        )
+
+    result = apply_laboratory_task_operation(
         snapshot,
-        task_code="TASK-1",
-        experiment_code="EXP-A",
-        run_no="RUN-A",
-        lab_name="盐雾试验室",
-        schedule_id="SCH-A",
-        tray_codes=["TP-A", "TP-B"],
-        started_at="2026-06-06 09:00:00",
+        operation_type="compare",
+        task_code=task_code,
+        experiment_code="EXP-B",
+        schedule_id="SCH-B",
+        lab_name="霉菌试验室",
+        tray_codes=[tray_code],
     )
 
-    assert result["affectedTrayCodes"] == ["TP-A"]
-    assert result["samples"][0]["trays"][0]["status"] == "实验进行中"
-    assert result["samples"][1]["trays"][0]["status"] == "实验准备就绪"
-    assert [item["tray_code"] for item in result["experimentRunTrays"]] == ["TP-A"]
+    tray = result["samples"][0]["trays"][0]
+    assert tray["target_schedule_id"] == "SCH-B"
+    assert tray["target_experiment_code"] == "EXP-B"
 
 
 def test_start_ignores_requested_trays_not_ready_in_current_laboratory():

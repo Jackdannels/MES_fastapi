@@ -906,6 +906,8 @@ def process_laboratory_event(
         context = {
             "task_no": fixture_installation["task_code"],
             "experiment_no": fixture_installation["experiment_code"],
+            "schedule_id": fixture_installation["schedule_id"],
+            "sub_experiment_code": fixture_installation["sub_experiment_code"],
         }
     payload_run_no = first_text(payload, "run_no", "runNo")
     payload_sub_experiment_code = first_text(payload, "sub_experiment_code", "subExperimentCode", "sub_experiment_no", "subExperimentNo")

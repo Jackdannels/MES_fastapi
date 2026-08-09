@@ -54,10 +54,14 @@ function useLaboratoryOperationPersistence({
       experiment_code: currentTask.value?.experimentCode || "",
       fixture_install_id: generateFixtureInstallId(),
       lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
+      schedule_id: currentTask.value?.id || "",
       sample_count: countTrayRowSamples(targetTrayRows),
       sample_type: "",
       task_code: currentTask.value?.taskCode || "",
       tray_codes: resolvedTrayCodes,
+      ...(resolveSubExperimentCode(currentTask.value)
+        ? { sub_experiment_code: resolveSubExperimentCode(currentTask.value) }
+        : {}),
     };
   };
 
@@ -74,6 +78,13 @@ function useLaboratoryOperationPersistence({
       lab_code: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
       schedule_id: normalizeText(normalizedOverrides.scheduleId) || currentTask.value?.id || "",
       task_code: currentTask.value?.taskCode || "",
+      tray_codes: Array.from(new Set(
+        (Array.isArray(currentTask.value?.sequenceEligibleTrayCodes) && currentTask.value.sequenceEligibleTrayCodes.length > 0
+          ? currentTask.value.sequenceEligibleTrayCodes
+          : (Array.isArray(currentTask.value?.trayCodes) ? currentTask.value.trayCodes : []))
+          .map(normalizeText)
+          .filter(Boolean),
+      )),
     };
     const axisBatchNo = normalizeText(normalizedOverrides.axisBatchNo)
       || currentTask.value?.axis_batch_no
@@ -192,6 +203,7 @@ function useLaboratoryOperationPersistence({
       labName: laboratoryConfig.value.labName,
       occurredAt: actionTime,
       operationType,
+      scheduleId: currentTask.value?.id,
       subExperimentCode: resolveSubExperimentCode(currentTask.value),
       taskCode: currentTask.value?.taskCode,
       trayCodes: targetTrayCodes,
@@ -217,6 +229,8 @@ function useLaboratoryOperationPersistence({
       labCode: laboratoryConfig.value.labCode || laboratoryConfig.value.labId,
       labName: laboratoryConfig.value.labName,
       operationType: "fixtureReady",
+      scheduleId: currentTask.value?.id,
+      subExperimentCode: resolveSubExperimentCode(currentTask.value),
       taskCode: targetTaskCode,
       trayCodes: Array.from(targetTrayCodes),
     }));

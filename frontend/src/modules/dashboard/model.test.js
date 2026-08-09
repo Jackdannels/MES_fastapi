@@ -980,6 +980,63 @@ describe("dashboard model", () => {
     ]);
   });
 
+  test("uses persisted unscheduled time when dashboard sample projection omits arrival history", () => {
+    const viewModel = buildDashboardViewModel({
+      tasks: [
+        {
+          code: "SYLU-2026-08-001",
+          source: "外部委托",
+          status: "待排程",
+          transfer_status: "到货",
+        },
+      ],
+      samples: [
+        {
+          task_code: "SYLU-2026-08-001",
+          history: [],
+          status: "实验前外观检测间存放",
+          trays: [
+            {
+              tray_code: "SYLU-2026-08-001-TP-001",
+              status: "实验前外观检测间存放",
+            },
+          ],
+        },
+      ],
+      conflicts: [
+        {
+          id: "schedule-exception-acknowledged",
+          type: "schedule_missed_start",
+          status: "acknowledged",
+          task_code: "SYLU-2026-08-001",
+          experiment_code: "SYLU-2026-08-001-C",
+        },
+      ],
+      experiments: [
+        {
+          task_code: "SYLU-2026-08-001",
+          experiment_code: "SYLU-2026-08-001-C",
+          experiment_name: "冲击试验",
+          status: "待排程",
+          unscheduled_since: "2026-08-07T00:08:11.000Z",
+        },
+      ],
+      schedules: [],
+      devices: [],
+      streams: [],
+      now: Date.parse("2026-08-09T11:48:45.000Z"),
+    });
+
+    expect(viewModel.unscheduledExperimentItems).toEqual([
+      expect.objectContaining({
+        taskCode: "SYLU-2026-08-001",
+        experimentCode: "SYLU-2026-08-001-C",
+        elapsedLabel: "59:40:34",
+        isOverdue: true,
+      }),
+    ]);
+  });
+
   test("ignores unscheduled timers for tasks that are not yet confirmed in transfer storage", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [

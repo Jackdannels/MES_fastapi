@@ -524,9 +524,11 @@ function useLaboratoryPage(options = {}) {
   const canSelectTaskKey = (taskKey) => {
     const nextSelectionKey = String(taskKey ?? "").trim();
     const currentSelectionKey = taskSelectionKey(currentTask.value);
+    const nextTask = view.value.scheduleRows.find((row) => taskSelectionKey(row) === nextSelectionKey);
     return (
       !runningInteractionLocked.value
       && Boolean(nextSelectionKey)
+      && nextTask?.sequenceEligible !== false
       && (!currentTaskSwitchLocked.value || !currentSelectionKey || nextSelectionKey === currentSelectionKey)
     );
   };

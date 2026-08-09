@@ -14,6 +14,7 @@ from app.services.appearance_inspection import (
     PRE_EXPERIMENT_APPEARANCE_STATUS,
 )
 from app.services.experiment_segments import normalize_text
+from app.services.experiment_schedule_sequence import assert_common_next_scheduled_step
 
 
 COMPARE_STATUS = "已到达实验室"
@@ -346,6 +347,8 @@ def apply_laboratory_task_operation(
     task_code: str,
     experiment_code: str,
     sub_experiment_code: str = "",
+    schedule_id: str = "",
+    lab_code: str = "",
     lab_name: str = "",
     tray_codes: list[str] | None = None,
     occurred_at: str = "",
@@ -363,6 +366,19 @@ def apply_laboratory_task_operation(
     if not affected_tray_codes:
         raise ValueError("trayCodes are required")
 
+    next_step = assert_common_next_scheduled_step(
+        snapshot,
+        task_code=normalized_task_code,
+        tray_codes=affected_tray_codes,
+        schedule_id=normalize_text(schedule_id),
+        experiment_code=normalized_experiment_code,
+        sub_experiment_code=normalized_sub_experiment_code,
+        lab_code=normalize_text(lab_code),
+        lab_name=normalize_text(lab_name),
+    )
+    normalized_experiment_code = next_step["experiment_code"]
+    normalized_sub_experiment_code = next_step["sub_experiment_code"]
+
     occurred_time = format_business_datetime(occurred_at) or normalize_text(occurred_at) or now_business_text()
     scoped_snapshot = scope_snapshot_samples_for_experiment(
         snapshot,
@@ -371,7 +387,7 @@ def apply_laboratory_task_operation(
         tray_codes=affected_tray_codes,
     )
     experiment_name = resolve_experiment_name(snapshot, normalized_task_code, normalized_experiment_code)
-    target_lab_name = normalize_text(lab_name) or resolve_lab_name(snapshot, normalized_task_code, normalized_experiment_code)
+    target_lab_name = next_step["lab_name"]
     history_action = OPERATION_HISTORY_ACTION.get(normalized_operation_type, "")
     affected_tray_set = set(affected_tray_codes)
     if normalized_operation_type == "compare":
@@ -413,11 +429,17 @@ def apply_laboratory_task_operation(
                 tray["status"] = next_status
                 tray["updated_at"] = occurred_time
                 tray["target_experiment_code"] = normalized_experiment_code
+                tray["target_schedule_id"] = next_step["schedule_id"]
                 if normalized_sub_experiment_code:
                     tray["target_sub_experiment_code"] = normalized_sub_experiment_code
                 else:
                     tray.pop("target_sub_experiment_code", None)
                     tray.pop("targetSubExperimentCode", None)
+                if next_step["axis_batch_no"]:
+                    tray["target_axis_batch_no"] = next_step["axis_batch_no"]
+                else:
+                    tray.pop("target_axis_batch_no", None)
+                    tray.pop("targetAxisBatchNo", None)
                 if target_lab_name:
                     tray["target_lab"] = target_lab_name
                 tray.pop("targetExperimentCode", None)

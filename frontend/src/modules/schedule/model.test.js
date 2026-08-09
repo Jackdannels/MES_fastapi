@@ -159,6 +159,93 @@ describe("schedulePageModel", () => {
     expect(options.find((option) => option.value === "afternoon")?.label).toBe("下午（12:00-18:00）");
   });
 
+  test("resolves the next afternoon schedule ten minutes after the occupied window", () => {
+    const schedules = [
+      {
+        id: "schedule-salt-existing",
+        task_code: "TASK-EXISTING",
+        device: "盐雾试验室",
+        lab_code: "LAB_SALT",
+        start_at: "2099-03-20T12:00:00",
+        end_at: "2099-03-20T13:00:00",
+      },
+    ];
+    const options = buildManualTimeSlotOptions({
+      device: "盐雾试验室",
+      labCode: "LAB_SALT",
+      now: new Date("2099-03-19T09:00:00"),
+      plannedDuration: 1,
+      plannedDurationUnit: "hours",
+      scheduleDate: "2099-03-20",
+      schedules,
+    });
+    const result = resolveScheduleTimes(
+      {
+        device: "盐雾试验室",
+        lab_code: "LAB_SALT",
+        planned_duration_unit: "hours",
+        planned_hours: 1,
+        schedule_date: "2099-03-20",
+        time_slot: "afternoon",
+      },
+      new Date("2099-03-19T09:00:00"),
+      schedules,
+    );
+
+    expect(options.find((option) => option.value === "afternoon")).toEqual(
+      expect.objectContaining({ disabled: false, label: "下午（12:00-18:00，最早 13:10 开始）" }),
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.startTime).toBe("13:10");
+    expect(result.endTime).toBe("14:10");
+  });
+
+  test("finds the earliest gap that can fit the selected duration", () => {
+    const schedules = [
+      { id: "schedule-1", device: "盐雾试验室", start_at: "2099-03-20T12:00:00", end_at: "2099-03-20T13:00:00" },
+      { id: "schedule-2", device: "盐雾试验室", start_at: "2099-03-20T14:00:00", end_at: "2099-03-20T15:00:00" },
+    ];
+
+    const halfHour = resolveScheduleTimes(
+      { device: "盐雾试验室", planned_hours: 0.5, schedule_date: "2099-03-20", time_slot: "afternoon" },
+      new Date("2099-03-19T09:00:00"),
+      schedules,
+    );
+    const oneHour = resolveScheduleTimes(
+      { device: "盐雾试验室", planned_hours: 1, schedule_date: "2099-03-20", time_slot: "afternoon" },
+      new Date("2099-03-19T09:00:00"),
+      schedules,
+    );
+
+    expect(halfHour.startTime).toBe("13:10");
+    expect(halfHour.endTime).toBe("13:40");
+    expect(oneHour.startTime).toBe("15:10");
+    expect(oneHour.endTime).toBe("16:10");
+  });
+
+  test("disables a fixed slot when no start time remains after occupied schedules", () => {
+    const schedules = [
+      { id: "schedule-full", device: "盐雾试验室", start_at: "2099-03-20T12:00:00", end_at: "2099-03-20T18:00:00" },
+    ];
+    const options = buildManualTimeSlotOptions({
+      device: "盐雾试验室",
+      now: new Date("2099-03-19T09:00:00"),
+      plannedDuration: 1,
+      scheduleDate: "2099-03-20",
+      schedules,
+    });
+    const result = resolveScheduleTimes(
+      { device: "盐雾试验室", planned_hours: 1, schedule_date: "2099-03-20", time_slot: "afternoon" },
+      new Date("2099-03-19T09:00:00"),
+      schedules,
+    );
+
+    expect(options.find((option) => option.value === "afternoon")).toEqual(
+      expect.objectContaining({ disabled: true, label: "下午（12:00-18:00，无可用时段）" }),
+    );
+    expect(result.error).toBe("当前时段没有足够的可用时间");
+  });
+
   test("resolveScheduleTimes rejects custom starts before the current time", () => {
     const result = resolveScheduleTimes(
       {
@@ -242,6 +329,25 @@ describe("schedulePageModel", () => {
 
     expect(result.error).toBeUndefined();
     expect(result.plannedHours).toBe(9999);
+  });
+
+  test("resolveScheduleTimes supports 0.1-hour duration precision", () => {
+    const result = resolveScheduleTimes(
+      {
+        custom_start: "09:30",
+        device: "Lab-A",
+        planned_duration_unit: "hours",
+        planned_hours: "0.1",
+        schedule_date: "2099-03-20",
+        time_slot: "custom",
+      },
+      new Date("2099-03-20T09:30:00"),
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.plannedHours).toBe(0.1);
+    expect(result.startTime).toBe("09:30");
+    expect(result.endTime).toBe("09:36");
   });
 
   test("buildManualTimeSlotOptions shows the earliest start time inside the active slot window", () => {
@@ -4081,6 +4187,7 @@ describe("schedulePageModel", () => {
     const { createManualScheduleForm } = await import("./model");
     const result = createManualScheduleForm(new Date("2099-03-20T11:59:00"));
 
+    expect(result.planned_hours).toBe(1);
     expect(result.schedule_date).toBe("2099-03-20");
     expect(result.time_slot).toBe("morning");
   });

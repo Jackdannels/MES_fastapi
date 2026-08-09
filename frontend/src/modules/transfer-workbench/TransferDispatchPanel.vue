@@ -211,20 +211,14 @@ const resolveDestinationTypeLabel = (destination) => (destination?.targetType ==
 
 const resolveDestinationStatusLabel = (destination) => {
   if (destination?.preferred) {
-    return "优先送达";
+    return "下一排程";
   }
-  if (destination?.scheduled) {
-    return "可送达";
-  }
-  return "待排程";
+  return "可送达";
 };
 
 const resolveDestinationCardClass = (destination) => {
   if (destination?.targetType === "staging") {
     return "is-staging";
-  }
-  if (!destination?.scheduled) {
-    return "is-idle";
   }
   if (destination?.preferred) {
     return "is-running";
@@ -262,10 +256,7 @@ const resolveDestinationHint = (destination) => {
   if (destination?.targetType === "staging") {
     return "允许先送暂存间，后续再转正式实验室。";
   }
-  if (!destination?.scheduled) {
-    return "当前实验尚未排程，暂不能直接送达。";
-  }
-  return "当前托盘可直接送往该实验室。";
+  return "仅允许送往当前排程顺序中的下一实验室。";
 };
 </script>
 

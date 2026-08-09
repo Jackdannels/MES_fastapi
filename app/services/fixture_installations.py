@@ -21,6 +21,8 @@ FIXTURE_INSTALLATION_COLUMNS = (
     "tray_no",
     "task_no",
     "experiment_no",
+    "schedule_no",
+    "sub_experiment_code",
     "lab_code",
     "status",
 )
@@ -44,16 +46,20 @@ def register_pending_fixture_installation(
     fixture_install_id: str,
     task_code: str,
     experiment_code: str,
+    schedule_id: str,
+    sub_experiment_code: str = "",
     lab_code: str,
     tray_codes: list[str],
 ) -> None:
     normalized_id = normalize_text(fixture_install_id)
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
+    normalized_schedule_id = normalize_text(schedule_id)
+    normalized_sub_experiment_code = normalize_text(sub_experiment_code)
     normalized_lab_code = normalize_text(lab_code)
     normalized_tray_codes = normalize_tray_codes(tray_codes)
-    if not all((normalized_id, normalized_task_code, normalized_experiment_code, normalized_lab_code)):
-        raise ValueError("fixture_install_id、task_code、experiment_code 和 lab_code 均不能为空")
+    if not all((normalized_id, normalized_task_code, normalized_experiment_code, normalized_schedule_id, normalized_lab_code)):
+        raise ValueError("fixture_install_id、task_code、experiment_code、schedule_id 和 lab_code 均不能为空")
     if not normalized_tray_codes:
         raise ValueError("tray_codes 不能为空")
 
@@ -65,21 +71,22 @@ def register_pending_fixture_installation(
                 UPDATE biz_fixture_install_pending
                 SET status = '{SUPERSEDED}', updated_at = NOW()
                 WHERE task_no = %s
-                  AND experiment_no = %s
-                  AND lab_code = %s
                   AND tray_no IN ({placeholders})
                   AND status IN ('{PENDING}', '{READY}')
                 """,
-                (normalized_task_code, normalized_experiment_code, normalized_lab_code, *normalized_tray_codes),
+                (normalized_task_code, *normalized_tray_codes),
             )
             cursor.executemany(
                 """
                 INSERT INTO biz_fixture_install_pending (
-                  fixture_install_id, tray_no, task_no, experiment_no, lab_code, status, requested_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                  fixture_install_id, tray_no, task_no, experiment_no, schedule_no,
+                  sub_experiment_code, lab_code, status, requested_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
                 ON DUPLICATE KEY UPDATE
                   task_no = VALUES(task_no),
                   experiment_no = VALUES(experiment_no),
+                  schedule_no = VALUES(schedule_no),
+                  sub_experiment_code = VALUES(sub_experiment_code),
                   lab_code = VALUES(lab_code),
                   status = VALUES(status),
                   requested_at = NOW(),
@@ -91,6 +98,8 @@ def register_pending_fixture_installation(
                         tray_code,
                         normalized_task_code,
                         normalized_experiment_code,
+                        normalized_schedule_id,
+                        normalized_sub_experiment_code or None,
                         normalized_lab_code,
                         PENDING,
                     )
@@ -108,7 +117,8 @@ def find_fixture_installation(fixture_install_id: str) -> dict[str, Any] | None:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT fixture_install_id, tray_no, task_no, experiment_no, lab_code, status
+                SELECT fixture_install_id, tray_no, task_no, experiment_no, schedule_no,
+                       sub_experiment_code, lab_code, status
                 FROM biz_fixture_install_pending
                 WHERE fixture_install_id = %s
                 ORDER BY tray_no
@@ -126,6 +136,8 @@ def find_fixture_installation(fixture_install_id: str) -> dict[str, Any] | None:
         "fixture_install_id": normalize_text(first.get("fixture_install_id")),
         "task_code": normalize_text(first.get("task_no")),
         "experiment_code": normalize_text(first.get("experiment_no")),
+        "schedule_id": normalize_text(first.get("schedule_no")),
+        "sub_experiment_code": normalize_text(first.get("sub_experiment_code")),
         "lab_code": normalize_text(first.get("lab_code")),
         "status": normalize_text(first.get("status")),
         "tray_codes": [
@@ -177,6 +189,8 @@ def mark_fixture_installation_failed(fixture_install_id: str) -> None:
 def apply_pending_fixture_ready(installation: dict[str, Any], occurred_at: str) -> dict[str, Any]:
     task_code = normalize_text(installation.get("task_code"))
     experiment_code = normalize_text(installation.get("experiment_code"))
+    schedule_id = normalize_text(installation.get("schedule_id"))
+    sub_experiment_code = normalize_text(installation.get("sub_experiment_code"))
     lab_code = normalize_text(installation.get("lab_code"))
     tray_codes = normalize_tray_codes(installation.get("tray_codes"))
     return run_atomic_laboratory_operation(
@@ -186,7 +200,9 @@ def apply_pending_fixture_ready(installation: dict[str, Any], occurred_at: str) 
             operation_type="fixtureReady",
             task_code=task_code,
             experiment_code=experiment_code,
-            lab_name=lab_code,
+            schedule_id=schedule_id,
+            sub_experiment_code=sub_experiment_code,
+            lab_code=lab_code,
             tray_codes=tray_codes,
             occurred_at=occurred_at,
         ),

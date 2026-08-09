@@ -38,6 +38,9 @@ class TrayDispatchRequest(BaseModel):
     target_type: str = Field(alias="targetType")
     target_name: str = Field(alias="targetName")
     experiment_code: str = Field(default="", alias="experimentCode")
+    schedule_id: str = Field(default="", alias="scheduleId")
+    sub_experiment_code: str = Field(default="", alias="subExperimentCode")
+    axis_batch_no: int | str | None = Field(default=None, alias="axisBatchNo")
 
     model_config = ConfigDict(populate_by_name=True)
 

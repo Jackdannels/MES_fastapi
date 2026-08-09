@@ -8,6 +8,7 @@ const EXPERIMENTS_KEY = "mes.experiments";
 const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
 const EXPERIMENT_RUN_TRAYS_KEY = "mes.experiment_run_trays";
 const EXPERIMENT_RUN_STEPS_KEY = "mes.experiment_run_steps";
+const EXPERIMENT_RUNS_KEY = "mes.experiment_runs";
 const SAMPLES_KEY = "mes.samples";
 const STAGING_EVENTS_KEY = "mes.staging_events";
 const STAGING_LOCATION = "恒温恒湿间（暂存间）";
@@ -527,6 +528,7 @@ export {
   EXPERIMENTS_KEY,
   EXPERIMENT_RUN_STEPS_KEY,
   EXPERIMENT_RUN_TRAYS_KEY,
+  EXPERIMENT_RUNS_KEY,
   EXPERIMENT_TRAYS_KEY,
   EXPLICIT_STAGING_INBOUND_STATUSES,
   NORMAL_STAGING_LABEL,

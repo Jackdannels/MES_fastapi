@@ -8,6 +8,7 @@ from app.services.experiment_segments import (
     record_sub_experiment_code,
     resolve_record_sub_experiment_code,
 )
+from app.services.experiment_schedule_sequence import assert_common_next_scheduled_step
 from app.services.laboratory_axis_steps import (
     AXIS_PENDING_STATUS,
     AXIS_RUNNING_STATUS,
@@ -73,9 +74,26 @@ def start_storage_laboratory_experiment(
     if not affected_tray_codes:
         raise ValueError("trayCodes are required for experiment start")
 
+    next_step = assert_common_next_scheduled_step(
+        snapshot,
+        task_code=normalized_task_code,
+        tray_codes=affected_tray_codes,
+        schedule_id=normalize_text(schedule_id),
+        experiment_code=normalized_experiment_code,
+        sub_experiment_code=normalized_sub_experiment_code,
+        axis_batch_no=axis_batch_no,
+        axis_codes=axis_codes,
+        lab_name=normalize_text(lab_name),
+    )
+    normalized_schedule_id = next_step["schedule_id"]
+    normalized_experiment_code = next_step["experiment_code"]
+    normalized_sub_experiment_code = next_step["sub_experiment_code"]
+    lab_name = next_step["lab_name"]
+    axis_batch_no = next_step["axis_batch_no"]
+    axis_codes = next_step["axis_codes"]
+
     experiments = [dict(item) for item in snapshot.get("experiments", [])]
     schedules = [dict(item) for item in snapshot.get("schedules", [])]
-    normalized_schedule_id = normalize_text(schedule_id)
     tasks = [dict(item) for item in snapshot.get("tasks", [])]
     experiment_runs = [dict(item) for item in snapshot.get("experiment_runs", [])]
     experiment_run_trays = [dict(item) for item in snapshot.get("experiment_run_trays", [])]

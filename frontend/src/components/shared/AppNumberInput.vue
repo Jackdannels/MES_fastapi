@@ -22,6 +22,8 @@
       :required="required"
       :placeholder="placeholder"
       :inputmode="inputmode"
+      @keydown.down.prevent="stepBy(-1)"
+      @keydown.up.prevent="stepBy(1)"
       @input="handleInput"
       @change="handleChange"
     />
@@ -101,6 +103,14 @@ const props = defineProps({
     type: [Number, String],
     default: 1,
   },
+  stepDown: {
+    type: [Number, String],
+    default: undefined,
+  },
+  stepUp: {
+    type: [Number, String],
+    default: undefined,
+  },
   controlsLayout: {
     type: String,
     default: "vertical",
@@ -163,7 +173,8 @@ const normalizeInputValue = (value) => {
 };
 
 const stepBy = (direction) => {
-  const step = toFiniteNumber(props.step) || 1;
+  const directionalStep = direction > 0 ? props.stepUp : props.stepDown;
+  const step = toFiniteNumber(directionalStep) || toFiniteNumber(props.step) || 1;
   const min = toFiniteNumber(props.min);
   const current = toFiniteNumber(props.modelValue);
   const base = current ?? min ?? 0;

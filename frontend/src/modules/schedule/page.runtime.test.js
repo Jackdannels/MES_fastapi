@@ -1610,9 +1610,13 @@ describe("SchedulePage runtime", () => {
 
     expect(wrapper.get('[data-testid="edit-duration-unit-days"]').classes()).toContain("is-active");
     expect(wrapper.get('input[name="edit_planned_hours"]').element.value).toBe("15");
+    expect(wrapper.get('input[name="edit_planned_hours"]').attributes("min")).toBe("0.5");
+    expect(wrapper.get('input[name="edit_planned_hours"]').attributes("step")).toBe("0.5");
     await wrapper.get('[data-testid="edit-duration-unit-hours"]').trigger("click");
     expect(wrapper.get('[data-testid="edit-duration-unit-hours"]').classes()).toContain("is-active");
     expect(wrapper.get('input[name="edit_planned_hours"]').element.value).toBe("360");
+    expect(wrapper.get('input[name="edit_planned_hours"]').attributes("min")).toBe("0.1");
+    expect(wrapper.get('input[name="edit_planned_hours"]').attributes("step")).toBe("0.1");
     await wrapper.get('input[name="edit_planned_hours"]').setValue("1.5");
     await wrapper.get('[data-testid="schedule-edit-device"]').setValue(SECONDARY_LAB);
     await wrapper.get('[data-testid="schedule-update"]').trigger("click");
@@ -1665,11 +1669,23 @@ describe("SchedulePage runtime", () => {
     await settle(wrapper);
 
     const durationInput = wrapper.get('input[name="planned_hours"]');
+    expect(durationInput.element.value).toBe("1");
+    expect(durationInput.attributes("min")).toBe("0.1");
     expect(durationInput.attributes("max")).toBe("9999");
+    expect(durationInput.attributes("step")).toBe("0.1");
+    await durationInput.setValue("0.5");
+    await wrapper.get('.schedule-duration-control [data-testid="number-step-down"]').trigger("click");
+    expect(wrapper.get('input[name="planned_hours"]').element.value).toBe("0.4");
+    await wrapper.get('.schedule-duration-control [data-testid="number-step-up"]').trigger("click");
+    expect(wrapper.get('input[name="planned_hours"]').element.value).toBe("0.5");
+    await wrapper.get('.schedule-duration-control [data-testid="number-step-up"]').trigger("click");
+    expect(wrapper.get('input[name="planned_hours"]').element.value).toBe("1");
 
     await wrapper.get('[data-testid="schedule-duration-unit-days"]').trigger("click");
     await settle(wrapper);
+    expect(wrapper.get('input[name="planned_hours"]').attributes("min")).toBe("0.5");
     expect(wrapper.get('input[name="planned_hours"]').attributes("max")).toBe("99");
+    expect(wrapper.get('input[name="planned_hours"]').attributes("step")).toBe("0.5");
 
     await wrapper.get('select[name="task_code"]').setValue("SYLU-2026-01-001");
     await settle(wrapper);
@@ -1906,6 +1922,47 @@ describe("SchedulePage runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.get('select[name="time_slot"]').text()).toContain("17:07");
+
+    vi.useRealTimers();
+  });
+
+  test("shows the earliest remaining afternoon start after an existing laboratory schedule", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2099-03-19T09:00:00"));
+
+    setStorage(TASKS_KEY, [
+      { id: "task-existing", code: "TASK-EXISTING", name: "Existing", test_type: "UNKNOWN", status: STATUS_SCHEDULED },
+      { id: "task-new", code: "TASK-NEW", name: "New", test_type: "UNKNOWN", status: STATUS_WAITING, tray_codes: ["TASK-NEW-TP-001"] },
+    ]);
+    setStorage(EXPERIMENTS_KEY, [
+      { id: "TASK-NEW-A", task_code: "TASK-NEW", experiment_code: "TASK-NEW-A", experiment_name: "盐雾试验", required_device: PRIMARY_LAB },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(SCHEDULES_KEY, [
+      {
+        id: "schedule-existing",
+        task_code: "TASK-EXISTING",
+        experiment_code: "TASK-EXISTING-A",
+        device: PRIMARY_LAB,
+        planned_hours: 1,
+        start_at: "2099-03-20T12:00:00",
+        end_at: "2099-03-20T13:00:00",
+        status: STATUS_SCHEDULED,
+      },
+    ]);
+    setStorage(SAMPLES_KEY, []);
+    setStorage(STREAMS_KEY, []);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+    await wrapper.get('select[name="task_code"]').setValue("TASK-NEW");
+    await settle(wrapper);
+    await wrapper.get('select[name="device"]').setValue(PRIMARY_LAB);
+    await wrapper.get('input[name="schedule_date"]').setValue("2099-03-20");
+    await wrapper.get('input[name="planned_hours"]').setValue("1");
+    await settle(wrapper);
+
+    expect(wrapper.get('select[name="time_slot"]').text()).toContain("下午（12:00-18:00，最早 13:10 开始）");
 
     vi.useRealTimers();
   });

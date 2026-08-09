@@ -9,6 +9,33 @@ const API_BASE_URL = getFrontendApiBaseUrl();
 
 const normalizeText = (value) => String(value || "").trim();
 
+const parseScheduleTime = (destination) => {
+  const value = destination?.scheduleStartAt ?? destination?.schedule_start_at;
+  const timestamp = Date.parse(String(value || ""));
+  return Number.isFinite(timestamp) ? timestamp : Number.POSITIVE_INFINITY;
+};
+
+const resolveStrictDispatchDestinations = (destinations) => {
+  const candidates = Array.isArray(destinations) ? destinations : [];
+  const stagingDestinations = candidates.filter((destination) => normalizeText(destination?.targetType) === "staging");
+  const nextScheduledLab = candidates
+    .filter((destination) => normalizeText(destination?.targetType) !== "staging" && Boolean(destination?.scheduled))
+    .sort((left, right) => {
+      const timeDifference = parseScheduleTime(left) - parseScheduleTime(right);
+      if (timeDifference) {
+        return timeDifference;
+      }
+      return normalizeText(left?.scheduleId || left?.schedule_id).localeCompare(
+        normalizeText(right?.scheduleId || right?.schedule_id),
+      );
+    })[0];
+
+  return [
+    ...stagingDestinations,
+    ...(nextScheduledLab ? [{ ...nextScheduledLab, preferred: true }] : []),
+  ];
+};
+
 const readErrorMessage = async (response) => {
   const payload = await response.json().catch(() => null);
   return payload?.detail || payload?.message || `请求失败（${response.status}）`;
@@ -41,7 +68,9 @@ function useTransferDispatch(options = {}) {
 
   const applyDispatchPayload = (payload, fallbackDestinations = []) => {
     state.tray = payload?.tray || null;
-    state.destinations = Array.isArray(payload?.destinations) ? payload.destinations : fallbackDestinations;
+    state.destinations = resolveStrictDispatchDestinations(
+      Array.isArray(payload?.destinations) ? payload.destinations : fallbackDestinations,
+    );
   };
 
   const resetDispatch = () => {
@@ -97,7 +126,7 @@ function useTransferDispatch(options = {}) {
       return false;
     }
     if (!canSelectDestination(destination)) {
-      feedbackState.show("当前候选位置尚未排程，不能直接出库。", "warning");
+      feedbackState.show("该目标不是当前排程顺序中的下一实验，请刷新后重试。", "warning");
       return false;
     }
 
@@ -116,6 +145,9 @@ function useTransferDispatch(options = {}) {
           targetType: destination.targetType,
           targetName: destination.targetName,
           experimentCode: destination.experimentCode || "",
+          scheduleId: destination.scheduleId || destination.schedule_id || "",
+          subExperimentCode: destination.subExperimentCode || destination.sub_experiment_code || "",
+          axisBatchNo: destination.axisBatchNo || destination.axis_batch_no || "",
         }),
       });
       if (!response.ok) {
@@ -150,4 +182,4 @@ function useTransferDispatch(options = {}) {
   };
 }
 
-export { useTransferDispatch };
+export { resolveStrictDispatchDestinations, useTransferDispatch };

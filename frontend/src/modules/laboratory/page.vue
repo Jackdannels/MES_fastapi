@@ -92,7 +92,7 @@
       <div class="laboratory-recent-tasks">
         <div class="laboratory-recent-tasks__header">
           <h4>最近安排任务</h4>
-          <span class="muted">默认按最近安排任务执行，也可在查看任务中切换当前任务。</span>
+          <span class="muted">按托盘排程顺序执行；前序实验未完成时，后续实验不可选择。</span>
         </div>
         <div class="laboratory-recent-tasks__list">
           <div v-if="!recentTasks.length" class="laboratory-recent-task laboratory-recent-task--empty">
@@ -122,6 +122,7 @@
               轴向：{{ row.axisCodes.join("、") }}
             </span>
             <span class="laboratory-recent-task__time">{{ row.dateTimeRange }}</span>
+            <span v-if="row.sequenceEligible === false" class="muted">等待前序实验完成</span>
           </button>
         </div>
       </div>
@@ -363,7 +364,7 @@
                   :disabled="!canSelectTaskKey(row.id)"
                   @click="setPendingTaskCode(row.id)"
                 >
-                  {{ pendingTaskCode === row.id ? "已选中" : "选择任务" }}
+                  {{ row.sequenceEligible === false ? "等待前序实验" : pendingTaskCode === row.id ? "已选中" : "选择任务" }}
                 </button>
               </td>
             </tr>

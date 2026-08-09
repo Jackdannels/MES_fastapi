@@ -138,6 +138,7 @@ class LaboratoryOperationRequest(BaseModel):
     task_code: str = Field(default="", alias="taskCode")
     experiment_code: str = Field(default="", alias="experimentCode")
     sub_experiment_code: str = Field(default="", alias="subExperimentCode")
+    schedule_id: str = Field(default="", alias="scheduleId")
     lab_code: str = Field(default="", alias="labCode")
     lab_name: str = Field(default="", alias="labName")
     tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
@@ -286,6 +287,8 @@ def apply_laboratory_operation(
                 task_code=request.task_code,
                 experiment_code=request.experiment_code,
                 sub_experiment_code=request.sub_experiment_code,
+                schedule_id=request.schedule_id,
+                lab_code=request.lab_code,
                 lab_name=request.lab_name,
                 tray_codes=request.tray_codes,
                 occurred_at=occurred_at,

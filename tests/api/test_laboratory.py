@@ -981,7 +981,7 @@ def test_laboratory_start_does_not_treat_multi_tray_sample_returned_status_as_al
     snapshot = {
         "tasks": [{"id": task_code, "code": task_code, "status": "任务进行中"}],
         "samples": [sample],
-        "schedules": [{"task_code": task_code, "experiment_code": "EXP-B", "device": "霉菌试验室"}],
+        "schedules": [{"id": "SCH-B", "task_code": task_code, "experiment_code": "EXP-B", "device": "霉菌试验室", "start_at": "2099-01-01 09:00:00"}],
         "experiments": [{"task_code": task_code, "experiment_code": "EXP-B", "experiment_name": "霉菌试验"}],
         "experiment_runs": [],
         "experiment_run_trays": [],
@@ -1023,7 +1023,7 @@ def test_laboratory_start_rejects_target_tray_returned_status_without_run_tray_r
                 "history": [],
             }
         ],
-        "schedules": [{"task_code": task_code, "experiment_code": "EXP-B", "device": "霉菌试验室"}],
+        "schedules": [{"id": "SCH-B", "task_code": task_code, "experiment_code": "EXP-B", "device": "霉菌试验室", "start_at": "2099-01-01 09:00:00"}],
         "experiments": [{"task_code": task_code, "experiment_code": "EXP-B", "experiment_name": "霉菌试验"}],
         "experiment_runs": [],
         "experiment_run_trays": [],
@@ -1648,9 +1648,9 @@ def test_laboratory_operation_preserves_other_lab_tray_state(monkeypatch):
                 {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "experiment_name": "冲击试验"},
                 {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "experiment_name": "霉菌试验"},
             ],
-            "mes.schedules": [
-                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "device": "冲击一室"},
-                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "device": "霉菌试验室"},
+                "mes.schedules": [
+                    {"id": "SCH-PARALLEL-A", "task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "device": "冲击一室", "start_at": "2099-01-01 09:00:00"},
+                    {"id": "SCH-PARALLEL-B", "task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "device": "霉菌试验室", "start_at": "2099-01-01 10:00:00"},
             ],
             "mes.experiment_trays": [
                 {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "tray_code": "TP-A"},
@@ -1720,8 +1720,8 @@ def test_laboratory_compare_operation_clears_stale_fixture_ready(monkeypatch):
             "mes.experiments": [
                 {"task_code": "TASK-FIXTURE", "experiment_code": "EXP-VIB", "experiment_name": "振动试验"},
             ],
-            "mes.schedules": [
-                {"task_code": "TASK-FIXTURE", "experiment_code": "EXP-VIB", "device": "振动一室"},
+                "mes.schedules": [
+                    {"id": "SCH-FIXTURE", "task_code": "TASK-FIXTURE", "experiment_code": "EXP-VIB", "device": "振动一室", "start_at": "2099-01-01 09:00:00"},
             ],
             "mes.experiment_trays": [
                 {"task_code": "TASK-FIXTURE", "experiment_code": "EXP-VIB", "tray_code": "TP-FIXTURE"},
@@ -1779,8 +1779,8 @@ def test_laboratory_compare_operation_rewrites_stale_tray_target(monkeypatch):
                 {"task_code": "TASK-STALE", "experiment_code": "EXP-HUMID", "experiment_name": "高低温湿热试验"},
                 {"task_code": "TASK-STALE", "experiment_code": "EXP-TEMP", "experiment_name": "温度冲击试验"},
             ],
-            "mes.schedules": [
-                {"task_code": "TASK-STALE", "experiment_code": "EXP-HUMID", "device": "高低温湿热一室"},
+                "mes.schedules": [
+                    {"id": "SCH-STALE-HUMID", "task_code": "TASK-STALE", "experiment_code": "EXP-HUMID", "device": "高低温湿热一室", "start_at": "2099-01-01 09:00:00"},
             ],
             "mes.experiment_trays": [
                 {"task_code": "TASK-STALE", "experiment_code": "EXP-HUMID", "tray_code": "TP-STALE"},
@@ -1862,9 +1862,9 @@ def test_laboratory_operations_merge_against_latest_snapshot_when_parallel_labs_
                 {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "experiment_name": "冲击试验"},
                 {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "experiment_name": "霉菌试验"},
             ],
-            "mes.schedules": [
-                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "device": "冲击一室"},
-                {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "device": "霉菌试验室"},
+                "mes.schedules": [
+                    {"id": "SCH-PARALLEL-A", "task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "device": "冲击一室", "start_at": "2099-01-01 09:00:00"},
+                    {"id": "SCH-PARALLEL-B", "task_code": "TASK-PARALLEL", "experiment_code": "EXP-B", "device": "霉菌试验室", "start_at": "2099-01-01 10:00:00"},
             ],
             "mes.experiment_trays": [
                 {"task_code": "TASK-PARALLEL", "experiment_code": "EXP-A", "tray_code": "TP-A"},
@@ -1955,10 +1955,14 @@ def test_atomic_laboratory_operation_uses_scoped_sample_persistence_when_availab
     storage = ScopedStorage(
         {
             "mes.tasks": [{"code": "TASK-SCOPED"}],
-            "mes.experiments": [
+                "mes.experiments": [
                 {"task_code": "TASK-SCOPED", "experiment_code": "EXP-A", "experiment_name": "冲击试验"},
-                {"task_code": "TASK-SCOPED", "experiment_code": "EXP-B", "experiment_name": "霉菌试验"},
-            ],
+                    {"task_code": "TASK-SCOPED", "experiment_code": "EXP-B", "experiment_name": "霉菌试验"},
+                ],
+                "mes.schedules": [
+                    {"id": "SCH-SCOPED-A", "task_code": "TASK-SCOPED", "experiment_code": "EXP-A", "device": "冲击一室", "start_at": "2099-01-01 09:00:00"},
+                    {"id": "SCH-SCOPED-B", "task_code": "TASK-SCOPED", "experiment_code": "EXP-B", "device": "霉菌试验室", "start_at": "2099-01-01 10:00:00"},
+                ],
             "mes.experiment_trays": [
                 {"task_code": "TASK-SCOPED", "experiment_code": "EXP-A", "tray_code": "TP-A"},
                 {"task_code": "TASK-SCOPED", "experiment_code": "EXP-B", "tray_code": "TP-B"},

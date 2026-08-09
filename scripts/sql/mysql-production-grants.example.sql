@@ -1,5 +1,5 @@
 -- Production account template. Replace every <...> placeholder before use.
--- Run this file as a MySQL DBA; it is not part of the V001-V007 migration chain.
+-- Run this file as a MySQL DBA; it is not part of the V001-V008 migration chain.
 -- The database must already exist before granting database-scoped privileges.
 
 CREATE USER IF NOT EXISTS 'mes_migrator'@'<application-host>'

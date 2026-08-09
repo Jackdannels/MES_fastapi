@@ -950,7 +950,7 @@ describe("StagingManagementPage runtime", () => {
     expect(destinationModal.text()).not.toContain("恒温恒湿间（暂存间）");
   });
 
-  test("stock-out destination modal lists multiple target labs and highlights the nearest schedule", async () => {
+  test("stock-out destination modal exposes only the earliest unfinished schedule", async () => {
     remoteSnapshot = {
       ...createSnapshot(),
       [STORAGE_KEYS.experiments]: [
@@ -981,10 +981,10 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
 
     const cards = mounted.findAll('[data-testid^="zancun-destination-card-"]');
-    expect(cards).toHaveLength(2);
+    expect(cards).toHaveLength(1);
     expect(cards[0].text()).toContain("盐雾试验室");
-    expect(cards[0].text()).toContain("推荐");
-    expect(cards[1].text()).toContain("振动一室");
+    expect(cards[0].text()).toContain("下一排程");
+    expect(mounted.text()).not.toContain("振动一室");
     expect(mounted.get('[data-testid="zancun-destination-submit-0"]').attributes("disabled")).toBeUndefined();
   });
 
@@ -1166,7 +1166,7 @@ describe("StagingManagementPage runtime", () => {
     });
   });
 
-  test("appearance stock-out highlights the original lab and confirms a non-original lab in orange", async () => {
+  test("appearance stock-out ignores stale target metadata and keeps only the next schedule", async () => {
     remoteSnapshot = createAppearanceOriginalPlanSnapshot();
     const mounted = await mountPage({ room: "appearance" });
 
@@ -1175,41 +1175,22 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
 
     const destinationCards = mounted.findAll('[data-testid^="zancun-destination-card-"]');
-    expect(destinationCards).toHaveLength(3);
-    expect(destinationCards[0].text()).toContain("盐雾试验室");
-    expect(destinationCards[0].text()).toContain("原计划试验间");
-    expect(destinationCards[0].classes()).toContain("is-original-planned");
-    expect(destinationCards[1].text()).toContain("霉菌试验室");
-
-    const eventCount = remoteSnapshot[STORAGE_KEYS.staging_events].length;
-    await mounted.get('[data-testid="zancun-destination-submit-1"]').trigger("click");
-
-    const deviationModal = mounted.get('[data-testid="zancun-destination-deviation-modal"]');
-    expect(deviationModal.classes()).toContain("is-open");
-    expect(deviationModal.text()).toContain("原计划试验间为 盐雾试验室");
-    expect(deviationModal.text()).toContain("当前选择为 霉菌试验室");
-    expect(remoteSnapshot[STORAGE_KEYS.staging_events]).toHaveLength(eventCount);
-
-    await mounted.get('[data-testid="zancun-destination-deviation-confirm"]').trigger("click");
-    await settlePage(mounted);
-
-    expect(remoteSnapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
-      action: "stock_out",
-      room: "appearance",
-      target_experiment_code: "SYLU-2026-04-102-A",
-      target_lab: "霉菌试验室",
-      target_type: "lab",
-    });
+    expect(destinationCards).toHaveLength(2);
+    expect(destinationCards[0].text()).toContain("霉菌试验室");
+    expect(destinationCards[0].text()).not.toContain("原计划");
+    expect(mounted.get('[data-testid="zancun-destination-submit-0"]').attributes("disabled")).toBeUndefined();
+    expect(mounted.text()).not.toContain("盐雾试验室");
+    expect(mounted.find('[data-testid="zancun-destination-deviation-modal"]').exists()).toBe(false);
   });
 
-  test("appearance stock-out to staging bypasses the non-original-lab confirmation", async () => {
+  test("appearance stock-out can still return to staging without a deviation confirmation", async () => {
     remoteSnapshot = createAppearanceOriginalPlanSnapshot();
     const mounted = await mountPage({ room: "appearance" });
 
     await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
     await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
-    await mounted.get('[data-testid="zancun-destination-submit-2"]').trigger("click");
+    await mounted.get('[data-testid="zancun-destination-submit-1"]').trigger("click");
     await settlePage(mounted);
 
     expect(mounted.find('[data-testid="zancun-destination-deviation-modal"].is-open').exists()).toBe(false);

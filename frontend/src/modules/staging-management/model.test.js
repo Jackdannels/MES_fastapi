@@ -742,7 +742,7 @@ describe("staging-management model", () => {
     expect(detail.targetExperimentName).toBe("振动试验");
   });
 
-  test("stock-out detail lists all non-staging target labs and recommends the nearest scheduled lab", () => {
+  test("stock-out detail exposes only the earliest unfinished scheduled lab", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.schedules] = snapshot[STORAGE_KEYS.schedules].map((schedule) => (
       schedule.id === "schedule-102-next-lab"
@@ -756,19 +756,42 @@ describe("staging-management model", () => {
     expect(detail.targetDestinations).toEqual([
       expect.objectContaining({
         preferred: true,
+        scheduleId: "schedule-102-next-lab",
         scheduled: true,
         targetExperimentCode: "SYLU-2026-04-102-B",
         targetLab: "盐雾试验室",
       }),
-      expect.objectContaining({
-        preferred: false,
-        scheduled: true,
-        targetExperimentCode: "SYLU-2026-04-102-A",
-        targetLab: "振动一室",
-      }),
     ]);
     expect(detail.targetDestinations.map((destination) => destination.targetLab)).not.toContain("恒温恒湿间（暂存间）");
     expect(detail.targetLab).toBe("盐雾试验室");
+  });
+
+  test("same experiment schedules advance by exact schedule id", () => {
+    const snapshot = createSnapshot();
+    const taskCode = "SYLU-2026-04-102";
+    const experimentCode = "SYLU-2026-04-102-A";
+    const trayCode = "SYLU-2026-04-102-TP-001";
+    snapshot[STORAGE_KEYS.schedules] = [
+      { id: "schedule-segment-1", task_code: taskCode, experiment_code: experimentCode, sub_experiment_code: "SEG-1", device: "振动一室", start_at: "2026-04-01T09:00:00" },
+      { id: "schedule-segment-2", task_code: taskCode, experiment_code: experimentCode, sub_experiment_code: "SEG-2", device: "振动二室", start_at: "2026-04-01T10:00:00" },
+    ];
+    snapshot[STORAGE_KEYS.experiment_runs] = [
+      { run_no: "run-segment-1", schedule_id: "schedule-segment-1", task_code: taskCode, experiment_code: experimentCode, sub_experiment_code: "SEG-1" },
+    ];
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [
+      { run_no: "run-segment-1", task_code: taskCode, experiment_code: experimentCode, sub_experiment_code: "SEG-1", tray_code: trayCode, run_tray_status: "实验已完成" },
+    ];
+
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY });
+    const detail = buildZancunScanDetail(rows, trayCode, "stockOut");
+
+    expect(detail.targetDestinations).toEqual([
+      expect.objectContaining({
+        scheduleId: "schedule-segment-2",
+        subExperimentCode: "SEG-2",
+        targetLab: "振动二室",
+      }),
+    ]);
   });
 
   test.each([
@@ -802,7 +825,7 @@ describe("staging-management model", () => {
     });
 
     expect(vibrationDestination).toEqual(expect.objectContaining({
-      preferred: false,
+      preferred: true,
       targetAvailable: false,
       targetUnavailableReason: expect.stringContaining(`正在${status}`),
     }));
@@ -824,10 +847,11 @@ describe("staging-management model", () => {
     const detail = buildZancunScanDetail(rows, "SYLU-2026-04-102-TP-001", "stockOut");
 
     expect(detail.targetDestinations).toContainEqual(expect.objectContaining({
-      targetExperimentCode: "SYLU-2026-04-102-B",
-      targetLab: "盐雾试验室",
-      targetLabCode: "LAB_SALT",
-      targetLabId: 9,
+      scheduleId: "schedule-102-lab",
+      targetExperimentCode: "SYLU-2026-04-102-A",
+      targetLab: "振动一室",
+      targetLabCode: "LAB_VIBRATION_1",
+      targetLabId: 11,
     }));
     expect(detail).toEqual(expect.objectContaining({
       targetLab: "振动一室",
@@ -1488,7 +1512,6 @@ describe("staging-management model", () => {
 
     expect(detail.targetDestinations.map((destination) => destination.targetLab)).toEqual([
       "盐雾试验室",
-      "高低温湿热一室",
       "恒温恒湿间（暂存间）",
     ]);
     expect(detail.targetDestinations.map((destination) => destination.targetLab)).not.toContain("振动一室");
@@ -2091,7 +2114,7 @@ describe("staging-management model", () => {
     expect(metrics.stockedOutTodayCount).toBe(2);
   });
 
-  test("stock-out to salt lab stays a lab dispatch instead of forced pre-experiment appearance storage", () => {
+  test("stock-out rejects a later scheduled salt lab while an earlier experiment remains", () => {
     const result = applyZancunInventoryAction({
       now: TODAY,
       payload: {
@@ -2102,26 +2125,8 @@ describe("staging-management model", () => {
       },
       snapshot: createSnapshot(),
     });
-    const stockOutSample = result.snapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-102-SP-001");
-
-    expect(result.error).toBe("");
-    expect(result.snapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
-      action: "stock_out",
-      target_experiment_code: "SYLU-2026-04-102-B",
-      target_lab: "盐雾试验室",
-      target_type: "lab",
-    });
-    expect(stockOutSample).toMatchObject({
-      location: "盐雾试验室",
-      status: "送至实验室",
-      flow_status: "送至实验室",
-    });
-    expect(stockOutSample?.trays[0]).toMatchObject({
-      status: "送至实验室",
-      target_experiment_code: "SYLU-2026-04-102-B",
-      target_lab: "盐雾试验室",
-      target_type: "lab",
-    });
+    expect(result.error).toBe("请选择有效的目标实验室后再出库。");
+    expect(result.snapshot[STORAGE_KEYS.staging_events].at(-1)?.id).toBe("evt-103-out");
   });
 
   test("appearance room can stock in a tray dispatched to a mold lab as optional pre-experiment inspection", () => {
@@ -3187,7 +3192,7 @@ describe("staging-management model", () => {
     }));
   });
 
-  test("pre-experiment appearance highlights the original lab instead of the earliest schedule", () => {
+  test("pre-experiment appearance ignores stale target metadata and exposes only the next schedule", () => {
     const snapshot = createSnapshot();
     snapshot[STORAGE_KEYS.experiments] = snapshot[STORAGE_KEYS.experiments].map((experiment) => (
       experiment.experiment_code === "SYLU-2026-04-102-A"
@@ -3221,22 +3226,17 @@ describe("staging-management model", () => {
       .find((item) => item.trayCode === "SYLU-2026-04-102-TP-001");
 
     expect(row?.targetDestinations.map((destination) => destination.targetLab)).toEqual([
-      "盐雾试验室",
       "霉菌试验室",
       "恒温恒湿间（暂存间）",
     ]);
     expect(row?.targetDestinations[0]).toMatchObject({
-      originalPlanned: true,
       preferred: true,
-      targetExperimentCode: "SYLU-2026-04-102-B",
-      targetLab: "盐雾试验室",
-    });
-    expect(row?.targetDestinations[1]).toMatchObject({
-      originalPlanned: false,
-      preferred: false,
+      targetAvailable: true,
+      targetExperimentCode: "SYLU-2026-04-102-A",
       targetLab: "霉菌试验室",
+      targetUnavailableReason: "",
     });
-    expect(row?.targetLab).toBe("盐雾试验室");
+    expect(row?.targetLab).toBe("霉菌试验室");
   });
 
   test("stock-out selects a destination by lab code when display names differ", () => {
@@ -3777,6 +3777,14 @@ describe("staging-management model", () => {
       sub_experiment_code: secondSubExperimentCode,
     });
     snapshot[STORAGE_KEYS.experiment_run_trays] ||= [];
+    snapshot[STORAGE_KEYS.experiment_runs] ||= [];
+    snapshot[STORAGE_KEYS.experiment_runs].push({
+      run_no: "run-axis-partial-z",
+      schedule_id: "schedule-axis-partial-z",
+      task_code: taskCode,
+      experiment_code: experimentCode,
+      sub_experiment_code: firstSubExperimentCode,
+    });
     snapshot[STORAGE_KEYS.experiment_run_trays].push({
       run_no: "run-axis-partial-z",
       task_code: taskCode,
@@ -3946,6 +3954,15 @@ describe("staging-management model", () => {
         status: "实验已完成",
         run_tray_status: "实验已完成",
         ended_at: "2026-06-25 15:14:11",
+      },
+    ];
+    snapshot[STORAGE_KEYS.experiment_runs] = [
+      {
+        run_no: "RUN-CURRENT-AXIS-XY",
+        schedule_id: "schedule-current-axis-xy",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        sub_experiment_code: firstSubExperimentCode,
       },
     ];
     snapshot[STORAGE_KEYS.experiment_run_steps] = ["x+", "x-", "y+", "y-"].map((axisCode, index) => ({

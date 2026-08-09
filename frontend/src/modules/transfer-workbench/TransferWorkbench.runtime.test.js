@@ -224,6 +224,8 @@ const createDispatchLookupPayload = () => ({
       experimentName: "通电试验",
       scheduled: true,
       preferred: true,
+      scheduleId: "SCHEDULE-POWER-001",
+      subExperimentCode: "POWER-STAGE-001",
       scheduleStartAt: "2026-03-20T09:00:00",
       scheduleEndAt: "2026-03-20T12:00:00",
     },
@@ -610,10 +612,10 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get('[data-testid="transfer-dispatch-destination-card-0"]').text()).toContain("暂存间");
     expect(wrapper.get('[data-testid="transfer-dispatch-destination-card-1"]').text()).toContain("振动一室");
     expect(wrapper.get('[data-testid="transfer-dispatch-destination-card-1"]').text()).toContain("通电试验");
-    expect(wrapper.get('[data-testid="transfer-dispatch-destination-badge-1"]').text()).toBe("优先送达");
+    expect(wrapper.get('[data-testid="transfer-dispatch-destination-badge-1"]').text()).toBe("下一排程");
     expect(wrapper.text()).toContain("恒温恒湿间（暂存间）");
     expect(wrapper.text()).toContain("振动一室");
-    expect(wrapper.text()).toContain("优先送达");
+    expect(wrapper.text()).toContain("下一排程");
 
     await wrapper.get('[data-testid="transfer-dispatch-destination-1"]').trigger("click");
     await settle(wrapper);
@@ -626,6 +628,15 @@ describe("TransferWorkbench runtime", () => {
       expect.stringContaining("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch"),
       expect.objectContaining({ headers: expect.objectContaining({ Accept: "application/json" }) }),
     );
+    const dispatchPostCall = fetch.mock.calls.find(([input, options = {}]) => (
+      String(input).includes("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch")
+      && options.method === "POST"
+    ));
+    expect(JSON.parse(dispatchPostCall?.[1]?.body || "{}")).toEqual(expect.objectContaining({
+      experimentCode: "SYLU-2026-03-102-B",
+      scheduleId: "SCHEDULE-POWER-001",
+      subExperimentCode: "POWER-STAGE-001",
+    }));
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch"),
       expect.objectContaining({

@@ -2287,7 +2287,7 @@ describe("LaboratoryPage runtime", () => {
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).not.toContain("样品运输中");
   });
 
-  test("shows tray flow for a remaining impact axis schedule while the tray is dispatched to mold", async () => {
+  test("disables a remaining impact axis schedule while an earlier mold experiment is pending", async () => {
     vi.setSystemTime(new Date("2026-07-03T21:30:00+08:00"));
     reactiveRoute.query = { lab: "冲击一室" };
     masterLabsState = [
@@ -2426,23 +2426,14 @@ describe("LaboratoryPage runtime", () => {
     expect(recentTasks).toHaveLength(1);
     expect(recentTasks[0].text()).toContain(taskCode);
     expect(recentTasks[0].text()).toContain("轴向：z+、z-");
-    expect(mounted.findAll(".laboratory-recent-task.is-current")).toHaveLength(1);
-    expect(mounted.find(".laboratory-recent-task.is-current").text()).toContain("已选中");
+    expect(recentTasks[0].text()).toContain("等待前序实验完成");
+    expect(mounted.findAll(".laboratory-recent-task.is-current")).toHaveLength(0);
 
     await mounted.get('[data-testid="laboratory-view-tasks"]').trigger("click");
-    expect(mounted.get('[data-testid="laboratory-select-task-SYLU-2026-07-021"]').text()).toBe("已选中");
-    await mounted.get('[data-testid="laboratory-confirm-current-task"]').trigger("click");
-    await flushPageUpdates();
-
-    expect(mounted.findAll(".laboratory-recent-task.is-current")).toHaveLength(1);
-    expect(mounted.find(".laboratory-recent-task.is-current").text()).toContain("已选中");
+    const selectButton = mounted.get('[data-testid="laboratory-select-task-SYLU-2026-07-021"]');
+    expect(selectButton.text()).toBe("等待前序实验");
+    expect(selectButton.attributes("disabled")).toBeDefined();
     expect(mounted.get('[data-testid="laboratory-compare"]').attributes("disabled")).toBeDefined();
-    expect(mounted.get('[data-testid="laboratory-tray-tab-SYLU-2026-07-021-TP-001"]').text()).toBe(trayCode);
-    expect(mounted.get('[data-testid="laboratory-tray-flow"]').text()).toContain(`${taskCode} / 冲击试验`);
-    expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toContain(`当前托盘：${trayCode}`);
-    expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).not.toContain("样品运输中");
-    expect(mounted.get('[data-testid="laboratory-task-empty-hint"]').text()).toContain("当前托盘已送至霉菌试验室");
-    expect(mounted.get('[data-testid="laboratory-task-empty-hint"]').text()).not.toContain("请先在查看任务中选择一个任务");
   });
 
   test("blocks switching away from a task that has completed comparison", async () => {
@@ -4137,6 +4128,7 @@ describe("LaboratoryPage runtime", () => {
       lab_code: "LAB_SALT",
       schedule_id: "schedule-1",
       task_code: "SYLU-2026-04-101",
+      tray_codes: ["TP-001", "TP-002"],
     });
     expect(snapshotState[STORAGE_KEYS.samples][0]).toEqual(expect.objectContaining({
       flow_status: "实验准备就绪",

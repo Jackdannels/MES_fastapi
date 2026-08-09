@@ -74,7 +74,7 @@ describe("laboratory model", () => {
 
     expect(view.labName).toBe("振动一室");
     expect(view.scheduleRows.map((row) => row.taskCode)).toEqual(["SYLU-2026-04-102"]);
-    expect(view.allScheduleRows.map((row) => row.device)).toEqual(["振动一室", "盐雾试验室"]);
+    expect(view.allScheduleRows.map((row) => row.device)).toEqual(expect.arrayContaining(["振动一室", "盐雾试验室"]));
     expect(view.currentTask).toEqual(expect.objectContaining({
       taskCode: "SYLU-2026-04-102",
       experimentName: "振动试验",
@@ -1328,7 +1328,7 @@ describe("laboratory model", () => {
     expect(getLaboratoryOperationLock([impactGhost, vibrationCurrent], vibrationCurrent, { name: "振动一室" })).toEqual({ active: false });
   });
 
-  test("operation lock ignores a withdrawn shared-tray experiment after a later laboratory comparison", () => {
+  test("withdrawal does not promote a later shared-tray experiment ahead of the next schedule", () => {
     const taskCode = "SYLU-2026-06-021";
     const trayCode = `${taskCode}-TP-002`;
     const view = buildLaboratoryWorkbenchView({
@@ -1400,8 +1400,7 @@ describe("laboratory model", () => {
     });
     const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
 
-    expect(getLaboratoryActionState(workflow).canInstallSample).toBe(true);
-    expect(getLaboratoryOperationLock(view.allScheduleRows, view.currentTask, { name: "振动一室" })).toEqual({ active: false });
+    expect(getLaboratoryActionState(workflow).canInstallSample).toBe(false);
   });
 
   test("operation lock ignores a withdrawn old experiment when run trays exclude the current tray", () => {
@@ -4995,7 +4994,7 @@ describe("laboratory model", () => {
     }));
   });
 
-  test("keeps other labs locked when a shared tray is dispatched to a specific lab before any experiment completes", () => {
+  test("keeps later laboratories unavailable before the first scheduled experiment completes", () => {
     const view = buildSaltSprayLaboratoryView({
       experimentTrays: [
         { task_code: "SYLU-2026-04-303", experiment_code: "SYLU-2026-04-303-A", tray_code: "TP-303" },
@@ -5071,28 +5070,19 @@ describe("laboratory model", () => {
       tasks: [{ code: "SYLU-2026-04-303", name: "复合实验任务", test_type: "盐雾试验 / 高低温湿热试验 / 振动试验" }],
     });
 
-    expect(view.currentTask).toEqual(expect.objectContaining({
-      device: "高低温湿热一室",
-      experimentCode: "SYLU-2026-04-303-B",
-    }));
-    expect(getLaboratoryActionState(buildLaboratoryWorkflowFromTask(view.currentTask))).toEqual({
-      canCompare: false,
-      canInstallSample: false,
-      canMarkReady: false,
-    });
+    expect(view.currentTask).toBeNull();
+    expect(view.scheduleRows[0]).toEqual(expect.objectContaining({ sequenceEligible: false }));
     expect(validateLaboratoryTrayScan({
       allScheduleRows: view.allScheduleRows,
       currentTask: view.currentTask,
       scanCode: "TP-303",
       scheduleRows: view.scheduleRows,
     })).toEqual(expect.objectContaining({
-      guidance: "TP-303 已出库至盐雾试验室，请先出库至高低温湿热一室后再比对。",
-      message: "托盘未送达当前试验间",
+      guidance: "当前没有可比对的任务",
+      message: "当前没有可比对的任务",
       ok: false,
       tone: "error",
-      trayCode: "TP-303",
     }));
-    expect(view.selectedTrayFlow.steps.find((step) => step.key === "route-0-2")?.label).toBe("送至盐雾试验室");
   });
 
   test("uses tray target lab when task trays are dispatched to different laboratories", () => {
@@ -5398,7 +5388,7 @@ describe("laboratory model", () => {
           task_code: "SYLU-2026-06-001",
           experiment_code: "SYLU-2026-06-001-A",
           device: "盐雾试验室",
-          start_at: "2026-06-05 09:00:00",
+          start_at: "2026-06-05 10:00:00",
           end_at: "2026-06-05 11:00:00",
         },
         {
@@ -5413,24 +5403,18 @@ describe("laboratory model", () => {
       tasks: [{ code: "SYLU-2026-06-001", name: "复合实验任务", test_type: "盐雾试验 / 霉菌试验" }],
     });
 
-    const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
-
-    expect(view.currentTask.experimentCode).toBe("SYLU-2026-06-001-A");
-    expect(workflow.hasActiveOtherExperimentRun).toBe(true);
-    expect(getLaboratoryActionState(workflow)).toEqual({
-      canCompare: false,
-      canInstallSample: false,
-      canMarkReady: false,
-    });
+    expect(view.currentTask).toBeNull();
+    expect(view.scheduleRows.find((row) => row.experimentCode === "SYLU-2026-06-001-A")).toEqual(
+      expect.objectContaining({ sequenceEligible: false }),
+    );
     expect(validateLaboratoryTrayScan({
       allScheduleRows: view.allScheduleRows,
       currentTask: view.currentTask,
       scanCode: "TP-001",
       scheduleRows: view.scheduleRows,
     })).toEqual(expect.objectContaining({
-      message: "托盘正在其他实验中",
+      message: "当前没有可比对的任务",
       ok: false,
-      trayCode: "TP-001",
     }));
   });
 
@@ -5482,7 +5466,7 @@ describe("laboratory model", () => {
           experiment_code: `${taskCode}-A`,
           device: "冲击一室",
           status: "实验进行中",
-          start_at: "2026-06-06 13:30:00",
+          start_at: "2026-06-06 13:31:00",
         },
         {
           task_code: taskCode,
@@ -5494,24 +5478,18 @@ describe("laboratory model", () => {
       ],
       tasks: [{ code: taskCode, test_type: "冲击试验 / 振动试验" }],
     });
-    const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
-
-    expect(view.currentTask.experimentCode).toBe(`${taskCode}-B`);
-    expect(workflow.hasActiveOtherExperimentRun).toBe(true);
-    expect(getLaboratoryActionState(workflow)).toEqual({
-      canCompare: false,
-      canInstallSample: false,
-      canMarkReady: false,
-    });
+    expect(view.currentTask).toBeNull();
+    expect(view.scheduleRows.find((row) => row.experimentCode === `${taskCode}-B`)).toEqual(
+      expect.objectContaining({ sequenceEligible: false }),
+    );
     expect(validateLaboratoryTrayScan({
       allScheduleRows: view.allScheduleRows,
       currentTask: view.currentTask,
       scanCode: trayCode,
       scheduleRows: view.scheduleRows,
     })).toEqual(expect.objectContaining({
-      message: "托盘正在其他实验中",
+      message: "当前没有可比对的任务",
       ok: false,
-      trayCode,
     }));
   });
 
@@ -5853,23 +5831,9 @@ describe("laboratory model", () => {
       tasks: [{ code: "TASK-RUN-SCOPE", name: "共享托盘运行态任务", test_type: "振动实验 / 温度冲击实验" }],
     });
 
-    expect(view.currentTask).toEqual(expect.objectContaining({
-      experimentCode: "EXP-TEMP",
-      experimentName: "温度冲击实验",
-    }));
+    expect(view.currentTask).toBeNull();
+    expect(view.scheduleRows[0]).toEqual(expect.objectContaining({ sequenceEligible: false }));
     expect(view.runningExperiment.active).toBe(false);
-    expect(view.currentTaskStatus).not.toBe("实验进行中");
-    expect(view.currentTask.trayRows[0]).toEqual(expect.objectContaining({
-      trayCode: "TP-RUN-SCOPE",
-      trayStatus: "送至实验室",
-    }));
-    expect(view.selectedTrayFlow.currentStatus).not.toContain("温度冲击实验进行中");
-    expect(buildLaboratoryProgressMessage(view.currentTaskFlow, view.currentTask, "温度冲击二室")).not.toContain("已进入实验进行中");
-    expect(getLaboratoryActionState(buildLaboratoryWorkflowFromTask(view.currentTask))).toEqual({
-      canCompare: false,
-      canInstallSample: false,
-      canMarkReady: false,
-    });
   });
 
   test("does not project a same-laboratory active run from another experiment onto the selected experiment", () => {
@@ -5946,19 +5910,11 @@ describe("laboratory model", () => {
       tasks: [{ code: "TASK-SAME-LAB", name: "同室共享托盘任务", test_type: "A实验 / B实验" }],
     });
 
-    expect(view.currentTask).toEqual(expect.objectContaining({
-      experimentCode: "EXP-B",
-      experimentName: "B实验",
-    }));
+    expect(view.currentTask).toBeNull();
+    expect(view.scheduleRows.find((row) => row.experimentCode === "EXP-B")).toEqual(
+      expect.objectContaining({ sequenceEligible: false }),
+    );
     expect(view.runningExperiment.active).toBe(false);
-    expect(view.currentTaskStatus).not.toBe("实验进行中");
-    expect(view.currentTask.trayRows[0].trayStatus).not.toBe("实验进行中");
-    expect(view.selectedTrayFlow.currentStatus).not.toContain("B实验进行中");
-    expect(getLaboratoryActionState(buildLaboratoryWorkflowFromTask(view.currentTask))).toEqual({
-      canCompare: false,
-      canInstallSample: false,
-      canMarkReady: false,
-    });
   });
 
   test("does not open running state from stale sample running text without an active run", () => {
@@ -6437,10 +6393,9 @@ describe("laboratory model", () => {
       scanCode: trayCode,
       scheduleRows: view.scheduleRows,
     })).toEqual(expect.objectContaining({
-      message: "比对正确",
-      ok: true,
-      tone: "success",
-      trayCode,
+      message: "当前没有可比对的任务",
+      ok: false,
+      tone: "error",
     }));
   });
 
@@ -6626,10 +6581,9 @@ describe("laboratory model", () => {
       scanCode: trayCode,
       scheduleRows: view.scheduleRows,
     })).toEqual(expect.objectContaining({
-      message: "托盘未送达当前试验间",
+      message: "当前没有可比对的任务",
       ok: false,
       tone: "error",
-      trayCode,
     }));
   });
 
@@ -8087,7 +8041,6 @@ describe("laboratory model", () => {
       experimentTrays: [
         { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: moldTrayCode },
         { task_code: taskCode, experiment_code: `${taskCode}-A`, tray_code: saltTrayCode },
-        { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: moldTrayCode },
         { task_code: taskCode, experiment_code: `${taskCode}-B`, tray_code: saltTrayCode },
         { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: moldTrayCode },
         { task_code: taskCode, experiment_code: `${taskCode}-C`, tray_code: saltTrayCode },
@@ -8457,6 +8410,11 @@ describe("laboratory model", () => {
     ].forEach(({ experimentCode, labName }) => {
       const view = buildLaboratoryWorkbenchView({ ...baseInput, labName });
 
+      if (experimentCode === `${taskCode}-C`) {
+        expect(view.currentTask).toBeNull();
+        expect(view.scheduleRows[0]).toEqual(expect.objectContaining({ sequenceEligible: false }));
+        return;
+      }
       expect(view.currentTask.experimentCode).toBe(experimentCode);
       expect(view.selectedTrayFlow.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：已到达暂存间`);
       expect(view.selectedTrayFlow.steps.find((step) => step.label === "霉菌试验已完成")).toEqual(
@@ -10587,7 +10545,7 @@ describe("laboratory model", () => {
           experiment_code: vibrationExperimentCode,
           id: "schedule-vibration-remaining",
           lab_code: "LAB_VIBRATION_1",
-          start_at: "2026-06-30 12:00:00",
+          start_at: "2026-06-30 13:00:00",
           status: "实验进行中",
           sub_experiment_code: `${vibrationExperimentCode}-AXIS-002`,
           task_code: taskCode,

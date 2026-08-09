@@ -107,7 +107,7 @@
         <div class="form-field">
           <label>{{ uiText.timeSlot }}</label>
           <select v-model="scheduleForm.time_slot" name="time_slot">
-            <option v-for="option in manualTimeSlotOptions" :key="option.value" :value="option.value">
+            <option v-for="option in manualTimeSlotOptions" :key="option.value" :value="option.value" :disabled="option.disabled">
               {{ option.label }}
             </option>
           </select>
@@ -118,9 +118,12 @@
             <AppNumberInput
               v-model="scheduleForm.planned_hours"
               name="planned_hours"
-              :min="0.5"
+              :min="scheduleForm.planned_duration_unit === 'days' ? 0.5 : 0.1"
               :max="scheduleForm.planned_duration_unit === 'days' ? PLANNED_DURATION_MAX_DAYS : PLANNED_DURATION_MAX_HOURS"
-              :step="0.5"
+              :step="scheduleForm.planned_duration_unit === 'days' ? 0.5 : 0.1"
+              :step-down="resolveDurationControlStep(scheduleForm, 'down')"
+              :step-up="resolveDurationControlStep(scheduleForm, 'up')"
+              inputmode="decimal"
             />
             <div class="schedule-duration-toggle" role="group" :aria-label="uiText.durationUnitLabel">
               <button
@@ -627,9 +630,12 @@
           <AppNumberInput
             v-model="editForm.planned_hours"
             name="edit_planned_hours"
-            :min="0.5"
+            :min="editForm.planned_duration_unit === 'days' ? 0.5 : 0.1"
             :max="editForm.planned_duration_unit === 'days' ? PLANNED_DURATION_MAX_DAYS : PLANNED_DURATION_MAX_HOURS"
-            :step="0.5"
+            :step="editForm.planned_duration_unit === 'days' ? 0.5 : 0.1"
+            :step-down="resolveDurationControlStep(editForm, 'down')"
+            :step-up="resolveDurationControlStep(editForm, 'up')"
+            inputmode="decimal"
           />
           <div class="schedule-duration-toggle" role="group" :aria-label="uiText.durationUnitLabel">
             <button
@@ -756,6 +762,19 @@ const uiText = {
   taskName: "任务名称",
   testType: "试验类型",
   timeSlot: "时段",
+};
+
+const resolveDurationControlStep = (form, direction) => {
+  if (form?.planned_duration_unit === "days") {
+    return 0.5;
+  }
+  const value = Number.parseFloat(String(form?.planned_hours ?? ""));
+  if (!Number.isFinite(value)) {
+    return 0.1;
+  }
+  return direction === "down"
+    ? (value <= 0.5 ? 0.1 : 0.5)
+    : (value < 0.5 ? 0.1 : 0.5);
 };
 
 const {

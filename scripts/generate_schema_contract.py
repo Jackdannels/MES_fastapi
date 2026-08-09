@@ -11,9 +11,10 @@ from typing import Any
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SOURCE = PROJECT_ROOT / "scripts" / "sql" / "0001-complete-baseline-schema.sql"
 DEFAULT_OUTPUT = PROJECT_ROOT / "app" / "db" / "schema_contract.json"
-DEFAULT_INDEX_SOURCES = (
+DEFAULT_EXTENSION_SOURCES = (
     PROJECT_ROOT / "scripts" / "sql" / "V006__long_running_query_indexes.sql",
     PROJECT_ROOT / "scripts" / "sql" / "V007__bounded_event_retention_indexes.sql",
+    PROJECT_ROOT / "scripts" / "sql" / "V008__fixture_install_schedule_identity.sql",
 )
 
 _CREATE_TABLE_RE = re.compile(
@@ -37,6 +38,12 @@ _ADD_INDEX_RE = re.compile(
     r"ALTER\s+TABLE\s+`?(?P<table>[a-zA-Z0-9_]+)`?\s+"
     r"ADD\s+(?P<unique>UNIQUE\s+)?INDEX\s+`?(?P<name>[a-zA-Z0-9_]+)`?\s*"
     r"\((?P<columns>[^)]+)\)",
+    re.IGNORECASE,
+)
+_ADD_COLUMN_RE = re.compile(
+    r"ALTER\s+TABLE\s+`?(?P<table>[a-zA-Z0-9_]+)`?\s+"
+    r"ADD\s+COLUMN\s+`?(?P<name>[a-zA-Z0-9_]+)`?\s+"
+    r"(?P<definition>[^'\r\n;]+)",
     re.IGNORECASE,
 )
 
@@ -143,18 +150,38 @@ def _parse_foreign_key(line: str) -> tuple[str, dict[str, Any]] | None:
     }
 
 
-def _merge_migration_indexes(
+def _merge_migration_extensions(
     tables: dict[str, Any],
-    index_sources: tuple[Path, ...],
+    extension_sources: tuple[Path, ...],
 ) -> list[dict[str, str]]:
     source_metadata: list[dict[str, str]] = []
-    for index_source in index_sources:
-        source_bytes = index_source.read_bytes()
+    for extension_source in extension_sources:
+        source_bytes = extension_source.read_bytes()
         sql = source_bytes.decode("utf-8")
-        matches = list(_ADD_INDEX_RE.finditer(sql))
-        if not matches:
-            raise ValueError(f"No ADD INDEX definitions found in {index_source}")
-        for match in matches:
+        column_matches = list(_ADD_COLUMN_RE.finditer(sql))
+        index_matches = list(_ADD_INDEX_RE.finditer(sql))
+        if not column_matches and not index_matches:
+            raise ValueError(f"No schema extension definitions found in {extension_source}")
+        for match in column_matches:
+            table_name = match.group("table")
+            if table_name not in tables:
+                raise ValueError(
+                    f"Migration column {match.group('name')} references unknown table {table_name}"
+                )
+            table = tables[table_name]
+            definition = _parse_column(
+                f"`{match.group('name')}` {match.group('definition').strip()}",
+                charset=table["charset"],
+                collation=table["collation"],
+            )[1]
+            columns = table["columns"]
+            existing = columns.get(match.group("name"))
+            if existing is not None and existing != definition:
+                raise ValueError(
+                    f"Conflicting definition for migration column {table_name}.{match.group('name')}"
+                )
+            columns[match.group("name")] = definition
+        for match in index_matches:
             table_name = match.group("table")
             if table_name not in tables:
                 raise ValueError(
@@ -175,7 +202,7 @@ def _merge_migration_indexes(
             indexes[match.group("name")] = definition
         source_metadata.append(
             {
-                "source": str(index_source.relative_to(PROJECT_ROOT)).replace("\\", "/"),
+                "source": str(extension_source.relative_to(PROJECT_ROOT)).replace("\\", "/"),
                 "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
             }
         )
@@ -184,7 +211,7 @@ def _merge_migration_indexes(
 
 def build_contract(
     source: Path,
-    index_sources: tuple[Path, ...] = DEFAULT_INDEX_SOURCES,
+    extension_sources: tuple[Path, ...] = DEFAULT_EXTENSION_SOURCES,
 ) -> dict[str, Any]:
     source_bytes = source.read_bytes()
     sql = source_bytes.decode("utf-8")
@@ -237,12 +264,12 @@ def build_contract(
         }
     if len(tables) != 39:
         raise ValueError(f"Expected 39 baseline tables, parsed {len(tables)}")
-    index_source_metadata = _merge_migration_indexes(tables, index_sources)
+    extension_source_metadata = _merge_migration_extensions(tables, extension_sources)
     return {
-        "contract_version": "V007",
+        "contract_version": "V008",
         "source": str(source.relative_to(PROJECT_ROOT)).replace("\\", "/"),
         "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
-        "index_sources": index_source_metadata,
+        "index_sources": extension_source_metadata,
         "tables": dict(sorted(tables.items())),
     }
 

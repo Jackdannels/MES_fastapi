@@ -876,7 +876,7 @@ def test_transfer_area_legacy_stored_status_cannot_dispatch_as_arrived(monkeypat
     assert dispatched.json()["detail"] == "该托盘尚未确认入库，不能出库"
 
 
-def test_transfer_area_dispatch_lookup_returns_staging_and_sorted_lab_candidates(monkeypatch):
+def test_transfer_area_dispatch_lookup_returns_staging_and_only_the_next_scheduled_lab(monkeypatch):
     client, storage = build_client(monkeypatch)
     seed_task_102_dispatch_data(
         storage,
@@ -910,15 +910,14 @@ def test_transfer_area_dispatch_lookup_returns_staging_and_sorted_lab_candidates
     assert [item["targetName"] for item in payload["destinations"]] == [
         "恒温恒湿间（暂存间）",
         "振动一室",
-        "冲击一室",
     ]
     assert payload["destinations"][0]["targetType"] == "staging"
     assert payload["destinations"][1]["preferred"] is True
     assert payload["destinations"][1]["experimentCode"] == "SYLU-2026-03-102-B"
-    assert payload["destinations"][2]["preferred"] is False
+    assert payload["destinations"][1]["scheduleId"] == "schedule-102-b"
 
 
-def test_transfer_area_dispatch_lookup_keeps_unscheduled_experiments_pending(monkeypatch):
+def test_transfer_area_dispatch_lookup_does_not_offer_unscheduled_experiments(monkeypatch):
     client, storage = build_client(monkeypatch)
     seed_task_102_dispatch_data(storage, [])
 
@@ -926,15 +925,53 @@ def test_transfer_area_dispatch_lookup_keeps_unscheduled_experiments_pending(mon
 
     assert response.status_code == 200
     payload = response.json()
-    assert [item["targetName"] for item in payload["destinations"]] == [
-        "恒温恒湿间（暂存间）",
-        "耐久试验（待排程）",
-        "通电试验（待排程）",
-    ]
-    assert payload["destinations"][1]["preferred"] is False
-    assert payload["destinations"][1]["scheduled"] is False
-    assert payload["destinations"][2]["preferred"] is False
-    assert payload["destinations"][2]["scheduled"] is False
+    assert [item["targetName"] for item in payload["destinations"]] == ["恒温恒湿间（暂存间）"]
+
+
+def test_transfer_area_dispatch_rejects_later_schedule_but_allows_future_next_schedule(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "device": "振动一室",
+                "start_at": "2099-03-20T09:00:00",
+            },
+            {
+                "id": "schedule-102-a",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-A",
+                "device": "冲击一室",
+                "start_at": "2099-03-20T10:00:00",
+            },
+        ],
+    )
+
+    later = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={
+            "targetType": "lab",
+            "targetName": "冲击一室",
+            "experimentCode": "SYLU-2026-03-102-A",
+            "scheduleId": "schedule-102-a",
+        },
+    )
+    next_step = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={
+            "targetType": "lab",
+            "targetName": "振动一室",
+            "experimentCode": "SYLU-2026-03-102-B",
+            "scheduleId": "schedule-102-b",
+        },
+    )
+
+    assert later.status_code == 409
+    assert "下一实验" in later.json()["detail"]
+    assert next_step.status_code == 200
 
 
 def test_transfer_area_dispatch_to_staging_updates_tray_samples_and_history(monkeypatch):
@@ -1281,7 +1318,7 @@ def test_transfer_area_dispatch_to_lab_updates_tray_samples_and_history(monkeypa
 
     response = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
-        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
 
     assert response.status_code == 200
@@ -1338,7 +1375,7 @@ def test_transfer_area_rejects_dispatch_when_tray_is_no_longer_in_handover(monke
     lookup = client.get(f"/api/transfer-area/trays/{tray_code}/dispatch")
     response = client.post(
         f"/api/transfer-area/trays/{tray_code}/dispatch",
-        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
 
     assert lookup.status_code == 400
@@ -1373,7 +1410,7 @@ def test_transfer_area_dispatch_to_salt_lab_goes_directly_to_lab_without_forced_
 
     response = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
-        json={"targetType": "lab", "targetName": "盐雾试验室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "盐雾试验室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
 
     assert response.status_code == 200
@@ -1419,7 +1456,7 @@ def test_transfer_area_rejects_pre_experiment_appearance_dispatch_from_handover(
 
     response = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
-        json={"targetType": "lab", "targetName": "盐雾试验室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "盐雾试验室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
 
     assert response.status_code == 400
@@ -1578,7 +1615,7 @@ def test_transfer_area_dispatch_to_lab_clears_stale_fixture_ready(monkeypatch):
 
     response = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
-        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
 
     assert response.status_code == 400
@@ -1609,7 +1646,7 @@ def test_transfer_area_dispatch_to_lab_rejects_maintenance_device(monkeypatch):
 
     response = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
-        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
 
     assert response.status_code == 400
@@ -1647,7 +1684,7 @@ def test_transfer_area_dispatch_to_lab_allows_device_after_planned_maintenance_e
 
     response = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
-        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
 
     assert response.status_code == 200
@@ -1683,7 +1720,7 @@ def test_transfer_area_dispatch_to_lab_rejects_open_ended_maintenance_after_star
 
     response = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
-        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
 
     assert response.status_code == 400
@@ -1707,7 +1744,7 @@ def test_transfer_area_withdraw_handover_dispatch_restores_tray_to_arrived(monke
     )
     dispatched = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
-        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
     assert dispatched.status_code == 200
 
@@ -1746,7 +1783,7 @@ def test_transfer_area_withdraw_lookup_allows_dispatched_tray_outside_handover(m
     )
     dispatched = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
-        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
     assert dispatched.status_code == 200
 
@@ -2303,7 +2340,7 @@ def test_transfer_area_rejects_arrived_staging_tray_dispatch_from_handover(monke
 
     response = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
-        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
 
     assert response.status_code == 400
@@ -2347,7 +2384,7 @@ def test_transfer_area_rejects_completed_experiment_tray_dispatch_from_handover(
 
     response = client.post(
         "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
-        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B"},
+        json={"targetType": "lab", "targetName": "振动一室", "experimentCode": "SYLU-2026-03-102-B", "scheduleId": "schedule-102-b"},
     )
 
     assert response.status_code == 400

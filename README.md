@@ -341,12 +341,12 @@ python scripts\init_mysql_storage.py --seed-demo
 - `scripts\init_mysql_storage.py` 会先创建数据库，再通过 `schema_migrations` 只应用尚未执行的 MES 基线、`app_storage_snapshot` 和结构对齐版本；全新空数据库无需预置业务表
 - 已执行版本会保存 SHA-256 校验值；历史 SQL 被修改、上次迁移失败或无法取得数据库迁移锁时，脚本会停止而不是继续修改结构
 - 所有 SQL 应用完成后，脚本会按版本化 Schema 合约校验 39 张表、509 个字段、149 个索引、38 个外键以及引擎、字符集和默认值；结构漂移时最终迁移不会记录为成功
-- V004 已将原先业务请求期间的自动建表、补字段和补索引迁入版本 SQL，V005 对齐历史终端表字符集，V006 增加长期运行查询索引，V007 增加小批量事件留存清理索引；运行期不再自动执行 DDL
-- 已有数据库尚无 `schema_migrations` 时，非生产环境会只读校验完整结构合约，结构完整才允许临时兼容；生产环境必须存在成功的 V007 记录
+- V004 已将原先业务请求期间的自动建表、补字段和补索引迁入版本 SQL，V005 对齐历史终端表字符集，V006 增加长期运行查询索引，V007 增加小批量事件留存清理索引，V008 增加夹具安装待确认记录的排程身份；运行期不再自动执行 DDL
+- 已有数据库尚无 `schema_migrations` 时，非生产环境会只读校验完整结构合约，结构完整才允许临时兼容；生产环境必须存在成功的 V008 记录
 - 正式部署应配置独立的 `MYSQL_MIGRATION_USER` / `MYSQL_MIGRATION_PASSWORD` 运行初始化脚本；FastAPI 使用 `MYSQL_USER` / `MYSQL_PASSWORD`，仅授予 `SELECT`、`INSERT`、`UPDATE`、`DELETE`
-- `APP_ENV=prod` 时迁移账号必须与 API 账号不同，且数据库必须由 DBA 预先创建；API 启动前会只读校验 V007 和完整物理结构
+- `APP_ENV=prod` 时迁移账号必须与 API 账号不同，且数据库必须由 DBA 预先创建；API 启动前会只读校验 V008 和完整物理结构
 - `/health/live` 只表示进程存活；`/health/ready` 会检查数据库版本、完整结构合约和已启用的 RabbitMQ 连接
-- 升级已有环境仍应先备份并执行 `python scripts\init_mysql_storage.py`，尽快把只读兼容状态转为正式 V007 记录；旧库结构不完整或发生漂移时新版服务会拒绝访问
+- 升级已有环境仍应先备份并执行 `python scripts\init_mysql_storage.py`，尽快把只读兼容状态转为正式 V008 记录；旧库结构不完整或发生漂移时新版服务会拒绝访问
 - 后端运行期只支持 MySQL 存储，不再支持 `STORAGE_BACKEND=json`
 - `init_mysql_storage.py` 不会隐式从其他持久化介质导入业务数据
 

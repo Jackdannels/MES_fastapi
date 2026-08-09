@@ -4,13 +4,9 @@ from copy import deepcopy
 from typing import Any
 
 from app.core.storage_backend import apply_terminal_experiments_for_returned_trays
-from app.services.storage_schedule_patch import (
-    schedule_device,
-    schedule_experiment_code,
-    schedule_is_completed,
-    schedule_lab_code,
-    schedule_lab_id,
-    schedule_task_code,
+from app.services.experiment_schedule_sequence import (
+    ExperimentScheduleSequenceError,
+    assert_expected_next_scheduled_step,
 )
 
 
@@ -67,33 +63,6 @@ def normalize_text(value: Any) -> str:
 
 def as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
-
-
-def staging_dispatch_has_schedule(
-    schedules: Any,
-    *,
-    task_code: str,
-    experiment_code: str,
-    target_lab: str,
-    target_lab_code: str,
-    target_lab_id: Any,
-) -> bool:
-    normalized_lab_id = normalize_text(target_lab_id)
-    for schedule in as_list(schedules):
-        if (
-            not isinstance(schedule, dict)
-            or schedule_task_code(schedule) != task_code
-            or schedule_experiment_code(schedule) != experiment_code
-            or schedule_is_completed(schedule)
-        ):
-            continue
-        if normalized_lab_id and schedule_lab_id(schedule) == normalized_lab_id:
-            return True
-        if target_lab_code and schedule_lab_code(schedule) == target_lab_code:
-            return True
-        if target_lab and schedule_device(schedule) == target_lab:
-            return True
-    return False
 
 
 def room_config(room: str) -> dict[str, Any]:
@@ -235,6 +204,9 @@ def update_tray_samples(
     status: str,
     target_experiment_code: str = "",
     target_experiment_name: str = "",
+    target_schedule_id: str = "",
+    target_sub_experiment_code: str = "",
+    target_axis_batch_no: Any = "",
     target_lab: str = "",
     target_lab_code: str = "",
     target_lab_id: Any = "",
@@ -267,6 +239,18 @@ def update_tray_samples(
                     next_tray["target_experiment_code"] = target_experiment_code
                 if target_experiment_name:
                     next_tray["target_experiment_name"] = target_experiment_name
+                if target_schedule_id:
+                    next_tray["target_schedule_id"] = target_schedule_id
+                if target_sub_experiment_code:
+                    next_tray["target_sub_experiment_code"] = target_sub_experiment_code
+                else:
+                    next_tray.pop("target_sub_experiment_code", None)
+                    next_tray.pop("targetSubExperimentCode", None)
+                if target_axis_batch_no not in ("", None):
+                    next_tray["target_axis_batch_no"] = target_axis_batch_no
+                else:
+                    next_tray.pop("target_axis_batch_no", None)
+                    next_tray.pop("targetAxisBatchNo", None)
                 if target_type:
                     next_tray["target_type"] = target_type
             next_trays.append(next_tray)
@@ -332,25 +316,40 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
     target_lab_id = payload.get("targetLabId") if "targetLabId" in payload else payload.get("target_lab_id", "")
     target_experiment_code = normalize_text(payload.get("targetExperimentCode") or payload.get("target_experiment_code"))
     target_experiment_name = normalize_text(payload.get("targetExperimentName") or payload.get("target_experiment_name"))
+    target_schedule_id = normalize_text(payload.get("scheduleId") or payload.get("schedule_id") or payload.get("targetScheduleId") or payload.get("target_schedule_id"))
+    target_sub_experiment_code = normalize_text(payload.get("subExperimentCode") or payload.get("sub_experiment_code") or payload.get("targetSubExperimentCode") or payload.get("target_sub_experiment_code"))
+    target_axis_batch_no = payload.get("axisBatchNo") if "axisBatchNo" in payload else payload.get("axis_batch_no", payload.get("target_axis_batch_no", ""))
     target_type = normalize_text(payload.get("targetType") or payload.get("target_type")) or "lab"
     if not target_lab and not target_lab_code:
         raise StorageTrayActionError("请选择目标实验室后再出库。", status_code=400)
 
     normalized_tray_code = normalize_text(tray_code)
     task_code = primary_task_code(matches)
-    if (
-        config["event_room"] == STAGING_ROOM
-        and target_type == "lab"
-        and not staging_dispatch_has_schedule(
-            snapshot.get("mes.schedules"),
-            task_code=task_code,
-            experiment_code=target_experiment_code,
-            target_lab=target_lab,
-            target_lab_code=target_lab_code,
-            target_lab_id=target_lab_id,
-        )
-    ):
-        raise StorageTrayActionError("目标实验室没有当前有效排程。")
+    if target_type == "lab":
+        if not target_schedule_id:
+            raise StorageTrayActionError("出库请求缺少当前排程标识，请刷新后重试。", status_code=409)
+        try:
+            next_step = assert_expected_next_scheduled_step(
+                snapshot,
+                task_code=task_code,
+                tray_code=normalized_tray_code,
+                schedule_id=target_schedule_id,
+                experiment_code=target_experiment_code,
+                sub_experiment_code=target_sub_experiment_code,
+                axis_batch_no=target_axis_batch_no,
+                lab_id=target_lab_id,
+                lab_code=target_lab_code,
+                lab_name=target_lab,
+            )
+        except ExperimentScheduleSequenceError as exc:
+            raise StorageTrayActionError(str(exc), status_code=409) from exc
+        target_schedule_id = next_step["schedule_id"]
+        target_experiment_code = next_step["experiment_code"]
+        target_sub_experiment_code = next_step["sub_experiment_code"]
+        target_axis_batch_no = next_step["axis_batch_no"]
+        target_lab = next_step["lab_name"]
+        target_lab_code = next_step["lab_code"]
+        target_lab_id = next_step["lab_id"]
     appearance_metadata: dict[str, Any] = {}
     if config["event_room"] == APPEARANCE_ROOM:
         phase = appearance_phase(current_status)
@@ -370,6 +369,9 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
         status=status,
         target_experiment_code=target_experiment_code,
         target_experiment_name=target_experiment_name,
+        target_schedule_id=target_schedule_id,
+        target_sub_experiment_code=target_sub_experiment_code,
+        target_axis_batch_no=target_axis_batch_no,
         target_lab=target_lab,
         target_lab_code=target_lab_code,
         target_lab_id=target_lab_id,
@@ -387,6 +389,9 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
             "operator": owner,
             "target_experiment_code": target_experiment_code,
             "target_experiment_name": target_experiment_name,
+            "target_schedule_id": target_schedule_id,
+            "target_sub_experiment_code": target_sub_experiment_code,
+            "target_axis_batch_no": target_axis_batch_no,
             "target_lab": target_lab,
             "target_lab_code": target_lab_code,
             "target_lab_id": target_lab_id,

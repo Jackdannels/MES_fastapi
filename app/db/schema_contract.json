@@ -1,5 +1,5 @@
 {
-  "contract_version": "V007",
+  "contract_version": "V008",
   "index_sources": [
     {
       "source": "scripts/sql/V006__long_running_query_indexes.sql",
@@ -8,6 +8,10 @@
     {
       "source": "scripts/sql/V007__bounded_event_retention_indexes.sql",
       "source_sha256": "d64a0daa3968a5f89b8963ffda2453746da84152132a4588fcde9b6f310f80f1"
+    },
+    {
+      "source": "scripts/sql/V008__fixture_install_schedule_identity.sql",
+      "source_sha256": "3876e87555129297ed4ee3f36128e2161ddd37b26d974237005dc3af39bd7414"
     }
   ],
   "source": "scripts/sql/0001-complete-baseline-schema.sql",
@@ -1685,6 +1689,14 @@
           "nullable": false,
           "type": "datetime"
         },
+        "schedule_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
         "status": {
           "auto_increment": false,
           "charset": "utf8mb4",
@@ -1692,6 +1704,14 @@
           "default": "PENDING",
           "nullable": false,
           "type": "varchar(20)"
+        },
+        "sub_experiment_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(80)"
         },
         "task_no": {
           "auto_increment": false,
@@ -1755,6 +1775,19 @@
             "requested_at"
           ],
           "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_fixture_install_pending_task_tray_status": {
+          "columns": [
+            "task_no",
+            "tray_no",
+            "status"
+          ],
+          "sub_parts": [
+            null,
             null,
             null
           ],

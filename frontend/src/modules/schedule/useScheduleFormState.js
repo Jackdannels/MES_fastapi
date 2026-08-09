@@ -219,7 +219,11 @@ function useScheduleFormState({
   const maintenanceLabNotice = computed(() => buildMaintenanceLabNotice(manualLabOptionItems.value));
   const manualTimeSlotOptions = computed(() => buildManualTimeSlotOptions({
     device: scheduleForm.value.device,
+    labCode: scheduleForm.value.lab_code,
+    labId: scheduleForm.value.lab_id,
     now: now.value,
+    plannedDuration: scheduleForm.value.planned_hours,
+    plannedDurationUnit: scheduleForm.value.planned_duration_unit,
     scheduleDate: scheduleForm.value.schedule_date,
     schedules: activeSchedules.value,
   }));
@@ -288,7 +292,7 @@ function useScheduleFormState({
   );
   const normalizeHourDurationValue = (value) => Math.min(
     PLANNED_DURATION_MAX_HOURS,
-    Math.max(0.5, Math.round(value * 2) / 2),
+    Math.max(0.1, Math.round(value * 10) / 10),
   );
   const clampFormDurationValue = (form) => {
     const unit = normalizeText(form?.planned_duration_unit) || "hours";
@@ -306,7 +310,7 @@ function useScheduleFormState({
     }
     const currentValue = normalizeDurationValue(
       form?.planned_hours,
-      currentUnit === "days" ? 0.5 : 3.5,
+      currentUnit === "days" ? 0.5 : 1,
       currentUnit,
     );
     form.planned_duration_unit = nextUnit;

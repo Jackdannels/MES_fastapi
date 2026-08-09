@@ -45,6 +45,23 @@ describe("AppNumberInput", () => {
     expect(wrapper.emitted("update:modelValue")).toEqual([["1"]]);
   });
 
+  test("supports different increment and decrement steps", async () => {
+    const wrapper = mount(AppNumberInput, {
+      props: {
+        modelValue: "0.5",
+        min: 0.1,
+        step: 0.1,
+        stepDown: 0.1,
+        stepUp: 0.5,
+      },
+    });
+
+    await wrapper.get('[data-testid="number-step-down"]').trigger("click");
+    await wrapper.get('[data-testid="number-step-up"]').trigger("click");
+
+    expect(wrapper.emitted("update:modelValue")).toEqual([["0.4"], ["1"]]);
+  });
+
   test("places touch controls on both sides of the field in horizontal mode", async () => {
     const wrapper = mount(AppNumberInput, {
       props: {

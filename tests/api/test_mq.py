@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 import pytest
 from datetime import datetime, timezone
@@ -11,6 +11,7 @@ from app.services import mq_publisher
 from app.services import mq_runtime
 from app.services import mq_subscriber
 from app.services import fixture_installations
+from app.services.experiment_schedule_sequence import ExperimentScheduleSequenceError
 from app.services.attendance_service import AttendanceService, InMemoryAttendanceRepository, set_attendance_service_for_tests
 from app.services.mq_event_processor import (
     MySQLMqEventRepository,
@@ -49,6 +50,7 @@ def build_client(monkeypatch):
         return {"published": False, "reason": "disabled"}
 
     monkeypatch.setattr(mq_route, "publish_laboratory_command", fake_publish)
+    monkeypatch.setattr(mq_route, "assert_mq_next_schedule", lambda **_kwargs: {})
     app = FastAPI()
     app.state.settings = Settings(_env_file=None, APP_ENV="test", MQTT_HTTP_EVENT_INGRESS_ENABLED=True)
     app.include_router(mq_route.router)
@@ -114,6 +116,8 @@ def test_fixture_install_endpoint_registers_install_id_and_trays_before_publishi
             "task_code": "SYLU-2026-07-003",
             "lab_code": "LAB_VIBRATION_1",
             "experiment_code": "SYLU-2026-07-003-C",
+            "schedule_id": "schedule-vibration-001",
+            "sub_experiment_code": "SYLU-2026-07-003-C-AXIS-001",
             "sample_count": 12,
             "fixture_install_id": "fixture-install-20260715-001",
             "tray_codes": ["SYLU-2026-07-003-TP-001"],
@@ -126,6 +130,8 @@ def test_fixture_install_endpoint_registers_install_id_and_trays_before_publishi
             "fixture_install_id": "fixture-install-20260715-001",
             "task_code": "SYLU-2026-07-003",
             "experiment_code": "SYLU-2026-07-003-C",
+            "schedule_id": "schedule-vibration-001",
+            "sub_experiment_code": "SYLU-2026-07-003-C-AXIS-001",
             "lab_code": "LAB_VIBRATION_1",
             "tray_codes": ["SYLU-2026-07-003-TP-001"],
         }
@@ -134,6 +140,8 @@ def test_fixture_install_endpoint_registers_install_id_and_trays_before_publishi
         "task_code": "SYLU-2026-07-003",
         "lab_code": "LAB_VIBRATION_1",
         "experiment_code": "SYLU-2026-07-003-C",
+        "schedule_id": "schedule-vibration-001",
+        "sub_experiment_code": "SYLU-2026-07-003-C-AXIS-001",
         "sample_type": "",
         "sample_count": 12,
         "fixture_install_id": "fixture-install-20260715-001",
@@ -159,6 +167,8 @@ def test_find_fixture_installation_accepts_mysql_tuple_rows(monkeypatch):
                     "SYLU-2026-08-001-TP-001",
                     "SYLU-2026-08-001",
                     "SYLU-2026-08-001-A",
+                    "schedule-impact-001",
+                    "SYLU-2026-08-001-A-AXIS-001",
                     "LAB_IMPACT_1",
                     "PENDING",
                 )
@@ -180,10 +190,174 @@ def test_find_fixture_installation_accepts_mysql_tuple_rows(monkeypatch):
         "fixture_install_id": "fixture-install-current",
         "task_code": "SYLU-2026-08-001",
         "experiment_code": "SYLU-2026-08-001-A",
+        "schedule_id": "schedule-impact-001",
+        "sub_experiment_code": "SYLU-2026-08-001-A-AXIS-001",
         "lab_code": "LAB_IMPACT_1",
         "status": "PENDING",
         "tray_codes": ["SYLU-2026-08-001-TP-001"],
     }
+
+
+def _fixture_callback_snapshot(*, second_schedule_first: bool = False) -> dict:
+    first_start = "2026-08-01 10:00:00" if second_schedule_first else "2026-08-01 09:00:00"
+    second_start = "2026-08-01 09:00:00" if second_schedule_first else "2026-08-01 10:00:00"
+    return {
+        "tasks": [],
+        "samples": [
+            {
+                "code": "SAMPLE-1",
+                "task_code": "TASK-1",
+                "status": "工装夹具安装",
+                "flow_status": "工装夹具安装",
+                "location": "冲击一室",
+                "trays": [
+                    {
+                        "tray_code": "TRAY-1",
+                        "status": "工装夹具安装",
+                        "target_experiment_code": "EXP-1",
+                    }
+                ],
+            }
+        ],
+        "schedules": [
+            {
+                "id": "SCH-A",
+                "task_code": "TASK-1",
+                "experiment_code": "EXP-1",
+                "sub_experiment_code": "SUB-A",
+                "device": "冲击一室",
+                "lab_code": "LAB_IMPACT_1",
+                "start_at": first_start,
+            },
+            {
+                "id": "SCH-B",
+                "task_code": "TASK-1",
+                "experiment_code": "EXP-1",
+                "sub_experiment_code": "SUB-B",
+                "device": "冲击一室",
+                "lab_code": "LAB_IMPACT_1",
+                "start_at": second_start,
+            },
+        ],
+        "experiments": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-1", "experiment_name": "冲击试验"}
+        ],
+        "experiment_runs": [],
+        "experiment_run_trays": [],
+        "experiment_trays": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-1", "tray_code": "TRAY-1"}
+        ],
+        "experiment_samples": [
+            {"task_code": "TASK-1", "experiment_code": "EXP-1", "sample_code": "SAMPLE-1"}
+        ],
+        "staging_events": [],
+    }
+
+
+def _apply_fixture_callback(monkeypatch, snapshot: dict, *, schedule_id: str, sub_experiment_code: str):
+    monkeypatch.setattr(fixture_installations, "get_storage_backend", lambda: object())
+    monkeypatch.setattr(
+        fixture_installations,
+        "run_atomic_laboratory_operation",
+        lambda *, operation, **_kwargs: operation(snapshot),
+    )
+    return fixture_installations.apply_pending_fixture_ready(
+        {
+            "fixture_install_id": "fixture-exact",
+            "task_code": "TASK-1",
+            "experiment_code": "EXP-1",
+            "schedule_id": schedule_id,
+            "sub_experiment_code": sub_experiment_code,
+            "lab_code": "LAB_IMPACT_1",
+            "status": "PENDING",
+            "tray_codes": ["TRAY-1"],
+        },
+        "2026-08-01 09:30:00",
+    )
+
+
+def test_fixture_ready_callback_applies_only_its_exact_pending_schedule(monkeypatch):
+    result = _apply_fixture_callback(
+        monkeypatch,
+        _fixture_callback_snapshot(),
+        schedule_id="SCH-A",
+        sub_experiment_code="SUB-A",
+    )
+
+    tray = result["samples"][0]["trays"][0]
+    assert tray["fixture_ready"] is True
+    assert tray["fixtureReady"] is True
+
+
+def test_fixture_ready_callback_rejects_stale_identity_after_same_lab_schedule_reorder(monkeypatch):
+    with pytest.raises(ExperimentScheduleSequenceError, match="必须先执行排程 SCH-B"):
+        _apply_fixture_callback(
+            monkeypatch,
+            _fixture_callback_snapshot(second_schedule_first=True),
+            schedule_id="SCH-A",
+            sub_experiment_code="SUB-A",
+        )
+
+
+def test_register_fixture_install_supersedes_active_rows_by_task_and_tray_across_contexts(monkeypatch):
+    calls = []
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, statement, params=None):
+            calls.append(("execute", statement, params))
+
+        def executemany(self, statement, rows):
+            calls.append(("executemany", statement, list(rows)))
+
+    class FakeConnection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            calls.append(("commit",))
+
+    monkeypatch.setattr(fixture_installations, "get_connection", lambda: FakeConnection())
+
+    fixture_installations.register_pending_fixture_installation(
+        fixture_install_id="fixture-new",
+        task_code="TASK-1",
+        experiment_code="EXP-NEW",
+        schedule_id="SCH-NEW",
+        sub_experiment_code="SUB-NEW",
+        lab_code="LAB-NEW",
+        tray_codes=["TRAY-1"],
+    )
+
+    supersede_sql, supersede_params = calls[0][1], calls[0][2]
+    assert "WHERE task_no = %s" in supersede_sql
+    assert "AND tray_no IN (%s)" in supersede_sql
+    assert "experiment_no = %s" not in supersede_sql
+    assert "lab_code = %s" not in supersede_sql
+    assert supersede_params == ("TASK-1", "TRAY-1")
+    assert calls[1][2] == [
+        (
+            "fixture-new",
+            "TRAY-1",
+            "TASK-1",
+            "EXP-NEW",
+            "SCH-NEW",
+            "SUB-NEW",
+            "LAB-NEW",
+            "PENDING",
+        )
+    ]
 
 
 def test_fixture_install_endpoint_rejects_sample_count_above_task_limit(monkeypatch):
@@ -279,6 +453,81 @@ def test_ready_endpoint_preserves_schedule_and_axis_context(monkeypatch):
         "current_axis_code": "x+",
         "sub_experiment_code": "SYLU-2026-06-021-A-AXIS-X",
     }
+
+
+def test_mq_initial_commands_validate_and_preserve_schedule_identity(monkeypatch):
+    client, published = build_client(monkeypatch)
+    validations = []
+    monkeypatch.setattr(mq_route, "assert_mq_next_schedule", lambda **kwargs: validations.append(kwargs) or {})
+    monkeypatch.setattr(mq_route, "register_pending_fixture_installation", lambda **_kwargs: None)
+    monkeypatch.setattr(mq_route, "mark_fixture_installation_failed", lambda _fixture_install_id: None)
+
+    fixture_response = client.post(
+        "/api/mq/laboratory/fixture-install",
+        json={
+            "task_code": "TASK-SEQUENCE",
+            "lab_code": "LAB_VIBRATION_1",
+            "experiment_code": "EXP-B",
+            "subExperimentCode": "EXP-B-SEGMENT",
+            "scheduleId": "SCH-B",
+            "sample_count": 1,
+            "fixture_install_id": "fixture-sequence",
+            "tray_codes": ["TRAY-1"],
+        },
+    )
+    ready_response = client.post(
+        "/api/mq/laboratory/ready",
+        json={
+            "task_code": "TASK-SEQUENCE",
+            "lab_code": "LAB_VIBRATION_1",
+            "experiment_code": "EXP-B",
+            "subExperimentCode": "EXP-B-SEGMENT",
+            "scheduleId": "SCH-B",
+            "trayCodes": ["TRAY-1"],
+        },
+    )
+
+    assert fixture_response.status_code == 200
+    assert ready_response.status_code == 200
+    assert validations[0] == {
+        "task_code": "TASK-SEQUENCE",
+        "tray_codes": ["TRAY-1"],
+        "schedule_id": "SCH-B",
+        "experiment_code": "EXP-B",
+        "sub_experiment_code": "EXP-B-SEGMENT",
+        "lab_code": "LAB_VIBRATION_1",
+    }
+    assert validations[1] == {
+        **validations[0],
+        "axis_batch_no": "",
+        "axis_codes": [],
+    }
+    assert published[0]["payload"]["schedule_id"] == "SCH-B"
+    assert published[0]["payload"]["sub_experiment_code"] == "EXP-B-SEGMENT"
+    assert published[1]["payload"]["schedule_id"] == "SCH-B"
+
+
+def test_mq_initial_command_rejects_out_of_order_schedule_before_publish(monkeypatch):
+    client, published = build_client(monkeypatch)
+
+    def reject_sequence(**_kwargs):
+        raise HTTPException(status_code=409, detail="当前托盘必须先执行排程 SCH-A")
+
+    monkeypatch.setattr(mq_route, "assert_mq_next_schedule", reject_sequence)
+    response = client.post(
+        "/api/mq/laboratory/ready",
+        json={
+            "task_code": "TASK-SEQUENCE",
+            "lab_code": "LAB_VIBRATION_1",
+            "experiment_code": "EXP-B",
+            "scheduleId": "SCH-B",
+            "trayCodes": ["TRAY-1"],
+        },
+    )
+
+    assert response.status_code == 409
+    assert "SCH-A" in response.json()["detail"]
+    assert published == []
 
 
 def test_ready_endpoint_allows_hot_humid_laboratory_two(monkeypatch):
@@ -1360,6 +1609,8 @@ def test_process_fixture_ready_marks_only_the_matching_pending_installation(monk
         "fixture_install_id": "fixture-install-new",
         "task_code": "SYLU-2026-07-003",
         "experiment_code": "SYLU-2026-07-003-C",
+        "schedule_id": "schedule-vibration-001",
+        "sub_experiment_code": "SYLU-2026-07-003-C-AXIS-001",
         "lab_code": "LAB_VIBRATION_1",
         "status": "PENDING",
         "tray_codes": ["SYLU-2026-07-003-TP-001"],
@@ -1859,8 +2110,9 @@ def test_mysql_start_run_for_context_uses_shared_start_rules(monkeypatch):
                     {
                         "id": "schedule-salt",
                         "task_code": "TASK-001",
-                        "experiment_code": "EXP-001",
-                        "device": "盐雾试验室",
+                            "experiment_code": "EXP-001",
+                            "sub_experiment_code": "EXP-001-AXIS-X",
+                            "device": "盐雾试验室",
                         "status": "实验准备就绪",
                     }
                 ],
