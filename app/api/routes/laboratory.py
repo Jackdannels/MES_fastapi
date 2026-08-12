@@ -40,6 +40,7 @@ from app.services.laboratory_operations import (
     write_laboratory_updates,
 )
 from app.services.laboratory_start import start_storage_laboratory_experiment
+from app.services.schedule_cascade_runtime import apply_run_schedule_cascade, run_forecast_end_at
 from app.services.test_data_reports import archive_completion_reports
 from app.services.laboratory_withdrawal import (
     COMPLETED_EXPERIMENT_STATUSES,
@@ -250,6 +251,40 @@ def write_start_snapshot(
         task_codes={task_code} if normalize_text(task_code) else None,
     )
     publish_storage_update(list(LABORATORY_START_STORAGE_UPDATE_KEYS))
+
+
+def apply_result_schedule_cascade(
+    result: dict[str, Any],
+    *,
+    run_no: str,
+    new_end_at: str = "",
+    reason: str,
+) -> dict[str, Any]:
+    normalized_run_no = normalize_text(run_no)
+    run = next(
+        (
+            item
+            for item in as_list(result.get("experimentRuns"))
+            if normalize_text(item.get("run_no") or item.get("runNo") or item.get("id")) == normalized_run_no
+        ),
+        None,
+    )
+    if run is None:
+        return {"changed": False, "skipped_reason": "run_not_found"}
+    boundary = normalize_text(new_end_at) or run_forecast_end_at(run)
+    try:
+        cascade = apply_run_schedule_cascade(
+            get_storage_backend(),
+            run,
+            new_end_at=boundary,
+            reason=reason,
+        )
+    except Exception as exc:
+        logger.exception("Failed to cascade schedules for run=%s", normalized_run_no)
+        return {"changed": False, "error": str(exc)}
+    if cascade.get("changed"):
+        publish_storage_update(["mes.schedules", "mes.conflicts"])
+    return cascade
 
 
 def find_task(snapshot: dict[str, list[dict[str, Any]]], task_code: str) -> dict[str, Any]:
@@ -868,6 +903,11 @@ def start_current_experiment(
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             write_start_snapshot(snapshot, result, normalized_task_code)
+            schedule_cascade = apply_result_schedule_cascade(
+                result,
+                run_no=request.run_no,
+                reason="实验实际开始时间变化",
+            )
             attendance_service = get_attendance_service()
             attendance_service.start_work_interval(
                 lab_code=request.lab_code,
@@ -882,6 +922,7 @@ def start_current_experiment(
                 "attendanceSession": attendance_service.read_lab_session(lab_name),
                 "ok": True,
                 "message": f"{normalized_task_code} / {current_experiment_name} 已开始",
+                "scheduleCascade": schedule_cascade,
                 **result,
             }
 
@@ -934,6 +975,12 @@ def complete_current_experiment(
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             write_completion_snapshot(result, normalized_task_code)
+            schedule_cascade = apply_result_schedule_cascade(
+                result,
+                run_no=request.run_no,
+                new_end_at=completed_at,
+                reason="实验实际结束时间变化",
+            )
             if should_finish_work_interval_for_completion(axis_code=request.axis_code, next_axis_code=request.next_axis_code):
                 get_attendance_service().finish_work_interval(
                     run_no=request.run_no,
@@ -970,6 +1017,7 @@ def complete_current_experiment(
         return {
             "ok": True,
             "message": f"{normalized_task_code} / {current_experiment_name} 已完成",
+            "scheduleCascade": schedule_cascade,
             **result,
             "reportArchive": report_archive,
         }

@@ -295,7 +295,7 @@ describe("useSchedulePage", () => {
         custom_start: "",
         device: "",
         experiment_code: "SYLU-2026-03-006-C",
-        planned_hours: 3.5,
+        planned_hours: 1,
         schedule_date: "2099-03-19",
         task_code: "SYLU-2026-03-006",
         time_slot: "morning",

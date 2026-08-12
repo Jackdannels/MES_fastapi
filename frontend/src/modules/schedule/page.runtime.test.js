@@ -289,6 +289,42 @@ describe("SchedulePage runtime", () => {
     wrapper.unmount();
   });
 
+  test("shows effective schedule times with automatic-delay audit context", async () => {
+    setStorage(TASKS_KEY, [
+      { id: "task-delayed", code: "TASK-DELAYED", name: "顺延任务", test_type: "盐雾试验", status: STATUS_WAITING },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(EXPERIMENTS_KEY, [
+      { task_code: "TASK-DELAYED", experiment_code: "TASK-DELAYED-A", experiment_name: "盐雾试验" },
+    ]);
+    setStorage(SCHEDULES_KEY, [{
+      id: "schedule-delayed",
+      task_code: "TASK-DELAYED",
+      experiment_code: "TASK-DELAYED-A",
+      device: PRIMARY_LAB,
+      start_at: "2099-03-20T03:30:00",
+      end_at: "2099-03-20T04:30:00",
+      original_start_at: "2099-03-20T02:40:00",
+      original_end_at: "2099-03-20T03:40:00",
+      delay_minutes: 50,
+      delay_reason: "前序实验超时",
+      delay_source_run_no: "run-delayed-001",
+      status: STATUS_SCHEDULED,
+    }]);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    const delayMeta = wrapper.get('[data-testid="schedule-delay-schedule-delayed"]');
+    expect(delayMeta.text()).toContain("自动顺延 50 分钟");
+    expect(delayMeta.text()).toContain("原 2099-03-20 02:40");
+    expect(delayMeta.attributes("title")).toContain("原因：前序实验超时");
+    expect(delayMeta.attributes("title")).toContain("来源运行：run-delayed-001");
+    expect(wrapper.get("#schedule-table").text()).toContain("2099-03-20 04:30");
+    expect(wrapper.get("#schedule-table").text()).toContain("原 2099-03-20 03:40");
+    wrapper.unmount();
+  });
+
   test("shows a warning and keeps storage unchanged when deleting a running schedule from task detail", async () => {
     const today = buildDateParts(0);
     setStorage(TASKS_KEY, [

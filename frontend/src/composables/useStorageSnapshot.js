@@ -11,6 +11,7 @@ import { reconcileScheduleExceptions } from "@/lib/scheduleExceptions";
 const RECONCILIATION_KEYS = [
   STORAGE_KEYS.conflicts,
   STORAGE_KEYS.experiments,
+  STORAGE_KEYS.experiment_runs,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.samples,
   STORAGE_KEYS.schedules,

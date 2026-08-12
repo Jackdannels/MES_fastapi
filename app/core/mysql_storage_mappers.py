@@ -36,6 +36,17 @@ from app.core.mysql_storage_codecs import (
 
 APPEARANCE_INSPECTION_LOCATION = "外观检测间"
 PRE_EXPERIMENT_APPEARANCE_STATUS = "实验前外观检测间存放"
+SCHEDULE_DELAY_REMARK_PREFIX = "MES_SCHEDULE_DELAY_V1:"
+SCHEDULE_DELAY_REASON_MAX_LENGTH = 120
+SCHEDULE_DELAY_SOURCE_RUN_MAX_LENGTH = 80
+SCHEDULE_DELAY_USER_REMARK_MAX_LENGTH = 160
+SCHEDULE_DELAY_FIELDS = (
+    "original_start_at",
+    "original_end_at",
+    "delay_minutes",
+    "delay_reason",
+    "source_run_no",
+)
 
 
 def _normalize_axis_codes(value: Any) -> list[str]:
@@ -382,6 +393,49 @@ def build_experiment_run_tray_insert_rows(run: Dict[str, Any]) -> list[Dict[str,
     return []
 
 
+def _decode_schedule_delay_remark(value: Any) -> tuple[str, dict[str, Any]]:
+    text = normalize_text(value)
+    if not text.startswith(SCHEDULE_DELAY_REMARK_PREFIX):
+        return text, {}
+    try:
+        payload = json.loads(text[len(SCHEDULE_DELAY_REMARK_PREFIX) :])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return text, {}
+    if not isinstance(payload, dict):
+        return text, {}
+    user_remark = normalize_text(payload.get("user_remark"))[:SCHEDULE_DELAY_USER_REMARK_MAX_LENGTH]
+    metadata = {
+        "original_start_at": normalize_text(payload.get("original_start_at")),
+        "original_end_at": normalize_text(payload.get("original_end_at")),
+        "delay_minutes": parse_int_value(payload.get("delay_minutes")),
+        "delay_reason": normalize_text(payload.get("reason"))[:SCHEDULE_DELAY_REASON_MAX_LENGTH],
+        "source_run_no": normalize_text(payload.get("source_run_no"))[:SCHEDULE_DELAY_SOURCE_RUN_MAX_LENGTH],
+    }
+    return user_remark, metadata
+
+
+def _encode_schedule_delay_remark(schedule: Dict[str, Any]) -> str:
+    user_remark, existing_metadata = _decode_schedule_delay_remark(schedule.get("remark"))
+    metadata = {
+        field: schedule.get(field) if schedule.get(field) not in (None, "") else existing_metadata.get(field)
+        for field in SCHEDULE_DELAY_FIELDS
+    }
+    original_start_at = format_iso_storage_datetime(metadata.get("original_start_at"))
+    original_end_at = format_iso_storage_datetime(metadata.get("original_end_at"))
+    if not original_start_at or not original_end_at:
+        return user_remark
+    payload: dict[str, Any] = {
+        "original_start_at": original_start_at,
+        "original_end_at": original_end_at,
+        "delay_minutes": parse_int_value(metadata.get("delay_minutes")),
+        "reason": normalize_text(metadata.get("delay_reason"))[:SCHEDULE_DELAY_REASON_MAX_LENGTH],
+        "source_run_no": normalize_text(metadata.get("source_run_no"))[:SCHEDULE_DELAY_SOURCE_RUN_MAX_LENGTH],
+    }
+    if user_remark:
+        payload["user_remark"] = user_remark[:SCHEDULE_DELAY_USER_REMARK_MAX_LENGTH]
+    return SCHEDULE_DELAY_REMARK_PREFIX + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
 def build_schedule_insert_row(schedule: Dict[str, Any]) -> Dict[str, Any]:
     device = normalize_text(
         schedule.get("device")
@@ -406,7 +460,7 @@ def build_schedule_insert_row(schedule: Dict[str, Any]) -> Dict[str, Any]:
         "planned_hours": parse_float_value(schedule.get("planned_hours")),
         "schedule_status": normalize_experiment_status_text(schedule.get("status")),
         "is_retention": 1 if RETENTION_KEYWORD in device else 0,
-        "remark": "",
+        "remark": _encode_schedule_delay_remark(schedule),
     }
 
 
@@ -434,6 +488,11 @@ def build_storage_schedule_item(row: Dict[str, Any]) -> Dict[str, Any]:
         item["axis_codes"] = axis_codes
     if axis_batch_no:
         item["axis_batch_no"] = axis_batch_no
+    user_remark, delay_metadata = _decode_schedule_delay_remark(row.get("remark"))
+    if user_remark:
+        item["remark"] = user_remark
+    if delay_metadata.get("original_start_at") and delay_metadata.get("original_end_at"):
+        item.update(delay_metadata)
     return item
 
 

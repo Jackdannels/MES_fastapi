@@ -42,4 +42,14 @@ describe("temporal boundary clock", () => {
     });
     expect(temporalBoundaryHasElapsed(duringMaintenance, new Date("2026-07-25T00:00:00.000+08:00"))).toBe(true);
   });
+
+  test("changes once when an active run reaches its forecast end", () => {
+    const state = buildTemporalBoundaryState({
+      experimentRuns: [{ planned_end_at: "2026-07-24T10:30:00.000+08:00" }],
+      now: new Date("2026-07-24T10:00:00.000+08:00"),
+    });
+
+    expect(temporalBoundaryHasElapsed(state, new Date("2026-07-24T10:29:59.000+08:00"))).toBe(false);
+    expect(temporalBoundaryHasElapsed(state, new Date("2026-07-24T10:30:00.000+08:00"))).toBe(true);
+  });
 });

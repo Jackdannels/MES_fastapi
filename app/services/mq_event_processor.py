@@ -40,6 +40,7 @@ from app.services.laboratory_operations import (
     write_laboratory_updates,
 )
 from app.services.laboratory_start import start_storage_laboratory_experiment
+from app.services.schedule_cascade_runtime import apply_run_schedule_cascade, run_forecast_end_at
 from app.services.storage_update_bus import publish_storage_update
 from app.services.test_data_reports import archive_completion_reports
 from app.services.mq_event_protocol import (
@@ -211,7 +212,40 @@ def publish_realtime_update() -> None:
             "mes.experiment_run_steps",
             "mes.samples",
             "mes.schedules",
+            "mes.conflicts",
     ])
+
+
+def apply_mqtt_schedule_cascade(
+    storage: Any,
+    experiment_runs: list[dict[str, Any]],
+    *,
+    run_no: str,
+    new_end_at: str = "",
+    reason: str,
+) -> dict[str, Any]:
+    normalized_run_no = normalize_text(run_no)
+    run = next(
+        (
+            item
+            for item in experiment_runs
+            if normalize_text(item.get("run_no") or item.get("runNo") or item.get("id")) == normalized_run_no
+        ),
+        None,
+    )
+    if run is None:
+        return {"changed": False, "skipped_reason": "run_not_found"}
+    boundary = normalize_text(new_end_at) or run_forecast_end_at(run)
+    try:
+        return apply_run_schedule_cascade(
+            storage,
+            run,
+            new_end_at=boundary,
+            reason=reason,
+        )
+    except Exception as exc:
+        logger.exception("Failed to cascade MQTT schedules for run=%s", normalized_run_no)
+        return {"changed": False, "error": str(exc)}
 
 
 class MySQLMqEventRepository:
@@ -652,6 +686,12 @@ class MySQLMqEventRepository:
                 scoped_samples=result["samples"],
                 task_codes={task_no},
             )
+            apply_mqtt_schedule_cascade(
+                storage,
+                result["experimentRuns"],
+                run_no=run_no,
+                reason="实验实际开始时间变化",
+            )
         return {
             "run_no": run_no,
             "task_no": task_no,
@@ -711,6 +751,12 @@ class MySQLMqEventRepository:
                 updates,
                 scoped_samples=result["samples"],
                 task_codes={task_scope} if task_scope else None,
+            )
+            apply_mqtt_schedule_cascade(
+                storage,
+                result["experimentRuns"],
+                run_no=run_no,
+                reason="实验实际开始时间变化",
             )
 
     def mark_run_ended(
@@ -780,6 +826,13 @@ class MySQLMqEventRepository:
                 updates,
                 scoped_samples=result["samples"],
                 task_codes={task_no},
+            )
+            apply_mqtt_schedule_cascade(
+                storage,
+                result["experimentRuns"],
+                run_no=run_no,
+                new_end_at=occurred_at,
+                reason="实验实际结束时间变化",
             )
         try:
             archive_completion_reports(

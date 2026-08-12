@@ -4280,6 +4280,36 @@ class _TrackingConnection(_DummyConnection):
         return None
 
 
+def test_patch_schedules_upserts_only_supplied_rows_without_pruning(monkeypatch) -> None:
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    connection = _TrackingConnection()
+    captured = []
+    monkeypatch.setattr(backend, "_ensure_schema_extensions", lambda: None)
+    monkeypatch.setattr(backend, "_connect", lambda: connection)
+    monkeypatch.setattr(
+        mysql_storage_backend_module,
+        "upsert_schedules",
+        lambda _cursor, schedules: captured.extend(schedules),
+    )
+
+    backend.patch_schedules([
+        {
+            "id": "SCH-DELAYED",
+            "task_code": "TASK-1",
+            "experiment_code": "EXP-1",
+            "device": "盐雾试验室",
+            "start_at": "2026-08-10 03:30:00",
+            "end_at": "2026-08-10 04:30:00",
+        }
+    ])
+
+    assert [item["id"] for item in captured] == ["SCH-DELAYED"]
+    assert connection.commit_count == 1
+
+
 def test_write_many_internal_updates_children_before_task_cleanup(monkeypatch) -> None:
     backend = MySQLMesStorageBackend(
         MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),

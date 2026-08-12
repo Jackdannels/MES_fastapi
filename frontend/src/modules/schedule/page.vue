@@ -402,8 +402,25 @@
           <td>{{ row.experimentLabel || "-" }}</td>
           <td>{{ row.axisLabel || "-" }}</td>
           <td>{{ row.device }}</td>
-          <td>{{ row.startAt }}</td>
-          <td>{{ row.endAt }}</td>
+          <td>
+            <div>{{ row.startAt }}</div>
+            <div
+              v-if="row.scheduleIsDelayed"
+              class="schedule-delay-meta"
+              :class="{ 'is-conflict': row.scheduleHasDelayConflict }"
+              :title="row.delay.title"
+              :data-testid="`schedule-delay-${row.id}`"
+            >
+              <span class="schedule-delay-badge">{{ row.delayBadgeLabel }}</span>
+              <span v-if="row.delay.originalStartAt">原 {{ row.delay.originalStartAt }}</span>
+            </div>
+          </td>
+          <td>
+            <div>{{ row.endAt }}</div>
+            <div v-if="row.scheduleIsDelayed && row.delay.originalEndAt" class="schedule-delay-original">
+              原 {{ row.delay.originalEndAt }}
+            </div>
+          </td>
           <td><span :class="row.rowStatusClass">{{ row.rowStatus }}</span></td>
           <td>
             <button

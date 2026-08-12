@@ -59,6 +59,7 @@ import {
   statusClass,
   taskHasSavedTrayPlan,
 } from "./scheduleLifecycleModel";
+import { resolveScheduleDelayPresentation } from "./scheduleDelayPresentation";
 
 
 function buildTaskScheduledOverlays({ taskCode, experimentCode, schedules, experiments, experimentTrays, tasks = [], samples = [] }) {
@@ -212,10 +213,15 @@ function buildScheduleRows({ schedules, tasks, experiments, samples = [], experi
         experimentNameByCode,
         trayExperimentCodeMap,
       });
+      const delayPresentation = resolveScheduleDelayPresentation(schedule);
 
       return {
         axisLabel: normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes).map(formatAxisLabel).join(" / "),
         device: normalizeText(schedule?.device),
+        delay: delayPresentation,
+        delayBadgeLabel: delayPresentation.badgeLabel,
+        delayMinutes: delayPresentation.delayMinutes,
+        delayReason: delayPresentation.reason,
         endAt: formatDateTime(schedule?.end_at),
         axisCodes: normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes),
         experimentCode,
@@ -223,6 +229,8 @@ function buildScheduleRows({ schedules, tasks, experiments, samples = [], experi
         id: normalizeText(schedule?.id),
         rowStatus: status,
         rowStatusClass: statusClass(status),
+        scheduleHasDelayConflict: delayPresentation.hasConflict,
+        scheduleIsDelayed: delayPresentation.isDelayed,
         startAt: formatDateTime(schedule?.start_at),
         subExperimentCode,
         sub_experiment_code: subExperimentCode,

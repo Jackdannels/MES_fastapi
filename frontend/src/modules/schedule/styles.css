@@ -279,6 +279,34 @@
   justify-content: flex-end;
 }
 
+.schedule-delay-meta,
+.schedule-delay-original {
+  align-items: center;
+  color: var(--muted, #64748b);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.schedule-delay-badge {
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 999px;
+  color: #c2410c;
+  display: inline-flex;
+  font-weight: 700;
+  line-height: 1;
+  padding: 4px 7px;
+}
+
+.schedule-delay-meta.is-conflict .schedule-delay-badge {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
 #schedule-table td:nth-child(5),
 #schedule-table td:nth-child(6) {
   white-space: normal;

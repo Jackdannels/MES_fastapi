@@ -89,6 +89,7 @@ function useSchedulePage(options = {}) {
   const resetTemporalBoundaryState = () => {
     temporalBoundaryState = buildTemporalBoundaryState({
       devices: rawDevices.value,
+      experimentRuns: rawExperimentRuns.value,
       now: now.value,
       schedules: rawSchedules.value,
     });
@@ -529,6 +530,9 @@ function useSchedulePage(options = {}) {
     if (temporalBoundaryHasElapsed(temporalBoundaryState, now.value)) {
       structuralNow.value = now.value;
       resetTemporalBoundaryState();
+      // Reconcile once at a schedule, maintenance, or run forecast boundary.
+      // Ordinary second/minute ticks never rewrite schedule timestamps.
+      void loadSchedulePage({ resetForm: false });
     }
     syncManualScheduleLegality();
   };

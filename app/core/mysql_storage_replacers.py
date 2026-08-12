@@ -367,6 +367,13 @@ def replace_schedules(cursor, schedules: list[dict[str, Any]]) -> None:
     _upsert_schedule_rows(cursor, rows)
 
 
+def upsert_schedules(cursor, schedules: list[dict[str, Any]]) -> None:
+    """Upsert only the supplied schedules without pruning unrelated rows."""
+
+    rows = [build_schedule_insert_row(schedule) for schedule in schedules if normalize_text(schedule.get("id"))]
+    _upsert_schedule_rows(cursor, rows)
+
+
 def _upsert_schedule_rows(cursor, rows: list[dict[str, Any]]) -> None:
     if not rows:
         return

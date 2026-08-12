@@ -216,6 +216,27 @@ def _schedule_is_fixture_locked(
     )
 
 
+def schedule_is_locked_for_automatic_reschedule(snapshot: Any, schedule: Any) -> bool:
+    """Return whether a schedule has crossed the existing comparison/start lock boundary.
+
+    Automatic delay propagation uses the same lock evidence as manual schedule edits so
+    it cannot silently move a schedule whose trays or run have already entered the lab.
+    """
+
+    if not isinstance(snapshot, dict) or not isinstance(schedule, dict):
+        return False
+    if _record_has_schedule_locked_status(schedule):
+        return True
+    return _schedule_is_fixture_locked(
+        schedule,
+        snapshot.get("samples") or snapshot.get("mes.samples"),
+        snapshot.get("experiment_trays") or snapshot.get("mes.experiment_trays"),
+        snapshot.get("experiment_runs") or snapshot.get("mes.experiment_runs"),
+        snapshot.get("experiment_run_trays") or snapshot.get("mes.experiment_run_trays"),
+        snapshot.get("experiment_run_steps") or snapshot.get("mes.experiment_run_steps"),
+    )
+
+
 def _locked_schedule_fields_changed(current_schedule: Any, next_schedule: Any) -> bool:
     if not isinstance(current_schedule, dict) or not isinstance(next_schedule, dict):
         return True

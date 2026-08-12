@@ -3,6 +3,7 @@ import { resolveTransferConfirmedAt } from "./transferArrivalTime";
 import { formatLocalDateTime } from "./dateTime";
 import { serverNowDate } from "./serverClock";
 import { normalizeAxisCodes } from "./axisCodes";
+import { labIdentityMatches } from "./labIdentity";
 import {
   EXPERIMENT_STATUS_COMPLETED,
   EXPERIMENT_STATUS_RUNNING,
@@ -41,6 +42,8 @@ const COMPLETED_STATUSES = new Set([
 
 const SCHEDULE_EXCEPTION_TYPE = "schedule_missed_start";
 const SCHEDULE_EXCEPTION_REASON = "排程时段内未开始实验，系统已自动撤销排程";
+const SCHEDULE_DELAY_EXCEPTION_TYPE = "schedule_delayed_by_active_run";
+const SCHEDULE_DELAY_EXCEPTION_REASON = "受前序实验超时影响，等待预计结束";
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 
@@ -52,6 +55,7 @@ const parseDate = (value) => {
 const cloneSnapshotArrays = (snapshot = {}) => ({
   [STORAGE_KEYS.conflicts]: asArray(snapshot[STORAGE_KEYS.conflicts]).map((entry) => ({ ...entry })),
   [STORAGE_KEYS.experiments]: asArray(snapshot[STORAGE_KEYS.experiments]).map((entry) => ({ ...entry })),
+  [STORAGE_KEYS.experiment_runs]: asArray(snapshot[STORAGE_KEYS.experiment_runs]).map((entry) => ({ ...entry })),
   [STORAGE_KEYS.experiment_trays]: asArray(snapshot[STORAGE_KEYS.experiment_trays]).map((entry) => ({ ...entry })),
   [STORAGE_KEYS.samples]: asArray(snapshot[STORAGE_KEYS.samples]).map((sample) => ({
     ...sample,
@@ -336,12 +340,99 @@ const buildScheduleExceptionDetail = (schedule, experiments, now) => {
 
 const buildExceptionId = (scheduleId) => `schedule-exception-${scheduleId || Date.now()}`;
 
+const runIdentifier = (run) => normalizeText(run?.run_no ?? run?.runNo ?? run?.id);
+
+const isActiveExperimentRun = (run) =>
+  isExperimentRunningStatus(run?.status ?? run?.run_status ?? run?.runStatus);
+
+const runScheduleIdentifier = (run) => normalizeText(
+  run?.schedule_id ?? run?.scheduleId ?? run?.schedule_no ?? run?.scheduleNo,
+);
+
+const runPrecedesSchedule = (run, schedule, schedules) => {
+  const currentSchedule = asArray(schedules).find(
+    (entry) => scheduleIdentifier(entry) === runScheduleIdentifier(run),
+  );
+  const targetStart = parseDate(schedule?.original_start_at ?? schedule?.originalStartAt ?? schedule?.start_at ?? schedule?.startAt);
+  const currentStart = parseDate(
+    currentSchedule?.original_start_at
+      ?? currentSchedule?.originalStartAt
+      ?? currentSchedule?.start_at
+      ?? currentSchedule?.startAt
+      ?? run?.started_at
+      ?? run?.startedAt,
+  );
+  if (currentStart && targetStart) {
+    return currentStart.getTime() <= targetStart.getTime();
+  }
+  const runStartedAt = parseDate(run?.started_at ?? run?.startedAt);
+  const targetEnd = parseDate(schedule?.end_at ?? schedule?.endAt);
+  return Boolean(runStartedAt && targetEnd && runStartedAt.getTime() <= targetEnd.getTime());
+};
+
+const runIsOverdueForSchedule = (run, schedule, schedules, now) => {
+  const currentSchedule = asArray(schedules).find(
+    (entry) => scheduleIdentifier(entry) === runScheduleIdentifier(run),
+  );
+  const expectedEnd = parseDate(
+    run?.planned_end_at
+      ?? run?.plannedEndAt
+      ?? currentSchedule?.end_at
+      ?? currentSchedule?.endAt,
+  );
+  if (expectedEnd) {
+    return expectedEnd.getTime() < now.getTime();
+  }
+  const targetStart = parseDate(schedule?.start_at ?? schedule?.startAt);
+  return Boolean(targetStart && targetStart.getTime() <= now.getTime());
+};
+
+const findBlockingActiveRun = (schedule, experimentRuns, schedules, now) =>
+  asArray(experimentRuns).find(
+    (run) => isActiveExperimentRun(run)
+      && labIdentityMatches(run, schedule)
+      && runPrecedesSchedule(run, schedule, schedules)
+      && runIsOverdueForSchedule(run, schedule, schedules, now),
+  ) || null;
+
+const buildScheduleDelayExceptionDetail = (schedule, experiments, run, now) => {
+  const baseDetail = buildScheduleExceptionDetail(schedule, experiments, now);
+  const runNo = runIdentifier(run);
+  const plannedEndAt = formatDateTime(run?.planned_end_at ?? run?.plannedEndAt);
+  return [
+    baseDetail,
+    runNo ? `前序运行：${runNo}` : "",
+    `预计结束：${plannedEndAt || "等待设备或操作员确认"}`,
+  ].filter(Boolean).join(" / ");
+};
+
+const scheduleHasWaitingMetadata = (schedule, run) =>
+  normalizeText(schedule?.delay_reason ?? schedule?.delayReason) === SCHEDULE_DELAY_EXCEPTION_REASON
+  && normalizeText(
+    schedule?.source_run_no
+      ?? schedule?.sourceRunNo
+      ?? schedule?.delay_source_run_no
+      ?? schedule?.delaySourceRunNo,
+  ) === runIdentifier(run);
+
+const withWaitingMetadata = (schedule, run) => ({
+  ...schedule,
+  delay_minutes: Number(schedule?.delay_minutes ?? schedule?.delayMinutes) || 0,
+  delay_reason: SCHEDULE_DELAY_EXCEPTION_REASON,
+  original_end_at: schedule?.original_end_at || schedule?.originalEndAt || schedule?.end_at || schedule?.endAt,
+  original_start_at: schedule?.original_start_at || schedule?.originalStartAt || schedule?.start_at || schedule?.startAt,
+  source_run_no: runIdentifier(run),
+  delay_status: "waiting_active_run_end",
+  delay_waiting_for_estimated_end: true,
+});
+
 function reconcileScheduleExceptions(snapshot = {}, options = {}) {
   const now = parseDate(options.now) || serverNowDate();
   const working = cloneSnapshotArrays(snapshot);
   const schedules = working[STORAGE_KEYS.schedules];
   const tasks = working[STORAGE_KEYS.tasks];
   const experiments = working[STORAGE_KEYS.experiments];
+  const experimentRuns = working[STORAGE_KEYS.experiment_runs];
   const samples = working[STORAGE_KEYS.samples];
   const experimentTrays = working[STORAGE_KEYS.experiment_trays];
   const conflicts = working[STORAGE_KEYS.conflicts];
@@ -358,19 +449,29 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
     samplesByTaskCode.set(taskCode, [...(samplesByTaskCode.get(taskCode) || []), sample]);
   });
 
-  const expiredUnstartedSchedules = schedules.filter((schedule) => {
+  const allUnstartedSchedules = schedules.filter((schedule) => {
     if (isRetentionDevice(schedule)) {
-      return false;
-    }
-    const endAt = parseDate(schedule?.end_at);
-    if (!endAt || endAt.getTime() >= now.getTime()) {
       return false;
     }
     const lifecycle = resolveScheduleLifecycle({ experimentTrayMap, trayExperimentCodeMap, experimentNameByCode, samples, schedule });
     return !lifecycle.started;
   });
 
-  if (expiredUnstartedSchedules.length === 0) {
+  const blockedScheduleRuns = new Map();
+  allUnstartedSchedules.forEach((schedule) => {
+    const blockingRun = findBlockingActiveRun(schedule, experimentRuns, schedules, now);
+    if (blockingRun) {
+      blockedScheduleRuns.set(scheduleIdentifier(schedule), blockingRun);
+    }
+  });
+  const expiredUnstartedSchedules = allUnstartedSchedules.filter((schedule) => {
+    const endAt = parseDate(schedule?.end_at);
+    return endAt
+      && endAt.getTime() < now.getTime()
+      && !blockedScheduleRuns.has(scheduleIdentifier(schedule));
+  });
+
+  if (expiredUnstartedSchedules.length === 0 && blockedScheduleRuns.size === 0) {
     return {
       changed: false,
       snapshot: {
@@ -385,7 +486,17 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
   const removedExperiments = new Set(
     expiredUnstartedSchedules.map((schedule) => `${normalizeText(schedule?.task_code)}::${normalizeText(schedule?.experiment_code)}`),
   );
-  const nextSchedules = schedules.filter((schedule) => !removedScheduleIds.has(normalizeText(schedule?.id)));
+  let scheduleMetadataChanged = false;
+  const nextSchedules = schedules
+    .filter((schedule) => !removedScheduleIds.has(normalizeText(schedule?.id)))
+    .map((schedule) => {
+      const blockingRun = blockedScheduleRuns.get(scheduleIdentifier(schedule));
+      if (!blockingRun || scheduleHasWaitingMetadata(schedule, blockingRun)) {
+        return schedule;
+      }
+      scheduleMetadataChanged = true;
+      return withWaitingMetadata(schedule, blockingRun);
+    });
   const nextExperiments = experiments.map((experiment) => {
     const key = `${normalizeText(experiment?.task_code)}::${normalizeText(experiment?.experiment_code)}`;
     if (!removedExperiments.has(key)) {
@@ -405,6 +516,39 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
     };
   });
   const nextConflicts = conflicts.slice();
+  let conflictsChanged = false;
+
+  blockedScheduleRuns.forEach((blockingRun, scheduleId) => {
+    const runNo = runIdentifier(blockingRun);
+    const duplicated = nextConflicts.some(
+      (entry) =>
+        normalizeText(entry?.type) === SCHEDULE_DELAY_EXCEPTION_TYPE
+        && normalizeText(entry?.schedule_id) === scheduleId
+        && normalizeText(entry?.source_run_no) === runNo,
+    );
+    if (duplicated) {
+      return;
+    }
+    const schedule = schedules.find((entry) => scheduleIdentifier(entry) === scheduleId);
+    if (!schedule) {
+      return;
+    }
+    nextConflicts.push({
+      acknowledged_at: "",
+      created_at: formatLocalDateTime(now),
+      detail: buildScheduleDelayExceptionDetail(schedule, experiments, blockingRun, now),
+      device: normalizeText(schedule?.device),
+      experiment_code: normalizeText(schedule?.experiment_code),
+      id: `schedule-delay-exception-${scheduleId}-${runNo || "active-run"}`,
+      reason: SCHEDULE_DELAY_EXCEPTION_REASON,
+      schedule_id: scheduleId,
+      source_run_no: runNo,
+      status: "pending",
+      task_code: normalizeText(schedule?.task_code),
+      type: SCHEDULE_DELAY_EXCEPTION_TYPE,
+    });
+    conflictsChanged = true;
+  });
 
   expiredUnstartedSchedules.forEach((schedule) => {
     const scheduleId = normalizeText(schedule?.id);
@@ -430,6 +574,7 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
       task_code: normalizeText(schedule?.task_code),
       type: SCHEDULE_EXCEPTION_TYPE,
     });
+    conflictsChanged = true;
   });
 
   const nextTasks = tasks.map((task) => ({
@@ -441,6 +586,7 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
     ...snapshot,
     [STORAGE_KEYS.conflicts]: nextConflicts,
     [STORAGE_KEYS.experiments]: nextExperiments,
+    [STORAGE_KEYS.experiment_runs]: experimentRuns,
     [STORAGE_KEYS.experiment_trays]: experimentTrays,
     [STORAGE_KEYS.samples]: samples,
     [STORAGE_KEYS.schedules]: nextSchedules,
@@ -448,15 +594,25 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
   };
 
   return {
-    changed: true,
+    changed: expiredUnstartedSchedules.length > 0 || scheduleMetadataChanged || conflictsChanged,
     snapshot: nextSnapshot,
     updates: {
-      [STORAGE_KEYS.conflicts]: nextConflicts,
-      [STORAGE_KEYS.experiments]: nextExperiments,
-      [STORAGE_KEYS.schedules]: nextSchedules,
-      [STORAGE_KEYS.tasks]: nextTasks,
+      ...(conflictsChanged ? { [STORAGE_KEYS.conflicts]: nextConflicts } : {}),
+      ...(expiredUnstartedSchedules.length > 0 ? {
+        [STORAGE_KEYS.experiments]: nextExperiments,
+        [STORAGE_KEYS.tasks]: nextTasks,
+      } : {}),
+      ...(expiredUnstartedSchedules.length > 0 || scheduleMetadataChanged
+        ? { [STORAGE_KEYS.schedules]: nextSchedules }
+        : {}),
     },
   };
 }
 
-export { reconcileScheduleExceptions, SCHEDULE_EXCEPTION_REASON, SCHEDULE_EXCEPTION_TYPE };
+export {
+  reconcileScheduleExceptions,
+  SCHEDULE_DELAY_EXCEPTION_REASON,
+  SCHEDULE_DELAY_EXCEPTION_TYPE,
+  SCHEDULE_EXCEPTION_REASON,
+  SCHEDULE_EXCEPTION_TYPE,
+};

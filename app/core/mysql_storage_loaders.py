@@ -60,7 +60,7 @@ def load_schedules(cursor, *, task_codes: set[str] | None = None) -> list[dict[s
         f"""
         SELECT s.schedule_no, s.task_no, s.experiment_no, s.sub_experiment_code, s.device_name, s.lab_id, l.lab_code,
                s.axis_codes_json, s.axis_batch_no,
-               s.schedule_start_time, s.schedule_end_time, s.planned_hours, s.schedule_status
+               s.schedule_start_time, s.schedule_end_time, s.planned_hours, s.schedule_status, s.remark
         FROM biz_schedule s
         LEFT JOIN md_lab l
           ON l.lab_id = s.lab_id

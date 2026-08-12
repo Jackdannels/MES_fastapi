@@ -68,6 +68,7 @@ from app.core.mysql_storage_replacers import (
     replace_task_streams,
     replace_task_allocation_relations,
     replace_tasks,
+    upsert_schedules,
 )
 from app.core.mysql_storage_sample_write import (
     build_managed_sample_write_rows,
@@ -687,6 +688,26 @@ class MySQLMesStorageBackend(StorageBackend):
 
     def write(self, key: str, value: Any) -> None:
         self.write_many({key: value})
+
+    def patch_schedules(self, schedules: list[dict[str, Any]]) -> None:
+        """Persist an event-driven schedule cascade without pruning other tasks."""
+
+        normalized_schedules = _normalize_value(
+            "mes.schedules",
+            schedules if isinstance(schedules, list) else [],
+        )
+        if not normalized_schedules:
+            return
+        with observed_lock(self._write_lock, "storage.write_lock"):
+            self._ensure_schema_extensions()
+            with self._connect() as connection:
+                try:
+                    with connection.cursor() as cursor:
+                        upsert_schedules(cursor, normalized_schedules)
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
 
     def write_many(self, updates: Dict[str, Any]) -> None:
         with observed_lock(self._write_lock, "storage.write_lock"):
