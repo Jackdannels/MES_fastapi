@@ -85,6 +85,35 @@ describe("taskOverviewAlerts", () => {
     expect(findFirstOverdueWaitingTaskCode(tasks, experiments, [], now)).toBe("");
   });
 
+  test("ignores completed returned tasks that retain transfer confirmation history", () => {
+    const now = Date.parse("2026-08-15T10:00:00.000Z");
+    const tasks = [
+      {
+        code: "SYLU-2026-08-001",
+        status: "任务已完成",
+        transfer_status: "厂家收回",
+      },
+    ];
+    const experiments = [
+      {
+        task_code: "SYLU-2026-08-001",
+        experiment_code: "SYLU-2026-08-001-A",
+        status: "实验已完成",
+      },
+    ];
+    const samples = [
+      {
+        task_code: "SYLU-2026-08-001",
+        history: [{ action: "任务已确认入库", time: "2026-08-13T00:32:23.000Z" }],
+        status: "厂家收回",
+        trays: [{ tray_code: "SYLU-2026-08-001-TP-001", status: "厂家收回" }],
+      },
+    ];
+
+    expect(hasOverdueWaitingExperiment(tasks, experiments, [], now, samples)).toBe(false);
+    expect(findFirstOverdueWaitingTaskCode(tasks, experiments, [], now, samples)).toBe("");
+  });
+
   test("uses arrived sample state as fallback when task transfer status is missing", () => {
     const now = Date.parse("2026-03-20T10:00:00.000Z");
     const tasks = [{ code: "TASK-ARRIVED", status: "待排程" }];

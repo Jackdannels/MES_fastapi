@@ -1,6 +1,7 @@
 import { resolveTransferConfirmedAt } from "./transferArrivalTime";
 import { serverNowMs } from "./serverClock";
 import { TRANSFER_STATUS_ARRIVED, isTransferArrivedStatus, normalizeTaskStatusLabel } from "./statusNormalization";
+import { filterActiveTasks } from "./taskArchive";
 
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
 const RETENTION_KEYWORD = "暂存间";
@@ -62,13 +63,18 @@ const hasFormalScheduleForExperiment = (schedules, experiment) =>
   );
 
 const listOverdueWaitingExperiments = (tasks, experiments, schedules, now = serverNowMs(), samples = []) => {
-  const taskByCode = new Map((Array.isArray(tasks) ? tasks : []).map((task) => [normalizeText(task?.code), task]));
+  const taskByCode = new Map(
+    filterActiveTasks(tasks, samples).map((task) => [normalizeText(task?.code), task]),
+  );
   const samplesByTaskCode = buildSamplesByTaskCode(samples);
 
   return (Array.isArray(experiments) ? experiments : [])
     .filter((experiment) => {
       const taskCode = normalizeText(experiment?.task_code);
       const task = taskByCode.get(taskCode);
+      if (!task) {
+        return false;
+      }
       const taskSamples = samplesByTaskCode.get(taskCode);
       const confirmedAt = resolveTransferConfirmedAt({ samples: taskSamples, task });
       if (!confirmedAt && !isTaskArrived(task, taskSamples)) {
