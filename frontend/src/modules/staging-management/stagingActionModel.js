@@ -7,6 +7,7 @@ import {
   APPEARANCE_STOCKED_STATUS,
   EXPERIMENTS_KEY,
   EXPERIMENT_RUN_STEPS_KEY,
+  EXPERIMENT_RUN_PAUSES_KEY,
   EXPERIMENT_RUN_TRAYS_KEY,
   EXPERIMENT_TRAYS_KEY,
   POST_EXPERIMENT_STAGING_LOCATION,
@@ -15,6 +16,8 @@ import {
   SCHEDULES_KEY,
   STAGING_EVENTS_KEY,
   STAGING_LOCATION,
+  MID_EXPERIMENT_APPEARANCE_STATUS,
+  MID_EXPERIMENT_RETURNED_STATUS,
   TASKS_KEY,
   asArray,
   collectTrayStorageEvents,
@@ -53,6 +56,7 @@ function applyZancunInventoryAction(input = {}) {
     [EXPERIMENT_TRAYS_KEY]: asArray(snapshot[EXPERIMENT_TRAYS_KEY]).map((entry) => ({ ...entry })),
     [EXPERIMENT_RUN_TRAYS_KEY]: asArray(snapshot[EXPERIMENT_RUN_TRAYS_KEY]).map((entry) => ({ ...entry })),
     [EXPERIMENT_RUN_STEPS_KEY]: asArray(snapshot[EXPERIMENT_RUN_STEPS_KEY]).map((entry) => ({ ...entry })),
+    [EXPERIMENT_RUN_PAUSES_KEY]: asArray(snapshot[EXPERIMENT_RUN_PAUSES_KEY]).map((entry) => ({ ...entry })),
     [SAMPLES_KEY]: asArray(snapshot[SAMPLES_KEY]).map((sample) => ({
       ...sample,
       trays: asArray(sample?.trays).map((tray) => ({ ...tray })),
@@ -209,6 +213,7 @@ function applyZancunInventoryAction(input = {}) {
   const selectedTargetType = normalizeText(payload.targetType);
   const selectedScheduleId = normalizeText(payload.scheduleId || payload.schedule_id);
   const selectedSubExperimentCode = normalizeText(payload.subExperimentCode || payload.sub_experiment_code);
+  const inspectionResult = normalizeText(payload.inspectionResult || payload.inspection_result);
   const targetDestinations = asArray(matchedRow.targetDestinations);
   const destinationMatchesSelectedLab = (destination) => {
     const destinationCode = normalizeText(destination?.targetLabCode || destination?.target_lab_code);
@@ -274,7 +279,9 @@ function applyZancunInventoryAction(input = {}) {
     && matchedRow.isPostExperimentInbound;
   const nextStockInStatus =
     actionMode === "stockIn"
-      ? matchedRow.isPreExperimentAppearanceInbound && config.key === "appearance"
+      ? matchedRow.isMidExperimentAppearanceInbound && config.key === "appearance"
+        ? MID_EXPERIMENT_APPEARANCE_STATUS
+        : matchedRow.isPreExperimentAppearanceInbound && config.key === "appearance"
         ? APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
         : matchedRow.isPostExperimentAppearanceInbound && config.key === "appearance"
           ? APPEARANCE_STOCKED_STATUS
@@ -290,7 +297,9 @@ function applyZancunInventoryAction(input = {}) {
       : "";
   const appearanceStockInPhase =
     config.key === "appearance" && actionMode === "stockIn"
-      ? nextStockInStatus === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+      ? nextStockInStatus === MID_EXPERIMENT_APPEARANCE_STATUS
+        ? "mid_experiment"
+        : nextStockInStatus === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
         ? "pre_experiment"
         : nextStockInStatus === APPEARANCE_STOCKED_STATUS
           ? "post_experiment"
@@ -298,7 +307,9 @@ function applyZancunInventoryAction(input = {}) {
       : "";
   const appearanceStockOutPhase =
     config.key === "appearance" && actionMode === "stockOut"
-      ? normalizeText(matchedRow.status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
+      ? matchedRow.isMidExperimentAppearanceInbound
+        ? "mid_experiment"
+        : normalizeText(matchedRow.status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
         ? "pre_experiment"
         : normalizeText(matchedRow.status) === APPEARANCE_STOCKED_STATUS
           ? "post_experiment"
@@ -337,12 +348,29 @@ function applyZancunInventoryAction(input = {}) {
           ...(resolvedScheduleId ? { schedule_id: resolvedScheduleId } : {}),
           ...(resolvedSubExperimentCode ? { sub_experiment_code: resolvedSubExperimentCode } : {}),
           ...(appearanceStockOutPhase ? { appearance_phase: appearanceStockOutPhase } : {}),
+          ...(appearanceStockOutPhase === "mid_experiment"
+            ? {
+                inspection_result: inspectionResult,
+                pause_no: matchedRow.midExperimentPauseNo,
+                run_no: matchedRow.midExperimentRunNo,
+              }
+            : {}),
         }
       : {
           location: nextStockInLocation,
           status: nextStockInStatus,
           ...(appearanceStockInPhase ? { appearance_phase: appearanceStockInPhase } : {}),
           ...(appearanceStockInTargetExperimentCode ? { target_experiment_code: appearanceStockInTargetExperimentCode } : {}),
+          ...(appearanceStockInPhase === "mid_experiment"
+            ? {
+                experiment_code: normalizeText(matchedRow.targetExperimentCode),
+                pause_no: matchedRow.midExperimentPauseNo,
+                run_no: matchedRow.midExperimentRunNo,
+                target_experiment_code: normalizeText(matchedRow.targetExperimentCode),
+                target_lab: normalizeText(matchedRow.targetLab),
+                target_lab_code: normalizeText(matchedRow.targetLabCode),
+              }
+            : {}),
         }),
   });
 
@@ -374,7 +402,9 @@ function applyZancunInventoryAction(input = {}) {
     const targetExperimentCode =
       normalizeText(selectedDestination?.targetExperimentCode) || selectedTargetExperimentCode || normalizeText(matchedRow.targetExperimentCode);
     const outboundLocation = isStagingTarget ? STAGING_LOCATION : resolvedTargetLab;
-    const outboundStatus = isStagingTarget ? "送至暂存间" : "送至实验室";
+    const outboundStatus = matchedRow.isMidExperimentAppearanceInbound
+      ? MID_EXPERIMENT_RETURNED_STATUS
+      : isStagingTarget ? "送至暂存间" : "送至实验室";
     const synced = synchronizeSamplesForTrayCodes({
       historyAction: config.historyStockOutAction,
       historyDetail: `${matchedRow.trayCode} 送至 ${outboundLocation}`,
@@ -389,6 +419,10 @@ function applyZancunInventoryAction(input = {}) {
     });
     nextSnapshot[SAMPLES_KEY] = synced.samples.map((sample) => ({
       ...sample,
+      ...(matchedRow.isMidExperimentAppearanceInbound
+        && asArray(sample?.trays).some((tray) => normalizeText(tray?.tray_code) === normalizeText(matchedRow.trayCode))
+        ? { status: MID_EXPERIMENT_RETURNED_STATUS, flow_status: MID_EXPERIMENT_RETURNED_STATUS }
+        : {}),
       trays: asArray(sample?.trays).map((tray) =>
         normalizeText(tray?.tray_code) === normalizeText(matchedRow.trayCode)
           ? {

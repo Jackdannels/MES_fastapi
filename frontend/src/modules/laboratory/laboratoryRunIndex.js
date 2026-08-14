@@ -20,7 +20,7 @@ const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const toTime = (value) => parseBusinessDateTimeToMs(value);
 
-const RUNNING_EXPERIMENT_RUN_STATUSES = new Set(["实验进行中", "实验中"]);
+const RUNNING_EXPERIMENT_RUN_STATUSES = new Set(["实验进行中", "实验中", "实验暂停"]);
 
 const buildExperimentTrayCodeMap = (experimentTrays) => {
   const trayMap = new Map();

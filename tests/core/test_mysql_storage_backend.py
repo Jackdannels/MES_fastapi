@@ -965,6 +965,19 @@ def test_schedule_mapping_accepts_legacy_device_name_field() -> None:
     assert insert_row["lab_code"] == "LAB_SALT"
 
 
+def test_schedule_mapping_backfills_canonical_salt_lab_code_from_device_name() -> None:
+    insert_row = build_schedule_insert_row(
+        {
+            "id": "schedule-salt-without-identity",
+            "task_code": "TASK-SALT",
+            "experiment_code": "EXP-SALT",
+            "device": "盐雾试验室",
+        }
+    )
+
+    assert insert_row["lab_code"] == "LAB_SALT"
+
+
 def test_schedule_mapping_round_trips_axis_codes_in_standard_order() -> None:
     storage_schedule = {
         "id": "schedule-axis",
@@ -4947,6 +4960,7 @@ def test_read_all_is_read_only_and_does_not_backfill_legacy_unscheduled_since(mo
     )
     monkeypatch.setattr(backend, "_load_experiment_trays", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_runs", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_experiment_run_pauses", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_run_trays", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_run_steps", lambda cursor: [])
     monkeypatch.setattr(
@@ -4990,6 +5004,7 @@ def test_read_all_includes_experiment_run_steps(monkeypatch) -> None:
     monkeypatch.setattr(backend, "_load_experiments", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_trays", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_runs", lambda cursor: [])
+    monkeypatch.setattr(backend, "_load_experiment_run_pauses", lambda cursor: [])
     monkeypatch.setattr(backend, "_load_experiment_run_trays", lambda cursor: [])
     monkeypatch.setattr(
         backend,

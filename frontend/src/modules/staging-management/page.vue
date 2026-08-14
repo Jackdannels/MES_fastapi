@@ -145,6 +145,7 @@
           </div>
         </div>
         <AppFeedback :message="scanWarning" tone="warning" @close="scanWarning = ''" />
+
       </div>
       <template #footer>
         <button class="action-btn zancun-scan-complete-btn" data-testid="zancun-scan-complete" type="button" @click="handleScanFooter">
@@ -169,6 +170,16 @@
           <span class="pill">样品数 {{ activeDetail.quantity || 0 }}</span>
         </article>
         <AppFeedback :message="scanWarning" tone="warning" @close="scanWarning = ''" />
+
+        <div v-if="activeDetail.isMidExperimentAppearanceInbound" class="form-field">
+          <label>中途外观检查结论（选填）</label>
+          <textarea
+            v-model="activeDetail.inspectionResult"
+            data-testid="zancun-mid-inspection-result"
+            placeholder="可填写外观检查结论；留空也可返回原盐雾试验室"
+            rows="3"
+          />
+        </div>
 
         <article
           v-for="(destination, index) in activeDetail.targetDestinations"
@@ -367,6 +378,7 @@ const snapshot = ref({
   [STORAGE_KEYS.experiments]: [],
   [STORAGE_KEYS.experiment_trays]: [],
   [STORAGE_KEYS.experiment_runs]: [],
+  [STORAGE_KEYS.experiment_run_pauses]: [],
   [STORAGE_KEYS.experiment_run_trays]: [],
   [STORAGE_KEYS.experiment_run_steps]: [],
   [STORAGE_KEYS.samples]: [],
@@ -384,6 +396,7 @@ const STAGING_SNAPSHOT_KEYS = [
   STORAGE_KEYS.experiments,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.experiment_runs,
+  STORAGE_KEYS.experiment_run_pauses,
   STORAGE_KEYS.experiment_run_trays,
   STORAGE_KEYS.experiment_run_steps,
   STORAGE_KEYS.samples,
@@ -523,6 +536,10 @@ const activeDetail = reactive({
   isPostExperimentInbound: false,
   inboundTargetExperimentCode: "",
   inboundTargetLab: "",
+  inspectionResult: "",
+  isMidExperimentAppearanceInbound: false,
+  midExperimentPauseNo: "",
+  midExperimentRunNo: "",
   scheduleId: "",
   subExperimentCode: "",
   targetExperimentCode: "",
@@ -566,6 +583,10 @@ const resetDetail = () => {
   activeDetail.isPostExperimentInbound = false;
   activeDetail.inboundTargetExperimentCode = "";
   activeDetail.inboundTargetLab = "";
+  activeDetail.inspectionResult = "";
+  activeDetail.isMidExperimentAppearanceInbound = false;
+  activeDetail.midExperimentPauseNo = "";
+  activeDetail.midExperimentRunNo = "";
   activeDetail.scheduleId = "";
   activeDetail.subExperimentCode = "";
   activeDetail.targetExperimentCode = "";
@@ -700,10 +721,24 @@ const submitStockInScan = async () => {
     return;
   }
   scanForm.code = scannedCode;
-  const detail = buildZancunScanDetail(overviewSourceRows.value, scannedCode, activeScanMode.value, { room: activeRoom.value });
 
   scanSubmitting.value = true;
   try {
+    // A pause confirmation may arrive after this page was opened. Refresh the
+    // authoritative snapshot before deciding whether this is a normal or a
+    // mid-experiment appearance stock-in.
+    const latestSnapshot = activeRoom.value === "appearance"
+      ? await readRawStorageSnapshot()
+      : snapshot.value;
+    const actionSnapshot = activeRoom.value === "appearance"
+      ? mergeArraySnapshot(snapshot.value, latestSnapshot, STAGING_SNAPSHOT_KEYS)
+      : snapshot.value;
+    snapshot.value = actionSnapshot;
+    const latestRows = buildZancunRowsFromSnapshot(actionSnapshot, {
+      now: nowValue(),
+      room: activeRoom.value,
+    });
+    const detail = buildZancunScanDetail(latestRows, scannedCode, activeScanMode.value, { room: activeRoom.value });
     const result = applyZancunInventoryAction({
       now: nowValue(),
       payload: {
@@ -712,16 +747,24 @@ const submitStockInScan = async () => {
         room: activeRoom.value,
       },
       room: activeRoom.value,
-      snapshot: snapshot.value,
+      snapshot: actionSnapshot,
     });
     const stockInActionPayload = {
       mode: "stockIn",
       room: activeRoom.value,
       trayCode: detail.found ? detail.trayCode : scannedCode,
     };
-    if (activeRoom.value === "appearance" || result.row?.status !== "到货") {
-      stockInActionPayload.location = result.row?.location;
-      stockInActionPayload.status = result.row?.status;
+    const stockInEvent = result.snapshot?.[STORAGE_KEYS.staging_events]
+      ?.slice()
+      .reverse()
+      .find((event) => (
+        event?.action === "stock_in"
+        && normalizeTrayScanCode(event?.tray_code) === stockInActionPayload.trayCode
+        && event?.room === activeRoom.value
+      ));
+    if (stockInEvent?.location || stockInEvent?.status) {
+      stockInActionPayload.location = stockInEvent.location;
+      stockInActionPayload.status = stockInEvent.status;
     }
     if (await persistTrayActionResult(result, stockInActionPayload)) {
       scanWarning.value = "";
@@ -751,7 +794,7 @@ const completeScan = async () => {
     return;
   }
 
-  if (!["到货", "已到达暂存间", "实验后暂存间存放", "实验后外观检测间存放", "实验前外观检测间存放"].includes(detail.status)) {
+  if (!["到货", "已到达暂存间", "实验后暂存间存放", "实验后外观检测间存放", "实验前外观检测间存放", "中途外观检查中"].includes(detail.status)) {
     scanWarning.value = activeRoom.value === "appearance" ? "该托盘尚未完成外观检测间扫码入库。" : "该托盘尚未完成暂存间扫码入库。";
     resetScanCodeAfterAttempt();
     return;
@@ -848,6 +891,8 @@ const confirmDestinationAction = async (destination = null) => {
     targetLabCode: target.targetLabCode,
     targetLabId: target.targetLabId,
     targetType: target.targetType,
+    inspectionResult: activeDetail.inspectionResult,
+    runNo: activeDetail.midExperimentRunNo || target.runNo || "",
     trayCode: activeDetail.trayCode,
   };
   const result = applyZancunInventoryAction({
@@ -864,6 +909,8 @@ const confirmDestinationAction = async (destination = null) => {
         targetLabCode: target.targetLabCode,
         targetLabId: target.targetLabId,
         targetType: target.targetType,
+        inspectionResult: activeDetail.inspectionResult,
+        runNo: activeDetail.midExperimentRunNo || target.runNo || "",
       },
       room: activeRoom.value,
       snapshot: actionSnapshot,

@@ -7,6 +7,7 @@ from app.core.mysql_storage_mappers import (
     build_storage_device_item,
     build_storage_experiment_item,
     build_storage_experiment_run_item,
+    build_storage_experiment_run_pause_item,
     build_storage_experiment_run_step_item,
     build_storage_experiment_run_tray_item,
     build_storage_experiment_sample_item,
@@ -145,6 +146,23 @@ def load_experiment_runs(cursor, *, task_codes: set[str] | None = None) -> list[
         run_params,
     )
     return [build_storage_experiment_run_item(row, tray_codes=tray_map.get(normalize_text(row.get("run_no")))) for row in cursor.fetchall()]
+
+
+def load_experiment_run_pauses(cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
+    task_scope, task_params = _task_scope(task_codes, "task_no")
+    cursor.execute(
+        f"""
+        SELECT pause_no, run_no, task_no, experiment_no, lab_code, pause_status,
+               inspection_tray_codes_json, pause_reason, paused_at, resumed_at,
+               stopped_at, pause_seconds, termination_type, termination_reason,
+               created_at, updated_at
+        FROM biz_experiment_run_pause
+        WHERE 1 = 1{task_scope}
+        ORDER BY created_at ASC, pause_no ASC
+        """,
+        task_params,
+    )
+    return [build_storage_experiment_run_pause_item(row) for row in cursor.fetchall()]
 
 
 def load_experiment_run_trays(cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:

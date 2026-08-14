@@ -8,6 +8,15 @@ from app.services.experiment_schedule_sequence import (
     ExperimentScheduleSequenceError,
     assert_expected_next_scheduled_step,
 )
+from app.services.appearance_inspection import (
+    APPEARANCE_STOCK_IN_ACTION,
+    APPEARANCE_STOCK_OUT_ACTION,
+    MID_EXPERIMENT_APPEARANCE_PHASE,
+    MID_EXPERIMENT_APPEARANCE_STATUS,
+    MID_EXPERIMENT_RETURNED_STATUS,
+    latest_mid_experiment_appearance_action,
+    resolve_mid_experiment_appearance_context,
+)
 
 
 SAMPLES_KEY = "mes.samples"
@@ -37,7 +46,7 @@ ROOM_CONFIGS = {
     },
     APPEARANCE_ROOM: {
         "event_room": APPEARANCE_ROOM,
-        "current_statuses": {"实验后外观检测间存放", "实验前外观检测间存放"},
+        "current_statuses": {"实验后外观检测间存放", "实验前外观检测间存放", MID_EXPERIMENT_APPEARANCE_STATUS},
         "duplicate_stock_in_error": "该托盘已完成外观检测间扫码入库。",
         "history_stock_in_action": "外观检测间扫码入库",
         "history_stock_out_action": "外观检测间扫码出库",
@@ -125,6 +134,8 @@ def appearance_phase(status: str) -> str:
         return "pre_experiment"
     if normalized_status == "实验后外观检测间存放":
         return "post_experiment"
+    if normalized_status == MID_EXPERIMENT_APPEARANCE_STATUS:
+        return MID_EXPERIMENT_APPEARANCE_PHASE
     return ""
 
 
@@ -311,6 +322,15 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
     if current_status not in config["current_statuses"]:
         raise StorageTrayActionError(config["requires_stock_in_error"], status_code=409)
 
+    mid_context = (
+        resolve_mid_experiment_appearance_context(snapshot, tray_code)
+        if config["event_room"] == APPEARANCE_ROOM and current_status == MID_EXPERIMENT_APPEARANCE_STATUS
+        else None
+    )
+    inspection_result = normalize_text(payload.get("inspectionResult") or payload.get("inspection_result"))
+    if current_status == MID_EXPERIMENT_APPEARANCE_STATUS and mid_context is None:
+        raise StorageTrayActionError("当前盐雾暂停检查已失效，请刷新后重试。", status_code=409)
+
     target_lab = normalize_text(payload.get("targetLab") or payload.get("target_lab") or payload.get("targetName") or payload.get("target_name"))
     target_lab_code = normalize_text(payload.get("targetLabCode") or payload.get("target_lab_code"))
     target_lab_id = payload.get("targetLabId") if "targetLabId" in payload else payload.get("target_lab_id", "")
@@ -320,12 +340,28 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
     target_sub_experiment_code = normalize_text(payload.get("subExperimentCode") or payload.get("sub_experiment_code") or payload.get("targetSubExperimentCode") or payload.get("target_sub_experiment_code"))
     target_axis_batch_no = payload.get("axisBatchNo") if "axisBatchNo" in payload else payload.get("axis_batch_no", payload.get("target_axis_batch_no", ""))
     target_type = normalize_text(payload.get("targetType") or payload.get("target_type")) or "lab"
+    if mid_context is not None:
+        requested_run_no = normalize_text(payload.get("runNo") or payload.get("run_no"))
+        if target_lab_code and target_lab_code != mid_context["lab_code"]:
+            raise StorageTrayActionError("中途检查托盘只能返回原盐雾试验室。", status_code=409)
+        if target_lab and target_lab != mid_context["lab_name"]:
+            raise StorageTrayActionError("中途检查托盘只能返回原盐雾试验室。", status_code=409)
+        if target_experiment_code and target_experiment_code != mid_context["experiment_code"]:
+            raise StorageTrayActionError("中途检查托盘只能返回原盐雾实验。", status_code=409)
+        if requested_run_no and requested_run_no != mid_context["run_no"]:
+            raise StorageTrayActionError("中途检查托盘只能返回原盐雾运行。", status_code=409)
+        target_lab = mid_context["lab_name"]
+        target_lab_code = mid_context["lab_code"]
+        target_lab_id = mid_context["lab_id"]
+        target_experiment_code = mid_context["experiment_code"]
+        target_schedule_id = mid_context["schedule_id"]
+        target_type = "lab"
     if not target_lab and not target_lab_code:
         raise StorageTrayActionError("请选择目标实验室后再出库。", status_code=400)
 
     normalized_tray_code = normalize_text(tray_code)
     task_code = primary_task_code(matches)
-    if target_type == "lab":
+    if target_type == "lab" and mid_context is None:
         if not target_schedule_id:
             raise StorageTrayActionError("出库请求缺少当前排程标识，请刷新后重试。", status_code=409)
         try:
@@ -355,9 +391,17 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
         phase = appearance_phase(current_status)
         if phase:
             appearance_metadata["appearance_phase"] = phase
+        if mid_context is not None:
+            appearance_metadata.update(
+                {
+                    "inspection_result": inspection_result,
+                    "pause_no": mid_context["pause_no"],
+                    "run_no": mid_context["run_no"],
+                }
+            )
     is_staging_target = target_type == STAGING_ROOM or target_lab == STAGING_LOCATION
     location = STAGING_LOCATION if is_staging_target else target_lab
-    status = "送至暂存间" if is_staging_target else "送至实验室"
+    status = MID_EXPERIMENT_RETURNED_STATUS if mid_context is not None else ("送至暂存间" if is_staging_target else "送至实验室")
     owner = normalize_text(payload.get("operator")) or "扫码登记"
     updated_samples = update_tray_samples(
         samples,
@@ -426,18 +470,45 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
         current_status,
         payload,
     )
+    mid_context = resolve_mid_experiment_appearance_context(snapshot, tray_code) if config["event_room"] == APPEARANCE_ROOM else None
+    mid_action = (
+        latest_mid_experiment_appearance_action(
+            snapshot,
+            tray_code=normalize_text(tray_code),
+            run_no=mid_context["run_no"],
+            pause_no=mid_context["pause_no"],
+        )
+        if mid_context is not None
+        else ""
+    )
+    allows_mid_experiment_appearance_stock_in = (
+        mid_context is not None
+        and current_status in {"实验进行中", "实验中", "实验暂停", MID_EXPERIMENT_RETURNED_STATUS}
+        and not mid_action
+    )
+    if mid_context is not None and mid_action == APPEARANCE_STOCK_OUT_ACTION:
+        raise StorageTrayActionError("本次盐雾暂停外观检查已完成，不能重复入库。", status_code=409)
+    if mid_context is not None and mid_action == APPEARANCE_STOCK_IN_ACTION:
+        raise StorageTrayActionError(config["duplicate_stock_in_error"], status_code=409)
     if (
         current_status not in config["stock_in_candidate_statuses"]
         and not allows_partial_axis_stock_in
         and not allows_pre_experiment_appearance_stock_in
         and not allows_post_experiment_appearance_stock_in
+        and not allows_mid_experiment_appearance_stock_in
     ):
         raise StorageTrayActionError(config["stock_in_blocked_error"], status_code=400)
 
     normalized_tray_code = normalize_text(tray_code)
     task_code = primary_task_code(matches)
     owner = normalize_text(payload.get("operator")) or "扫码登记"
-    status = normalize_text(payload.get("status")) or config["stock_in_status"]
+    requested_status = normalize_text(payload.get("status"))
+    # The server-side pause record is authoritative. A page opened before the
+    # pause ACK may still submit the ordinary appearance status; do not reject
+    # an otherwise authorized tray because of that stale presentation value.
+    if mid_context is not None:
+        requested_status = MID_EXPERIMENT_APPEARANCE_STATUS
+    status = MID_EXPERIMENT_APPEARANCE_STATUS if mid_context is not None else (requested_status or config["stock_in_status"])
     location = normalize_text(payload.get("location")) or config["stock_in_location"]
     appearance_metadata: dict[str, Any] = {}
     if config["event_room"] == APPEARANCE_ROOM:
@@ -448,6 +519,18 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
         if target_experiment_code:
             appearance_metadata["target_experiment_code"] = target_experiment_code
             appearance_metadata["experiment_code"] = target_experiment_code
+        if mid_context is not None:
+            appearance_metadata.update(
+                {
+                    "appearance_phase": MID_EXPERIMENT_APPEARANCE_PHASE,
+                    "experiment_code": mid_context["experiment_code"],
+                    "pause_no": mid_context["pause_no"],
+                    "run_no": mid_context["run_no"],
+                    "target_experiment_code": mid_context["experiment_code"],
+                    "target_lab": mid_context["lab_name"],
+                    "target_lab_code": mid_context["lab_code"],
+                }
+            )
     updated_samples = update_tray_samples(
         samples,
         normalized_tray_code,

@@ -182,8 +182,9 @@ def test_sample_storage_update_reads_bounded_validation_key_set(monkeypatch):
     assert response.status_code == 200
     assert set(storage.read_many_calls[-1]) == {
         "mes.devices",
-        "mes.experiment_run_steps",
-        "mes.experiment_run_trays",
+            "mes.experiment_run_steps",
+            "mes.experiment_run_pauses",
+            "mes.experiment_run_trays",
         "mes.experiment_runs",
         "mes.experiment_trays",
         "mes.experiments",
@@ -230,6 +231,246 @@ def test_storage_tray_action_uses_task_scope_and_preserves_unrelated_samples(mon
     assert storage.scope_reads[-1][0] == {task_code}
     assert storage.scope_writes[-1][0] == {task_code}
     assert set(storage.scope_writes[-1][1]) == {"mes.samples", "mes.staging_events"}
+
+
+def _salt_mid_appearance_snapshot():
+    task_code = "TASK-SALT-MID"
+    tray_code = "TP-SALT-MID"
+    run_no = "RUN-SALT-MID"
+    pause_no = "PAUSE-SALT-MID-1"
+    return {
+        "mes.samples": [{
+            "code": "SP-SALT-MID",
+            "task_code": task_code,
+            "location": "盐雾试验室",
+            "status": "实验进行中",
+            "flow_status": "实验进行中",
+            "trays": [{"tray_code": tray_code, "status": "实验进行中"}],
+        }],
+        "mes.experiment_runs": [{
+            "run_no": run_no,
+            "task_code": task_code,
+            "experiment_code": "EXP-SALT-MID",
+            "schedule_id": "SCH-SALT-MID",
+            "device": "盐雾试验室",
+            "status": "实验暂停",
+        }],
+        "mes.experiment_run_trays": [{
+            "run_no": run_no,
+            "task_code": task_code,
+            "experiment_code": "EXP-SALT-MID",
+            "tray_code": tray_code,
+            "status": "实验进行中",
+        }],
+        "mes.experiment_run_pauses": [{
+            "pause_no": pause_no,
+            "run_no": run_no,
+            "task_code": task_code,
+            "experiment_code": "EXP-SALT-MID",
+            "lab_code": "LAB_SALT",
+            "status": "实验暂停",
+            "inspection_tray_codes": [tray_code],
+        }],
+        "mes.staging_events": [],
+    }
+
+
+def test_salt_paused_selected_tray_can_enter_mid_experiment_appearance_and_return_only_to_original_run(monkeypatch):
+    snapshot = _salt_mid_appearance_snapshot()
+    tray_code = "TP-SALT-MID"
+    client, storage = build_client(monkeypatch, snapshot)
+
+    stocked = client.post(f"/api/storage/rooms/appearance/trays/{tray_code}/stock-in", json={})
+    assert stocked.status_code == 200
+    stocked_event = storage.read("mes.staging_events")[-1]
+    assert stocked_event["appearance_phase"] == "mid_experiment"
+    assert stocked_event["run_no"] == "RUN-SALT-MID"
+    assert stocked_event["pause_no"] == "PAUSE-SALT-MID-1"
+    assert storage.read("mes.samples")[0]["status"] == "中途外观检查中"
+
+    forged = client.post(
+        f"/api/storage/rooms/appearance/trays/{tray_code}/stock-out",
+        json={
+            "inspectionResult": "未见新增腐蚀",
+            "targetLab": "冲击一室",
+            "targetLabCode": "LAB_IMPACT_1",
+            "targetExperimentCode": "EXP-OTHER",
+            "runNo": "RUN-OTHER",
+        },
+    )
+    assert forged.status_code == 409
+    assert "只能返回原盐雾试验室" in forged.json()["detail"]
+
+    returned = client.post(
+        f"/api/storage/rooms/appearance/trays/{tray_code}/stock-out",
+        json={"inspectionResult": "未见新增腐蚀"},
+    )
+    assert returned.status_code == 200
+    returned_event = storage.read("mes.staging_events")[-1]
+    assert returned_event["appearance_phase"] == "mid_experiment"
+    assert returned_event["target_lab"] == "盐雾试验室"
+    assert returned_event["target_lab_code"] == "LAB_SALT"
+    assert returned_event["target_experiment_code"] == "EXP-SALT-MID"
+    assert returned_event["run_no"] == "RUN-SALT-MID"
+    assert returned_event["inspection_result"] == "未见新增腐蚀"
+    assert storage.read("mes.samples")[0]["status"] == "等待恢复实验"
+
+
+def test_salt_mid_appearance_stock_in_overrides_stale_post_experiment_client_status(monkeypatch):
+    snapshot = _salt_mid_appearance_snapshot()
+    tray_code = "TP-SALT-MID"
+    client, storage = build_client(monkeypatch, snapshot)
+
+    response = client.post(
+        f"/api/storage/rooms/appearance/trays/{tray_code}/stock-in",
+        json={
+            "location": "外观检测间",
+            "status": "实验后外观检测间存放",
+        },
+    )
+
+    assert response.status_code == 200
+    event = storage.read("mes.staging_events")[-1]
+    assert event["status"] == "中途外观检查中"
+    assert event["appearance_phase"] == "mid_experiment"
+    assert event["run_no"] == "RUN-SALT-MID"
+    assert event["pause_no"] == "PAUSE-SALT-MID-1"
+    assert storage.read("mes.samples")[0]["status"] == "中途外观检查中"
+
+
+def test_mid_experiment_appearance_rejects_unselected_or_unconfirmed_pause_tray(monkeypatch):
+    snapshot = _salt_mid_appearance_snapshot()
+    snapshot["mes.experiment_run_pauses"][0]["inspection_tray_codes"] = []
+    client, _storage = build_client(monkeypatch, snapshot)
+
+    response = client.post("/api/storage/rooms/appearance/trays/TP-SALT-MID/stock-in", json={})
+
+    assert response.status_code == 400
+    assert "不能外观检测间入库" in response.json()["detail"]
+
+
+def test_mid_experiment_resume_validation_requires_result_and_original_salt_return():
+    from app.services.appearance_inspection import validate_mid_experiment_trays_ready_for_resume
+
+    snapshot = _salt_mid_appearance_snapshot()
+    pause = snapshot["mes.experiment_run_pauses"][0]
+    with pytest.raises(ValueError, match="尚未全部返回"):
+        validate_mid_experiment_trays_ready_for_resume(snapshot, pause)
+
+    snapshot["mes.staging_events"] = [
+        {
+            "room": "appearance",
+            "action": "stock_in",
+            "appearance_phase": "mid_experiment",
+            "run_no": "RUN-SALT-MID",
+            "pause_no": "PAUSE-SALT-MID-1",
+            "tray_code": "TP-SALT-MID",
+            "time": "2026-08-12 10:00:00",
+        },
+        {
+            "room": "appearance",
+            "action": "stock_out",
+            "appearance_phase": "mid_experiment",
+            "run_no": "RUN-SALT-MID",
+            "pause_no": "PAUSE-SALT-MID-1",
+            "tray_code": "TP-SALT-MID",
+            "inspection_result": "未见新增腐蚀",
+            "target_lab": "盐雾试验室",
+            "target_lab_code": "LAB_SALT",
+            "time": "2026-08-12 10:10:00",
+        },
+    ]
+    sample = snapshot["mes.samples"][0]
+    sample["location"] = "盐雾试验室"
+    sample["status"] = "等待恢复实验"
+    sample["flow_status"] = "等待恢复实验"
+    sample["trays"][0]["status"] = "等待恢复实验"
+
+    validate_mid_experiment_trays_ready_for_resume(snapshot, pause)
+
+
+def test_mid_experiment_appearance_conclusion_is_optional_and_empty_value_is_audited(monkeypatch):
+    from app.services.appearance_inspection import validate_mid_experiment_trays_ready_for_resume
+
+    snapshot = _salt_mid_appearance_snapshot()
+    tray_code = "TP-SALT-MID"
+    client, storage = build_client(monkeypatch, snapshot)
+
+    assert client.post(f"/api/storage/rooms/appearance/trays/{tray_code}/stock-in", json={}).status_code == 200
+    response = client.post(f"/api/storage/rooms/appearance/trays/{tray_code}/stock-out", json={})
+
+    assert response.status_code == 200
+    event = storage.read("mes.staging_events")[-1]
+    assert event["appearance_phase"] == "mid_experiment"
+    assert event["inspection_result"] == ""
+    assert event["target_lab_code"] == "LAB_SALT"
+    validate_mid_experiment_trays_ready_for_resume(
+        storage.read_all(),
+        storage.read("mes.experiment_run_pauses")[0],
+    )
+
+
+def test_second_salt_pause_allows_manual_appearance_stock_in_after_previous_cycle_returned(monkeypatch):
+    snapshot = _salt_mid_appearance_snapshot()
+    tray_code = "TP-SALT-MID"
+    first_pause = snapshot["mes.experiment_run_pauses"][0]
+    first_pause["pause_no"] = "PAUSE-SALT-MID-OLD"
+    first_pause["status"] = "实验已恢复"
+    snapshot["mes.experiment_run_pauses"].append({
+        **first_pause,
+        "pause_no": "PAUSE-SALT-MID-NEW",
+        "status": "实验暂停",
+    })
+    snapshot["mes.staging_events"] = [
+        {
+            "room": "appearance", "action": "stock_in", "appearance_phase": "mid_experiment",
+            "run_no": "RUN-SALT-MID", "pause_no": "PAUSE-SALT-MID-OLD", "tray_code": tray_code,
+            "time": "2026-08-12 10:00:00",
+        },
+        {
+            "room": "appearance", "action": "stock_out", "appearance_phase": "mid_experiment",
+            "run_no": "RUN-SALT-MID", "pause_no": "PAUSE-SALT-MID-OLD", "tray_code": tray_code,
+            "inspection_result": "继续实验", "target_lab": "盐雾试验室", "target_lab_code": "LAB_SALT",
+            "time": "2026-08-12 10:10:00",
+        },
+    ]
+    sample = snapshot["mes.samples"][0]
+    sample["location"] = "盐雾试验室"
+    sample["status"] = "等待恢复实验"
+    sample["flow_status"] = "等待恢复实验"
+    sample["trays"][0]["status"] = "等待恢复实验"
+    client, storage = build_client(monkeypatch, snapshot)
+
+    response = client.post(f"/api/storage/rooms/appearance/trays/{tray_code}/stock-in", json={})
+
+    assert response.status_code == 200
+    event = storage.read("mes.staging_events")[-1]
+    assert event["action"] == "stock_in"
+    assert event["pause_no"] == "PAUSE-SALT-MID-NEW"
+    assert event["appearance_phase"] == "mid_experiment"
+    assert storage.read("mes.samples")[0]["status"] == "中途外观检查中"
+
+
+def test_completed_current_salt_pause_cannot_be_relisted_or_stocked_in_again(monkeypatch):
+    snapshot = _salt_mid_appearance_snapshot()
+    tray_code = "TP-SALT-MID"
+    snapshot["mes.staging_events"] = [{
+        "room": "appearance", "action": "stock_out", "appearance_phase": "mid_experiment",
+        "run_no": "RUN-SALT-MID", "pause_no": "PAUSE-SALT-MID-1", "tray_code": tray_code,
+        "inspection_result": "继续实验", "target_lab": "盐雾试验室", "target_lab_code": "LAB_SALT",
+        "time": "2026-08-12 10:10:00",
+    }]
+    sample = snapshot["mes.samples"][0]
+    sample["location"] = "盐雾试验室"
+    sample["status"] = "等待恢复实验"
+    sample["flow_status"] = "等待恢复实验"
+    sample["trays"][0]["status"] = "等待恢复实验"
+    client, _storage = build_client(monkeypatch, snapshot)
+
+    response = client.post(f"/api/storage/rooms/appearance/trays/{tray_code}/stock-in", json={})
+
+    assert response.status_code == 409
+    assert "本次盐雾暂停外观检查已完成" in response.json()["detail"]
 
 
 def test_running_device_repair_atomically_completes_experiment_before_entering_repair(monkeypatch):

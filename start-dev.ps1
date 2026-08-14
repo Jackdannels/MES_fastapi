@@ -6,6 +6,7 @@ param(
     [string]$FrontendNetworkHost = "192.168.110.15",
     [string]$LimsSimulatorHost = "127.0.0.1",
     [int]$LimsSimulatorPort = 8900,
+    [int]$UpperComputerSimulatorPort = 8899,
     [string]$RabbitMqUrl = "amqp://guest:guest@127.0.0.1:5672/",
     [string]$CondaEnv = "fastapi",
     [int]$FrontendWaitTimeoutSeconds = 90,
@@ -128,10 +129,11 @@ if (-not (Test-Path -LiteralPath (Join-Path $LimsSimulatorRoot "app.py"))) {
 
 $condaBat = Resolve-CondaBat
 $condaPython = Resolve-CondaPython $condaBat $CondaEnv
-$backendReadyUrl = "http://127.0.0.1:$BackendPort/api/storage"
+$backendReadyUrl = "http://127.0.0.1:$BackendPort/health/ready"
 $frontendLocalUrl = "http://127.0.0.1:$FrontendPort/"
 $limsSimulatorUrl = "http://127.0.0.1:$LimsSimulatorPort/"
 $limsSimulatorReadyUrl = "http://127.0.0.1:$LimsSimulatorPort/api/state"
+$upperComputerSimulatorUrl = "http://127.0.0.1:$UpperComputerSimulatorPort/"
 $frontendNetworkHost = if ([string]::IsNullOrWhiteSpace($FrontendNetworkHost)) { Resolve-PrimaryLanIpv4 } else { $FrontendNetworkHost.Trim() }
 $frontendNetworkUrl = "http://${frontendNetworkHost}:$FrontendPort/"
 $launcherSessionId = [Guid]::NewGuid().ToString("N")
@@ -151,7 +153,7 @@ Write-Host "Waiting for backend: $backendReadyUrl"
 do {
     try {
         `$response = Invoke-WebRequest -UseBasicParsing -Uri "$backendReadyUrl" -TimeoutSec 2
-        if (`$response.StatusCode -ge 200 -and `$response.StatusCode -lt 500) {
+        if (`$response.StatusCode -ge 200 -and `$response.StatusCode -lt 300) {
             Write-Host "Backend is ready."
             exit 0
         }
@@ -183,7 +185,7 @@ do {
         `$response = Invoke-WebRequest -UseBasicParsing -Uri "$frontendLocalUrl" -TimeoutSec 2
         `$limsResponse = Invoke-WebRequest -UseBasicParsing -Uri "$limsSimulatorReadyUrl" -TimeoutSec 2
         `$limsState = `$limsResponse.Content | ConvertFrom-Json
-        if (`$response.StatusCode -ge 200 -and `$response.StatusCode -lt 500 -and `$limsResponse.StatusCode -ge 200 -and `$limsResponse.StatusCode -lt 500 -and `$limsState.connected) {
+        if (`$response.StatusCode -ge 200 -and `$response.StatusCode -lt 300 -and `$limsResponse.StatusCode -ge 200 -and `$limsResponse.StatusCode -lt 300 -and `$limsState.connected) {
             Write-Host "Opening browser: $frontendNetworkUrl"
             Start-Process "$frontendNetworkUrl"
             Start-Process "$limsSimulatorUrl"
@@ -285,9 +287,11 @@ if ($StateFile) {
         backendPort = $BackendPort
         frontendPort = $FrontendPort
         limsSimulatorPort = $LimsSimulatorPort
+        upperComputerSimulatorPort = $UpperComputerSimulatorPort
         frontendLocalUrl = $frontendLocalUrl
         frontendUrl = $frontendNetworkUrl
         limsSimulatorUrl = $limsSimulatorUrl
+        upperComputerSimulatorUrl = $upperComputerSimulatorUrl
         logDirectory = $(if ($Production) { $logDirectory } else { "" })
         launcherSessionId = $launcherSessionId
     } | ConvertTo-Json | Set-Content -LiteralPath $StateFile -Encoding UTF8
@@ -299,8 +303,9 @@ if (-not $DisableAutoOpenBrowser) {
         -WindowStyle Hidden
 }
 
-Write-Host "Started MES backend, frontend, and LIMS simulator dev windows."
+Write-Host "Started MES backend, frontend, LIMS simulator, and backend-managed upper-computer service."
 Write-Host "Backend:  http://localhost:$BackendPort"
 Write-Host "Frontend: $frontendNetworkUrl"
 Write-Host "LIMS simulator: $limsSimulatorUrl"
+Write-Host "Upper-computer service: $upperComputerSimulatorUrl"
 exit 0

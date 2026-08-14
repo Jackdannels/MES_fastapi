@@ -15,6 +15,7 @@ DEFAULT_EXTENSION_SOURCES = (
     PROJECT_ROOT / "scripts" / "sql" / "V006__long_running_query_indexes.sql",
     PROJECT_ROOT / "scripts" / "sql" / "V007__bounded_event_retention_indexes.sql",
     PROJECT_ROOT / "scripts" / "sql" / "V008__fixture_install_schedule_identity.sql",
+    PROJECT_ROOT / "scripts" / "sql" / "V009__salt_spray_experiment_pause.sql",
 )
 
 _CREATE_TABLE_RE = re.compile(
@@ -158,9 +159,10 @@ def _merge_migration_extensions(
     for extension_source in extension_sources:
         source_bytes = extension_source.read_bytes()
         sql = source_bytes.decode("utf-8")
+        table_matches = list(_CREATE_TABLE_RE.finditer(sql))
         column_matches = list(_ADD_COLUMN_RE.finditer(sql))
         index_matches = list(_ADD_INDEX_RE.finditer(sql))
-        if not column_matches and not index_matches:
+        if not table_matches and not column_matches and not index_matches:
             raise ValueError(f"No schema extension definitions found in {extension_source}")
         for match in column_matches:
             table_name = match.group("table")
@@ -215,8 +217,10 @@ def build_contract(
 ) -> dict[str, Any]:
     source_bytes = source.read_bytes()
     sql = source_bytes.decode("utf-8")
+    extension_sql = "\n".join(path.read_text(encoding="utf-8") for path in extension_sources)
+    schema_sql = f"{sql}\n{extension_sql}"
     tables: dict[str, Any] = {}
-    for match in _CREATE_TABLE_RE.finditer(sql):
+    for match in _CREATE_TABLE_RE.finditer(schema_sql):
         table_name = match.group("name")
         charset = match.group("charset")
         collation = match.group("collation")
@@ -262,11 +266,11 @@ def build_contract(
             "delete_rule": "RESTRICT",
             "update_rule": "RESTRICT",
         }
-    if len(tables) != 39:
-        raise ValueError(f"Expected 39 baseline tables, parsed {len(tables)}")
+    if len(tables) != 40:
+        raise ValueError(f"Expected 40 schema tables, parsed {len(tables)}")
     extension_source_metadata = _merge_migration_extensions(tables, extension_sources)
     return {
-        "contract_version": "V008",
+        "contract_version": "V011",
         "source": str(source.relative_to(PROJECT_ROOT)).replace("\\", "/"),
         "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
         "index_sources": extension_source_metadata,

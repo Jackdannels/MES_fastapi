@@ -54,9 +54,11 @@ describe("laboratory workbench layout", () => {
     expect(stylesSource).toMatch(/\.laboratory-reset-modal \.action-btn\.danger\s*\{[^}]*background:\s*rgba\(153,\s*27,\s*27,\s*0\.88\)/i);
   });
 
-  test("enlarges compare, install, and ready operation dialogs", () => {
+  test("enlarges compare, install, ready, and salt-spray control dialogs", () => {
     expect(pageSource).toContain('class="laboratory-operation-modal laboratory-operation-modal--compare"');
-    expect(pageSource.match(/class="laboratory-operation-modal(?:\s[^"]*)?"/g)).toHaveLength(3);
+    expect(pageSource.match(/class="laboratory-operation-modal(?:\s[^"]*)?"/g)).toHaveLength(5);
+    expect(pageSource).toContain('data-testid="laboratory-salt-pause-modal"');
+    expect(pageSource).toContain('data-testid="laboratory-salt-stop-modal"');
     expect(pageSource).toContain("laboratory-operation-modal-button");
     expect(stylesSource).toMatch(/\.laboratory-operation-modal \.modal-content\s*\{[^}]*width:\s*min\(860px,\s*92vw\)[^}]*min-height:\s*360px/i);
     expect(stylesSource).toMatch(/\.laboratory-operation-modal--compare \.modal-content\s*\{[^}]*width:\s*min\(1320px,\s*96vw\)[^}]*max-width:\s*calc\(100vw\s*-\s*24px\)/i);
@@ -67,6 +69,13 @@ describe("laboratory workbench layout", () => {
     expect(pageSource).toContain("laboratory-compare-complete-button");
     expect(stylesSource).toMatch(/\[data-testid="laboratory-compare-modal"\] \.form-actions\s*\{[^}]*width:\s*100%[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/i);
     expect(stylesSource).toMatch(/\.laboratory-compare-complete-button\s*\{[^}]*width:\s*100%[^}]*height:\s*72px[^}]*min-height:\s*72px[^}]*font-size:\s*20px/i);
+  });
+
+  test("teleports salt-spray control confirmations above the running experiment overlay", () => {
+    expect(pageSource).toMatch(/<Teleport to="body">\s*<AppModal[\s\S]*?class="laboratory-operation-modal laboratory-salt-control-modal--priority"[\s\S]*?data-testid="laboratory-salt-pause-modal"/);
+    expect(pageSource).toMatch(/<Teleport to="body">\s*<AppModal[\s\S]*?class="laboratory-operation-modal laboratory-salt-control-modal--priority"[\s\S]*?data-testid="laboratory-salt-stop-modal"/);
+    expect(stylesSource).toMatch(/\.laboratory-running-overlay\s*\{[^}]*z-index:\s*60/i);
+    expect(stylesSource).toMatch(/\.modal\.laboratory-salt-control-modal--priority\s*\{[^}]*z-index:\s*80/i);
   });
 
   test("renders employee login as a large touch-friendly dialog", () => {

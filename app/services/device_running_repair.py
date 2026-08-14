@@ -6,7 +6,7 @@ from app.services.laboratory_completion import complete_storage_laboratory_exper
 from app.services.laboratory_snapshot_adapter import completion_updates, snapshot_from_storage_payload
 
 
-RUNNING_EXPERIMENT_STATUSES = {"实验进行中", "实验中"}
+RUNNING_EXPERIMENT_STATUSES = {"实验进行中", "实验中", "实验暂停"}
 
 
 class DeviceRunningRepairError(ValueError):

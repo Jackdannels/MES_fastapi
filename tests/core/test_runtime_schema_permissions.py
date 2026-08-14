@@ -74,7 +74,7 @@ class _VersionCursor:
         return []
 
 
-@pytest.mark.parametrize("row", [("V008", 1), {"version": "V008", "success": 1}])
+@pytest.mark.parametrize("row", [("V011", 1), {"version": "V011", "success": 1}])
 def test_runtime_accepts_successful_required_schema_version(row, monkeypatch) -> None:
     cursor = _VersionCursor(row, history_exists=True)
     contract_checks = []
@@ -84,16 +84,16 @@ def test_runtime_accepts_successful_required_schema_version(row, monkeypatch) ->
 
     assert cursor.statements[-1] == (
         "SELECT version, success FROM schema_migrations WHERE version = %s",
-        ("V008",),
+        ("V011",),
     )
     assert contract_checks == [cursor]
 
 
-@pytest.mark.parametrize("row", [None, ("V007", 1), ("V008", 0)])
+@pytest.mark.parametrize("row", [None, ("V010", 1), ("V011", 0)])
 def test_runtime_rejects_missing_old_or_failed_schema_version(row) -> None:
     cursor = _VersionCursor(row, history_exists=True)
 
-    with pytest.raises(RuntimeError, match="V008"):
+    with pytest.raises(RuntimeError, match="V011"):
         require_schema_version(cursor)
 
 
@@ -103,7 +103,7 @@ def test_runtime_accepts_complete_legacy_schema_without_migration_history(caplog
 
     require_schema_version(cursor, app_env="dev")
 
-    assert "allowing a complete V008 legacy schema" in caplog.text
+    assert "allowing a complete V011 legacy schema" in caplog.text
 
 
 def test_runtime_rejects_incomplete_legacy_schema_without_migration_history(monkeypatch) -> None:
@@ -130,8 +130,8 @@ def test_runtime_rejects_historyless_schema_in_production_before_compatibility_c
         require_schema_version(cursor, app_env="prod")
 
 
-def test_runtime_rejects_schema_drift_even_when_v008_is_recorded(monkeypatch) -> None:
-    cursor = _VersionCursor(("V008", 1), history_exists=True)
+def test_runtime_rejects_schema_drift_even_when_v011_is_recorded(monkeypatch) -> None:
+    cursor = _VersionCursor(("V011", 1), history_exists=True)
     monkeypatch.setattr(
         schema_version,
         "validate_schema_contract",

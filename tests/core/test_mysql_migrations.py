@@ -188,9 +188,9 @@ def test_final_migration_is_not_recorded_successful_when_contract_validation_fai
     monkeypatch,
     tmp_path,
 ) -> None:
-    path = tmp_path / "V008.sql"
+    path = tmp_path / "V011.sql"
     path.write_text("SELECT 1;", encoding="utf-8")
-    migration = _migration("V008", path)
+    migration = _migration("V011", path)
     records: dict[str, tuple[Any, ...]] = {}
     control_cursor = _MigrationCursor(records)
     validation_cursor = _MigrationCursor({})
@@ -207,11 +207,38 @@ def test_final_migration_is_not_recorded_successful_when_contract_validation_fai
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("schema drift")),
     )
 
-    with pytest.raises(RuntimeError, match="V008 failed.*schema drift"):
+    with pytest.raises(RuntimeError, match="V011 failed.*schema drift"):
         init_mysql_storage.apply_pending_schema_migrations()
 
-    assert records["V008"][2] == 0
-    assert records["V008"][3] == "schema drift"
+    assert records["V011"][2] == 0
+    assert records["V011"][3] == "schema drift"
+
+
+def test_v010_repairs_salt_lab_in_place_and_backfills_existing_schedules() -> None:
+    migration_sql = (
+        init_mysql_storage.SQL_DIR / "V010__repair_salt_spray_lab_identity.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "WHERE lab.lab_code = 'LAB_SALT'" in migration_sql
+    assert "lab.lab_name = '盐雾试验室'" in migration_sql
+    assert "test_type.test_type_code = 'YW'" in migration_sql
+    assert "UPDATE biz_schedule AS schedule_row" in migration_sql
+    assert "schedule_row.lab_id = lab.lab_id" in migration_sql
+    assert "schedule_row.device_name IN ('盐雾试验室', 'Salt Spray Lab')" in migration_sql
+
+
+def test_v011_replaces_legacy_lab_master_data_with_the_canonical_set() -> None:
+    migration_sql = (
+        init_mysql_storage.SQL_DIR / "V011__canonicalize_laboratory_master_data.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "'LAB_HOT_HUMID_2', '高低温湿热二室'" in migration_sql
+    assert "DELETE FROM md_lab" in migration_sql
+    assert "lab_code IN ('LAB_IMPACT', 'LAB_VIB')" in migration_sql
+    assert "DELETE FROM md_test_type" in migration_sql
+    assert "'TT_IMPACT', 'TT_VIB', 'TT_SALT', 'TT_TEMP', 'TT_MOLD'" in migration_sql
+    assert "DELETE FROM md_equipment" in migration_sql
+    assert "equipment_code IN ('EQ-IM-001', 'EQ-VB-001', 'EQ-SS-001')" in migration_sql
 
 
 def test_migration_stops_when_database_lock_cannot_be_acquired(monkeypatch) -> None:

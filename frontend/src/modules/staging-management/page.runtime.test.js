@@ -841,6 +841,71 @@ describe("StagingManagementPage runtime", () => {
     expect(mounted.find('[data-testid="zancun-scan-modal"].is-open').exists()).toBe(false);
   });
 
+  test("refreshes a newly confirmed salt pause before constructing appearance stock-in", async () => {
+    const taskCode = "SYLU-2026-04-103";
+    const trayCode = `${taskCode}-TP-001`;
+    const experimentCode = `${taskCode}-A`;
+    const runNo = "RUN-SALT-MID-PAGE";
+    const pauseNo = "PAUSE-SALT-MID-PAGE";
+    const mounted = await mountPage({ room: "appearance" });
+
+    // The page was mounted before the upper-computer pause confirmation. The
+    // next GET represents the authoritative snapshot after that confirmation.
+    remoteSnapshot = {
+      ...remoteSnapshot,
+      [STORAGE_KEYS.samples]: remoteSnapshot[STORAGE_KEYS.samples].map((sample) => (
+        sample.task_code === taskCode
+          ? {
+              ...sample,
+              location: "盐雾试验室",
+              status: "实验进行中",
+              flow_status: "实验进行中",
+              trays: sample.trays.map((tray) => ({ ...tray, status: "实验进行中" })),
+            }
+          : sample
+      )),
+      [STORAGE_KEYS.experiment_runs]: [{
+        run_no: runNo,
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        device: "盐雾试验室",
+        status: "实验暂停",
+      }],
+      [STORAGE_KEYS.experiment_run_trays]: [{
+        run_no: runNo,
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        tray_code: trayCode,
+      }],
+      [STORAGE_KEYS.experiment_run_pauses]: [{
+        pause_no: pauseNo,
+        run_no: runNo,
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        lab_code: "LAB_SALT",
+        status: "实验暂停",
+        inspection_tray_codes: [trayCode],
+      }],
+      [STORAGE_KEYS.staging_events]: remoteSnapshot[STORAGE_KEYS.staging_events]
+        .filter((event) => event.tray_code !== trayCode),
+    };
+
+    await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue(trayCode);
+    await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
+    await settlePage(mounted);
+
+    const request = fetch.mock.calls.find(([url, options = {}]) => (
+      String(url).includes(`/api/storage/rooms/appearance/trays/${trayCode}/stock-in`)
+      && options.method === "POST"
+    ));
+    expect(request).toBeTruthy();
+    expect(JSON.parse(request[1].body)).toMatchObject({
+      location: "外观检测间",
+      status: "中途外观检查中",
+    });
+  });
+
   test("stock-in scan accepts tray QR payloads and persists the plain tray code", async () => {
     const mounted = await mountPage();
 

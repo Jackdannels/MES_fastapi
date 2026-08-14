@@ -4,7 +4,17 @@ import { LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS } from "./labo
 
 const RESETTABLE_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS]);
 export const SWITCH_REVERTIBLE_TRAY_STATUSES = RESETTABLE_TRAY_STATUSES;
-export const TASK_SWITCH_LOCKED_TRAY_STATUSES = new Set([LAB_COMPARE_STATUS, LAB_INSTALL_STATUS, LAB_READY_STATUS, "实验进行中", "实验中"]);
+export const TASK_SWITCH_LOCKED_TRAY_STATUSES = new Set([
+  LAB_COMPARE_STATUS,
+  LAB_INSTALL_STATUS,
+  LAB_READY_STATUS,
+  "实验进行中",
+  "实验中",
+  "实验暂停",
+  "中途外观检查中",
+  "中途检查完成，返回盐雾试验室",
+  "等待恢复实验",
+]);
 export const COMPLETED_EXPERIMENT_RUN_STATUSES = new Set(["实验完成", "实验已完成", "实验已经完成"]);
 
 export const normalizeText = (value) => String(value ?? "").trim();

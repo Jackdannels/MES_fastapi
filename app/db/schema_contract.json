@@ -1,5 +1,5 @@
 {
-  "contract_version": "V008",
+  "contract_version": "V011",
   "index_sources": [
     {
       "source": "scripts/sql/V006__long_running_query_indexes.sql",
@@ -12,6 +12,10 @@
     {
       "source": "scripts/sql/V008__fixture_install_schedule_identity.sql",
       "source_sha256": "3876e87555129297ed4ee3f36128e2161ddd37b26d974237005dc3af39bd7414"
+    },
+    {
+      "source": "scripts/sql/V009__salt_spray_experiment_pause.sql",
+      "source_sha256": "0ef8e38fd923ac92f7e17f0452872c68519fe53666782101aa883ccb59faff53"
     }
   ],
   "source": "scripts/sql/0001-complete-baseline-schema.sql",
@@ -1144,6 +1148,192 @@
         "uk_biz_experiment_run_no": {
           "columns": [
             "run_no"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        }
+      }
+    },
+    "biz_experiment_run_pause": {
+      "charset": "utf8mb4",
+      "collation": "utf8mb4_unicode_ci",
+      "columns": {
+        "created_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        },
+        "experiment_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "inspection_tray_codes_json": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "json"
+        },
+        "lab_code": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "pause_id": {
+          "auto_increment": true,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": false,
+          "type": "bigint"
+        },
+        "pause_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(100)"
+        },
+        "pause_reason": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(500)"
+        },
+        "pause_seconds": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "0",
+          "nullable": false,
+          "type": "int"
+        },
+        "pause_status": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(30)"
+        },
+        "paused_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "resumed_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "run_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(80)"
+        },
+        "stopped_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": null,
+          "nullable": true,
+          "type": "datetime"
+        },
+        "task_no": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": false,
+          "type": "varchar(50)"
+        },
+        "termination_reason": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(500)"
+        },
+        "termination_type": {
+          "auto_increment": false,
+          "charset": "utf8mb4",
+          "collation": "utf8mb4_unicode_ci",
+          "default": null,
+          "nullable": true,
+          "type": "varchar(30)"
+        },
+        "updated_at": {
+          "auto_increment": false,
+          "charset": null,
+          "collation": null,
+          "default": "CURRENT_TIMESTAMP",
+          "nullable": false,
+          "type": "datetime"
+        }
+      },
+      "engine": "InnoDB",
+      "foreign_keys": {},
+      "indexes": {
+        "PRIMARY": {
+          "columns": [
+            "pause_id"
+          ],
+          "sub_parts": [
+            null
+          ],
+          "unique": true
+        },
+        "idx_biz_experiment_run_pause_run_status": {
+          "columns": [
+            "run_no",
+            "pause_status"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "idx_biz_experiment_run_pause_task_exp": {
+          "columns": [
+            "task_no",
+            "experiment_no"
+          ],
+          "sub_parts": [
+            null,
+            null
+          ],
+          "unique": false
+        },
+        "uk_biz_experiment_run_pause_no": {
+          "columns": [
+            "pause_no"
           ],
           "sub_parts": [
             null

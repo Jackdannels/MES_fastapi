@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Dict, Iterable
 
 from app.core.axis_codes import sort_axis_codes
+from app.core.master_data import DEFAULT_LABS
 from app.core.storage_backend import (
     normalize_experiment_detail_text,
     normalize_experiment_status_text,
@@ -47,6 +48,13 @@ SCHEDULE_DELAY_FIELDS = (
     "delay_reason",
     "source_run_no",
 )
+
+
+CANONICAL_LAB_CODE_BY_NAME = {
+    normalize_text(row.get("lab_name")): normalize_text(row.get("lab_code"))
+    for row in DEFAULT_LABS
+    if normalize_text(row.get("lab_name")) and normalize_text(row.get("lab_code"))
+}
 
 
 def _normalize_axis_codes(value: Any) -> list[str]:
@@ -451,7 +459,10 @@ def build_schedule_insert_row(schedule: Dict[str, Any]) -> Dict[str, Any]:
         "sub_experiment_code": _sub_experiment_code(schedule),
         "schedule_type": STORAGE_MARKER,
         "lab_id": parse_int_value(schedule.get("lab_id") or schedule.get("labId")),
-        "lab_code": normalize_text(schedule.get("lab_code") or schedule.get("labCode")),
+        "lab_code": (
+            normalize_text(schedule.get("lab_code") or schedule.get("labCode"))
+            or CANONICAL_LAB_CODE_BY_NAME.get(device, "")
+        ),
         "device_name": device,
         "axis_codes_json": _axis_codes_json(schedule.get("axis_codes") or schedule.get("axisCodes")),
         "axis_batch_no": normalize_text(schedule.get("axis_batch_no") or schedule.get("axisBatchNo")),
@@ -494,6 +505,55 @@ def build_storage_schedule_item(row: Dict[str, Any]) -> Dict[str, Any]:
     if delay_metadata.get("original_start_at") and delay_metadata.get("original_end_at"):
         item.update(delay_metadata)
     return item
+
+
+def build_experiment_run_pause_insert_row(pause: Dict[str, Any]) -> Dict[str, Any]:
+    now_beijing = current_beijing_datetime()
+    tray_codes = [
+        normalize_text(item)
+        for item in (pause.get("inspection_tray_codes") or pause.get("inspectionTrayCodes") or [])
+        if normalize_text(item)
+    ]
+    return {
+        "pause_no": normalize_text(pause.get("pause_no") or pause.get("pauseNo")),
+        "run_no": normalize_text(pause.get("run_no") or pause.get("runNo")),
+        "task_no": normalize_text(pause.get("task_code") or pause.get("task_no")),
+        "experiment_no": normalize_text(pause.get("experiment_code") or pause.get("experiment_no")),
+        "lab_code": normalize_text(pause.get("lab_code") or pause.get("labCode")),
+        "pause_status": normalize_text(pause.get("status") or pause.get("pause_status")),
+        "inspection_tray_codes_json": json.dumps(tray_codes, ensure_ascii=False),
+        "pause_reason": normalize_text(pause.get("pause_reason") or pause.get("pauseReason")) or None,
+        "paused_at": parse_storage_datetime(pause.get("paused_at")),
+        "resumed_at": parse_storage_datetime(pause.get("resumed_at")),
+        "stopped_at": parse_storage_datetime(pause.get("stopped_at")),
+        "pause_seconds": parse_int_value(pause.get("pause_seconds")),
+        "termination_type": normalize_text(pause.get("termination_type")) or None,
+        "termination_reason": normalize_text(pause.get("termination_reason")) or None,
+        "created_at": parse_storage_datetime(pause.get("created_at")) or now_beijing,
+        "updated_at": parse_storage_datetime(pause.get("updated_at")) or now_beijing,
+    }
+
+
+def build_storage_experiment_run_pause_item(row: Dict[str, Any]) -> Dict[str, Any]:
+    tray_codes = _normalize_axis_codes(row.get("inspection_tray_codes_json"))
+    return {
+        "pause_no": normalize_text(row.get("pause_no")),
+        "run_no": normalize_text(row.get("run_no")),
+        "task_code": normalize_text(row.get("task_no")),
+        "experiment_code": normalize_text(row.get("experiment_no")),
+        "lab_code": normalize_text(row.get("lab_code")),
+        "status": normalize_text(row.get("pause_status")),
+        "inspection_tray_codes": tray_codes,
+        "pause_reason": normalize_text(row.get("pause_reason")),
+        "paused_at": format_iso_storage_datetime(row.get("paused_at")),
+        "resumed_at": format_iso_storage_datetime(row.get("resumed_at")),
+        "stopped_at": format_iso_storage_datetime(row.get("stopped_at")),
+        "pause_seconds": parse_int_value(row.get("pause_seconds")),
+        "termination_type": normalize_text(row.get("termination_type")),
+        "termination_reason": normalize_text(row.get("termination_reason")),
+        "created_at": format_iso_storage_datetime(row.get("created_at")),
+        "updated_at": format_iso_storage_datetime(row.get("updated_at")),
+    }
 
 
 def build_device_insert_row(device: Dict[str, Any]) -> Dict[str, Any]:

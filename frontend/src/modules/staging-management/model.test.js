@@ -148,6 +148,141 @@ const createSnapshot = () => ({
   ],
 });
 
+describe("salt pause mid-experiment appearance", () => {
+  test("routes a selected paused salt tray through mid-experiment appearance and locks its return", () => {
+    const snapshot = createSnapshot();
+    const taskCode = "SYLU-2026-04-103";
+    const trayCode = "SYLU-2026-04-103-TP-001";
+    snapshot[STORAGE_KEYS.samples] = [{
+      code: `${taskCode}-SP-001`,
+      task_code: taskCode,
+      location: "盐雾试验室",
+      status: "实验进行中",
+      flow_status: "实验进行中",
+      trays: [{ tray_code: trayCode, status: "实验进行中", quantity: 1 }],
+    }];
+    snapshot[STORAGE_KEYS.experiment_runs] = [{
+      run_no: "RUN-SALT-MID",
+      task_code: taskCode,
+      experiment_code: `${taskCode}-A`,
+      device: "盐雾试验室",
+      status: "实验暂停",
+    }];
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [{
+      run_no: "RUN-SALT-MID",
+      task_code: taskCode,
+      tray_code: trayCode,
+    }];
+    snapshot[STORAGE_KEYS.experiment_run_pauses] = [{
+      pause_no: "PAUSE-SALT-MID-1",
+      run_no: "RUN-SALT-MID",
+      experiment_code: `${taskCode}-A`,
+      lab_code: "LAB_SALT",
+      status: "实验暂停",
+      inspection_tray_codes: [trayCode],
+    }];
+
+    const inboundRows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+    expect(inboundRows[0]).toMatchObject({
+      isMidExperimentAppearanceInbound: true,
+      status: "待入库",
+      midExperimentRunNo: "RUN-SALT-MID",
+    });
+
+    const stocked = applyZancunInventoryAction({
+      now: TODAY,
+      room: "appearance",
+      payload: { code: trayCode, mode: "stockIn", room: "appearance" },
+      snapshot,
+    });
+    expect(stocked.error).toBe("");
+    expect(stocked.snapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      appearance_phase: "mid_experiment",
+      pause_no: "PAUSE-SALT-MID-1",
+      run_no: "RUN-SALT-MID",
+    });
+
+    const optionalResult = applyZancunInventoryAction({
+      now: TODAY,
+      room: "appearance",
+      payload: { code: trayCode, mode: "stockOut", room: "appearance", targetLab: "盐雾试验室", targetLabCode: "LAB_SALT" },
+      snapshot: stocked.snapshot,
+    });
+    expect(optionalResult.error).toBe("");
+    expect(optionalResult.snapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      appearance_phase: "mid_experiment",
+      inspection_result: "",
+      target_lab_code: "LAB_SALT",
+    });
+
+    const returned = applyZancunInventoryAction({
+      now: TODAY,
+      room: "appearance",
+      payload: {
+        code: trayCode,
+        inspectionResult: "未见新增腐蚀",
+        mode: "stockOut",
+        room: "appearance",
+        targetExperimentCode: `${taskCode}-A`,
+        targetLab: "盐雾试验室",
+        targetLabCode: "LAB_SALT",
+      },
+      snapshot: stocked.snapshot,
+    });
+    expect(returned.error).toBe("");
+    expect(returned.snapshot[STORAGE_KEYS.samples][0]).toMatchObject({ location: "盐雾试验室", status: "等待恢复实验" });
+    expect(returned.snapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      appearance_phase: "mid_experiment",
+      inspection_result: "未见新增腐蚀",
+      run_no: "RUN-SALT-MID",
+      target_lab_code: "LAB_SALT",
+    });
+  });
+
+  test("hides a tray completed for the current pause and relists it for a new pause number", () => {
+    const snapshot = createSnapshot();
+    const taskCode = "SYLU-2026-04-103";
+    const trayCode = `${taskCode}-TP-001`;
+    const runNo = "RUN-SALT-REPEAT";
+    const oldPauseNo = "PAUSE-SALT-OLD";
+    const newPauseNo = "PAUSE-SALT-NEW";
+    snapshot[STORAGE_KEYS.samples] = [{
+      code: `${taskCode}-SP-001`, task_code: taskCode, location: "盐雾试验室",
+      status: "等待恢复实验", flow_status: "等待恢复实验",
+      trays: [{ tray_code: trayCode, status: "等待恢复实验", quantity: 1 }],
+    }];
+    snapshot[STORAGE_KEYS.experiment_runs] = [{
+      run_no: runNo, task_code: taskCode, experiment_code: `${taskCode}-A`, device: "盐雾试验室", status: "实验暂停",
+    }];
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [{ run_no: runNo, task_code: taskCode, tray_code: trayCode }];
+    snapshot[STORAGE_KEYS.experiment_run_pauses] = [{
+      pause_no: oldPauseNo, run_no: runNo, experiment_code: `${taskCode}-A`, lab_code: "LAB_SALT",
+      status: "实验暂停", inspection_tray_codes: [trayCode],
+    }];
+    snapshot[STORAGE_KEYS.staging_events] = [{
+      room: "appearance", action: "stock_out", appearance_phase: "mid_experiment",
+      run_no: runNo, pause_no: oldPauseNo, tray_code: trayCode, inspection_result: "继续实验",
+      target_lab: "盐雾试验室", target_lab_code: "LAB_SALT", time: "2026-04-01T11:00:00",
+    }];
+
+    expect(buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" }))
+      .not.toContainEqual(expect.objectContaining({ trayCode }));
+
+    snapshot[STORAGE_KEYS.experiment_run_pauses][0].status = "实验已恢复";
+    snapshot[STORAGE_KEYS.experiment_run_pauses].push({
+      pause_no: newPauseNo, run_no: runNo, experiment_code: `${taskCode}-A`, lab_code: "LAB_SALT",
+      status: "实验暂停", inspection_tray_codes: [trayCode],
+    });
+    expect(buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" }))
+      .toContainEqual(expect.objectContaining({
+        trayCode,
+        status: "待入库",
+        isMidExperimentAppearanceInbound: true,
+        midExperimentPauseNo: newPauseNo,
+      }));
+  });
+});
+
 describe("staging-management model", () => {
   test("keeps the staging model public compatibility exports stable while splitting internals", () => {
     expect(Object.keys(stagingModelPublicApi).sort()).toEqual([

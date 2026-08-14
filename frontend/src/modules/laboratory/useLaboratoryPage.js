@@ -7,7 +7,14 @@ import {
   HOST_INTERFACE_MODE_STORAGE_KEY,
 } from "@/lib/hostInterfaceMode";
 import { serverNowDate } from "@/lib/serverClock";
-import { publishLaboratoryEndRequest, publishLaboratoryFixtureInstall, publishLaboratoryReady } from "@/lib/laboratoryMqApi";
+import {
+  publishLaboratoryEndRequest,
+  publishLaboratoryFixtureInstall,
+  publishLaboratoryPauseRequest,
+  publishLaboratoryReady,
+  publishLaboratoryResumeRequest,
+  publishLaboratoryStopRequest,
+} from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -49,6 +56,8 @@ import { useLaboratoryOperationPersistence } from "./useLaboratoryOperationPersi
 import { useLaboratoryResetFlow } from "./useLaboratoryResetFlow";
 import { completionConfirmationMatches, useLaboratoryCompletionFlow } from "./useLaboratoryCompletionFlow";
 import { updateRunningExperimentClock } from "./laboratoryPresentation";
+import { useSaltSprayPauseFlow } from "./useSaltSprayPauseFlow";
+import { buildSaltSprayRunPresentation, findActivePause } from "./saltSprayPausePresentation";
 
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 const COMPLETION_CONFIRMATION_TIMEOUT_MS = 10_000;
@@ -64,10 +73,12 @@ function useLaboratoryPage(options = {}) {
       STORAGE_KEYS.schedules,
       STORAGE_KEYS.experiments,
       STORAGE_KEYS.experiment_runs,
+      STORAGE_KEYS.experiment_run_pauses,
       STORAGE_KEYS.experiment_run_trays,
       STORAGE_KEYS.experiment_run_steps,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.samples,
+      STORAGE_KEYS.staging_events,
       STORAGE_KEYS.devices,
     ]);
   const loadSnapshot = options.loadSnapshot || storage.loadSnapshot;
@@ -78,10 +89,12 @@ function useLaboratoryPage(options = {}) {
   const schedules = ref([]);
   const experiments = ref([]);
   const experimentRuns = ref([]);
+  const experimentRunPauses = ref([]);
   const experimentRunTrays = ref([]);
   const experimentRunSteps = ref([]);
   const experimentTrays = ref([]);
   const samples = ref([]);
+  const stagingEvents = ref([]);
   const devices = ref([]);
 
   const selectedTaskCode = ref("");
@@ -187,10 +200,12 @@ function useLaboratoryPage(options = {}) {
     schedules,
     experiments,
     experimentRuns,
+    experimentRunPauses,
     experimentRunTrays,
     experimentRunSteps,
     experimentTrays,
     samples,
+    stagingEvents,
     devices,
   ], refreshStructuralClock);
 
@@ -397,6 +412,15 @@ function useLaboratoryPage(options = {}) {
   const runningModalExperiment = computed(() => {
     const base = completedRunningExperiment.value?.active ? completedRunningExperiment.value : runningExperiment.value;
     const continuation = axisContinuation.value;
+    const activeRun = currentTask.value?.activeRun || null;
+    const saltSpray = normalizeText(laboratoryConfig.value.labCode) === "LAB_SALT" && base?.active && !base?.completed
+      ? buildSaltSprayRunPresentation({
+          activePause: findActivePause(experimentRunPauses.value, base?.runNo),
+          activeRun,
+          now: tickNow.value,
+          runningExperiment: base,
+        })
+      : null;
     const locallyWaitingForStart = Boolean(
       axisReadyPendingKey.value
       && axisReadyPendingKey.value === axisTransitionKey(continuation)
@@ -404,6 +428,8 @@ function useLaboratoryPage(options = {}) {
     );
     return {
       ...base,
+      ...(saltSpray || {}),
+      activeRun,
       axisCompletedLabel: continuation.completedAxisCodes.length ? `已完成：${continuation.completedAxisCodes.join("、")}` : "已完成：暂无",
       axisContinuation: {
         ...continuation,
@@ -448,6 +474,20 @@ function useLaboratoryPage(options = {}) {
     clearHostlessFixtureReadyTimer();
   };
   const usesMqttCompletion = () => isMqttHostInterfaceMode() && usesMqttExperimentEnd();
+  const saltSprayPauseFlow = useSaltSprayPauseFlow({
+    currentTask,
+    experimentRunPauses,
+    experimentRuns,
+    laboratoryConfig,
+    refreshAuthoritativeState: () => load({ silent: true }),
+    requestPause: (payload) => publishLaboratoryMqSafely(publishLaboratoryPauseRequest, payload, "暂停实验"),
+    requestResume: (payload) => publishLaboratoryMqSafely(publishLaboratoryResumeRequest, payload, "继续实验"),
+    requestStop: (payload) => publishLaboratoryMqSafely(publishLaboratoryStopRequest, payload, "停止实验"),
+    runWithAttendance,
+    runningExperiment,
+    samples,
+    stagingEvents,
+  });
 
   const closeFullInteractionState = () => {
     selectedTaskCode.value = "";
@@ -538,10 +578,12 @@ function useLaboratoryPage(options = {}) {
     [STORAGE_KEYS.schedules]: schedules.value,
     [STORAGE_KEYS.experiments]: experiments.value,
     [STORAGE_KEYS.experiment_runs]: experimentRuns.value,
+    [STORAGE_KEYS.experiment_run_pauses]: experimentRunPauses.value,
     [STORAGE_KEYS.experiment_run_trays]: experimentRunTrays.value,
     [STORAGE_KEYS.experiment_run_steps]: experimentRunSteps.value,
     [STORAGE_KEYS.experiment_trays]: experimentTrays.value,
     [STORAGE_KEYS.samples]: samples.value,
+    [STORAGE_KEYS.staging_events]: stagingEvents.value,
     [STORAGE_KEYS.devices]: devices.value,
   });
 
@@ -550,10 +592,12 @@ function useLaboratoryPage(options = {}) {
     || schedules.value.length > 0
     || experiments.value.length > 0
     || experimentRuns.value.length > 0
+    || experimentRunPauses.value.length > 0
     || experimentRunTrays.value.length > 0
     || experimentRunSteps.value.length > 0
     || experimentTrays.value.length > 0
     || samples.value.length > 0
+    || stagingEvents.value.length > 0
     || devices.value.length > 0;
 
   const applySnapshotArray = (snapshot, key, target, { preserveInvalid = false } = {}) => {
@@ -595,10 +639,12 @@ function useLaboratoryPage(options = {}) {
       applySnapshotArray(snapshot, STORAGE_KEYS.schedules, schedules, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.experiments, experiments, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_runs, experimentRuns, { preserveInvalid });
+      applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_pauses, experimentRunPauses, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_trays, experimentRunTrays, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_run_steps, experimentRunSteps, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.experiment_trays, experimentTrays, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.samples, samples, { preserveInvalid });
+      applySnapshotArray(snapshot, STORAGE_KEYS.staging_events, stagingEvents, { preserveInvalid });
       applySnapshotArray(snapshot, STORAGE_KEYS.devices, devices, { preserveInvalid });
       await attendanceLoad;
     } finally {
@@ -1037,6 +1083,7 @@ function useLaboratoryPage(options = {}) {
   };
 
   return {
+    ...saltSprayPauseFlow,
     actionState,
     attendanceLoggedIn,
     attendanceLoginError,

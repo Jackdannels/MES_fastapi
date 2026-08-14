@@ -286,6 +286,10 @@
   z-index: 60;
 }
 
+.modal.laboratory-salt-control-modal--priority {
+  z-index: 80;
+}
+
 .laboratory-running-overlay__backdrop {
   position: absolute;
   inset: 0;
@@ -364,6 +368,62 @@
   text-align: left;
   cursor: pointer;
   transition: background-color 180ms ease, border-color 180ms ease;
+}
+
+.laboratory-salt-exposure-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.laboratory-salt-exposure-grid > div {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(var(--industrial-accent-rgb), 0.24);
+  border-radius: var(--radius-control);
+  background: rgba(var(--industrial-accent-rgb), 0.06);
+}
+
+.laboratory-salt-exposure-grid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.laboratory-salt-exposure-grid strong {
+  font-size: 18px;
+}
+
+.laboratory-salt-control-form,
+.laboratory-salt-control-form fieldset,
+.laboratory-salt-field {
+  display: grid;
+  gap: 10px;
+}
+
+.laboratory-salt-control-form fieldset {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+
+.laboratory-salt-tray-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+}
+
+.laboratory-salt-tray-option input {
+  width: 20px;
+  height: 20px;
+}
+
+.laboratory-salt-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
 }
 
 .laboratory-running-samples-trigger:hover {
@@ -1807,6 +1867,10 @@
 
   .laboratory-running-grid {
     grid-template-columns: 1fr;
+  }
+
+  .laboratory-salt-exposure-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .laboratory-running-actions,

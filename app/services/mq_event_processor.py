@@ -15,6 +15,7 @@ from app.core.master_data import (
 from app.core.storage_backend import get_storage_backend, normalize_storage_payload
 from app.db.session import get_connection
 from app.services.attendance_service import get_attendance_service, should_finish_work_interval_for_completion
+from app.services.appearance_inspection import validate_mid_experiment_trays_ready_for_resume
 from app.services.experiment_segments import record_sub_experiment_code
 from app.services.fixture_installations import (
     PENDING as FIXTURE_INSTALL_PENDING,
@@ -41,6 +42,11 @@ from app.services.laboratory_operations import (
 )
 from app.services.laboratory_start import start_storage_laboratory_experiment
 from app.services.schedule_cascade_runtime import apply_run_schedule_cascade, run_forecast_end_at
+from app.services.salt_spray_pause import (
+    ABNORMAL, PAUSED, PAUSE_RESUMED, PAUSE_STOPPED, RUNNING, SALT_LAB_CODE,
+    COMMAND_CONFIRMATION_TIMEOUT_SECONDS, TERMINATION_ABNORMAL, TERMINATION_TYPES,
+    decode_command_payload, inspection_tray_codes, pause_no_from_payload, shifted_planned_end,
+)
 from app.services.storage_update_bus import publish_storage_update
 from app.services.test_data_reports import archive_completion_reports
 from app.services.mq_event_protocol import (
@@ -167,6 +173,7 @@ def storage_completion_snapshot(payload: dict[str, Any]) -> dict[str, list[dict[
         "schedules": [dict(item) for item in normalized.get("mes.schedules", []) if isinstance(item, dict)],
         "experiments": [dict(item) for item in normalized.get("mes.experiments", []) if isinstance(item, dict)],
         "experiment_runs": [dict(item) for item in normalized.get("mes.experiment_runs", []) if isinstance(item, dict)],
+        "experiment_run_pauses": [dict(item) for item in normalized.get("mes.experiment_run_pauses", []) if isinstance(item, dict)],
         "experiment_run_trays": [dict(item) for item in normalized.get("mes.experiment_run_trays", []) if isinstance(item, dict)],
         "experiment_run_steps": [dict(item) for item in normalized.get("mes.experiment_run_steps", []) if isinstance(item, dict)],
         "experiment_trays": [dict(item) for item in normalized.get("mes.experiment_trays", []) if isinstance(item, dict)],
@@ -208,6 +215,7 @@ def publish_realtime_update() -> None:
     publish_storage_update([
             "mes.experiments",
             "mes.experiment_runs",
+            "mes.experiment_run_pauses",
             "mes.experiment_run_trays",
             "mes.experiment_run_steps",
             "mes.samples",
@@ -355,8 +363,11 @@ class MySQLMqEventRepository:
                       er.experiment_no,
                       er.sub_experiment_code,
                       er.axis_codes_json,
+                      er.schedule_no,
+                      er.planned_end_at,
                       er.device_name,
-                      er.run_status
+                      er.run_status,
+                      lab.lab_code
                     FROM biz_experiment_run er
                     JOIN biz_experiment_run_tray ert
                       ON ert.run_no = er.run_no
@@ -365,9 +376,9 @@ class MySQLMqEventRepository:
                     JOIN md_lab lab
                       ON lab.lab_id = tr.current_lab_id
                     WHERE lab.lab_code = %s
-                      AND COALESCE(er.run_status, '') <> '实验已完成'
+                      AND COALESCE(er.run_status, '') IN ('实验准备就绪', '实验进行中', '实验暂停')
                     ORDER BY
-                      CASE WHEN er.run_status = '实验进行中' THEN 0 ELSE 1 END,
+                      CASE WHEN er.run_status IN ('实验进行中', '实验暂停') THEN 0 ELSE 1 END,
                       er.started_at DESC,
                       er.created_at DESC,
                       er.run_no DESC
@@ -392,9 +403,13 @@ class MySQLMqEventRepository:
                       er.experiment_no,
                       er.sub_experiment_code,
                       er.axis_codes_json,
+                      er.schedule_no,
+                      er.planned_end_at,
                       er.device_name,
-                      er.run_status
+                      er.run_status,
+                      lab.lab_code
                     FROM biz_experiment_run er
+                    LEFT JOIN md_lab lab ON lab.lab_name = er.device_name
                     WHERE er.run_no = %s
                     LIMIT 1
                     """,
@@ -402,6 +417,166 @@ class MySQLMqEventRepository:
                 )
                 row = cursor_row_as_dict(cursor)
         return row
+
+    def find_salt_command_payload(self, command: str, run_no: str, pause_no: str) -> dict[str, Any]:
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT payload_json FROM biz_mq_message_log
+                    WHERE direction='MES_TO_HOST' AND lab_code=%s AND message_type=%s
+                      AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.run_no'))=%s
+                      AND JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.pause_no'))=%s
+                      AND process_status NOT IN ('FAILED', 'SKIPPED')
+                    ORDER BY created_at DESC, message_log_id DESC LIMIT 1
+                    """,
+                    (SALT_LAB_CODE, command, normalize_text(run_no), normalize_text(pause_no)),
+                )
+                row = cursor_row_as_dict(cursor) or {}
+        return decode_command_payload(row.get("payload_json"))
+
+    def find_pending_salt_command(self, run_no: str) -> dict[str, Any]:
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT command.message_log_id, command.message_type, command.payload_json,
+                           TIMESTAMPDIFF(SECOND, command.created_at, NOW()) AS pending_seconds
+                    FROM biz_mq_message_log command
+                    WHERE command.direction='MES_TO_HOST' AND command.lab_code=%s
+                      AND command.message_type IN ('PAUSE_REQUEST','RESUME_REQUEST','STOP_REQUEST')
+                      AND JSON_UNQUOTE(JSON_EXTRACT(command.payload_json, '$.run_no'))=%s
+                      AND command.process_status NOT IN ('FAILED','SKIPPED')
+                      AND NOT EXISTS (
+                        SELECT 1 FROM biz_experiment_event event
+                        WHERE event.event_type = CASE command.message_type
+                          WHEN 'PAUSE_REQUEST' THEN 'EXPERIMENT_PAUSED'
+                          WHEN 'RESUME_REQUEST' THEN 'EXPERIMENT_RESUMED'
+                          ELSE 'EXPERIMENT_STOPPED' END
+                          AND JSON_UNQUOTE(JSON_EXTRACT(event.payload_json, '$.pause_no')) =
+                              JSON_UNQUOTE(JSON_EXTRACT(command.payload_json, '$.pause_no'))
+                      )
+                    ORDER BY command.created_at DESC, command.message_log_id DESC
+                    LIMIT 1 FOR UPDATE
+                    """,
+                    (SALT_LAB_CODE, normalize_text(run_no)),
+                )
+                row = cursor_row_as_dict(cursor) or {}
+                if not row:
+                    return {}
+                try:
+                    pending_seconds = int(row.get("pending_seconds") or 0)
+                except (TypeError, ValueError):
+                    pending_seconds = 0
+                if pending_seconds >= COMMAND_CONFIRMATION_TIMEOUT_SECONDS:
+                    cursor.execute(
+                        """
+                        UPDATE biz_mq_message_log
+                        SET process_status='FAILED',
+                            error_code='CONFIRMATION_TIMEOUT',
+                            error_message=%s,
+                            processed_at=NOW()
+                        WHERE message_log_id=%s
+                          AND process_status NOT IN ('FAILED','SKIPPED')
+                        """,
+                        (
+                            f"上位机确认超时（{COMMAND_CONFIRMATION_TIMEOUT_SECONDS}秒）",
+                            row.get("message_log_id"),
+                        ),
+                    )
+                    connection.commit()
+                    return {}
+        payload = decode_command_payload(row.get("payload_json"))
+        return {"command": normalize_text(row.get("message_type")), "payload": payload} if payload else {}
+
+    def mark_salt_run_paused(self, run_no: str, pause_no: str, occurred_at: str, command_payload: dict[str, Any]) -> None:
+        trays = inspection_tray_codes(command_payload)
+        if not trays:
+            raise ValueError("暂停命令必须指定中途检查托盘")
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT run_status, task_no, experiment_no FROM biz_experiment_run WHERE run_no=%s FOR UPDATE", (run_no,))
+                run = cursor_row_as_dict(cursor) or {}
+                if normalize_text(run.get("run_status")) == PAUSED:
+                    cursor.execute("SELECT pause_no FROM biz_experiment_run_pause WHERE pause_no=%s", (pause_no,))
+                    if cursor.fetchone():
+                        return
+                if normalize_text(run.get("run_status")) != RUNNING:
+                    raise ValueError("当前实验状态必须为实验进行中")
+                placeholders = ", ".join(["%s"] * len(trays))
+                cursor.execute(f"SELECT tray_no FROM biz_experiment_run_tray WHERE run_no=%s AND tray_no IN ({placeholders})", [run_no, *trays])
+                existing = {normalize_text(row.get("tray_no")) for row in cursor_rows_as_dicts(cursor)}
+                if existing != set(trays):
+                    raise ValueError("中途检查托盘必须全部属于当前实验运行")
+                cursor.execute(
+                    """INSERT INTO biz_experiment_run_pause
+                    (pause_no,run_no,task_no,experiment_no,lab_code,pause_status,inspection_tray_codes_json,pause_reason,paused_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (pause_no, run_no, run.get("task_no"), run.get("experiment_no"), SALT_LAB_CODE, PAUSED,
+                     json.dumps(trays, ensure_ascii=False), normalize_text(command_payload.get("pause_reason")) or None,
+                     mysql_datetime_text(occurred_at)),
+                )
+                cursor.execute("UPDATE biz_experiment_run SET run_status=%s,updated_at=%s WHERE run_no=%s", (PAUSED, mysql_datetime_text(occurred_at), run_no))
+            connection.commit()
+
+    def mark_salt_run_resumed(self, run_no: str, pause_no: str, occurred_at: str) -> None:
+        storage = get_storage_backend()
+        snapshot = storage.read_all()
+        pause_record = next(
+            (item for item in snapshot.get("mes.experiment_run_pauses", []) if normalize_text(item.get("pause_no")) == pause_no),
+            None,
+        )
+        if not pause_record:
+            raise ValueError("当前实验不存在可恢复的暂停区间")
+        validate_mid_experiment_trays_ready_for_resume(snapshot, pause_record)
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """SELECT p.pause_status,p.paused_at,er.planned_end_at,er.schedule_no,er.run_status
+                    FROM biz_experiment_run_pause p JOIN biz_experiment_run er ON er.run_no=p.run_no
+                    WHERE p.pause_no=%s AND p.run_no=%s FOR UPDATE""", (pause_no, run_no),
+                )
+                row = cursor_row_as_dict(cursor) or {}
+                if normalize_text(row.get("pause_status")) == PAUSE_RESUMED:
+                    return
+                if normalize_text(row.get("pause_status")) != PAUSED or normalize_text(row.get("run_status")) != PAUSED:
+                    raise ValueError("当前实验不存在可恢复的暂停区间")
+                paused_at, resumed_at = parse_beijing_datetime(row.get("paused_at")), parse_beijing_datetime(occurred_at)
+                if paused_at is None or resumed_at is None or resumed_at < paused_at:
+                    raise ValueError("恢复时间不得早于暂停时间")
+                seconds = int((resumed_at - paused_at).total_seconds())
+                next_end = shifted_planned_end(row.get("planned_end_at"), seconds)
+                cursor.execute("UPDATE biz_experiment_run_pause SET pause_status=%s,resumed_at=%s,pause_seconds=%s,updated_at=%s WHERE pause_no=%s", (PAUSE_RESUMED,mysql_datetime_text(occurred_at),seconds,mysql_datetime_text(occurred_at),pause_no))
+                cursor.execute("UPDATE biz_experiment_run SET run_status=%s,planned_end_at=%s,updated_at=%s WHERE run_no=%s", (RUNNING,next_end or row.get("planned_end_at"),mysql_datetime_text(occurred_at),run_no))
+            connection.commit()
+        if next_end:
+            apply_run_schedule_cascade(storage, {"run_no": run_no, "schedule_id": row.get("schedule_no")}, new_end_at=next_end, reason="盐雾实验暂停恢复")
+
+    def mark_salt_run_stopped(self, run_no: str, pause_no: str, occurred_at: str, termination_type: str, reason: str) -> None:
+        cascade_run: dict[str, Any] = {}
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("""SELECT p.pause_status,p.paused_at,er.schedule_no
+                    FROM biz_experiment_run_pause p JOIN biz_experiment_run er ON er.run_no=p.run_no
+                    WHERE p.pause_no=%s AND p.run_no=%s FOR UPDATE""", (pause_no,run_no))
+                pause = cursor_row_as_dict(cursor) or {}
+                if normalize_text(pause.get("pause_status")) == PAUSE_STOPPED:
+                    return
+                if normalize_text(pause.get("pause_status")) != PAUSED:
+                    raise ValueError("当前实验不存在可停止的暂停区间")
+                paused_at, stopped_at = parse_beijing_datetime(pause.get("paused_at")), parse_beijing_datetime(occurred_at)
+                seconds = max(0, int((stopped_at-paused_at).total_seconds())) if paused_at and stopped_at else 0
+                cursor.execute("""UPDATE biz_experiment_run_pause SET pause_status=%s,stopped_at=%s,pause_seconds=%s,
+                    termination_type=%s,termination_reason=%s,updated_at=%s WHERE pause_no=%s""",
+                    (PAUSE_STOPPED,mysql_datetime_text(occurred_at),seconds,termination_type,reason or None,mysql_datetime_text(occurred_at),pause_no))
+                if termination_type == TERMINATION_ABNORMAL:
+                    cursor.execute("UPDATE biz_experiment_run SET run_status=%s,ended_at=%s,updated_at=%s WHERE run_no=%s AND run_status=%s", (ABNORMAL,mysql_datetime_text(occurred_at),mysql_datetime_text(occurred_at),run_no,PAUSED))
+                    cascade_run = {"run_no": run_no, "schedule_id": pause.get("schedule_no")}
+            connection.commit()
+        if cascade_run:
+            apply_run_schedule_cascade(
+                get_storage_backend(), cascade_run, new_end_at=occurred_at, reason="盐雾实验异常停止"
+            )
 
     def find_current_context_by_lab(
         self,
@@ -969,7 +1144,7 @@ def process_laboratory_event(
     if message_type == "EXPERIMENT_RESULT" and not payload_run_no:
         raise ValueError("run_no is required for experiment result")
     run = None
-    if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"}:
+    if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT", "EXPERIMENT_PAUSED", "EXPERIMENT_RESUMED", "EXPERIMENT_STOPPED"}:
         run = repo.find_run_by_no(payload_run_no) if payload_run_no else repo.find_active_run_by_lab(lab_code)
     created_run_from_context = False
     started_existing_axis = False
@@ -993,12 +1168,21 @@ def process_laboratory_event(
                 )
     if message_type == "EXPERIMENT_ENDED" and not run:
         raise ValueError(f"active experiment run is required for lab_code: {lab_code}")
+    if message_type in {"EXPERIMENT_PAUSED", "EXPERIMENT_RESUMED", "EXPERIMENT_STOPPED"}:
+        if lab_code != SALT_LAB_CODE:
+            raise ValueError("盐雾暂停事件仅支持 LAB_SALT")
+        if not payload_run_no or not run:
+            raise ValueError("run_no is required for salt spray pause lifecycle")
+        if normalize_text(run.get("lab_code")) != SALT_LAB_CODE:
+            raise ValueError("run_no does not belong to LAB_SALT")
     if message_type == "EXPERIMENT_RESULT" and not run:
         raise ValueError(f"experiment run is required for lab_code: {lab_code}")
     if message_type == "EXPERIMENT_ENDED" and run_axis_codes(run) and not payload_axis_code:
         raise ValueError("axis_code is required for axis-aware experiment end")
     context_task_no = normalize_text((run or {}).get("task_no")) or normalize_text((context or {}).get("task_no"))
-    authoritative_context = created_run_from_context or started_existing_axis or message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT"}
+    authoritative_context = created_run_from_context or started_existing_axis or message_type in {
+        "EXPERIMENT_ENDED", "EXPERIMENT_RESULT", "EXPERIMENT_PAUSED", "EXPERIMENT_RESUMED", "EXPERIMENT_STOPPED"
+    }
     if fixture_installation:
         task_no = fixture_installation["task_code"]
     elif authoritative_context:
@@ -1018,6 +1202,35 @@ def process_laboratory_event(
     sub_experiment_code = context_sub_experiment_code or payload_sub_experiment_code
     run_no = normalize_text((run or {}).get("run_no"))
     correlation_id = first_text(payload, "correlation_id", "correlationId")
+    pause_no = pause_no_from_payload(payload)
+    salt_command = {
+        "EXPERIMENT_PAUSED": "PAUSE_REQUEST",
+        "EXPERIMENT_RESUMED": "RESUME_REQUEST",
+        "EXPERIMENT_STOPPED": "STOP_REQUEST",
+    }.get(message_type, "")
+    command_payload: dict[str, Any] = {}
+    if salt_command:
+        if not pause_no:
+            raise ValueError("pause_no is required for salt spray pause lifecycle")
+        finder = getattr(repo, "find_salt_command_payload", None)
+        command_payload = finder(salt_command, run_no, pause_no) if callable(finder) else {}
+        if not command_payload:
+            raise ValueError("matching salt spray command is required")
+        # Validate and persist the physical transition before accepting the
+        # event into the idempotency log. A failed transition must remain
+        # retryable with the same device message_id.
+        if message_type == "EXPERIMENT_PAUSED":
+            repo.mark_salt_run_paused(run_no, pause_no, occurred_at, command_payload)
+        elif message_type == "EXPERIMENT_RESUMED":
+            repo.mark_salt_run_resumed(run_no, pause_no, occurred_at)
+        else:
+            termination_type = normalize_text(command_payload.get("termination_type"))
+            termination_reason = normalize_text(command_payload.get("termination_reason"))
+            if termination_type not in TERMINATION_TYPES:
+                raise ValueError("termination_type 仅支持 completion_criteria 或 abnormal")
+            repo.mark_salt_run_stopped(run_no, pause_no, occurred_at, termination_type, termination_reason)
+            if termination_type != TERMINATION_ABNORMAL:
+                repo.mark_run_ended(run_no, occurred_at, "", "", sub_experiment_code)
     message_log_id = repo.record_message(
         {
             "message_id": message_id,
@@ -1038,7 +1251,7 @@ def process_laboratory_event(
         }
     )
 
-    if message_type in {"FIXTURE_READY", "EXPERIMENT_STARTED", "EXPERIMENT_ENDED"}:
+    if message_type in {"FIXTURE_READY", "EXPERIMENT_STARTED", "EXPERIMENT_ENDED", "EXPERIMENT_PAUSED", "EXPERIMENT_RESUMED", "EXPERIMENT_STOPPED"}:
         event_record = {
             "event_type": message_type,
             "task_no": task_no,
@@ -1080,6 +1293,8 @@ def process_laboratory_event(
                 lab_code=lab_code,
                 ended_at=occurred_at,
             )
+    elif message_type == "EXPERIMENT_STOPPED":
+        get_attendance_service().finish_work_interval(run_no=run_no, lab_code=lab_code, ended_at=occurred_at)
     elif message_type == "EXPERIMENT_RESULT":
         result_package = payload.get("result_package")
         if not isinstance(result_package, dict):

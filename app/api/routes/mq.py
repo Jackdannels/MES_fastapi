@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import AliasChoices, BaseModel, Field, field_validator
@@ -32,6 +33,13 @@ from app.services.mq_event_processor import (
 from app.services.mq_publisher import publish_laboratory_command
 from app.services.mq_runtime import default_mq_runtime
 from app.services.storage_update_bus import publish_storage_update
+from app.services.appearance_inspection import validate_mid_experiment_trays_ready_for_resume
+from app.services.salt_spray_pause import (
+    PAUSED,
+    RUNNING,
+    SALT_LAB_CODE,
+    TERMINATION_TYPES,
+)
 
 
 router = APIRouter(prefix="/api/mq", tags=["mq"])
@@ -126,6 +134,69 @@ class ExperimentEndRequest(BaseModel):
     @classmethod
     def trim_text(cls, value: Any) -> str:
         return str(value or "").strip()
+
+
+class SaltPauseRequest(BaseModel):
+    task_code: str = Field(min_length=1)
+    lab_code: str = Field(min_length=1)
+    experiment_code: str = Field(min_length=1)
+    run_no: str = Field(min_length=1, validation_alias=AliasChoices("run_no", "runNo"))
+    inspection_tray_codes: list[str] = Field(min_length=1, validation_alias=AliasChoices("inspection_tray_codes", "inspectionTrayCodes"))
+    pause_reason: str = Field(min_length=1, max_length=500, validation_alias=AliasChoices("pause_reason", "pauseReason"))
+
+    @field_validator("task_code", "lab_code", "experiment_code", "run_no", "pause_reason", mode="before")
+    @classmethod
+    def trim_pause_text(cls, value: Any) -> str:
+        return str(value or "").strip()
+
+    @field_validator("inspection_tray_codes", mode="before")
+    @classmethod
+    def normalize_pause_trays(cls, value: Any) -> list[str]:
+        return normalize_tray_codes(value.replace("，", ",").split(",") if isinstance(value, str) else value)
+
+
+class SaltResumeRequest(BaseModel):
+    task_code: str = Field(min_length=1)
+    lab_code: str = Field(min_length=1)
+    experiment_code: str = Field(min_length=1)
+    run_no: str = Field(min_length=1, validation_alias=AliasChoices("run_no", "runNo"))
+    pause_no: str = Field(min_length=1, validation_alias=AliasChoices("pause_no", "pauseNo"))
+
+    @field_validator("task_code", "lab_code", "experiment_code", "run_no", "pause_no", mode="before")
+    @classmethod
+    def trim_resume_text(cls, value: Any) -> str:
+        return str(value or "").strip()
+
+
+class SaltStopRequest(SaltResumeRequest):
+    termination_type: str = Field(validation_alias=AliasChoices("termination_type", "terminationType"))
+    termination_reason: str = Field(min_length=1, max_length=500, validation_alias=AliasChoices("termination_reason", "terminationReason"))
+
+    @field_validator("termination_type", "termination_reason", mode="before")
+    @classmethod
+    def trim_stop_text(cls, value: Any) -> str:
+        return str(value or "").strip()
+
+
+def _salt_run_or_error(request: SaltPauseRequest | SaltResumeRequest) -> tuple[MySQLMqEventRepository, dict[str, Any]]:
+    if request.lab_code != SALT_LAB_CODE:
+        raise HTTPException(status_code=422, detail="盐雾暂停控制仅支持 LAB_SALT")
+    repository = MySQLMqEventRepository()
+    run = repository.find_run_by_no(request.run_no) or {}
+    if not run:
+        raise HTTPException(status_code=404, detail="实验运行不存在")
+    if str(run.get("lab_code") or "").strip() != SALT_LAB_CODE:
+        raise HTTPException(status_code=409, detail="实验运行不属于盐雾试验室")
+    if str(run.get("task_no") or "").strip() != request.task_code or str(run.get("experiment_no") or "").strip() != request.experiment_code:
+        raise HTTPException(status_code=409, detail="实验运行上下文不匹配")
+    return repository, run
+
+
+def _reject_pending_salt_command(repository: MySQLMqEventRepository, run_no: str) -> None:
+    finder = getattr(repository, "find_pending_salt_command", None)
+    pending = finder(run_no) if callable(finder) else {}
+    if pending:
+        raise HTTPException(status_code=409, detail="当前实验已有等待上位机确认的控制命令")
 
 
 class InterfaceModeRequest(BaseModel):
@@ -329,6 +400,78 @@ def publish_experiment_end_request(request: ExperimentEndRequest) -> dict[str, A
             payload[key] = value
     try:
         result = publish_laboratory_command("END_REQUEST", payload)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"ok": True, "payload": payload, **result}
+
+
+@router.post("/laboratory/pause-request")
+def publish_salt_pause_request(request: SaltPauseRequest) -> dict[str, Any]:
+    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_EXPERIMENT_END_REQUEST)
+    repository, run = _salt_run_or_error(request)
+    _reject_pending_salt_command(repository, request.run_no)
+    if str(run.get("run_status") or "").strip() != RUNNING:
+        raise HTTPException(status_code=409, detail="只有实验进行中的盐雾实验可以暂停")
+    stored_run_trays = get_storage_backend().read("mes.experiment_run_trays")
+    run_trays = set([
+        str(row.get("tray_code") or row.get("tray_no") or "").strip()
+        for row in stored_run_trays
+        if str(row.get("run_no") or "").strip() == request.run_no
+    ])
+    if not set(request.inspection_tray_codes).issubset(run_trays):
+        raise HTTPException(status_code=409, detail="中途检查托盘必须全部属于当前实验运行")
+    pause_no = f"pause-{uuid4().hex}"
+    payload = request.model_dump()
+    payload["pause_no"] = pause_no
+    try:
+        result = publish_laboratory_command("PAUSE_REQUEST", payload)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"ok": True, "pauseNo": pause_no, "payload": payload, **result}
+
+
+@router.post("/laboratory/resume-request")
+def publish_salt_resume_request(request: SaltResumeRequest) -> dict[str, Any]:
+    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_EXPERIMENT_END_REQUEST)
+    repository, run = _salt_run_or_error(request)
+    _reject_pending_salt_command(repository, request.run_no)
+    if str(run.get("run_status") or "").strip() != PAUSED:
+        raise HTTPException(status_code=409, detail="只有已暂停的盐雾实验可以恢复")
+    storage = get_storage_backend()
+    snapshot = storage.read_all()
+    pause = next((row for row in snapshot.get("mes.experiment_run_pauses", []) if str(row.get("pause_no") or "").strip() == request.pause_no), None)
+    if not pause or str(pause.get("status") or "").strip() != PAUSED:
+        raise HTTPException(status_code=409, detail="当前实验不存在可恢复的暂停区间")
+    try:
+        validate_mid_experiment_trays_ready_for_resume(snapshot, pause)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    payload = request.model_dump()
+    try:
+        result = publish_laboratory_command("RESUME_REQUEST", payload)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"ok": True, "payload": payload, **result}
+
+
+@router.post("/laboratory/stop-request")
+def publish_salt_stop_request(request: SaltStopRequest) -> dict[str, Any]:
+    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_EXPERIMENT_END_REQUEST)
+    repository, run = _salt_run_or_error(request)
+    _reject_pending_salt_command(repository, request.run_no)
+    if str(run.get("run_status") or "").strip() != PAUSED:
+        raise HTTPException(status_code=409, detail="只有已暂停的盐雾实验可以停止")
+    pause = next(
+        (row for row in get_storage_backend().read("mes.experiment_run_pauses") if str(row.get("pause_no") or "").strip() == request.pause_no),
+        None,
+    )
+    if not pause or str(pause.get("run_no") or "").strip() != request.run_no or str(pause.get("status") or "").strip() != PAUSED:
+        raise HTTPException(status_code=409, detail="当前实验不存在可停止的暂停区间")
+    if request.termination_type not in TERMINATION_TYPES:
+        raise HTTPException(status_code=422, detail="termination_type 仅支持 completion_criteria 或 abnormal")
+    payload = request.model_dump()
+    try:
+        result = publish_laboratory_command("STOP_REQUEST", payload)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"ok": True, "payload": payload, **result}

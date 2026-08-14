@@ -127,7 +127,9 @@ const buildLaboratoryScheduleRow = ({
   const displayStartAt = normalizeText(activeRunTrayRelations[0]?.started_at || activeRunTrayRelations[0]?.startedAt) || normalizeText(activeRun?.started_at) || startAt;
   const estimatedEndAt = addDurationToDateTime(displayStartAt, resolvePlannedDurationMs(schedule, activeRun));
   const displayEndAt = estimatedEndAt || normalizeText(activeRun?.planned_end_at) || normalizeText(activeRun?.ended_at) || endAt;
-  const activeRunStatus = activeRunTrayRelations.length > 0 || RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(activeRun?.status)) ? "实验进行中" : "";
+  const activeRunStatus = activeRunTrayRelations.length > 0 || RUNNING_EXPERIMENT_RUN_STATUSES.has(normalizeText(activeRun?.status))
+    ? normalizeText(activeRun?.status) === "实验暂停" ? "实验暂停" : "实验进行中"
+    : "";
   if (activeRunStatus) {
     trayRows.forEach((row) => {
       if (activeRunTrayCodes.length > 0 && !activeRunTrayCodes.includes(normalizeText(row?.trayCode))) {
@@ -236,6 +238,8 @@ const buildLaboratoryScheduleRow = ({
       || normalizeText(activeRun?.id)
       || normalizeText(activeRunTrayRelations[0]?.run_no)
       || normalizeText(activeRunTrayRelations[0]?.runNo),
+    activeRun,
+    runStatus: normalizeText(activeRun?.status),
     startAt: displayStartAt,
     startDateTimeLabel: formatDateTime(displayStartAt),
     startTimeLabel: formatTime(displayStartAt),

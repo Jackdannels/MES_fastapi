@@ -634,6 +634,7 @@ def test_mq_realtime_update_publishes_experiment_run_trays(monkeypatch):
     assert published_updates == [[
         "mes.experiments",
         "mes.experiment_runs",
+        "mes.experiment_run_pauses",
         "mes.experiment_run_trays",
         "mes.experiment_run_steps",
         "mes.samples",
@@ -2665,7 +2666,7 @@ def test_mysql_find_active_run_by_lab_prioritizes_running_runs_in_query(monkeypa
 
     MySQLMqEventRepository().find_active_run_by_lab("LAB_SALT")
 
-    assert "CASE WHEN er.run_status = '实验进行中' THEN 0 ELSE 1 END" in connection.cursor_obj.active_run_sql
+    assert "CASE WHEN er.run_status IN ('实验进行中', '实验暂停') THEN 0 ELSE 1 END" in connection.cursor_obj.active_run_sql
     assert connection.cursor_obj.active_run_sql.index("CASE WHEN er.run_status") < connection.cursor_obj.active_run_sql.index("er.started_at DESC")
 
 

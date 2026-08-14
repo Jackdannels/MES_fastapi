@@ -6,7 +6,7 @@ from app.services.experiment_segments import record_sub_experiment_code
 
 
 COMPLETED_STATUS = "实验已完成"
-RUNNING_STATUSES = {"实验进行中", "实验中"}
+RUNNING_STATUSES = {"实验进行中", "实验中", "实验暂停"}
 
 
 def normalize_text(value: Any) -> str:

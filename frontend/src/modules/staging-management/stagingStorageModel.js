@@ -9,6 +9,7 @@ const EXPERIMENT_TRAYS_KEY = "mes.experiment_trays";
 const EXPERIMENT_RUN_TRAYS_KEY = "mes.experiment_run_trays";
 const EXPERIMENT_RUN_STEPS_KEY = "mes.experiment_run_steps";
 const EXPERIMENT_RUNS_KEY = "mes.experiment_runs";
+const EXPERIMENT_RUN_PAUSES_KEY = "mes.experiment_run_pauses";
 const SAMPLES_KEY = "mes.samples";
 const STAGING_EVENTS_KEY = "mes.staging_events";
 const STAGING_LOCATION = "恒温恒湿间（暂存间）";
@@ -21,6 +22,8 @@ const POST_EXPERIMENT_STAGING_LABEL = "实验后暂存";
 const NORMAL_STAGING_LABEL = "放置暂存间";
 const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "实验后外观检测间存放";
+const MID_EXPERIMENT_APPEARANCE_STATUS = "中途外观检查中";
+const MID_EXPERIMENT_RETURNED_STATUS = "等待恢复实验";
 const WITHDRAWAL_HISTORY_ACTIONS = new Set(["撤回出库", "实验任务撤回", "任务切换撤回"]);
 const PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS = new Set(["任务比对", "样品安装", "实验确认", "开始实验", "实验开始"]);
 const ACTIVE_EXPERIMENT_RUN_TRAY_STATUSES = new Set(["已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", "实验中"]);
@@ -89,7 +92,7 @@ const STORAGE_ROOM_CONFIGS = {
   },
   appearance: {
     currentLocation: APPEARANCE_LOCATION,
-    currentStatuses: new Set([APPEARANCE_STOCKED_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS]),
+    currentStatuses: new Set([APPEARANCE_STOCKED_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS, MID_EXPERIMENT_APPEARANCE_STATUS]),
     duplicateStockInError: "该托盘已完成外观检测间扫码入库。",
     eventRoom: "appearance",
     historyStockInAction: "外观检测间扫码入库",
@@ -529,9 +532,12 @@ export {
   EXPERIMENT_RUN_STEPS_KEY,
   EXPERIMENT_RUN_TRAYS_KEY,
   EXPERIMENT_RUNS_KEY,
+  EXPERIMENT_RUN_PAUSES_KEY,
   EXPERIMENT_TRAYS_KEY,
   EXPLICIT_STAGING_INBOUND_STATUSES,
   NORMAL_STAGING_LABEL,
+  MID_EXPERIMENT_APPEARANCE_STATUS,
+  MID_EXPERIMENT_RETURNED_STATUS,
   PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS,
   POST_EXPERIMENT_STAGING_LABEL,
   POST_EXPERIMENT_STAGING_LOCATION,

@@ -33,4 +33,20 @@ const publishLaboratoryReady = (payload) =>
 const publishLaboratoryEndRequest = (payload) =>
   postLaboratoryMqCommand("/api/mq/laboratory/end-request", payload);
 
-export { publishLaboratoryEndRequest, publishLaboratoryFixtureInstall, publishLaboratoryReady };
+const publishLaboratoryPauseRequest = (payload) =>
+  postLaboratoryMqCommand("/api/mq/laboratory/pause-request", payload);
+
+const publishLaboratoryResumeRequest = (payload) =>
+  postLaboratoryMqCommand("/api/mq/laboratory/resume-request", payload);
+
+const publishLaboratoryStopRequest = (payload) =>
+  postLaboratoryMqCommand("/api/mq/laboratory/stop-request", payload);
+
+export {
+  publishLaboratoryEndRequest,
+  publishLaboratoryFixtureInstall,
+  publishLaboratoryPauseRequest,
+  publishLaboratoryReady,
+  publishLaboratoryResumeRequest,
+  publishLaboratoryStopRequest,
+};

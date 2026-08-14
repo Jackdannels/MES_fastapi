@@ -1,6 +1,7 @@
 import { computed, nextTick, ref, watch } from "vue";
 
 import { normalizeAxisCodes } from "@/lib/axisCodes";
+import { LAB_CODE_BY_NAME } from "@/lib/labs";
 import {
   AXIS_CODE_OPTIONS,
   buildExperimentOptions,
@@ -122,7 +123,7 @@ function useScheduleFormState({
   const buildLabIdentity = (value) => {
     const lab = findMasterLabByOptionValue(value);
     return {
-      lab_code: resolveMasterLabCode(lab),
+      lab_code: resolveMasterLabCode(lab) || LAB_CODE_BY_NAME[normalizeText(value)] || "",
       lab_id: resolveMasterLabId(lab),
     };
   };

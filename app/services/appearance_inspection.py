@@ -8,6 +8,10 @@ APPEARANCE_INSPECTION_LOCATION = "外观检测间"
 APPEARANCE_INSPECTION_DISPATCH_STATUS = "送至外观检测间"
 APPEARANCE_INSPECTION_STOCKED_STATUS = "实验后外观检测间存放"
 PRE_EXPERIMENT_APPEARANCE_STATUS = "实验前外观检测间存放"
+MID_EXPERIMENT_APPEARANCE_STATUS = "中途外观检查中"
+MID_EXPERIMENT_RETURNED_STATUS = "等待恢复实验"
+MID_EXPERIMENT_APPEARANCE_PHASE = "mid_experiment"
+EXPERIMENT_RUN_PAUSES_KEY = "mes.experiment_run_pauses"
 APPEARANCE_REQUIRED_KEYWORDS = ("盐雾", "霉菌", "高低温湿热")
 APPEARANCE_EVENT_ROOM = "appearance"
 APPEARANCE_STOCK_IN_ACTION = "stock_in"
@@ -23,6 +27,151 @@ STAGING_STORED_STATUSES = {
     "已到达暂存间",
     POST_EXPERIMENT_STAGING_STOCKED_STATUS,
 }
+
+
+def record_text(record: Any, *keys: str) -> str:
+    if not isinstance(record, dict):
+        return ""
+    for key in keys:
+        value = normalize_text(record.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _selected_inspection_trays(pause: Any) -> set[str]:
+    if not isinstance(pause, dict):
+        return set()
+    values = pause.get("inspection_tray_codes")
+    if not isinstance(values, list):
+        values = pause.get("inspectionTrayCodes")
+    return {normalize_text(value) for value in as_list(values) if normalize_text(value)}
+
+
+def resolve_mid_experiment_appearance_context(snapshot: Any, tray_code: Any) -> dict[str, Any] | None:
+    """Resolve the single open salt-spray pause authorizing a tray inspection."""
+
+    if not isinstance(snapshot, dict):
+        return None
+    normalized_tray_code = normalize_text(tray_code)
+    if not normalized_tray_code:
+        return None
+    runs = as_list(snapshot.get("mes.experiment_runs"))
+    run_trays = as_list(snapshot.get("mes.experiment_run_trays"))
+    pauses = as_list(snapshot.get(EXPERIMENT_RUN_PAUSES_KEY))
+    contexts: list[dict[str, Any]] = []
+    for pause in pauses:
+        if not isinstance(pause, dict) or record_text(pause, "status") != "实验暂停":
+            continue
+        if normalized_tray_code not in _selected_inspection_trays(pause):
+            continue
+        run_no = record_text(pause, "run_no", "runNo")
+        pause_no = record_text(pause, "pause_no", "pauseNo")
+        if not run_no or not pause_no:
+            continue
+        run = next(
+            (
+                item
+                for item in runs
+                if isinstance(item, dict)
+                and record_text(item, "run_no", "runNo") == run_no
+                and record_text(item, "status", "run_status", "runStatus") == "实验暂停"
+            ),
+            None,
+        )
+        if run is None:
+            continue
+        belongs_to_run = any(
+            isinstance(relation, dict)
+            and record_text(relation, "run_no", "runNo") == run_no
+            and record_text(relation, "tray_code", "trayCode", "tray_no", "trayNo") == normalized_tray_code
+            for relation in run_trays
+        )
+        if not belongs_to_run:
+            continue
+        lab_code = record_text(pause, "lab_code", "labCode")
+        lab_name = record_text(run, "device", "device_name", "deviceName", "lab_name", "labName")
+        if lab_code != "LAB_SALT" and "盐雾" not in lab_name:
+            continue
+        contexts.append(
+            {
+                "experiment_code": record_text(pause, "experiment_code", "experimentCode")
+                or record_text(run, "experiment_code", "experimentCode", "experiment_no", "experimentNo"),
+                "lab_code": lab_code or "LAB_SALT",
+                "lab_id": run.get("lab_id", run.get("labId", "")),
+                "lab_name": lab_name or "盐雾试验室",
+                "pause_no": pause_no,
+                "run_no": run_no,
+                "schedule_id": record_text(run, "schedule_id", "scheduleId", "schedule_no", "scheduleNo"),
+                "task_code": record_text(pause, "task_code", "taskCode")
+                or record_text(run, "task_code", "taskCode", "task_no", "taskNo"),
+            }
+        )
+    return contexts[0] if len(contexts) == 1 else None
+
+
+def _latest_mid_experiment_events(snapshot: Any, *, tray_code: str, run_no: str, pause_no: str) -> list[dict[str, Any]]:
+    events = []
+    for index, event in enumerate(as_list(snapshot.get("mes.staging_events")) if isinstance(snapshot, dict) else []):
+        if not isinstance(event, dict):
+            continue
+        if staging_event_room(event) != APPEARANCE_EVENT_ROOM:
+            continue
+        if record_text(event, "appearance_phase", "appearancePhase") != MID_EXPERIMENT_APPEARANCE_PHASE:
+            continue
+        if record_text(event, "tray_code", "trayCode") != tray_code:
+            continue
+        if record_text(event, "run_no", "runNo") != run_no or record_text(event, "pause_no", "pauseNo") != pause_no:
+            continue
+        events.append((parse_datetime_value(event.get("time")) or datetime.min, index, event))
+    events.sort(key=lambda item: (item[0], item[1]))
+    return [event for _, _, event in events]
+
+
+def latest_mid_experiment_appearance_action(snapshot: Any, *, tray_code: str, run_no: str, pause_no: str) -> str:
+    events = _latest_mid_experiment_events(snapshot, tray_code=tray_code, run_no=run_no, pause_no=pause_no)
+    return record_text(events[-1], "action") if events else ""
+
+
+def validate_mid_experiment_trays_ready_for_resume(snapshot: Any, pause_record: Any) -> None:
+    """Reject resume until every selected inspection tray has a result and has returned."""
+
+    if not isinstance(snapshot, dict) or not isinstance(pause_record, dict):
+        raise ValueError("盐雾暂停记录无效，不能恢复实验。")
+    run_no = record_text(pause_record, "run_no", "runNo")
+    pause_no = record_text(pause_record, "pause_no", "pauseNo")
+    selected_trays = sorted(_selected_inspection_trays(pause_record))
+    if not selected_trays:
+        return
+    samples = as_list(snapshot.get("mes.samples"))
+    not_ready: list[str] = []
+    for tray_code in selected_trays:
+        events = _latest_mid_experiment_events(snapshot, tray_code=tray_code, run_no=run_no, pause_no=pause_no)
+        last_event = events[-1] if events else None
+        has_result = (
+            isinstance(last_event, dict)
+            and record_text(last_event, "action") == APPEARANCE_STOCK_OUT_ACTION
+        )
+        returned = (
+            isinstance(last_event, dict)
+            and record_text(last_event, "action") == APPEARANCE_STOCK_OUT_ACTION
+            and record_text(last_event, "target_lab_code", "targetLabCode") == "LAB_SALT"
+        )
+        sample_returned = any(
+            isinstance(sample, dict)
+            and normalize_text(sample.get("location")) == record_text(last_event, "target_lab", "targetLab")
+            and any(
+                isinstance(tray, dict)
+                and tray_code_text(tray) == tray_code
+                and status_text(tray) == MID_EXPERIMENT_RETURNED_STATUS
+                for tray in as_list(sample.get("trays"))
+            )
+            for sample in samples
+        )
+        if not (has_result and returned and sample_returned):
+            not_ready.append(tray_code)
+    if not_ready:
+        raise ValueError(f"中途外观检查托盘尚未全部返回盐雾试验室：{', '.join(not_ready)}")
 
 
 def normalize_text(value: Any) -> str:

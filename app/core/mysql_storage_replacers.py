@@ -7,6 +7,7 @@ from app.core.mysql_storage_mappers import (
     build_device_insert_row,
     build_experiment_insert_row,
     build_experiment_run_insert_row,
+    build_experiment_run_pause_insert_row,
     build_experiment_run_step_insert_row,
     build_experiment_run_tray_insert_row,
     build_experiment_sample_insert_row,
@@ -149,6 +150,7 @@ def replace_task_workflow_relations(
     schedules: list[dict[str, Any]] | None = None,
     experiments: list[dict[str, Any]] | None = None,
     experiment_runs: list[dict[str, Any]] | None = None,
+    experiment_run_pauses: list[dict[str, Any]] | None = None,
     experiment_run_trays: list[dict[str, Any]] | None = None,
     experiment_run_steps: list[dict[str, Any]] | None = None,
     experiment_trays: list[dict[str, Any]] | None = None,
@@ -175,6 +177,12 @@ def replace_task_workflow_relations(
         for item in experiment_runs
         if normalize_text(item.get("task_code")) in normalized_task_codes
         and (normalize_text(item.get("run_no")) or normalize_text(item.get("id")))
+    ]
+    pause_rows = None if experiment_run_pauses is None else [
+        build_experiment_run_pause_insert_row(item)
+        for item in experiment_run_pauses
+        if normalize_text(item.get("task_code") or item.get("task_no")) in normalized_task_codes
+        and normalize_text(item.get("pause_no") or item.get("pauseNo"))
     ]
     run_tray_rows = None if experiment_run_trays is None else [
         build_experiment_run_tray_insert_row(item)
@@ -208,6 +216,8 @@ def replace_task_workflow_relations(
     # Delete children before parents; insert parents before children.
     if run_step_rows is not None:
         _delete_task_rows(cursor, "biz_experiment_run_step", normalized_task_codes)
+    if pause_rows is not None:
+        _delete_task_rows(cursor, "biz_experiment_run_pause", normalized_task_codes)
     if run_tray_rows is not None:
         _delete_task_rows(cursor, "biz_experiment_run_tray", normalized_task_codes)
     if sample_rows is not None:
@@ -233,6 +243,16 @@ def replace_task_workflow_relations(
         _upsert_schedule_rows(cursor, schedule_rows)
     if run_rows is not None:
         _insert_experiment_run_rows(cursor, run_rows)
+    if pause_rows is not None:
+        cursor.executemany(
+            """INSERT INTO biz_experiment_run_pause
+            (pause_no,run_no,task_no,experiment_no,lab_code,pause_status,inspection_tray_codes_json,pause_reason,
+             paused_at,resumed_at,stopped_at,pause_seconds,termination_type,termination_reason,created_at,updated_at)
+            VALUES (%(pause_no)s,%(run_no)s,%(task_no)s,%(experiment_no)s,%(lab_code)s,%(pause_status)s,
+             %(inspection_tray_codes_json)s,%(pause_reason)s,%(paused_at)s,%(resumed_at)s,%(stopped_at)s,
+             %(pause_seconds)s,%(termination_type)s,%(termination_reason)s,%(created_at)s,%(updated_at)s)""",
+            pause_rows,
+        )
     if tray_rows is not None:
         _insert_experiment_tray_rows(cursor, tray_rows)
     if sample_rows is not None:
@@ -492,6 +512,31 @@ def replace_experiment_runs(cursor, experiment_runs: list[dict[str, Any]], *, re
     ]
     cursor.execute("DELETE FROM biz_experiment_run")
     _insert_experiment_run_rows(cursor, rows)
+
+
+def replace_experiment_run_pauses(cursor, pauses: list[dict[str, Any]]) -> None:
+    rows = [
+        build_experiment_run_pause_insert_row(item)
+        for item in pauses
+        if normalize_text(item.get("pause_no") or item.get("pauseNo"))
+    ]
+    cursor.execute("DELETE FROM biz_experiment_run_pause")
+    if not rows:
+        return
+    cursor.executemany(
+        """
+        INSERT INTO biz_experiment_run_pause (
+          pause_no, run_no, task_no, experiment_no, lab_code, pause_status,
+          inspection_tray_codes_json, pause_reason, paused_at, resumed_at, stopped_at,
+          pause_seconds, termination_type, termination_reason, created_at, updated_at
+        ) VALUES (
+          %(pause_no)s, %(run_no)s, %(task_no)s, %(experiment_no)s, %(lab_code)s, %(pause_status)s,
+          %(inspection_tray_codes_json)s, %(pause_reason)s, %(paused_at)s, %(resumed_at)s, %(stopped_at)s,
+          %(pause_seconds)s, %(termination_type)s, %(termination_reason)s, %(created_at)s, %(updated_at)s
+        )
+        """,
+        rows,
+    )
 
 
 def replace_task_allocation_relations(

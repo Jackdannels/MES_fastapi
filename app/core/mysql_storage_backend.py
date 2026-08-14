@@ -46,6 +46,7 @@ from app.core.mysql_storage_loaders import (
     load_experiment_run_trays,
     load_experiment_run_steps,
     load_experiment_runs,
+    load_experiment_run_pauses,
     load_experiment_samples,
     load_experiment_trays,
     load_experiments,
@@ -59,6 +60,7 @@ from app.core.mysql_storage_replacers import (
     replace_task_experiments,
     replace_task_workflow_relations,
     replace_experiment_runs,
+    replace_experiment_run_pauses,
     replace_experiment_run_trays,
     replace_experiment_run_steps,
     replace_experiment_samples,
@@ -164,6 +166,7 @@ RELATIONAL_STORAGE_KEYS = (
     "mes.samples",
     "mes.experiments",
     "mes.experiment_runs",
+    "mes.experiment_run_pauses",
     "mes.experiment_run_trays",
     "mes.experiment_run_steps",
     "mes.experiment_trays",
@@ -337,6 +340,9 @@ class MySQLMesStorageBackend(StorageBackend):
     def _replace_experiment_runs(self, cursor, experiment_runs: list[dict[str, Any]], *, replace_trays: bool = True) -> None:
         replace_experiment_runs(cursor, experiment_runs, replace_trays=replace_trays)
 
+    def _replace_experiment_run_pauses(self, cursor, rows: list[dict[str, Any]]) -> None:
+        replace_experiment_run_pauses(cursor, rows)
+
     def _backfill_schedule_task_ids(self, cursor) -> None:
         backfill_schedule_task_ids(cursor)
 
@@ -435,6 +441,9 @@ class MySQLMesStorageBackend(StorageBackend):
     def _load_experiment_runs(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
         return load_experiment_runs(cursor, task_codes=task_codes)
 
+    def _load_experiment_run_pauses(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
+        return load_experiment_run_pauses(cursor, task_codes=task_codes)
+
     def _load_experiment_run_trays(self, cursor, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
         return load_experiment_run_trays(cursor, task_codes=task_codes)
 
@@ -522,6 +531,8 @@ class MySQLMesStorageBackend(StorageBackend):
                         relational_updates["mes.experiment_runs"] or [],
                         replace_trays="mes.experiment_run_trays" not in relational_updates,
                     )
+                if "mes.experiment_run_pauses" in relational_updates:
+                    self._replace_experiment_run_pauses(cursor, relational_updates["mes.experiment_run_pauses"] or [])
                 if "mes.experiment_run_trays" in relational_updates:
                     self._replace_experiment_run_trays(cursor, relational_updates["mes.experiment_run_trays"] or [])
                 if "mes.experiment_run_steps" in relational_updates:
@@ -615,6 +626,7 @@ class MySQLMesStorageBackend(StorageBackend):
                             "mes.streams": self._load_streams,
                             "mes.experiments": self._load_experiments,
                             "mes.experiment_runs": self._load_experiment_runs,
+                            "mes.experiment_run_pauses": self._load_experiment_run_pauses,
                             "mes.experiment_run_trays": self._load_experiment_run_trays,
                             "mes.experiment_run_steps": self._load_experiment_run_steps,
                             "mes.experiment_trays": self._load_experiment_trays,
@@ -753,6 +765,7 @@ class MySQLMesStorageBackend(StorageBackend):
                     "mes.schedules",
                     "mes.experiments",
                     "mes.experiment_runs",
+                    "mes.experiment_run_pauses",
                     "mes.experiment_run_trays",
                     "mes.experiment_run_steps",
                     "mes.experiment_trays",
@@ -798,6 +811,7 @@ class MySQLMesStorageBackend(StorageBackend):
                             task_codes=normalized_task_codes,
                             schedules=normalized_updates.get("mes.schedules"),
                             experiment_runs=normalized_updates.get("mes.experiment_runs"),
+                            experiment_run_pauses=normalized_updates.get("mes.experiment_run_pauses"),
                             experiment_run_trays=normalized_updates.get("mes.experiment_run_trays"),
                             experiment_run_steps=normalized_updates.get("mes.experiment_run_steps"),
                             experiment_trays=normalized_updates.get("mes.experiment_trays"),

@@ -510,6 +510,26 @@ describe("useSchedulePage", () => {
     expect(wrapper.vm.manualLabOptions).toEqual(["盐雾试验室"]);
   });
 
+  test("uses the canonical salt lab code when master lab data is unavailable", async () => {
+    const snapshot = buildSnapshot();
+    snapshot["mes.tasks"][0].test_type = "盐雾试验";
+    snapshot["mes.experiments"][1].required_device = "盐雾试验";
+    mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
+    mocks.readMasterLabs.mockResolvedValueOnce([]);
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.scheduleForm.task_code = "SYLU-2026-03-006";
+    await settle(wrapper);
+    wrapper.vm.scheduleForm.experiment_code = "SYLU-2026-03-006-B";
+    await settle(wrapper);
+
+    expect(wrapper.vm.scheduleForm.device).toBe("盐雾试验室");
+    expect(wrapper.vm.scheduleForm.lab_code).toBe("LAB_SALT");
+    expect(wrapper.vm.scheduleForm.lab_id).toBe("");
+  });
+
   test("auto-selects the laboratory when an experiment type has exactly one available lab", async () => {
     const snapshot = buildSnapshot();
     snapshot["mes.experiments"][1].required_device = "盐雾试验";

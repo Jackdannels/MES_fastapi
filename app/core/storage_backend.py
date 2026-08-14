@@ -794,7 +794,7 @@ def _normalize_value(key: str, value: Any) -> Any:
         return _normalize_status_collection(_sanitize_sample_collection(value), status_scope="experiment")
     if key == "mes.tasks" and isinstance(value, list):
         return _normalize_status_collection(value, status_scope="task")
-    if key in {"mes.schedules", "mes.experiments", "mes.experiment_runs", "mes.experiment_run_trays", "mes.experiment_run_steps"} and isinstance(value, list):
+    if key in {"mes.schedules", "mes.experiments", "mes.experiment_runs", "mes.experiment_run_pauses", "mes.experiment_run_trays", "mes.experiment_run_steps"} and isinstance(value, list):
         return _normalize_status_collection(value, status_scope="experiment")
     if key == STORAGE_META_KEY:
         return _normalize_meta(value)

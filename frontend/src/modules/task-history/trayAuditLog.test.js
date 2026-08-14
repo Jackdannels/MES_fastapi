@@ -134,4 +134,33 @@ describe("tray audit log", () => {
     expect(formatAuditDuration(2 * 60 * 60 * 1000 + 35 * 1000)).toBe("02:00:35");
     expect(formatAuditExportTime("2026-07-27 15:49:30")).toBe("2026年7月27日 15时49分30秒");
   });
+
+  test("shows the optional mid-experiment appearance conclusion in tray logs", () => {
+    const taskCode = "TASK-SALT";
+    const trayCode = "TP-SALT";
+    const base = {
+      action: "stock_out",
+      appearance_phase: "mid_experiment",
+      room: "appearance",
+      target_lab: "盐雾试验室",
+      target_lab_code: "LAB_SALT",
+      task_code: taskCode,
+      tray_code: trayCode,
+    };
+    const log = buildTrayAuditLog({
+      stagingEvents: [
+        { ...base, id: "with-result", inspection_result: "轻微腐蚀，继续实验", time: "2026-08-13 01:00:00" },
+        { ...base, id: "without-result", inspection_result: "", time: "2026-08-13 02:00:00" },
+      ],
+      taskCode,
+      trayCode,
+    });
+
+    expect(log.events.map((event) => event.label)).toEqual([
+      "送至盐雾试验室 · 中途外观结论：轻微腐蚀，继续实验",
+      "送至盐雾试验室 · 中途外观结论：未填写",
+    ]);
+    expect(buildTrayAuditSvg({ events: log.events, taskCode, trayCode })).toContain("中途外观结论：未填写");
+    expect(buildTrayAuditCsv({ events: log.events, taskCode, trayCode })).toContain("中途外观结论：轻微腐蚀，继续实验");
+  });
 });

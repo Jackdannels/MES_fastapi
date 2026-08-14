@@ -17,6 +17,7 @@ STORAGE_KEYS: Iterable[str] = (
     "mes.schedules",
     "mes.experiments",
     "mes.experiment_runs",
+    "mes.experiment_run_pauses",
     "mes.experiment_run_trays",
     "mes.experiment_run_steps",
     "mes.experiment_trays",

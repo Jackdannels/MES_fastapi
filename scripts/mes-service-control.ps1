@@ -12,9 +12,17 @@ $ErrorActionPreference = "Stop"
 $backendPort = 8000
 $frontendPort = 5173
 $limsSimulatorPort = 8900
+$upperComputerSimulatorPort = 8899
 
-function Write-Result([string]$Status, [string]$Message) {
-    $json = [pscustomobject]@{ status = $Status; message = $Message } | ConvertTo-Json -Compress
+function Write-Result([string]$Status, [string]$Message, $Health = $null) {
+    $payload = [ordered]@{ status = $Status; message = $Message }
+    if ($null -ne $Health) {
+        $payload.backend = [bool]$Health.backend
+        $payload.frontend = [bool]$Health.frontend
+        $payload.lims = [bool]$Health.lims
+        $payload.upperComputer = [bool]$Health.upperComputer
+    }
+    $json = [pscustomobject]$payload | ConvertTo-Json -Compress
     if ($ResultFile) {
         $resultDirectory = Split-Path -Parent $ResultFile
         if ($resultDirectory) { New-Item -ItemType Directory -Force -Path $resultDirectory | Out-Null }
@@ -37,6 +45,7 @@ function Get-MesListenerPids {
         @(Get-ListenerPids $backendPort)
         @(Get-ListenerPids $frontendPort)
         @(Get-ListenerPids $limsSimulatorPort)
+        @(Get-ListenerPids $upperComputerSimulatorPort)
     ) | Where-Object { $_ } | Select-Object -Unique
 }
 
@@ -48,13 +57,13 @@ function Test-MesRunning {
     $state = Read-State
     $tracked = @($state.backendCommandPid, $state.frontendCommandPid, $state.limsSimulatorCommandPid) | Where-Object { Test-ProcessAlive $_ }
     if ($IgnorePortListeners) { return [bool]($tracked.Count -gt 0) }
-    return [bool]($tracked.Count -gt 0 -or (Get-ListenerPids $backendPort).Count -gt 0 -or (Get-ListenerPids $frontendPort).Count -gt 0 -or (Get-ListenerPids $limsSimulatorPort).Count -gt 0)
+    return [bool]($tracked.Count -gt 0 -or (Get-ListenerPids $backendPort).Count -gt 0 -or (Get-ListenerPids $frontendPort).Count -gt 0 -or (Get-ListenerPids $limsSimulatorPort).Count -gt 0 -or (Get-ListenerPids $upperComputerSimulatorPort).Count -gt 0)
 }
 
 function Test-MesHttpReady([string]$Url) {
     try {
         $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 2
-        return $response.StatusCode -ge 200 -and $response.StatusCode -lt 500
+        return $response.StatusCode -ge 200 -and $response.StatusCode -lt 300
     } catch {
         return $false
     }
@@ -63,11 +72,32 @@ function Test-MesHttpReady([string]$Url) {
 function Test-LimsRabbitReady {
     try {
         $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$limsSimulatorPort/api/state" -TimeoutSec 2
-        if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 500) { return $false }
+        if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) { return $false }
         $state = $response.Content | ConvertFrom-Json
         return [bool]$state.connected
     } catch {
         return $false
+    }
+}
+
+function Test-UpperComputerReady {
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$upperComputerSimulatorPort/api/state" -TimeoutSec 2
+        if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) { return $false }
+        $state = $response.Content | ConvertFrom-Json
+        $autoMode = if ($null -ne $state.config.auto_mode) { $state.config.auto_mode } else { $state.config.autoMode }
+        return [bool]$state.connected -and [bool]$autoMode
+    } catch {
+        return $false
+    }
+}
+
+function Get-MesServiceHealth {
+    return [pscustomobject]@{
+        backend = Test-MesHttpReady "http://127.0.0.1:$backendPort/health/ready"
+        frontend = Test-MesHttpReady "http://127.0.0.1:$frontendPort/"
+        lims = Test-LimsRabbitReady
+        upperComputer = Test-UpperComputerReady
     }
 }
 
@@ -175,7 +205,7 @@ function Wait-MesPortsReleased([int]$TimeoutSeconds = 10) {
     } while ((Get-Date) -lt $deadline)
 
     $remainingListeners = @(
-        foreach ($port in @($backendPort, $frontendPort, $limsSimulatorPort)) {
+        foreach ($port in @($backendPort, $frontendPort, $limsSimulatorPort, $upperComputerSimulatorPort)) {
             foreach ($processId in @(Get-ListenerPids $port)) {
                 "${port}/PID ${processId}"
             }
@@ -213,10 +243,11 @@ function Stop-MesSystem {
 
 function Start-MesSystem {
     if (Test-MesRunning) {
-        $runningBackendReady = Test-MesHttpReady "http://127.0.0.1:$backendPort/api/storage"
+        $runningBackendReady = Test-MesHttpReady "http://127.0.0.1:$backendPort/health/ready"
         $runningFrontendReady = Test-MesHttpReady "http://127.0.0.1:$frontendPort/"
         $runningLimsReady = Test-LimsRabbitReady
-        if ($runningBackendReady -and $runningFrontendReady -and $runningLimsReady) {
+        $runningUpperComputerReady = Test-UpperComputerReady
+        if ($runningBackendReady -and $runningFrontendReady -and $runningLimsReady -and $runningUpperComputerReady) {
             Open-MesPages (Read-State)
             return @{ status = "already_running"; message = "MES系统已经运行，已打开MES与LIMS模拟器页面" }
         }
@@ -253,23 +284,25 @@ function Start-MesSystem {
     }
     if (-not (Test-Path -LiteralPath $StateFile)) { throw "启动脚本未写入服务状态文件" }
 
-    $backendReadyUrl = "http://127.0.0.1:$backendPort/api/storage"
+    $backendReadyUrl = "http://127.0.0.1:$backendPort/health/ready"
     $frontendReadyUrl = "http://127.0.0.1:$frontendPort/"
     $limsSimulatorReadyUrl = "http://127.0.0.1:$limsSimulatorPort/api/state"
     $deadline = (Get-Date).AddSeconds(90)
     $backendReady = $false
     $frontendReady = $false
     $limsSimulatorReady = $false
+    $upperComputerReady = $false
     do {
         $backendReady = Test-MesHttpReady $backendReadyUrl
         $frontendReady = Test-MesHttpReady $frontendReadyUrl
         $limsSimulatorReady = Test-LimsRabbitReady
-        if ($backendReady -and $frontendReady -and $limsSimulatorReady) { break }
+        $upperComputerReady = Test-UpperComputerReady
+        if ($backendReady -and $frontendReady -and $limsSimulatorReady -and $upperComputerReady) { break }
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)
-    if (-not ($backendReady -and $frontendReady -and $limsSimulatorReady)) {
+    if (-not ($backendReady -and $frontendReady -and $limsSimulatorReady -and $upperComputerReady)) {
         if ($startDetail) { throw "启动脚本执行异常且服务未准备完成: $startDetail" }
-        throw "前后端及LIMS模拟器未能在90秒内准备完成"
+        throw "后端、前端、LIMS模拟器及上位机服务未能在90秒内准备完成"
     }
 
     Open-MesPages (Read-State)
@@ -278,7 +311,22 @@ function Start-MesSystem {
 
 try {
     switch ($Action) {
-        "Status" { if (Test-MesRunning) { Write-Result "running" "MES系统正在运行" } else { Write-Result "stopped" "MES系统未启动" } }
+        "Status" {
+            if ($IgnorePortListeners -and -not (Test-MesRunning)) {
+                $stoppedHealth = [pscustomobject]@{ backend = $false; frontend = $false; lims = $false; upperComputer = $false }
+                Write-Result "stopped" "MES系统未启动" $stoppedHealth
+                break
+            }
+            $health = Get-MesServiceHealth
+            $healthyCount = @(@($health.backend, $health.frontend, $health.lims, $health.upperComputer) | Where-Object { $_ }).Count
+            if ($healthyCount -eq 4) {
+                Write-Result "running" "MES系统四项服务均已就绪" $health
+            } elseif ($healthyCount -eq 0 -and -not (Test-MesRunning)) {
+                Write-Result "stopped" "MES系统未启动" $health
+            } else {
+                Write-Result "partial" "MES系统部分服务未就绪" $health
+            }
+        }
         "Stop" { $result = Stop-MesSystem; Write-Result $result.status $result.message }
         "Start" { $result = Start-MesSystem; Write-Result $result.status $result.message }
         "Restart" { $stop = Stop-MesSystem; $result = Start-MesSystem; Write-Result $result.status $(if ($stop.status -eq "not_running") { "MES系统已启动" } else { "MES系统已重启" }) }

@@ -48,6 +48,9 @@ SCHEMA_MIGRATIONS = (
     SchemaMigration("V006", "long-running query indexes", SQL_DIR / "V006__long_running_query_indexes.sql"),
     SchemaMigration("V007", "bounded event retention indexes", SQL_DIR / "V007__bounded_event_retention_indexes.sql"),
     SchemaMigration("V008", "fixture install schedule identity", SQL_DIR / "V008__fixture_install_schedule_identity.sql"),
+    SchemaMigration("V009", "salt spray experiment pause lifecycle", SQL_DIR / "V009__salt_spray_experiment_pause.sql"),
+    SchemaMigration("V010", "repair salt spray laboratory identity", SQL_DIR / "V010__repair_salt_spray_lab_identity.sql"),
+    SchemaMigration("V011", "canonicalize laboratory master data", SQL_DIR / "V011__canonicalize_laboratory_master_data.sql"),
 )
 
 

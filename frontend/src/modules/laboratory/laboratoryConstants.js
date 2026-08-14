@@ -33,7 +33,11 @@ const APPEARANCE_STORAGE_STATUSES = new Set([
   APPEARANCE_INSPECTION_STOCKED_STATUS,
   PRE_EXPERIMENT_APPEARANCE_STOCKED_STATUS,
 ]);
-const RUNNING_EXPERIMENT_STATUSES = new Set(["实验进行中", "实验中"]);
+const RUNNING_EXPERIMENT_STATUSES = new Set([
+  "实验进行中",
+  "实验中",
+  "实验暂停",
+]);
 const LAB_DISPATCH_HISTORY_ACTIONS = new Set(["暂存间扫码出库", "外观检测间扫码出库", "接驳区扫码出库", "送至实验室"]);
 const LABORATORY_TASK_FLOW_STEPS = [
   { key: "waiting", label: STATUS_WAITING },

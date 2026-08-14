@@ -168,21 +168,22 @@ def test_contract_validation_raises_actionable_error() -> None:
     cursor = _ContractCursor()
     cursor.tables.pop(0)
 
-    with pytest.raises(SchemaContractError, match="V008 release contract"):
+    with pytest.raises(SchemaContractError, match="V011 release contract"):
         validate_schema_contract(cursor, database="isolated_test_db")
 
 
 def test_checked_in_contract_is_fresh_and_covers_all_baseline_objects() -> None:
     assert CONTRACT_PATH.read_text(encoding="utf-8") == render_contract()
-    assert SCHEMA_CONTRACT["contract_version"] == "V008"
+    assert SCHEMA_CONTRACT["contract_version"] == "V011"
     assert [source["source"] for source in SCHEMA_CONTRACT["index_sources"]] == [
         "scripts/sql/V006__long_running_query_indexes.sql",
         "scripts/sql/V007__bounded_event_retention_indexes.sql",
         "scripts/sql/V008__fixture_install_schedule_identity.sql",
+        "scripts/sql/V009__salt_spray_experiment_pause.sql",
     ]
-    assert len(SCHEMA_CONTRACT["tables"]) == 39
-    assert sum(len(table["columns"]) for table in SCHEMA_CONTRACT["tables"].values()) == 511
-    assert sum(len(table["indexes"]) for table in SCHEMA_CONTRACT["tables"].values()) == 159
+    assert len(SCHEMA_CONTRACT["tables"]) == 40
+    assert sum(len(table["columns"]) for table in SCHEMA_CONTRACT["tables"].values()) == 528
+    assert sum(len(table["indexes"]) for table in SCHEMA_CONTRACT["tables"].values()) == 163
     assert sum(len(table["foreign_keys"]) for table in SCHEMA_CONTRACT["tables"].values()) == 38
 
     pending_table = SCHEMA_CONTRACT["tables"]["biz_fixture_install_pending"]

@@ -14,7 +14,7 @@ from app.db.schema_contract import (
 
 logger = logging.getLogger(__name__)
 
-REQUIRED_SCHEMA_VERSION = "V008"
+REQUIRED_SCHEMA_VERSION = "V011"
 # Backward-compatible exports for diagnostics and tests. The legacy fingerprint is
 # now the complete release contract, not a small representative subset.
 LEGACY_REQUIRED_TABLES = set(REQUIRED_SCHEMA_TABLES)

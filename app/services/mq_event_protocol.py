@@ -12,12 +12,18 @@ EVENT_TYPES = {
     "FIXTURE_READY",
     "EXPERIMENT_STARTED",
     "EXPERIMENT_ENDED",
+    "EXPERIMENT_PAUSED",
+    "EXPERIMENT_RESUMED",
+    "EXPERIMENT_STOPPED",
     "EXPERIMENT_RESULT",
 }
 EVENT_TYPE_BY_TOPIC_SUFFIX = {
     "fixture-ready": "FIXTURE_READY",
     "experiment-started": "EXPERIMENT_STARTED",
     "experiment-ended": "EXPERIMENT_ENDED",
+    "experiment-paused": "EXPERIMENT_PAUSED",
+    "experiment-resumed": "EXPERIMENT_RESUMED",
+    "experiment-stopped": "EXPERIMENT_STOPPED",
     "experiment-result": "EXPERIMENT_RESULT",
 }
 BEIJING_TZ = timezone(timedelta(hours=8))

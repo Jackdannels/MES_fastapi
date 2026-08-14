@@ -20,7 +20,9 @@ def test_complete_baseline_covers_the_required_schema_contract() -> None:
     )
 
     assert len(created_tables) == len(set(created_tables)) == 39
-    assert set(created_tables) == set(init_mysql_storage.REQUIRED_SCHEMA_TABLES)
+    required_tables = set(init_mysql_storage.REQUIRED_SCHEMA_TABLES)
+    assert set(created_tables).issubset(required_tables)
+    assert required_tables - set(created_tables) == {"biz_experiment_run_pause"}
 
 
 def test_complete_baseline_contains_schema_only() -> None:

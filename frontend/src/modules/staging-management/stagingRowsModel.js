@@ -8,6 +8,7 @@ import {
   EXPERIMENT_RUN_STEPS_KEY,
   EXPERIMENT_RUN_TRAYS_KEY,
   EXPERIMENT_RUNS_KEY,
+  EXPERIMENT_RUN_PAUSES_KEY,
   EXPERIMENT_TRAYS_KEY,
   SAMPLES_KEY,
   SCHEDULES_KEY,
@@ -158,6 +159,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
   const experimentRunTrays = asArray(snapshot[EXPERIMENT_RUN_TRAYS_KEY]);
   const experimentRunSteps = asArray(snapshot[EXPERIMENT_RUN_STEPS_KEY]);
   const experimentRuns = asArray(snapshot[EXPERIMENT_RUNS_KEY]);
+  const experimentRunPauses = asArray(snapshot[EXPERIMENT_RUN_PAUSES_KEY]);
   const samples = asArray(snapshot[SAMPLES_KEY]);
   const stagingEvents = asArray(snapshot[STAGING_EVENTS_KEY]);
   const taskMap = buildTaskMap(tasks);
@@ -288,6 +290,40 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         .reverse()
         .find((event) => normalizeText(event?.action) === "stock_in") || null;
       const hasCompletedExperimentStatus = row.statuses.some((status) => COMPLETED_EXPERIMENT_STATUSES.has(normalizeText(status)));
+      const midPause = config.key === "appearance"
+        ? experimentRunPauses.find((pause) => {
+          const runNo = normalizeText(pause?.run_no || pause?.runNo);
+          const run = experimentRuns.find((item) => normalizeText(item?.run_no || item?.runNo) === runNo);
+          const belongsToRun = experimentRunTrays.some((relation) => (
+            normalizeText(relation?.run_no || relation?.runNo) === runNo
+            && normalizeText(relation?.tray_code || relation?.trayCode || relation?.tray_no || relation?.trayNo) === normalizeText(row.trayCode)
+          ));
+          return normalizeText(pause?.status) === "实验暂停"
+            && normalizeText(run?.status || run?.run_status) === "实验暂停"
+            && belongsToRun
+            && asArray(pause?.inspection_tray_codes || pause?.inspectionTrayCodes)
+              .some((code) => normalizeText(code) === normalizeText(row.trayCode))
+            && (normalizeText(pause?.lab_code || pause?.labCode) === "LAB_SALT" || normalizeText(run?.device).includes("盐雾"));
+        })
+        : null;
+      const midRun = midPause
+        ? experimentRuns.find((run) => normalizeText(run?.run_no || run?.runNo) === normalizeText(midPause?.run_no || midPause?.runNo))
+        : null;
+      const midPauseNo = normalizeText(midPause?.pause_no || midPause?.pauseNo);
+      const midRunNo = normalizeText(midPause?.run_no || midPause?.runNo);
+      const latestMidPauseEvent = midPause
+        ? trayStorageEvents
+          .filter((event) => (
+            normalizeText(event?.room) === "appearance"
+            && normalizeText(event?.appearance_phase || event?.appearancePhase) === "mid_experiment"
+            && normalizeText(event?.run_no || event?.runNo) === midRunNo
+            && normalizeText(event?.pause_no || event?.pauseNo) === midPauseNo
+          ))
+          .at(-1) || null
+        : null;
+      const midPauseAwaitingStockIn = Boolean(midPause) && !latestMidPauseEvent;
+      const midPauseStockedIn = normalizeText(latestMidPauseEvent?.action) === "stock_in";
+      const midPauseCompleted = normalizeText(latestMidPauseEvent?.action) === "stock_out";
       const allAssignedExperimentsCompleted = trayAssignedExperimentsAreCompleted({
         experiments,
         experimentRunTrays,
@@ -379,6 +415,15 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       if (isPostExperimentAppearanceInbound && !isCurrentStagingStatus(status, config)) {
         status = "待入库";
       }
+      if (midPauseAwaitingStockIn && !isCurrentStagingStatus(status, config)) {
+        status = "待入库";
+      }
+      if (midPauseStockedIn) {
+        status = "中途外观检查中";
+      }
+      if (midPauseCompleted) {
+        status = "";
+      }
       if (latestEventDispatchesToCurrentRoom && !(config.key === "appearance" && hasPreExperimentAppearanceStorageStatus)) {
         status = "待入库";
       }
@@ -406,6 +451,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       if (
         config.key === "appearance"
         && status
+        && !midPause
         && !trayHasAllowedAppearanceSource({
           experiments,
           experimentRunSteps,
@@ -424,7 +470,20 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         normalizeText(lastEvent?.action) === "stock_out"
         && toDateKey(lastEvent?.time) === toDateKey(options.now || serverNowDate());
 
-      const targetDestinations = resolveTrayTargetDestinations({
+      const targetDestinations = midPause
+        ? [{
+          preferred: true,
+          scheduled: true,
+          targetAvailable: true,
+          targetExperimentCode: normalizeText(midPause?.experiment_code || midPause?.experimentCode || midRun?.experiment_code),
+          targetExperimentName: "盐雾试验（中途检查返回）",
+          targetLab: normalizeText(midRun?.device || midRun?.device_name) || "盐雾试验室",
+          targetLabCode: normalizeText(midPause?.lab_code || midPause?.labCode) || "LAB_SALT",
+          targetLabId: midRun?.lab_id || midRun?.labId || "",
+          targetType: "lab",
+          runNo: normalizeText(midPause?.run_no || midPause?.runNo),
+        }]
+        : resolveTrayTargetDestinations({
         devices,
         experiments,
         experimentRunSteps,
@@ -476,6 +535,9 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         isPostExperimentInbound,
         isPostExperimentAppearanceInbound,
         isPreExperimentAppearanceInbound: isPreExperimentAppearanceLabDispatch,
+        isMidExperimentAppearanceInbound: Boolean(midPause) && !midPauseCompleted,
+        midExperimentPauseNo: midPauseNo,
+        midExperimentRunNo: midRunNo,
         inboundTargetExperimentCode: normalizeText(row.inboundTargetExperimentCode || row.targetExperimentCode),
         inboundTargetLab: normalizeText(row.inboundTargetLab || row.targetLab),
         targetExperimentCode: targetDestination?.targetExperimentCode || "",

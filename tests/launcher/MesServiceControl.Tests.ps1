@@ -32,6 +32,31 @@ Describe "MES service controller" {
         $controllerSource | Should Match '\$null = Stop-MesSystem'
     }
 
+    It "tracks the backend-managed upper-computer service through health and shutdown" {
+        $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
+        $controllerSource = Get-Content -LiteralPath $controller -Raw
+
+        $controllerSource | Should Match '\$upperComputerSimulatorPort = 8899'
+        $controllerSource | Should Match 'function Test-UpperComputerReady'
+        $controllerSource | Should Match 'http://127\.0\.0\.1:\$upperComputerSimulatorPort/api/state'
+        $controllerSource | Should Match '\[bool\]\$state\.connected -and \[bool\]\$autoMode'
+        $controllerSource | Should Match 'Get-ListenerPids \$upperComputerSimulatorPort'
+        $controllerSource | Should Match '\$runningUpperComputerReady'
+        $controllerSource | Should Match '\$upperComputerReady'
+        $controllerSource | Should Match '@\(\$backendPort, \$frontendPort, \$limsSimulatorPort, \$upperComputerSimulatorPort\)'
+        $startScript | Should Match 'upperComputerSimulatorPort = \$UpperComputerSimulatorPort'
+        $startScript | Should Match 'upperComputerSimulatorUrl = \$upperComputerSimulatorUrl'
+    }
+
+    It "reports four-service running, partial, and stopped status data" {
+        $controllerSource = Get-Content -LiteralPath $controller -Raw
+
+        $controllerSource | Should Match 'function Get-MesServiceHealth'
+        $controllerSource | Should Match 'Write-Result "running" "MES系统四项服务均已就绪" \$health'
+        $controllerSource | Should Match 'Write-Result "partial" "MES系统部分服务未就绪" \$health'
+        $controllerSource | Should Match '\$payload\.upperComputer = \[bool\]\$Health\.upperComputer'
+    }
+
     It "keeps multiword Windows Terminal tab titles quoted after ArgumentList is joined" {
         $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
 
@@ -63,7 +88,7 @@ Describe "MES service controller" {
         $startScript | Should Match '\$terminalCommandSwitch = if \(\$Production\) \{ "/c" \} else \{ "/k" \}'
         $startScript | Should Match '\$backendTerminalCommand = if \(\$Production\) \{ "\$backendCommand & exit /b 0" \}'
         $startScript | Should Match '\$frontendTerminalCommand = if \(\$Production\) \{ "\$frontendCommand & exit /b 0" \}'
-        $startScript | Should Match 'Write-Host "LIMS simulator: \$limsSimulatorUrl"\s*exit 0'
+        $startScript | Should Match 'Write-Host "LIMS simulator: \$limsSimulatorUrl"\s*Write-Host "Upper-computer service: \$upperComputerSimulatorUrl"\s*exit 0'
     }
 
     It "keeps colors in the visible production backend console" {
@@ -167,9 +192,9 @@ Describe "MES service controller" {
         $controllerSource = Get-Content -LiteralPath $controller -Raw
 
         $controllerSource | Should Match 'function Test-MesHttpReady'
-        $controllerSource | Should Match 'http://127\.0\.0\.1:\$backendPort/api/storage'
+        $controllerSource | Should Match 'http://127\.0\.0\.1:\$backendPort/health/ready'
         $controllerSource | Should Match 'http://127\.0\.0\.1:\$frontendPort/'
-        $controllerSource | Should Match '前后端及LIMS模拟器未能在90秒内准备完成'
+        $controllerSource | Should Match '后端、前端、LIMS模拟器及上位机服务未能在90秒内准备完成'
     }
 
     It "uses a launcher-hosted themed modal for action confirmations and results" {

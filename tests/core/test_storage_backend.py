@@ -1433,7 +1433,7 @@ def test_initialize_mysql_storage_validates_schema_only_after_migrations_are_app
     monkeypatch.setattr(
         module,
         "apply_pending_schema_migrations",
-        lambda: touched.append("migrations") or ["V001", "V002", "V003", "V004", "V005", "V006", "V007", "V008"],
+        lambda: touched.append("migrations") or ["V001", "V002", "V003", "V004", "V005", "V006", "V007", "V008", "V009", "V010", "V011"],
     )
 
     def _validate_after_migrations() -> None:
@@ -1474,7 +1474,7 @@ def test_initialize_mysql_storage_validates_schema_only_after_migrations_are_app
 
     assert touched == ["migrations", "validation"]
     assert summary["schema_initialized"] is True
-    assert summary["schema_version"] == "V008"
+    assert summary["schema_version"] == "V011"
 
 
 def test_initialize_mysql_storage_forbids_demo_seed_in_production(monkeypatch) -> None:
@@ -1504,6 +1504,9 @@ def test_init_mysql_storage_schema_order_starts_with_complete_baseline() -> None
         "V006__long_running_query_indexes.sql",
         "V007__bounded_event_retention_indexes.sql",
         "V008__fixture_install_schedule_identity.sql",
+        "V009__salt_spray_experiment_pause.sql",
+        "V010__repair_salt_spray_lab_identity.sql",
+        "V011__canonicalize_laboratory_master_data.sql",
     ]
 
 
@@ -1511,7 +1514,7 @@ def test_init_mysql_storage_validates_full_schema_including_experiment_run_table
     module = importlib.import_module("scripts.init_mysql_storage")
     representative_table = "biz_experiment_run"
 
-    assert len(module.REQUIRED_SCHEMA_TABLES) == 39
+    assert len(module.REQUIRED_SCHEMA_TABLES) == 40
     assert representative_table in module.REQUIRED_SCHEMA_TABLES
     monkeypatch.setattr(module, "find_missing_schema_tables", lambda: [representative_table])
 

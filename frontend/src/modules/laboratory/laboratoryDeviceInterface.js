@@ -47,8 +47,8 @@ function createLaboratoryDeviceInterface({
         readyPublishRetryAvailable.value = false;
       }
       await ensureHostInterfaceModeSynced();
-      await publisher(payload);
-      return true;
+      const result = await publisher(payload);
+      return result ?? true;
     } catch (error) {
       laboratoryMqError.value = {
         detail: formatErrorMessage(error),

@@ -29,7 +29,7 @@ const resolveLaboratoryStatusRank = (value) => {
   if (normalized === LAB_READY_STATUS) {
     return 3;
   }
-  if (normalized === "实验进行中" || normalized === "实验中") {
+  if (RUNNING_EXPERIMENT_STATUSES.has(normalized)) {
     return 4;
   }
   if (normalized === "实验已完成" || normalized === "实验后暂存间存放" || normalized === "厂家收回") {

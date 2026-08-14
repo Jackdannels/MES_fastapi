@@ -77,7 +77,13 @@ const normalizeStagingEventLabel = (event) => {
     if (targetsStaging) {
       return `送至暂存间${appearancePhaseText(event)}`;
     }
-    return targetLab ? `送至${targetLab}` : "送至实验室";
+    const baseLabel = targetLab ? `送至${targetLab}` : "送至实验室";
+    const phase = normalizeText(event?.appearance_phase || event?.appearancePhase);
+    if (room === "appearance" && phase === "mid_experiment") {
+      const inspectionResult = normalizeText(event?.inspection_result || event?.inspectionResult) || "未填写";
+      return `${baseLabel} · 中途外观结论：${inspectionResult}`;
+    }
+    return baseLabel;
   }
   return normalizeText(event?.detail || event?.status) || "暂存状态更新";
 };

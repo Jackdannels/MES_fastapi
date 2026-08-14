@@ -3,6 +3,16 @@
     <Teleport v-if="canTeleportScheduleAction" to=".header-actions-before-logout">
       <div class="laboratory-attendance-header" data-testid="laboratory-attendance-header">
         <button
+          v-if="canSimulatePauseConfirmation"
+          class="action-btn secondary laboratory-salt-simulate-button"
+          data-testid="laboratory-salt-simulate-pause-confirmation"
+          type="button"
+          :disabled="simulationSubmitting"
+          @click="simulatePauseConfirmation"
+        >
+          {{ simulationSubmitting ? "模拟确认中…" : "模拟上位机暂停确认" }}
+        </button>
+        <button
           class="action-btn laboratory-reset-button"
           data-testid="laboratory-reset-task"
           type="button"
@@ -620,9 +630,15 @@
               <div class="muted">{{ runningModalExperiment.completed ? "实验完成" : "当前进行实验" }}</div>
               <h4>{{ runningModalExperiment.taskCode }} / {{ runningModalExperiment.experimentName }}</h4>
             </div>
-            <span class="pill">{{ runningModalExperiment.completed ? "实验已完成" : "实验进行中" }}</span>
+            <span class="pill">{{ runningModalExperiment.completed ? "实验已完成" : runningModalExperiment.isPaused ? "实验暂停" : "实验进行中" }}</span>
           </div>
           <div class="laboratory-running-countdown" data-testid="laboratory-running-countdown">{{ runningModalExperiment.countdownLabel }}</div>
+          <div v-if="isSaltSprayLaboratory && !runningModalExperiment.completed" class="laboratory-salt-exposure-grid" data-testid="laboratory-salt-exposure-grid">
+            <div><span>有效暴露</span><strong>{{ runningModalExperiment.effectiveExposureLabel }}</strong></div>
+            <div><span>剩余有效时长</span><strong>{{ runningModalExperiment.remainingExposureLabel }}</strong></div>
+            <div><span>累计暂停</span><strong>{{ runningModalExperiment.totalPauseLabel }}</strong></div>
+            <div><span>暂停次数</span><strong>{{ runningModalExperiment.pauseCount }} 次</strong></div>
+          </div>
           <div v-if="runningModalExperiment.axisStatusLabel" class="laboratory-running-axis-status" data-testid="laboratory-running-axis-status">
             <strong>{{ runningModalExperiment.axisStatusLabel }}</strong>
             <span>{{ runningModalExperiment.axisCompletedLabel }}</span>
@@ -630,7 +646,7 @@
           </div>
           <div class="laboratory-running-times muted">
             <span>开始：{{ runningModalExperiment.startDateTimeLabel }}</span>
-            <span>{{ runningModalExperiment.completed ? "完成" : "预计完成" }}：{{ runningModalExperiment.endDateTimeLabel }}</span>
+            <span>{{ runningModalExperiment.completed ? "完成" : "预计完成" }}：{{ isSaltSprayLaboratory && !runningModalExperiment.completed ? runningModalExperiment.expectedEndLabel : runningModalExperiment.endDateTimeLabel }}</span>
           </div>
           <div class="laboratory-running-grid">
             <div>
@@ -673,10 +689,61 @@
             </button>
           </div>
           <div class="laboratory-running-modal__hint muted">
-            <span>{{ runningModalExperiment.completed ? "实验状态已自动更新为实验已完成，点击空白处关闭弹窗。" : "点击空白处可临时隐藏弹窗，10 秒无操作后会自动恢复。" }}</span>
-            <span v-if="!runningModalExperiment.completed && runningModalExperiment.remainingSeconds <= 0">实验已超时，请在确认现场状态后完成实验。</span>
+            <span>{{ runningModalExperiment.completed ? "实验状态已自动更新为实验已完成，点击空白处关闭弹窗。" : runningModalExperiment.isPaused ? "设备已确认暂停；暂停期间不计入有效暴露时间。" : "点击空白处可临时隐藏弹窗，10 秒无操作后会自动恢复。" }}</span>
+            <span v-if="!runningModalExperiment.completed && !runningModalExperiment.isPaused && runningModalExperiment.remainingSeconds <= 0">实验已超时，请在确认现场状态后完成实验。</span>
+            <span v-if="isSaltSprayLaboratory && runningModalExperiment.isPaused && activePauseInspectionTrayCodes.length">本次外观检查托盘：{{ activePauseInspectionTrayCodes.join("、") }}</span>
           </div>
           <div class="laboratory-running-actions">
+            <div
+              v-if="!runningModalExperiment.completed && (controlSubmitting || controlAwaitingConfirmation)"
+              class="laboratory-running-completion-pending"
+              data-testid="laboratory-salt-control-awaiting-confirmation"
+              role="status"
+              aria-live="polite"
+            >
+              <span class="laboratory-running-completion-pending__spinner" aria-hidden="true"></span>
+              <span>
+                <strong>{{ controlSubmitting ? "正在发送设备命令…" : "等待上位机确认…" }}</strong>
+                <small>正式状态将在收到设备事件后更新</small>
+              </span>
+            </div>
+            <div
+              v-if="!runningModalExperiment.completed && controlConfirmationError"
+              class="laboratory-running-completion-error"
+              data-testid="laboratory-salt-control-confirmation-error"
+              role="alert"
+            >
+              <strong>设备控制未确认</strong>
+              <span>{{ controlConfirmationError }}</span>
+            </div>
+            <button
+              v-if="isSaltSprayLaboratory && !runningModalExperiment.completed && !runningModalExperiment.isPaused && !controlSubmitting && !controlAwaitingConfirmation"
+              class="action-btn secondary"
+              data-testid="laboratory-salt-pause"
+              type="button"
+              @click="openPauseModal"
+            >
+              暂停并进行外观检查
+            </button>
+            <button
+              v-if="isSaltSprayLaboratory && !runningModalExperiment.completed && runningModalExperiment.isPaused && !controlSubmitting && !controlAwaitingConfirmation"
+              class="action-btn success"
+              data-testid="laboratory-salt-resume"
+              type="button"
+              :disabled="!canResume"
+              @click="requestContinue"
+            >
+              继续实验
+            </button>
+            <button
+              v-if="isSaltSprayLaboratory && !runningModalExperiment.completed && runningModalExperiment.isPaused && !controlSubmitting && !controlAwaitingConfirmation"
+              class="action-btn danger"
+              data-testid="laboratory-salt-stop"
+              type="button"
+              @click="openStopModal"
+            >
+              停止实验
+            </button>
             <div
               v-if="!runningModalExperiment.completed && (completionSubmitting || completionAwaitingConfirmation)"
               class="laboratory-running-completion-pending"
@@ -703,6 +770,7 @@
               v-if="!runningModalExperiment.completed
                 && !completionSubmitting
                 && !completionAwaitingConfirmation
+                && !(isSaltSprayLaboratory && runningModalExperiment.isPaused)
                 && !currentAxisCompletion.enabled"
               class="action-btn laboratory-running-complete-button"
               data-testid="laboratory-complete-experiment"
@@ -737,6 +805,93 @@
           </div>
         </div>
       </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <AppModal
+        :open="pauseModalOpen"
+        :close-on-backdrop="!controlSubmitting"
+        :close-on-esc="!controlSubmitting"
+        class="laboratory-operation-modal laboratory-salt-control-modal--priority"
+        data-testid="laboratory-salt-pause-modal"
+        title="暂停并进行中途外观检查"
+        @close="closePauseModal"
+      >
+      <div class="laboratory-modal-body laboratory-salt-control-form">
+        <p>选择本次需要进入外观检测间的托盘。命令发送后，只有收到上位机暂停确认，托盘才会被放行。</p>
+        <fieldset>
+          <legend>检查托盘（默认全选）</legend>
+          <label v-for="trayCode in inspectionTrayOptions" :key="`salt-pause-${trayCode}`" class="laboratory-salt-tray-option">
+            <input
+              type="checkbox"
+              :checked="inspectionTrayCodes.includes(trayCode)"
+              :disabled="controlSubmitting"
+              @change="toggleInspectionTray(trayCode)"
+            />
+            <span>{{ trayCode }}</span>
+          </label>
+        </fieldset>
+        <label class="laboratory-salt-field">
+          <span>暂停原因</span>
+          <textarea v-model="pauseReason" :disabled="controlSubmitting" rows="3"></textarea>
+        </label>
+      </div>
+      <template #footer>
+        <button class="action-btn secondary" type="button" :disabled="controlSubmitting" @click="closePauseModal">取消</button>
+        <button
+          class="action-btn"
+          data-testid="laboratory-salt-pause-confirm"
+          type="button"
+          :disabled="controlSubmitting || !inspectionTrayCodes.length || !pauseReason.trim()"
+          @click="confirmPause"
+        >
+          {{ controlSubmitting ? "发送中…" : "发送暂停命令" }}
+        </button>
+      </template>
+      </AppModal>
+    </Teleport>
+
+    <Teleport to="body">
+      <AppModal
+        :open="stopModalOpen"
+        :close-on-backdrop="!controlSubmitting"
+        :close-on-esc="!controlSubmitting"
+        class="laboratory-operation-modal laboratory-salt-control-modal--priority"
+        data-testid="laboratory-salt-stop-modal"
+        title="停止盐雾实验"
+        @close="closeStopModal"
+      >
+      <div class="laboratory-modal-body laboratory-salt-control-form">
+        <p>停止结果会影响任务是否能按正常完成流转，请选择真实原因。</p>
+        <fieldset>
+          <legend>停止类型</legend>
+          <label class="laboratory-salt-tray-option">
+            <input v-model="stopType" type="radio" value="completion_criteria" :disabled="controlSubmitting" />
+            <span>达到外观检查终止条件（正常完成）</span>
+          </label>
+          <label class="laboratory-salt-tray-option">
+            <input v-model="stopType" type="radio" value="abnormal" :disabled="controlSubmitting" />
+            <span>异常提前终止（不判定任务完成）</span>
+          </label>
+        </fieldset>
+        <label class="laboratory-salt-field">
+          <span>终止依据或异常原因</span>
+          <textarea v-model="stopReason" :disabled="controlSubmitting" rows="4"></textarea>
+        </label>
+      </div>
+      <template #footer>
+        <button class="action-btn secondary" type="button" :disabled="controlSubmitting" @click="closeStopModal">取消</button>
+        <button
+          class="action-btn danger"
+          data-testid="laboratory-salt-stop-confirm"
+          type="button"
+          :disabled="controlSubmitting || !stopReason.trim()"
+          @click="confirmStop"
+        >
+          {{ controlSubmitting ? "发送中…" : "确认停止" }}
+        </button>
+      </template>
+      </AppModal>
     </Teleport>
   </div>
 </template>
@@ -778,8 +933,10 @@ const {
   attendanceSubmitting,
   canRequestFixtureInstall,
   canRequestReady,
+  canSimulatePauseConfirmation,
   canTeleportScheduleAction,
   canCompleteCompare,
+  canResume,
   canResetCurrentTask,
   canSelectTaskKey,
   checklist,
@@ -788,6 +945,9 @@ const {
   completionAwaitingConfirmation,
   completionConfirmationError,
   completionSubmitting,
+  controlAwaitingConfirmation,
+  controlConfirmationError,
+  controlSubmitting,
   compareFeedback,
   compareScanInputRef,
   compareScanCode,
@@ -815,12 +975,18 @@ const {
   currentExperimentTrayRows,
   currentTask,
   hideRunningModal,
+  activePauseInspectionTrayCodes,
+  inspectionTrayCodes,
+  inspectionTrayOptions,
+  isSaltSprayLaboratory,
   logoutAttendance,
   installModalOpen,
   installActionLabel,
   laboratoryMqError,
   labName,
   openCompare,
+  openPauseModal,
+  openStopModal,
   openInstall,
   openReady,
   openResetConfirm,
@@ -838,6 +1004,10 @@ const {
   runningInteractionLocked,
   runningModalExperiment,
   runningModalVisible,
+  simulatePauseConfirmation,
+  simulationSubmitting,
+  pauseModalOpen,
+  pauseReason,
   scheduleRows,
   selectedTask,
   selectedTrayFlow,
@@ -849,6 +1019,15 @@ const {
   submitCompareScan,
   submitAttendanceLogin,
   submitAttendanceQrLogin,
+  requestContinue,
+  closePauseModal,
+  closeStopModal,
+  confirmPause,
+  confirmStop,
+  stopModalOpen,
+  stopReason,
+  stopType,
+  toggleInspectionTray,
   taskListModalOpen,
   trayFlowTask,
 } = useLaboratoryPage({ selectedLabName });

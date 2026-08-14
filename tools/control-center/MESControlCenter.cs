@@ -3,21 +3,42 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Net;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Web.Script.Serialization;
 using MESTerminalManager;
 
 [assembly: AssemblyTitle("MES 控制中心")]
 [assembly: AssemblyDescription("MES 服务控制与固定工作台终端管理")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Control Center")]
-[assembly: AssemblyVersion("2.0.0.0")]
-[assembly: AssemblyFileVersion("2.0.0.0")]
+[assembly: AssemblyVersion("2.1.0.0")]
+[assembly: AssemblyFileVersion("2.1.0.0")]
 
 namespace MESControlCenter
 {
+    internal sealed class ServiceIndicator
+    {
+        internal Label Dot;
+        internal Label Status;
+    }
+
+    internal sealed class ServiceHealthSnapshot
+    {
+        internal bool Backend;
+        internal bool Frontend;
+        internal bool Lims;
+        internal bool UpperComputer;
+
+        internal int HealthyCount
+        {
+            get { return (Backend ? 1 : 0) + (Frontend ? 1 : 0) + (Lims ? 1 : 0) + (UpperComputer ? 1 : 0); }
+        }
+    }
+
     internal static class Theme
     {
         internal static readonly Color Background = Color.FromArgb(7, 16, 20);
@@ -96,6 +117,7 @@ namespace MESControlCenter
         private readonly string controlScript;
         private readonly TerminalManagerClient terminalClient = new TerminalManagerClient();
         private readonly Timer refreshTimer = new Timer();
+        private readonly Timer serviceStatusTimer = new Timer();
         private readonly List<Button> serviceButtons = new List<Button>();
         private readonly List<Button> terminalButtons = new List<Button>();
 
@@ -107,9 +129,10 @@ namespace MESControlCenter
         private Label pageDescription;
         private Label systemStatusLabel;
         private Label serviceStateLabel;
-        private Label serviceBackendLabel;
-        private Label serviceFrontendLabel;
-        private Label serviceLimsLabel;
+        private ServiceIndicator serviceBackendIndicator;
+        private ServiceIndicator serviceFrontendIndicator;
+        private ServiceIndicator serviceLimsIndicator;
+        private ServiceIndicator serviceUpperComputerIndicator;
         private Label onlineMetricLabel;
         private Label commandMetricLabel;
         private Label offlineMetricLabel;
@@ -120,6 +143,7 @@ namespace MESControlCenter
         private TextBox passwordText;
         private Button connectButton;
         private Button refreshButton;
+        private Button startServiceButton;
         private Button reloadButton;
         private Button shutdownButton;
         private Button restartTerminalButton;
@@ -137,13 +161,14 @@ namespace MESControlCenter
         private List<TerminalRow> rows = new List<TerminalRow>();
         private bool terminalConnected;
         private bool serviceBusy;
+        private bool serviceStatusBusy;
         private bool terminalBusy;
         private bool systemRunning;
 
         internal ControlCenterForm(string scriptPath, bool autoStart)
         {
             controlScript = scriptPath;
-            Text = "MES 控制中心 v2.0";
+            Text = "MES 控制中心 v2.1";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(1160, 700);
             ClientSize = new Size(1420, 820);
@@ -156,12 +181,15 @@ namespace MESControlCenter
             BuildModal();
             refreshTimer.Interval = 5000;
             refreshTimer.Tick += async delegate { await RefreshTerminals(false); };
-            FormClosed += delegate { refreshTimer.Stop(); };
+            serviceStatusTimer.Interval = 5000;
+            serviceStatusTimer.Tick += async delegate { await RefreshServiceStatus(false); };
+            FormClosed += delegate { refreshTimer.Stop(); serviceStatusTimer.Stop(); };
             if (autoStart)
             {
                 Shown += async delegate
                 {
                     await RefreshServiceStatus(false);
+                    serviceStatusTimer.Start();
                     await ConnectAndRefresh(false);
                 };
             }
@@ -187,7 +215,7 @@ namespace MESControlCenter
             Panel brand = new Panel { Dock = DockStyle.Top, Height = 70 };
             BrandIcon brandIcon = new BrandIcon { Location = new Point(6, 2) };
             Label brandTitle = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), Location = new Point(58, 6), Text = "MES 控制中心" };
-            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font("Segoe UI", 8F), Location = new Point(59, 31), Text = "CONTROL CENTER  v2.0" };
+            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font("Segoe UI", 8F), Location = new Point(59, 31), Text = "CONTROL CENTER  v2.1" };
             brand.Controls.AddRange(new Control[] { brandIcon, brandTitle, brandVersion });
             sidebar.Controls.Add(brand);
 
@@ -251,7 +279,7 @@ namespace MESControlCenter
             TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Theme.Background, ColumnCount = 2, RowCount = 2, Padding = new Padding(0) };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 44F));
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 56F));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 228F));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 268F));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             page.Controls.Add(layout);
 
@@ -303,36 +331,41 @@ namespace MESControlCenter
             Panel actionBar = new Panel { Dock = DockStyle.Bottom, Height = 58, BackColor = Theme.Surface, Padding = new Padding(14, 8, 14, 8) };
             Button stop = CreateButton("关闭系统", Theme.DangerSoft, Theme.Danger, 106);
             Button restart = CreateButton("重启系统", Theme.WarningSoft, Theme.Warning, 106);
-            Button start = CreateButton("启动系统", Theme.AccentStrong, Color.FromArgb(4, 27, 23), 106);
+            startServiceButton = CreateButton("启动系统", Theme.AccentStrong, Color.FromArgb(4, 27, 23), 106);
             stop.Location = new Point(14, 8);
             restart.Location = new Point(128, 8);
-            start.Location = new Point(242, 8);
+            startServiceButton.Location = new Point(242, 8);
             stop.Click += delegate { RequestServiceAction("Stop"); };
             restart.Click += delegate { RequestServiceAction("Restart"); };
-            start.Click += delegate { RequestServiceAction("Start"); };
-            serviceButtons.AddRange(new Button[] { stop, restart, start });
-            actionBar.Controls.AddRange(new Control[] { stop, restart, start });
+            startServiceButton.Click += delegate { RequestServiceAction("Start"); };
+            serviceButtons.AddRange(new Button[] { stop, restart, startServiceButton });
+            actionBar.Controls.AddRange(new Control[] { stop, restart, startServiceButton });
 
             Panel lines = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
-            serviceBackendLabel = AddServiceLine(lines, "后端服务", ":8000", 0);
-            serviceFrontendLabel = AddServiceLine(lines, "前端服务", ":5173", 40);
-            serviceLimsLabel = AddServiceLine(lines, "LIMS 模拟器", ":8900", 80);
+            serviceUpperComputerIndicator = AddServiceLine(lines, "上位机服务", ":8899");
+            serviceLimsIndicator = AddServiceLine(lines, "LIMS 模拟器", ":8900");
+            serviceFrontendIndicator = AddServiceLine(lines, "前端服务", ":5173");
+            serviceBackendIndicator = AddServiceLine(lines, "后端服务", ":8000");
             card.Controls.Add(lines);
             card.Controls.Add(actionBar);
             card.Controls.Add(head);
         }
 
-        private Label AddServiceLine(Control parent, string name, string port, int top)
+        private ServiceIndicator AddServiceLine(Control parent, string name, string port)
         {
-            Panel line = new Panel { Dock = DockStyle.Top, Height = 40, BackColor = Theme.Surface };
-            Label dot = new Label { AutoSize = false, BackColor = Theme.Subtle, Location = new Point(16, 16), Size = new Size(8, 8) };
-            Label label = new Label { AutoSize = true, ForeColor = Theme.Text, Location = new Point(34, 11), Text = name };
-            Label value = new Label { AutoSize = true, Anchor = AnchorStyles.Top | AnchorStyles.Right, ForeColor = Theme.Subtle, Font = new Font("Consolas", 8.5F), Location = new Point(300, 11), Text = port };
-            line.Resize += delegate { value.Left = line.ClientSize.Width - value.Width - 16; };
-            line.Controls.AddRange(new Control[] { dot, label, value });
+            Panel line = new Panel { Dock = DockStyle.Top, Height = 36, BackColor = Theme.Surface };
+            Label dot = new Label { AutoSize = false, BackColor = Theme.Danger, Location = new Point(16, 14), Size = new Size(8, 8), AccessibleName = name + "状态灯" };
+            Label label = new Label { AutoSize = true, ForeColor = Theme.Text, Location = new Point(34, 9), Text = name };
+            Label status = new Label { AutoSize = true, Anchor = AnchorStyles.Top | AnchorStyles.Right, ForeColor = Theme.Danger, Location = new Point(260, 9), Text = "未运行", AccessibleName = name + "状态" };
+            Label value = new Label { AutoSize = true, Anchor = AnchorStyles.Top | AnchorStyles.Right, ForeColor = Theme.Subtle, Font = new Font("Consolas", 8.5F), Location = new Point(340, 9), Text = port };
+            line.Resize += delegate
+            {
+                value.Left = line.ClientSize.Width - value.Width - 16;
+                status.Left = value.Left - status.Width - 18;
+            };
+            line.Controls.AddRange(new Control[] { dot, label, status, value });
             parent.Controls.Add(line);
-            line.BringToFront();
-            return dot;
+            return new ServiceIndicator { Dot = dot, Status = status };
         }
 
         private Label AddMetric(TableLayoutPanel parent, int column, string title, string value, string note, Color color)
@@ -498,44 +531,143 @@ namespace MESControlCenter
 
         private async Task RefreshServiceStatus(bool showErrors)
         {
-            if (serviceBusy) return;
+            if (serviceStatusBusy) return;
+            serviceStatusBusy = true;
+            serviceStateLabel.Text = "正在检测";
+            serviceStateLabel.ForeColor = Theme.Muted;
             try
             {
-                string result = await Task.Run(delegate { return RunControl("Status"); });
-                string status = ReadResultValue(result, "status");
-                string message = ReadResultValue(result, "message");
-                systemRunning = status == "running";
-                systemStatusLabel.Text = systemRunning ? "运行中 · 服务已就绪" : "未运行 · 可启动";
-                systemStatusLabel.ForeColor = systemRunning ? Theme.Accent : Theme.Muted;
-                serviceStateLabel.Text = systemRunning ? "全部正常" : "服务未启动";
-                serviceStateLabel.ForeColor = systemRunning ? Theme.Accent : Theme.Warning;
-                SetServiceDots(systemRunning ? Theme.Accent : Theme.Subtle);
-                footerStatusLabel.Text = message;
+                Task<bool> backendTask = Task.Run(delegate { return TestJsonServiceReady("http://127.0.0.1:8000/health/ready", "status", "ready", false); });
+                Task<bool> frontendTask = Task.Run(delegate { return TestHttpReady("http://127.0.0.1:5173/"); });
+                Task<bool> limsTask = Task.Run(delegate { return TestJsonServiceReady("http://127.0.0.1:8900/api/state", "connected", "true", false); });
+                Task<bool> upperComputerTask = Task.Run(delegate { return TestJsonServiceReady("http://127.0.0.1:8899/api/state", "connected", "true", true); });
+                await Task.WhenAll(backendTask, frontendTask, limsTask, upperComputerTask);
+
+                ServiceHealthSnapshot health = new ServiceHealthSnapshot
+                {
+                    Backend = backendTask.Result,
+                    Frontend = frontendTask.Result,
+                    Lims = limsTask.Result,
+                    UpperComputer = upperComputerTask.Result
+                };
+                ApplyServiceIndicator(serviceBackendIndicator, health.Backend);
+                ApplyServiceIndicator(serviceFrontendIndicator, health.Frontend);
+                ApplyServiceIndicator(serviceLimsIndicator, health.Lims);
+                ApplyServiceIndicator(serviceUpperComputerIndicator, health.UpperComputer);
+                systemRunning = health.HealthyCount == 4;
+
+                if (systemRunning)
+                {
+                    systemStatusLabel.Text = "运行中 · 服务已就绪";
+                    systemStatusLabel.ForeColor = Theme.Accent;
+                    serviceStateLabel.Text = "全部正常";
+                    serviceStateLabel.ForeColor = Theme.Accent;
+                    footerStatusLabel.Text = "后端、前端、LIMS 模拟器及上位机服务均已就绪";
+                }
+                else if (health.HealthyCount == 0)
+                {
+                    systemStatusLabel.Text = "未运行 · 可启动";
+                    systemStatusLabel.ForeColor = Theme.Muted;
+                    serviceStateLabel.Text = "服务未启动";
+                    serviceStateLabel.ForeColor = Theme.Danger;
+                    footerStatusLabel.Text = "未检测到已就绪的 MES 服务";
+                }
+                else
+                {
+                    List<string> unavailable = new List<string>();
+                    if (!health.Backend) unavailable.Add("后端");
+                    if (!health.Frontend) unavailable.Add("前端");
+                    if (!health.Lims) unavailable.Add("LIMS 模拟器");
+                    if (!health.UpperComputer) unavailable.Add("上位机");
+                    systemStatusLabel.Text = "部分运行 · 请检查服务";
+                    systemStatusLabel.ForeColor = Theme.Warning;
+                    serviceStateLabel.Text = "部分服务异常";
+                    serviceStateLabel.ForeColor = Theme.Warning;
+                    footerStatusLabel.Text = "未就绪服务：" + String.Join("、", unavailable.ToArray());
+                }
+                UpdateServiceActionState();
             }
             catch (Exception exception)
             {
                 systemRunning = false;
                 systemStatusLabel.Text = "状态读取失败";
                 serviceStateLabel.Text = "无法检测";
-                SetServiceDots(Theme.Danger);
+                ApplyServiceIndicator(serviceBackendIndicator, false);
+                ApplyServiceIndicator(serviceFrontendIndicator, false);
+                ApplyServiceIndicator(serviceLimsIndicator, false);
+                ApplyServiceIndicator(serviceUpperComputerIndicator, false);
                 footerStatusLabel.Text = "服务状态读取失败：" + exception.Message;
                 if (showErrors) ShowModal("状态读取失败", exception.Message, false, null, true);
             }
+            finally
+            {
+                serviceStatusBusy = false;
+                UpdateServiceActionState();
+            }
         }
 
-        private void SetServiceDots(Color color)
+        private static void ApplyServiceIndicator(ServiceIndicator indicator, bool ready)
         {
-            serviceBackendLabel.BackColor = color;
-            serviceFrontendLabel.BackColor = color;
-            serviceLimsLabel.BackColor = color;
+            if (indicator == null) return;
+            indicator.Dot.BackColor = ready ? Theme.Accent : Theme.Danger;
+            indicator.Status.ForeColor = ready ? Theme.Accent : Theme.Danger;
+            indicator.Status.Text = ready ? "运行" : "未运行";
+        }
+
+        private static bool TestHttpReady(string url)
+        {
+            try
+            {
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+                request.Method = "GET";
+                request.Timeout = 2000;
+                request.ReadWriteTimeout = 2000;
+                request.Proxy = null;
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                {
+                    int statusCode = (int)response.StatusCode;
+                    return statusCode >= 200 && statusCode < 300;
+                }
+            }
+            catch { return false; }
+        }
+
+        private static bool TestJsonServiceReady(string url, string property, string expected, bool requireAutoMode)
+        {
+            try
+            {
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
+                request.Method = "GET";
+                request.Timeout = 2000;
+                request.ReadWriteTimeout = 2000;
+                request.Proxy = null;
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                using (StreamReader reader = new StreamReader(response.GetResponseStream()))
+                {
+                    int statusCode = (int)response.StatusCode;
+                    if (statusCode < 200 || statusCode >= 300) return false;
+                    object rootObject = new JavaScriptSerializer().DeserializeObject(reader.ReadToEnd());
+                    Dictionary<string, object> root = rootObject as Dictionary<string, object>;
+                    if (root == null || !root.ContainsKey(property)) return false;
+                    bool propertyReady = String.Equals(Convert.ToString(root[property]), expected, StringComparison.OrdinalIgnoreCase);
+                    if (!propertyReady || !requireAutoMode) return propertyReady;
+                    Dictionary<string, object> config = root.ContainsKey("config") ? root["config"] as Dictionary<string, object> : null;
+                    if (config == null) return false;
+                    object autoMode;
+                    if (!config.TryGetValue("auto_mode", out autoMode) && !config.TryGetValue("autoMode", out autoMode)) return false;
+                    return String.Equals(Convert.ToString(autoMode), "true", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+            catch { return false; }
         }
 
         private void RequestServiceAction(string action)
         {
             if (serviceBusy || modalOverlay.Visible) return;
+            if (action == "Start" && systemRunning) return;
             if (action == "Stop")
             {
-                ShowModal("确认关闭 MES 系统", "关闭操作将终止后端、前端、LIMS 模拟器及其专属窗口。是否继续？", true, delegate { ExecuteServiceAction(action); }, false);
+                ShowModal("确认关闭 MES 系统", "关闭操作将终止后端、前端、LIMS 模拟器、上位机服务及其专属窗口。是否继续？", true, delegate { ExecuteServiceAction(action); }, false);
             }
             else if (action == "Restart")
             {
@@ -577,7 +709,8 @@ namespace MESControlCenter
             finally
             {
                 serviceBusy = false;
-                SetServiceButtonsEnabled(true);
+                UpdateServiceActionState();
+                ResetWaitCursor();
             }
         }
 
@@ -589,6 +722,30 @@ namespace MESControlCenter
         private void SetServiceButtonsEnabled(bool enabled)
         {
             foreach (Button button in serviceButtons) button.Enabled = enabled;
+            if (startServiceButton != null) ApplyStartButtonVisual(startServiceButton.Enabled);
+        }
+
+        private void UpdateServiceActionState()
+        {
+            bool enabled = !serviceBusy;
+            foreach (Button button in serviceButtons) button.Enabled = enabled;
+            if (startServiceButton == null) return;
+            startServiceButton.Enabled = CanStartSystem(systemRunning, serviceBusy);
+            ApplyStartButtonVisual(startServiceButton.Enabled);
+        }
+
+        private static bool CanStartSystem(bool running, bool busy)
+        {
+            return !running && !busy;
+        }
+
+        private void ApplyStartButtonVisual(bool enabled)
+        {
+            if (startServiceButton == null) return;
+            startServiceButton.BackColor = enabled ? Theme.AccentStrong : Theme.SurfaceStrong;
+            startServiceButton.ForeColor = enabled ? Color.FromArgb(4, 27, 23) : Theme.Subtle;
+            startServiceButton.FlatAppearance.BorderColor = enabled ? Theme.AccentStrong : Theme.Border;
+            startServiceButton.Cursor = enabled ? Cursors.Hand : Cursors.Default;
         }
 
         private async Task ConnectAndRefresh(bool showErrors)
@@ -746,8 +903,18 @@ namespace MESControlCenter
         {
             terminalBusy = value;
             if (!String.IsNullOrWhiteSpace(message)) footerStatusLabel.Text = message;
-            UseWaitCursor = value || serviceBusy;
+            ResetWaitCursor();
             UpdateTerminalActionState();
+        }
+
+        private void ResetWaitCursor()
+        {
+            UseWaitCursor = false;
+            Cursor = Cursors.Default;
+            if (dashboardPage != null) dashboardPage.Cursor = Cursors.Default;
+            if (dashboardGrid != null) dashboardGrid.Cursor = Cursors.Default;
+            if (terminalPage != null) terminalPage.Cursor = Cursors.Default;
+            if (terminalGrid != null) terminalGrid.Cursor = Cursors.Default;
         }
 
         private void BuildModal()
@@ -839,8 +1006,20 @@ namespace MESControlCenter
         {
             PerformLayout();
             return dashboardPage != null && terminalPage != null && dashboardGrid != null && terminalGrid != null
+                && IsValidServiceIndicator(serviceBackendIndicator)
+                && IsValidServiceIndicator(serviceFrontendIndicator)
+                && IsValidServiceIndicator(serviceLimsIndicator)
+                && IsValidServiceIndicator(serviceUpperComputerIndicator)
+                && CanStartSystem(false, false) && !CanStartSystem(true, false) && !CanStartSystem(false, true)
+                && !UseWaitCursor && dashboardGrid.Cursor == Cursors.Default
                 && dashboardNav.Height >= 44 && terminalNav.Height >= 44
                 && ClientSize.Width >= MinimumSize.Width && ClientSize.Height >= MinimumSize.Height;
+        }
+
+        private static bool IsValidServiceIndicator(ServiceIndicator indicator)
+        {
+            return indicator != null && indicator.Dot != null && indicator.Status != null
+                && indicator.Dot.Width > 0 && indicator.Status.Text.Length > 0;
         }
 
         internal void ShowTerminalPageForPreview()

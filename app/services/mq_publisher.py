@@ -17,6 +17,9 @@ COMMAND_TOPICS = {
     "INSTALL_FIXTURE": "fixture-install",
     "READY": "experiment-ready",
     "END_REQUEST": "experiment-end-request",
+    "PAUSE_REQUEST": "experiment-pause-request",
+    "RESUME_REQUEST": "experiment-resume-request",
+    "STOP_REQUEST": "experiment-stop-request",
 }
 BEIJING_TZ = timezone(timedelta(hours=8))
 logger = logging.getLogger("mes.mqtt.publisher")
