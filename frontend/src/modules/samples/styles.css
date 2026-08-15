@@ -5,7 +5,7 @@
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
-  background: linear-gradient(135deg, var(--bg-card), rgba(19, 26, 34, 0.92));
+  background: linear-gradient(135deg, var(--bg-card), var(--surface-emphasis));
   box-shadow: var(--shadow);
   color: var(--text);
 }
@@ -589,9 +589,9 @@
 }
 
 .sample-flow-unified li.reached {
-  border-color: rgba(34, 197, 94, 0.58);
-  background: rgba(22, 101, 52, 0.2);
-  color: #bbf7d0;
+  border-color: var(--status-success-border);
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
 }
 
 .sample-flow-unified li.reached::before {
@@ -603,9 +603,9 @@
 }
 
 .sample-flow-unified li.current {
-  border-color: rgba(34, 211, 238, 0.86);
-  background: rgba(8, 145, 178, 0.22);
-  color: #cffafe;
+  border-color: var(--status-info-border);
+  background: var(--status-info-bg);
+  color: var(--status-info-text);
   border-width: 2px;
   font-weight: 600;
   box-shadow:
@@ -633,7 +633,7 @@
 }
 
 .sample-flow-time {
-  color: rgba(203, 213, 225, 0.82);
+  color: var(--text-disabled);
   font-size: 12px;
   font-weight: 700;
   text-align: right;

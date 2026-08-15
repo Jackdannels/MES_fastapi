@@ -96,7 +96,7 @@
   padding: 18px;
   border: 1px solid var(--visual-line);
   border-radius: var(--radius-panel);
-  background: linear-gradient(135deg, var(--bg-card), rgba(19, 26, 34, 0.92));
+  background: linear-gradient(135deg, var(--bg-card), var(--surface-emphasis));
   box-shadow: var(--shadow);
 }
 
@@ -286,16 +286,16 @@
 
 .visual-card-status.tone-live,
 .visual-board-live.tone-live {
-  color: #bbf7d0;
-  border-color: rgba(34, 197, 94, 0.42);
-  background: rgba(20, 83, 45, 0.45);
+  color: var(--status-success-text);
+  border-color: var(--status-success-border);
+  background: var(--status-success-bg);
 }
 
 .visual-card-status.tone-sync,
 .visual-board-live.tone-sync {
-  color: #fde68a;
-  border-color: rgba(245, 158, 11, 0.42);
-  background: rgba(120, 53, 15, 0.45);
+  color: var(--status-warning-text);
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-bg);
 }
 
 .visual-card-status.tone-alert,
@@ -651,7 +651,7 @@
 .visual-lab-switch-option:hover,
 .visual-lab-switch-option:focus-visible,
 .visual-lab-switch-option.is-active {
-  color: #cffafe;
+  color: var(--status-info-text);
   border-color: rgba(34, 211, 238, 0.56);
   outline: none;
   background:
@@ -728,15 +728,15 @@
 }
 
 .visual-lab-state.is-ok {
-  color: #bbf7d0;
-  border: 1px solid rgba(34, 197, 94, 0.38);
-  background: rgba(20, 83, 45, 0.42);
+  color: var(--status-success-text);
+  border: 1px solid var(--status-success-border);
+  background: var(--status-success-bg);
 }
 
 .visual-lab-state.is-alert {
-  color: #fed7aa;
-  border: 1px solid rgba(245, 158, 11, 0.45);
-  background: rgba(120, 53, 15, 0.48);
+  color: var(--status-warning-text);
+  border: 1px solid var(--status-warning-border);
+  background: var(--status-warning-bg);
 }
 
 .visual-lab-state.is-upkeep {
@@ -869,7 +869,7 @@
 
 .visual-flow-step.is-done,
 .visual-flow-step.is-active {
-  color: #d9f99d;
+  color: var(--status-success-text);
 }
 
 .visual-flow-step.is-done::before,
@@ -883,7 +883,7 @@
 }
 
 .visual-flow-step.is-inferred {
-  color: #fef08a;
+  color: var(--status-warning-text);
 }
 
 .visual-flow-step.is-inferred::before {
@@ -897,7 +897,7 @@
 }
 
 .visual-flow-step.is-active {
-  color: #cffafe;
+  color: var(--status-info-text);
 }
 
 .visual-flow-step.is-active .visual-flow-dot {
@@ -942,14 +942,14 @@
 }
 
 .visual-alert-strip {
-  color: #fecaca;
+  color: var(--status-danger-text);
   border-color: rgba(239, 68, 68, 0.46);
   background: rgba(127, 29, 29, 0.46);
   font-weight: 800;
 }
 
 .visual-ok-strip {
-  color: #bbf7d0;
+  color: var(--status-success-text);
   border-color: rgba(34, 197, 94, 0.32);
   background: rgba(20, 83, 45, 0.36);
   font-weight: 800;
@@ -1625,8 +1625,8 @@
   gap: 6px;
   min-height: 64px;
   padding: 6px 8px;
-  color: #cffafe;
-  background: rgba(8, 47, 73, 0.44);
+  color: var(--status-info-text);
+  background: var(--status-info-bg);
   font-weight: 900;
   text-align: center;
   overflow: hidden;
@@ -1641,7 +1641,7 @@
 }
 
 .visual-schedule-grid-head strong {
-  color: #cffafe;
+  color: var(--status-info-text);
   font: 900 24px/1.05 Consolas, "Microsoft YaHei", monospace;
 }
 
@@ -2221,7 +2221,7 @@
 }
 
 .visual-task-plan-row .has-tray {
-  color: #bbf7d0;
+  color: var(--status-success-text);
 }
 
 .visual-task-plan-tray-list {
@@ -2321,7 +2321,7 @@
 }
 
 .visual-task-plan-task-head strong {
-  color: #e0f2fe;
+  color: var(--screen-text);
   font-family: Consolas, "Microsoft YaHei", monospace;
   font-size: 14px;
 }
@@ -2333,18 +2333,18 @@
 }
 
 .visual-task-plan-task-head .has-tray {
-  color: #bbf7d0;
+  color: var(--status-success-text);
   font-family: Consolas, "Microsoft YaHei", monospace;
 }
 
 .visual-task-plan-task-head .is-pending {
-  color: #fde68a;
+  color: var(--status-warning-text);
 }
 
 .visual-task-plan-task-head b {
   justify-self: end;
   padding: 3px 8px;
-  color: #cffafe;
+  color: var(--status-info-text);
   border: 1px solid rgba(34, 211, 238, 0.24);
   border-radius: 999px;
   background: rgba(8, 47, 73, 0.44);

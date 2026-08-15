@@ -741,39 +741,39 @@
 }
 
 .transfer-tray-experiment-tag--tone-1 {
-  --tray-experiment-bg: rgba(14, 165, 233, 0.14);
-  --tray-experiment-border: rgba(14, 165, 233, 0.45);
-  --tray-experiment-color: #7dd3fc;
+  --tray-experiment-bg: var(--status-info-bg);
+  --tray-experiment-border: var(--status-info-border);
+  --tray-experiment-color: var(--status-info-text);
 }
 
 .transfer-tray-experiment-tag--tone-2 {
-  --tray-experiment-bg: rgba(16, 185, 129, 0.14);
-  --tray-experiment-border: rgba(16, 185, 129, 0.4);
-  --tray-experiment-color: #86efac;
+  --tray-experiment-bg: var(--status-success-bg);
+  --tray-experiment-border: var(--status-success-border);
+  --tray-experiment-color: var(--status-success-text);
 }
 
 .transfer-tray-experiment-tag--tone-3 {
-  --tray-experiment-bg: rgba(245, 158, 11, 0.16);
-  --tray-experiment-border: rgba(245, 158, 11, 0.44);
-  --tray-experiment-color: #facc15;
+  --tray-experiment-bg: var(--status-warning-bg);
+  --tray-experiment-border: var(--status-warning-border);
+  --tray-experiment-color: var(--status-warning-text);
 }
 
 .transfer-tray-experiment-tag--tone-4 {
-  --tray-experiment-bg: rgba(244, 114, 182, 0.15);
-  --tray-experiment-border: rgba(236, 72, 153, 0.42);
-  --tray-experiment-color: #f9a8d4;
+  --tray-experiment-bg: var(--status-danger-bg);
+  --tray-experiment-border: var(--status-danger-border);
+  --tray-experiment-color: var(--status-danger-text);
 }
 
 .transfer-tray-experiment-tag--tone-5 {
-  --tray-experiment-bg: rgba(168, 85, 247, 0.16);
-  --tray-experiment-border: rgba(147, 51, 234, 0.44);
-  --tray-experiment-color: #c4b5fd;
+  --tray-experiment-bg: var(--status-complete-bg);
+  --tray-experiment-border: var(--status-complete-border);
+  --tray-experiment-color: var(--status-complete-text);
 }
 
 .transfer-tray-experiment-tag--tone-6 {
-  --tray-experiment-bg: rgba(239, 68, 68, 0.13);
-  --tray-experiment-border: rgba(239, 68, 68, 0.38);
-  --tray-experiment-color: #fca5a5;
+  --tray-experiment-bg: var(--status-danger-bg);
+  --tray-experiment-border: var(--status-danger-border);
+  --tray-experiment-color: var(--status-danger-text);
 }
 
 .sample-tray-samples {

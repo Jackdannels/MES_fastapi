@@ -112,7 +112,7 @@
 
 .task-overview-schedule-card.is-scheduled {
   border-color: rgba(var(--industrial-accent-rgb), 0.62);
-  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.26), rgba(19, 26, 34, 0.96));
+  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.26), var(--surface-emphasis));
   color: var(--text);
 }
 

@@ -71,11 +71,11 @@
 }
 
 .table tbody tr {
-  background: rgba(13, 18, 24, 0.84);
+  background: var(--surface-subtle);
 }
 
 .table tbody tr:nth-child(even) {
-  background: rgba(19, 26, 34, 0.78);
+  background: var(--surface-alternate);
 }
 
 .table tbody tr:hover {
@@ -376,8 +376,8 @@ input[type="datetime-local"] {
   padding: 10px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-panel);
-  background: linear-gradient(180deg, rgba(19, 26, 34, 0.98), rgba(13, 18, 24, 0.98));
-  box-shadow: 0 24px 58px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.08);
+  background: linear-gradient(180deg, var(--surface-overlay), var(--surface-subtle));
+  box-shadow: 0 24px 58px var(--scrim), 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.08);
   color: var(--text);
 }
 
@@ -486,7 +486,7 @@ input[type="datetime-local"] {
 }
 
 .picker-only-calendar__day.is-muted {
-  color: rgba(139, 169, 164, 0.48);
+  color: var(--text-disabled);
 }
 
 .picker-only-calendar__day:hover {
@@ -497,7 +497,7 @@ input[type="datetime-local"] {
 .picker-only-calendar__day:disabled {
   border-color: transparent;
   background: transparent;
-  color: rgba(139, 169, 164, 0.28);
+  color: var(--text-disabled);
   cursor: not-allowed;
 }
 
@@ -562,7 +562,7 @@ input[type="datetime-local"] {
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background:
-    linear-gradient(180deg, rgba(13, 18, 24, 0.9), transparent 34%, transparent 66%, rgba(13, 18, 24, 0.9)),
+    linear-gradient(180deg, var(--surface-inset), transparent 34%, transparent 66%, var(--surface-inset)),
     rgba(var(--industrial-accent-rgb), 0.035);
   cursor: ns-resize;
   touch-action: none;
@@ -1094,7 +1094,7 @@ input[type="datetime-local"] {
 .modal-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.62);
+  background: var(--scrim);
 }
 
 .modal-content {
@@ -1170,38 +1170,45 @@ input[type="datetime-local"] {
 }
 
 .status.warn {
-  background: rgba(231, 183, 95, 0.16);
-  border-color: rgba(231, 183, 95, 0.42);
+  background: var(--status-warning-bg);
+  border-color: var(--status-warning-border);
+  color: var(--status-warning-text);
 }
 
 .status.alert {
-  background: rgba(255, 107, 90, 0.16);
-  border-color: rgba(255, 107, 90, 0.42);
+  background: var(--status-danger-bg);
+  border-color: var(--status-danger-border);
+  color: var(--status-danger-text);
 }
 
 .status.accepted {
-  background: rgba(var(--industrial-accent-rgb), 0.16);
-  border: 1px solid rgba(var(--industrial-accent-rgb), 0.5);
+  background: var(--status-success-bg);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success-text);
 }
 
 .status.scheduled {
-  background: rgba(99, 230, 190, 0.14);
-  border: 1px solid rgba(99, 230, 190, 0.42);
+  background: var(--status-info-bg);
+  border: 1px solid var(--status-info-border);
+  color: var(--status-info-text);
 }
 
 .status.retention {
-  background: rgba(231, 183, 95, 0.14);
-  border: 1px solid rgba(231, 183, 95, 0.42);
+  background: var(--status-warning-bg);
+  border: 1px solid var(--status-warning-border);
+  color: var(--status-warning-text);
 }
 
 .status.running {
-  background: rgba(var(--industrial-accent-rgb), 0.2);
-  border: 1px solid rgba(var(--industrial-accent-rgb), 0.58);
+  background: var(--status-success-bg);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success-text);
 }
 
 .status.completed {
-  background: rgba(139, 169, 164, 0.18);
-  border: 1px solid rgba(139, 169, 164, 0.38);
+  background: var(--status-complete-bg);
+  border: 1px solid var(--status-complete-border);
+  color: var(--status-complete-text);
 }
 
 .timeline {

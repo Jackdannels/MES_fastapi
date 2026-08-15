@@ -28,6 +28,16 @@
       </nav>
       <div class="sidebar-footer">
         已连接：Modbus
+        <button
+          class="action-btn secondary theme-toggle theme-toggle--sidebar"
+          data-testid="theme-toggle"
+          type="button"
+          :aria-pressed="isLightTheme"
+          :aria-label="themeToggleLabel"
+          @click="toggleTheme"
+        >
+          {{ themeToggleLabel }}
+        </button>
         <div class="badge-row">
           <span class="badge">自动采集</span>
           <span class="badge">固定报告</span>
@@ -149,6 +159,7 @@ import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
 import { useTerminalPresence } from "@/composables/useTerminalPresence";
+import { useTheme } from "@/composables/useTheme";
 import { findFirstOverdueWaitingTaskCode, hasOverdueWaitingExperiment } from "@/lib/taskOverviewAlerts";
 import { serverNowMs } from "@/lib/serverClock";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -169,9 +180,11 @@ const exitDialogOpen = ref(false);
 const hasTaskOverviewAlert = ref(false);
 const pendingScheduleExceptionCount = ref(0);
 const errorSample = useTrayErrorSampleHandling();
+const { isLightTheme, toggleTheme } = useTheme();
 let navAlertFallbackTimer = null;
 
 const pageSubtitle = computed(() => route.meta?.subtitle || "");
+const themeToggleLabel = computed(() => (isLightTheme.value ? "切换至暗色主题" : "切换至白色主题"));
 const isAuthLayout = computed(() => route.meta?.layout === "auth");
 const currentModule = computed(() => {
   const routeModule = route.meta?.module;

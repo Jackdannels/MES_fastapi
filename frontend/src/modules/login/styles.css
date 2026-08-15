@@ -17,7 +17,7 @@
   width: min(460px, 94vw);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-panel);
-  background: linear-gradient(135deg, var(--bg-card), rgba(19, 26, 34, 0.96));
+  background: linear-gradient(135deg, var(--bg-card), var(--surface-emphasis));
   box-shadow: var(--shadow);
   padding: 24px;
 }

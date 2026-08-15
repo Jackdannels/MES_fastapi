@@ -272,7 +272,7 @@
   min-height: 310px;
   border: 1px dashed rgba(var(--industrial-accent-rgb), 0.42);
   border-radius: var(--radius-panel);
-  background: rgba(7, 15, 20, 0.82);
+  background: var(--surface-inset);
   color: var(--accent);
   font-weight: 700;
   backdrop-filter: blur(2px);

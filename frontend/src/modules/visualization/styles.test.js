@@ -186,7 +186,7 @@ describe("visualization styles", () => {
   test("uses a yellow inferred-node tone instead of orange for reset and compatibility states", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
-    expect(source).toMatch(/\.visual-flow-step\.is-inferred\s*{[^}]*color:\s*#fef08a;/s);
+    expect(source).toMatch(/\.visual-flow-step\.is-inferred\s*{[^}]*color:\s*var\(--status-warning-text\);/s);
     expect(source).toMatch(/\.visual-flow-step\.is-inferred \.visual-flow-dot\s*{[^}]*background:\s*#facc15;/s);
     expect(source).not.toMatch(/\.visual-flow-step\.is-inferred \.visual-flow-dot\s*{[^}]*background:\s*#eab308;/s);
   });

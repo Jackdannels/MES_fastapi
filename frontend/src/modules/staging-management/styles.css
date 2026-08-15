@@ -174,7 +174,7 @@ body:has(.staging-management-page) .page-header .header-actions .action-btn {
   min-height: var(--zancun-console-slot-height, 72px);
   border-style: dashed;
   border-color: var(--border);
-  background: rgba(19, 26, 34, 0.46);
+  background: var(--surface-inset);
   color: var(--muted);
   box-shadow: none;
 }
@@ -557,7 +557,7 @@ body:has(.staging-management-page) .page-header .header-actions .action-btn {
   padding: 18px;
   border-radius: var(--radius-panel);
   border: 1px solid rgba(255, 107, 90, 0.5);
-  background: linear-gradient(135deg, rgba(255, 107, 90, 0.14), rgba(19, 26, 34, 0.96));
+  background: linear-gradient(135deg, rgba(255, 107, 90, 0.14), var(--surface-emphasis));
   color: var(--danger);
   display: grid;
   gap: 8px;

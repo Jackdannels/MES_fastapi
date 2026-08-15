@@ -21,6 +21,73 @@
   --radius-control: 4px;
   --shadow: 0 20px 52px rgba(0, 0, 0, 0.46);
   --font-code: "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
+  --surface-subtle: rgba(13, 18, 24, 0.84);
+  --surface-alternate: rgba(19, 26, 34, 0.78);
+  --surface-overlay: rgba(19, 26, 34, 0.98);
+  --surface-disabled: rgba(27, 36, 47, 0.92);
+  --scrim: rgba(0, 0, 0, 0.62);
+  --surface-inset: rgba(13, 18, 24, 0.9);
+  --surface-emphasis: rgba(19, 26, 34, 0.96);
+  --text-disabled: rgba(139, 169, 164, 0.64);
+  --status-info-bg: rgba(8, 145, 178, 0.22);
+  --status-info-border: rgba(34, 211, 238, 0.68);
+  --status-info-text: #cffafe;
+  --status-success-bg: rgba(22, 101, 52, 0.2);
+  --status-success-border: rgba(34, 197, 94, 0.58);
+  --status-success-text: #bbf7d0;
+  --status-warning-bg: rgba(180, 83, 9, 0.22);
+  --status-warning-border: rgba(245, 158, 11, 0.52);
+  --status-warning-text: #fde68a;
+  --status-danger-bg: rgba(190, 24, 93, 0.2);
+  --status-danger-border: rgba(251, 113, 133, 0.62);
+  --status-danger-text: #fecdd3;
+  --status-complete-bg: rgba(109, 40, 217, 0.18);
+  --status-complete-border: rgba(196, 181, 253, 0.58);
+  --status-complete-text: #ddd6fe;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-deep: #f3f7f8;
+  --bg-panel: #ffffff;
+  --bg-panel-strong: #e9f0f1;
+  --bg-card: rgba(255, 255, 255, 0.96);
+  --bg-card-raised: rgba(255, 255, 255, 0.99);
+  --border: rgba(13, 110, 93, 0.2);
+  --border-strong: rgba(13, 110, 93, 0.42);
+  --text: #112d2d;
+  --muted: #496765;
+  --accent: #087f6b;
+  --industrial-accent-rgb: 8, 127, 107;
+  --accent-2: #9a6700;
+  --accent-3: #c53c33;
+  --danger: #c53c33;
+  --success: #087f6b;
+  --grid-line: rgba(8, 127, 107, 0.07);
+  --shadow: 0 16px 42px rgba(15, 61, 56, 0.12);
+  --surface-subtle: rgba(255, 255, 255, 0.96);
+  --surface-alternate: rgba(240, 246, 246, 0.98);
+  --surface-overlay: rgba(255, 255, 255, 0.99);
+  --surface-disabled: rgba(221, 231, 232, 0.96);
+  --scrim: rgba(15, 37, 37, 0.46);
+  --surface-inset: rgba(238, 245, 245, 0.98);
+  --surface-emphasis: rgba(255, 255, 255, 0.99);
+  --text-disabled: #64748b;
+  --status-info-bg: rgba(14, 165, 233, 0.12);
+  --status-info-border: #38bdf8;
+  --status-info-text: #075985;
+  --status-success-bg: rgba(34, 197, 94, 0.12);
+  --status-success-border: #4ade80;
+  --status-success-text: #166534;
+  --status-warning-bg: rgba(245, 158, 11, 0.14);
+  --status-warning-border: #fbbf24;
+  --status-warning-text: #854d0e;
+  --status-danger-bg: rgba(244, 63, 94, 0.1);
+  --status-danger-border: #fb7185;
+  --status-danger-text: #b91c1c;
+  --status-complete-bg: rgba(139, 92, 246, 0.11);
+  --status-complete-border: #a78bfa;
+  --status-complete-text: #6d28d9;
 }
 
 * {
@@ -37,6 +104,379 @@ body {
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
     radial-gradient(circle at 18% 8%, rgba(var(--industrial-accent-rgb), 0.16), transparent 34%),
-    linear-gradient(135deg, #06090d, var(--bg-deep));
+    linear-gradient(135deg, var(--bg-deep), var(--bg-deep));
   background-size: 28px 28px, 28px 28px, auto, auto;
+}
+
+button,
+input,
+select,
+textarea {
+  color-scheme: inherit;
+}
+
+/* Modules with a purpose-specific surface retain their layout while following the global light palette. */
+:root[data-theme="light"] .tasks-external-detail input[readonly],
+:root[data-theme="light"] .tasks-external-detail textarea[readonly],
+:root[data-theme="light"] .tasks-intake-form input[name="source"][readonly],
+:root[data-theme="light"] .laboratory-attendance-status.is-empty,
+:root[data-theme="light"] .laboratory-attendance-panel,
+:root[data-theme="light"] .task-overview-summary-table thead th,
+:root[data-theme="light"] .task-overview-summary-table tbody td,
+:root[data-theme="light"] .transfer-table__row,
+:root[data-theme="light"] .transfer-table__row--placeholder,
+:root[data-theme="light"] .data-empty-state,
+:root[data-theme="light"] .system-qr-summary > div,
+:root[data-theme="light"] .gantt-slot.idle,
+:root[data-theme="light"] .gantt-slot-content--mixed {
+  background: var(--surface-subtle);
+}
+
+:root[data-theme="light"] .transfer-modal__backdrop,
+:root[data-theme="light"] .laboratory-running-overlay__backdrop {
+  background: var(--scrim);
+}
+
+:root[data-theme="light"] .visualization-page {
+  --screen-bg: #f5fbfb;
+  --screen-panel: rgba(255, 255, 255, 0.96);
+  --screen-panel-soft: rgba(238, 247, 246, 0.98);
+  --screen-line: rgba(8, 127, 107, 0.24);
+  --screen-line-strong: rgba(8, 127, 107, 0.5);
+  --screen-text: #143534;
+  --screen-muted: #55716e;
+  --screen-cyan: var(--status-info-text);
+  --screen-teal: var(--accent);
+  --screen-green: var(--status-success-text);
+  --screen-amber: var(--status-warning-text);
+  --screen-red: var(--status-danger-text);
+}
+
+:root[data-theme="light"] .visual-board.visual-lab-status-board,
+:root[data-theme="light"] .visual-lab-status-summary-item,
+:root[data-theme="light"] .visual-lab-status-card,
+:root[data-theme="light"] .visual-lab-status-metric,
+:root[data-theme="light"] .visual-schedule-lab-head,
+:root[data-theme="light"] .visual-schedule-lab-body,
+:root[data-theme="light"] .visual-analysis-calendar-arrow:disabled {
+  color: var(--text);
+  background: var(--surface-subtle);
+}
+
+/* High-density laboratory controls and comparison dialogs use their own dark palette in dark mode. */
+:root[data-theme="light"] .laboratory-action-item--compare,
+:root[data-theme="light"] .laboratory-action-item--install,
+:root[data-theme="light"] .laboratory-action-item--ready {
+  color: var(--text);
+  background: var(--surface-subtle);
+  border-color: var(--border-strong);
+}
+
+:root[data-theme="light"] .laboratory-action-item--compare:hover,
+:root[data-theme="light"] .laboratory-action-item--install:hover,
+:root[data-theme="light"] .laboratory-action-item--ready:hover {
+  color: var(--accent);
+  background: var(--status-info-bg);
+  border-color: var(--status-info-border);
+}
+
+:root[data-theme="light"] .laboratory-action-item:disabled,
+:root[data-theme="light"] .laboratory-action-item--compare:disabled,
+:root[data-theme="light"] .laboratory-action-item--install:disabled,
+:root[data-theme="light"] .laboratory-action-item--ready:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-disabled);
+  border-color: var(--border);
+}
+
+:root[data-theme="light"] .laboratory-flow-steps li.is-reached,
+:root[data-theme="light"] .laboratory-flow-steps li.is-active {
+  color: var(--status-success-text);
+  background: var(--status-success-bg);
+  border-color: var(--status-success-border);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .modal-content,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-head,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-checklist-item,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-scan input {
+  color: var(--text);
+  background: var(--surface-emphasis);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .modal-header strong,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-head h4,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-checklist-item span,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-scan input {
+  color: var(--text);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-checklist-item strong,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-scan .form-field > span {
+  color: var(--muted);
+}
+
+/* The visual screen has many status-specific badges; keep their text readable on light surfaces too. */
+:root[data-theme="light"] .visual-flow-step.is-active,
+:root[data-theme="light"] .visual-flow-step.is-done,
+:root[data-theme="light"] .visual-card-status.tone-live,
+:root[data-theme="light"] .visual-board-live.tone-live,
+:root[data-theme="light"] .visual-lab-state.is-ok,
+:root[data-theme="light"] .visual-ok-strip,
+:root[data-theme="light"] .visual-task-plan-row .has-tray,
+:root[data-theme="light"] .visual-task-plan-task-head .has-tray,
+:root[data-theme="light"] .visual-task-plan-group-row b {
+  color: var(--status-success-text);
+}
+
+:root[data-theme="light"] .visual-flow-step.is-active,
+:root[data-theme="light"] .visual-staging-tray-option.is-active,
+:root[data-theme="light"] .visual-analysis-custom-row strong,
+:root[data-theme="light"] .visual-analysis-calendar-wheel span,
+:root[data-theme="light"] .visual-analysis-range-pick-head span {
+  color: var(--status-info-text);
+}
+
+/* Visual management previews are embedded inside the light application shell. Override the
+   screen-only blackboard surfaces so all eight preview cards change together. */
+:root[data-theme="light"] .visual-screen-card,
+:root[data-theme="light"] .visual-screen-frame,
+:root[data-theme="light"] .visual-combined-screen,
+:root[data-theme="light"] .visual-expanded-screen {
+  background: var(--screen-bg);
+  border-color: var(--border-strong);
+}
+
+:root[data-theme="light"] .visual-board {
+  color: var(--screen-text);
+  background:
+    linear-gradient(rgba(var(--industrial-accent-rgb), 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--industrial-accent-rgb), 0.07) 1px, transparent 1px),
+    linear-gradient(135deg, var(--screen-bg), var(--surface-emphasis));
+  background-size: 42px 42px, 42px 42px, auto;
+}
+
+:root[data-theme="light"] .visual-board .visual-board-metrics div,
+:root[data-theme="light"] .visual-board .visual-staging-overview-item {
+  background:
+    linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.12), rgba(255, 255, 255, 0.97) 72%);
+  border-color: var(--screen-line);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 4px 14px rgba(15, 61, 56, 0.06);
+}
+
+:root[data-theme="light"] .visual-board .visual-task-plan-empty {
+  color: var(--screen-muted);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(14, 165, 233, 0.11), transparent 58%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(var(--industrial-accent-rgb), 0.08));
+  border-color: var(--screen-line-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme="light"] .visual-board .visual-staging-kind-summary .kind-current,
+:root[data-theme="light"] .visual-board .visual-staging-tray-option.kind-current span,
+:root[data-theme="light"] .visual-board .visual-staging-tray-option.kind-current small {
+  color: var(--status-success-text);
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .visual-board .visual-staging-kind-summary .kind-planned,
+:root[data-theme="light"] .visual-board .visual-staging-tray-option.kind-planned span,
+:root[data-theme="light"] .visual-board .visual-staging-tray-option.kind-planned small {
+  color: var(--status-info-text);
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .visual-board .visual-staging-kind-summary .kind-allowed,
+:root[data-theme="light"] .visual-board .visual-staging-tray-option.kind-allowed span,
+:root[data-theme="light"] .visual-board .visual-staging-tray-option.kind-allowed small {
+  color: var(--screen-muted);
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .visual-board .visual-staging-kind-summary .kind-post-test,
+:root[data-theme="light"] .visual-board .visual-staging-tray-option.kind-post-test span,
+:root[data-theme="light"] .visual-board .visual-staging-tray-option.kind-post-test small {
+  color: var(--status-warning-text);
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .visual-board .visual-staging-kind-summary .kind-appearance {
+  color: var(--status-complete-text);
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .visual-lab-panel,
+:root[data-theme="light"] .visual-lab-switch-option,
+:root[data-theme="light"] .visual-tray-flow,
+:root[data-theme="light"] .visual-empty-tray-flow,
+:root[data-theme="light"] .visual-side-metric,
+:root[data-theme="light"] .visual-alert-strip,
+:root[data-theme="light"] .visual-ok-strip {
+  color: var(--screen-text);
+  background: var(--screen-panel);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visual-lab-cycle,
+:root[data-theme="light"] .visual-staging-task-option,
+:root[data-theme="light"] .visual-staging-tray-option,
+:root[data-theme="light"] .visual-analysis-select,
+:root[data-theme="light"] .visual-analysis-time-card,
+:root[data-theme="light"] .visual-analysis-time-chip,
+:root[data-theme="light"] .visual-analysis-date-field {
+  color: var(--screen-text);
+  background: var(--screen-panel);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visual-board .visual-schedule-lab-head,
+:root[data-theme="light"] .visual-board .visual-schedule-lab-name,
+:root[data-theme="light"] .visual-board .visual-schedule-cell,
+:root[data-theme="light"] .visual-board .visual-schedule-slot,
+:root[data-theme="light"] .visual-board .visual-schedule-empty,
+:root[data-theme="light"] .visual-board .visual-task-plan-variant,
+:root[data-theme="light"] .visual-board .visual-task-plan-row,
+:root[data-theme="light"] .visual-board .visual-task-plan-task,
+:root[data-theme="light"] .visual-board .visual-task-plan-time-card,
+:root[data-theme="light"] .visual-board .visual-task-plan-group,
+:root[data-theme="light"] .visual-board .visual-task-plan-compact-row {
+  color: var(--screen-text);
+  background: var(--screen-panel);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visual-board .visual-schedule-slot.is-planned,
+:root[data-theme="light"] .visual-board .visual-schedule-slot.state-busy,
+:root[data-theme="light"] .visual-board .visual-schedule-slot.state-split,
+:root[data-theme="light"] .visual-board .visual-schedule-slot.state-stacked,
+:root[data-theme="light"] .visual-board .visual-schedule-slot.state-running {
+  background: var(--status-info-bg);
+}
+
+:root[data-theme="light"] .visual-board .visual-schedule-slot.state-maintenance,
+:root[data-theme="light"] .visual-board .visual-schedule-slot.state-disabled,
+:root[data-theme="light"] .visual-board .visual-schedule-slot.state-conflict,
+:root[data-theme="light"] .visual-board .visual-schedule-slot.is-conflict {
+  background: var(--status-warning-bg);
+}
+
+:root[data-theme="light"] .visual-board .visual-schedule-task strong,
+:root[data-theme="light"] .visual-board .visual-task-plan-row strong,
+:root[data-theme="light"] .visual-board .visual-task-plan-experiment-row span:first-child,
+:root[data-theme="light"] .visual-board .visual-task-plan-group-head strong {
+  color: var(--screen-text);
+}
+
+:root[data-theme="light"] .visual-board .visual-task-plan-table-head span,
+:root[data-theme="light"] .visual-board .visual-task-plan-task-head b,
+:root[data-theme="light"] .visual-board .visual-task-plan-experiment-head span {
+  color: var(--status-info-text);
+  background: var(--status-info-bg);
+  border-color: var(--status-info-border);
+}
+
+:root[data-theme="light"] .visual-board .visual-task-plan-row .visual-task-plan-tray-chip {
+  color: var(--status-success-text);
+  background: var(--status-success-bg);
+  border-color: var(--status-success-border);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen {
+  --bg: var(--screen-bg);
+  --panel: var(--screen-panel);
+  --cell: var(--surface-inset);
+  --line: var(--screen-line);
+  --text: var(--screen-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .card,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .info,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .tray-panel,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .empty,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .stat {
+  color: var(--screen-text);
+  background: var(--screen-panel);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen h1,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .stat strong,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .card h2,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .info strong,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .tray-code,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .tray-qty,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .countdown-head strong {
+  color: var(--screen-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .stat span,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .info label,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .tray-title,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .countdown-head span,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .attendance-chip {
+  color: var(--screen-muted);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .tray-row {
+  color: var(--screen-text);
+  background: var(--surface-inset);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visual-board .visual-staging-task-rail,
+:root[data-theme="light"] .visual-board .visual-staging-main,
+:root[data-theme="light"] .visual-board .visual-staging-capacity,
+:root[data-theme="light"] .visual-board .visual-staging-tray-detail,
+:root[data-theme="light"] .visual-board .visual-staging-sample-head,
+:root[data-theme="light"] .visual-board .visual-staging-sample-code,
+:root[data-theme="light"] .visual-board .visual-staging-capacity-card,
+:root[data-theme="light"] .visual-board .visual-staging-empty {
+  color: var(--screen-text);
+  background: var(--screen-panel);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visual-board .visual-analysis-panel,
+:root[data-theme="light"] .visual-board .visual-analysis-health-metrics div,
+:root[data-theme="light"] .visual-board .visual-analysis-total,
+:root[data-theme="light"] .visual-board .visual-analysis-rank-row,
+:root[data-theme="light"] .visual-board .visual-analysis-rules div,
+:root[data-theme="light"] .visual-board .visual-analysis-trend,
+:root[data-theme="light"] .visual-board .visual-analysis-pie,
+:root[data-theme="light"] .visual-board .visual-placeholder-chart,
+:root[data-theme="light"] .visual-board .visual-placeholder-copy,
+:root[data-theme="light"] .visual-board .visual-placeholder-kpi {
+  color: var(--screen-text);
+  background: var(--screen-panel);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visual-board .visual-analysis-pie-total,
+:root[data-theme="light"] .visual-board .visual-analysis-pie-labels text {
+  fill: var(--screen-text);
+  stroke: var(--screen-panel);
+}
+
+:root[data-theme="light"] .visual-preview-overlay,
+:root[data-theme="light"] .visual-combined-overlay,
+:root[data-theme="light"] .visual-lab-picker-overlay {
+  background: var(--bg-deep);
+}
+
+:root[data-theme="light"] .visual-lab-picker-panel,
+:root[data-theme="light"] .visual-lab-picker-option,
+:root[data-theme="light"] .visual-screen-close,
+:root[data-theme="light"] .visual-combined-close {
+  color: var(--screen-text);
+  background: var(--screen-panel);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .system-pagination-footer {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(var(--industrial-accent-rgb), 0.07));
+  border-top-color: var(--border-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }

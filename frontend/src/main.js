@@ -7,9 +7,11 @@ import {
   recordPerformanceMetric,
   startFrontendPerformanceMonitoring,
 } from "./lib/performanceMonitor";
+import { initializeTheme } from "./composables/useTheme";
 import "./assets/app.css";
 
 window.__MES_VUE_BOOT__ = true;
+initializeTheme();
 const applicationBootStartedAt = performanceNow();
 window.__MES_STOP_PERFORMANCE_MONITOR__ = startFrontendPerformanceMonitoring();
 

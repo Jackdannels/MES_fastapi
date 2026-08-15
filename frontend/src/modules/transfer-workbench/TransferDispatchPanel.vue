@@ -382,7 +382,7 @@ const resolveDestinationHint = (destination) => {
   min-height: 34px;
   padding: 7px 9px;
   border-radius: 8px;
-  background: rgba(8, 24, 28, 0.86);
+  background: var(--surface-inset);
   font-size: 13px;
   overflow: hidden;
 }
@@ -447,39 +447,39 @@ const resolveDestinationHint = (destination) => {
 }
 
 .transfer-dispatch-summary-card__experiment-tag--tone-1 {
-  --dispatch-experiment-bg: rgba(14, 165, 233, 0.14);
-  --dispatch-experiment-border: rgba(14, 165, 233, 0.45);
-  --dispatch-experiment-color: #7dd3fc;
+  --dispatch-experiment-bg: var(--status-info-bg);
+  --dispatch-experiment-border: var(--status-info-border);
+  --dispatch-experiment-color: var(--status-info-text);
 }
 
 .transfer-dispatch-summary-card__experiment-tag--tone-2 {
-  --dispatch-experiment-bg: rgba(16, 185, 129, 0.14);
-  --dispatch-experiment-border: rgba(16, 185, 129, 0.4);
-  --dispatch-experiment-color: #86efac;
+  --dispatch-experiment-bg: var(--status-success-bg);
+  --dispatch-experiment-border: var(--status-success-border);
+  --dispatch-experiment-color: var(--status-success-text);
 }
 
 .transfer-dispatch-summary-card__experiment-tag--tone-3 {
-  --dispatch-experiment-bg: rgba(245, 158, 11, 0.16);
-  --dispatch-experiment-border: rgba(245, 158, 11, 0.44);
-  --dispatch-experiment-color: #facc15;
+  --dispatch-experiment-bg: var(--status-warning-bg);
+  --dispatch-experiment-border: var(--status-warning-border);
+  --dispatch-experiment-color: var(--status-warning-text);
 }
 
 .transfer-dispatch-summary-card__experiment-tag--tone-4 {
-  --dispatch-experiment-bg: rgba(244, 114, 182, 0.15);
-  --dispatch-experiment-border: rgba(236, 72, 153, 0.42);
-  --dispatch-experiment-color: #f9a8d4;
+  --dispatch-experiment-bg: var(--status-danger-bg);
+  --dispatch-experiment-border: var(--status-danger-border);
+  --dispatch-experiment-color: var(--status-danger-text);
 }
 
 .transfer-dispatch-summary-card__experiment-tag--tone-5 {
-  --dispatch-experiment-bg: rgba(168, 85, 247, 0.16);
-  --dispatch-experiment-border: rgba(147, 51, 234, 0.44);
-  --dispatch-experiment-color: #c4b5fd;
+  --dispatch-experiment-bg: var(--status-complete-bg);
+  --dispatch-experiment-border: var(--status-complete-border);
+  --dispatch-experiment-color: var(--status-complete-text);
 }
 
 .transfer-dispatch-summary-card__experiment-tag--tone-6 {
-  --dispatch-experiment-bg: rgba(239, 68, 68, 0.13);
-  --dispatch-experiment-border: rgba(239, 68, 68, 0.38);
-  --dispatch-experiment-color: #fca5a5;
+  --dispatch-experiment-bg: var(--status-danger-bg);
+  --dispatch-experiment-border: var(--status-danger-border);
+  --dispatch-experiment-color: var(--status-danger-text);
 }
 
 .transfer-dispatch-summary-card__ticket-stats {
@@ -586,9 +586,9 @@ const resolveDestinationHint = (destination) => {
 }
 
 .transfer-dispatch-destination-card.is-running .transfer-dispatch-destination-card__status {
-  border-color: rgba(34, 197, 94, 0.42);
-  background: rgba(22, 101, 52, 0.24);
-  color: #bbf7d0;
+  border-color: var(--status-success-border);
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
 }
 
 .transfer-dispatch-destination-card.is-scheduled .transfer-dispatch-destination-card__status {
@@ -598,15 +598,15 @@ const resolveDestinationHint = (destination) => {
 }
 
 .transfer-dispatch-destination-card.is-staging .transfer-dispatch-destination-card__status {
-  border-color: rgba(245, 158, 11, 0.42);
-  background: rgba(180, 83, 9, 0.22);
-  color: #fde68a;
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
 }
 
 .transfer-dispatch-destination-card.is-idle .transfer-dispatch-destination-card__status {
   border-color: rgba(148, 163, 184, 0.4);
   background: rgba(148, 163, 184, 0.16);
-  color: rgba(226, 232, 240, 0.86);
+  color: var(--text-disabled);
 }
 
 .transfer-dispatch-destination-card__name {

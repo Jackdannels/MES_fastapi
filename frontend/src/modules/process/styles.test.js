@@ -20,7 +20,7 @@ describe("process control styles", () => {
     const source = readFileSync(processStylesPath, "utf8");
 
     expect(source).toMatch(/\.process-lab-card\.is-maintenance\s*{[^}]*border-color:\s*rgba\(239,\s*68,\s*68,/s);
-    expect(source).toMatch(/\.process-lab-card\.is-maintenance \.process-lab-status\s*{[^}]*color:\s*#fecaca;/s);
+    expect(source).toMatch(/\.process-lab-card\.is-maintenance \.process-lab-status\s*{[^}]*color:\s*var\(--status-danger-text\);/s);
     expect(source).toMatch(/\.process-lab-card\.is-urgent\s*{[^}]*border-color:\s*rgba\(245,\s*158,\s*11,/s);
     expect(source).toMatch(/\.process-lab-card\.is-urgent\s*{[^}]*animation:\s*process-lab-urgent-pulse/s);
     expect(source).toContain("@keyframes process-lab-urgent-pulse");

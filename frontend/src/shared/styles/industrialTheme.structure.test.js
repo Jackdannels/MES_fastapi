@@ -35,4 +35,29 @@ describe("industrial blackbox theme", () => {
     expect(source).toMatch(/\.form-field input,[\s\S]*?\.form-field textarea\s*\{[^}]*var\(--bg-panel-strong\)/s);
     expect(source).toContain("font-family: var(--font-code)");
   });
+
+  test("applies the light palette to every visualization preview surface", () => {
+    const source = readFileSync(baseStylesPath, "utf8");
+
+    expect(source).toMatch(/:root\[data-theme="light"\] \.visual-board\s*{[^}]*var\(--screen-bg\)/s);
+    expect(source).toContain(':root[data-theme="light"] .visual-board .visual-schedule-lab-name');
+    expect(source).toContain(':root[data-theme="light"] .visual-board .visual-task-plan-variant');
+    expect(source).toContain(':root[data-theme="light"] .visualization-page .visual-lab-matrix-screen');
+    expect(source).toContain(':root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .card');
+    expect(source).not.toContain(':root[data-theme="light"] .visual-board .visual-lab-matrix-screen');
+    expect(source).toContain(':root[data-theme="light"] .visual-board .visual-staging-task-rail');
+    expect(source).toContain(':root[data-theme="light"] .visual-board .visual-analysis-panel');
+    expect(source).toContain(':root[data-theme="light"] .visual-board .visual-board-metrics div');
+    expect(source).toContain(':root[data-theme="light"] .visual-board .visual-staging-overview-item');
+    expect(source).toMatch(/:root\[data-theme="light"\] \.visual-board \.visual-task-plan-empty\s*\{[^}]*linear-gradient/s);
+    expect(source).toMatch(/:root\[data-theme="light"\] \.visualization-page\s*\{[^}]*--screen-teal:\s*var\(--accent\)/s);
+    expect(source).toContain(':root[data-theme="light"] .visual-board .visual-staging-kind-summary .kind-current');
+  });
+
+  test("replaces the dark system pagination footer wash in light mode", () => {
+    const source = readFileSync(baseStylesPath, "utf8");
+
+    expect(source).toMatch(/:root\[data-theme="light"\] \.system-pagination-footer\s*\{[^}]*linear-gradient/s);
+    expect(source).toMatch(/:root\[data-theme="light"\] \.system-pagination-footer\s*\{[^}]*var\(--border-strong\)/s);
+  });
 });

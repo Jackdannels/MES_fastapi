@@ -135,7 +135,7 @@ const formatFlowTime = (value) => {
 .process-task-detail-modal-content { display: flex; flex-direction: column; height: min(980px, calc(100dvh - 16px)); max-height: calc(100dvh - 16px); overflow: hidden; box-sizing: border-box; }
 .process-task-modal-header { margin-bottom: 18px; }
 .process-task-modal-eyebrow { margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.12em; }
-.process-task-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.16), rgba(19, 26, 34, 0.96)); }
+.process-task-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.16), var(--surface-emphasis)); }
 .process-task-code-headline { margin: 0; font-size: clamp(30px, 4vw, 42px); line-height: 1; font-weight: 800; letter-spacing: 0.04em; color: var(--text); }
 .process-task-name-subtitle { margin: 10px 0 0; font-size: 15px; line-height: 1.4; color: var(--muted); }
 .process-task-status { flex-shrink: 0; }
@@ -186,10 +186,10 @@ const formatFlowTime = (value) => {
 .process-task-flow-list:focus-within::-webkit-scrollbar-thumb { background: rgba(var(--industrial-accent-rgb), 0.62); }
 .process-task-sample-code-list::-webkit-scrollbar-thumb:hover,
 .process-task-flow-list::-webkit-scrollbar-thumb:hover { background: rgba(var(--industrial-accent-rgb), 0.88); }
-.process-task-flow-list li { position: relative; padding: 12px 14px 12px 38px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.24); background: rgba(15, 23, 42, 0.34); color: var(--muted); font-size: 14px; }
+.process-task-flow-list li { position: relative; padding: 12px 14px 12px 38px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.24); background: var(--surface-inset); color: var(--muted); font-size: 14px; }
 .process-task-flow-list li::before { content: ""; position: absolute; left: 12px; top: 50%; width: 10px; height: 10px; margin-top: -5px; border-radius: 50%; background: rgba(148, 163, 184, 0.58); }
-.process-task-flow-list li.reached { border-color: rgba(34, 197, 94, 0.58); background: rgba(22, 101, 52, 0.2); color: #bbf7d0; }
-.process-task-flow-list li.current { border-color: rgba(34, 211, 238, 0.86); background: rgba(8, 145, 178, 0.22); color: #cffafe; border-width: 2px; font-weight: 700; box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.16), 0 0 0 1px rgba(34, 211, 238, 0.1); }
+.process-task-flow-list li.reached { border-color: var(--status-success-border); background: var(--status-success-bg); color: var(--status-success-text); }
+.process-task-flow-list li.current { border-color: var(--status-info-border); background: var(--status-info-bg); color: var(--status-info-text); border-width: 2px; font-weight: 700; box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.16), 0 0 0 1px rgba(34, 211, 238, 0.1); }
 .process-task-flow-list li.reached::before { background: rgba(34, 197, 94, 0.9); }
 .process-task-flow-list li.current::before { background: rgba(34, 211, 238, 0.96); }
 .process-task-flow-list--timed li { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: center; gap: 12px; }

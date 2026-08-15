@@ -155,9 +155,9 @@
 }
 
 .process-lab-card.is-scheduled .process-lab-status {
-  border-color: rgba(34, 211, 238, 0.42);
-  background: rgba(34, 211, 238, 0.14);
-  color: #67e8f9;
+  border-color: var(--status-info-border);
+  background: var(--status-info-bg);
+  color: var(--status-info-text);
 }
 
 .process-lab-card.is-idle .process-lab-status {
@@ -167,15 +167,15 @@
 }
 
 .process-lab-card.is-maintenance .process-lab-status {
-  border-color: rgba(248, 113, 113, 0.52);
-  background: rgba(127, 29, 29, 0.2);
-  color: #fecaca;
+  border-color: var(--status-danger-border);
+  background: var(--status-danger-bg);
+  color: var(--status-danger-text);
 }
 
 .process-lab-card.is-urgent .process-lab-status {
-  border-color: rgba(251, 146, 60, 0.56);
-  background: rgba(124, 45, 18, 0.2);
-  color: #fed7aa;
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
 }
 
 @keyframes process-lab-urgent-pulse {

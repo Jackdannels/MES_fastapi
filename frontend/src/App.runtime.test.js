@@ -357,6 +357,20 @@ describe("App runtime boundary", () => {
     expect(wrapper.text()).toContain("任务/托盘总览");
   });
 
+  test("switches the application between dark and white themes", async () => {
+    mountApp();
+    await nextTick();
+
+    expect(wrapper.find('.header-actions [data-testid="theme-toggle"]').exists()).toBe(false);
+    const toggle = wrapper.get('.sidebar-footer [data-testid="theme-toggle"]');
+    expect(toggle.text()).toBe("切换至白色主题");
+
+    await toggle.trigger("click");
+
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(wrapper.get('[data-testid="theme-toggle"]').text()).toBe("切换至暗色主题");
+  });
+
   test("does not read saved laboratory selection while rendering central routes", async () => {
     reactiveRoute.meta = { module: "central", title: "任务/托盘总览" };
     reactiveRoute.name = "task-overview";
