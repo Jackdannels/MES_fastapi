@@ -423,7 +423,34 @@
 .laboratory-salt-field textarea {
   box-sizing: border-box;
   width: 100%;
+  min-height: 96px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-panel-strong);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
   resize: vertical;
+  caret-color: var(--accent);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.laboratory-salt-field textarea::placeholder {
+  color: var(--muted);
+}
+
+.laboratory-salt-field textarea:focus {
+  outline: 2px solid rgba(var(--industrial-accent-rgb), 0.28);
+  outline-offset: 1px;
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 3px rgba(var(--industrial-accent-rgb), 0.08);
+}
+
+.laboratory-salt-field textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+  background: var(--surface-disabled);
 }
 
 .laboratory-running-samples-trigger:hover {

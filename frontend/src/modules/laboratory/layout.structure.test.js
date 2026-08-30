@@ -78,6 +78,11 @@ describe("laboratory workbench layout", () => {
     expect(stylesSource).toMatch(/\.modal\.laboratory-salt-control-modal--priority\s*\{[^}]*z-index:\s*80/i);
   });
 
+  test("keeps salt-spray reason textareas on the laboratory dark surface", () => {
+    expect(stylesSource).toMatch(/\.laboratory-salt-field textarea\s*\{[^}]*background:\s*var\(--bg-panel-strong\)[^}]*color:\s*var\(--text\)/i);
+    expect(stylesSource).toMatch(/\.laboratory-salt-field textarea:focus\s*\{[^}]*border-color:\s*var\(--border-strong\)/i);
+  });
+
   test("renders employee login as a large touch-friendly dialog", () => {
     expect(stylesSource).toMatch(/\[data-testid="laboratory-attendance-login-modal"\] \.modal-content\s*\{[^}]*width:\s*min\(920px,\s*94vw\)[^}]*min-height:\s*min\(560px,/i);
     expect(stylesSource).toMatch(/\[data-testid="laboratory-attendance-login-modal"\] \.laboratory-attendance-login-tab\s*\{[^}]*min-height:\s*52px[^}]*font-size:\s*16px/i);
