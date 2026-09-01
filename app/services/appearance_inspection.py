@@ -11,6 +11,7 @@ PRE_EXPERIMENT_APPEARANCE_STATUS = "实验前外观检测间存放"
 MID_EXPERIMENT_APPEARANCE_STATUS = "中途外观检查中"
 MID_EXPERIMENT_RETURNED_STATUS = "等待恢复实验"
 MID_EXPERIMENT_APPEARANCE_PHASE = "mid_experiment"
+POST_EXPERIMENT_APPEARANCE_PHASE = "post_experiment"
 EXPERIMENT_RUN_PAUSES_KEY = "mes.experiment_run_pauses"
 APPEARANCE_REQUIRED_KEYWORDS = ("盐雾", "霉菌", "高低温湿热")
 APPEARANCE_EVENT_ROOM = "appearance"
@@ -131,6 +132,182 @@ def _latest_mid_experiment_events(snapshot: Any, *, tray_code: str, run_no: str,
 def latest_mid_experiment_appearance_action(snapshot: Any, *, tray_code: str, run_no: str, pause_no: str) -> str:
     events = _latest_mid_experiment_events(snapshot, tray_code=tray_code, run_no=run_no, pause_no=pause_no)
     return record_text(events[-1], "action") if events else ""
+
+
+def _snapshot_rows(snapshot: Any, name: str) -> list[Any]:
+    if not isinstance(snapshot, dict):
+        return []
+    storage_key = f"mes.{name}"
+    return as_list(snapshot.get(storage_key) if storage_key in snapshot else snapshot.get(name))
+
+
+def _latest_mid_experiment_event_for_run(snapshot: Any, *, tray_code: str, run_no: str) -> dict[str, Any] | None:
+    candidates: list[tuple[datetime, int, dict[str, Any]]] = []
+    for index, event in enumerate(_snapshot_rows(snapshot, "staging_events")):
+        if not isinstance(event, dict):
+            continue
+        if staging_event_room(event) != APPEARANCE_EVENT_ROOM:
+            continue
+        if record_text(event, "appearance_phase", "appearancePhase") != MID_EXPERIMENT_APPEARANCE_PHASE:
+            continue
+        if record_text(event, "tray_code", "trayCode") != normalize_text(tray_code):
+            continue
+        if record_text(event, "run_no", "runNo") != normalize_text(run_no):
+            continue
+        candidates.append((parse_datetime_value(event.get("time")) or datetime.min, index, event))
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    return candidates[-1][2] if candidates else None
+
+
+def mid_experiment_appearance_stocked_trays_for_run(
+    snapshot: Any,
+    *,
+    run_no: str,
+    tray_codes: set[str],
+) -> set[str]:
+    """Return run trays that are still physically stocked in the appearance room."""
+
+    normalized_run_no = normalize_text(run_no)
+    candidates = {normalize_text(code) for code in tray_codes if normalize_text(code)}
+    if not normalized_run_no or not candidates:
+        return set()
+    samples = _snapshot_rows(snapshot, "samples")
+    stocked: set[str] = set()
+    for tray_code in candidates:
+        latest_event = _latest_mid_experiment_event_for_run(
+            snapshot,
+            tray_code=tray_code,
+            run_no=normalized_run_no,
+        )
+        if record_text(latest_event, "action") != APPEARANCE_STOCK_IN_ACTION:
+            continue
+        physically_stocked = any(
+            isinstance(sample, dict)
+            and normalize_text(sample.get("location")) == APPEARANCE_INSPECTION_LOCATION
+            and any(
+                isinstance(tray, dict)
+                and tray_code_text(tray) == tray_code
+                and status_text(tray) == MID_EXPERIMENT_APPEARANCE_STATUS
+                for tray in as_list(sample.get("trays"))
+            )
+            for sample in samples
+        )
+        if physically_stocked:
+            stocked.add(tray_code)
+    return stocked
+
+
+def completion_transitioned_appearance_stocked_trays_for_run(
+    snapshot: Any,
+    *,
+    run_no: str,
+    tray_codes: set[str],
+) -> set[str]:
+    """Return trays already moved from mid- to post-experiment appearance stock."""
+
+    normalized_run_no = normalize_text(run_no)
+    candidates = {normalize_text(code) for code in tray_codes if normalize_text(code)}
+    if not normalized_run_no or not candidates:
+        return set()
+    samples = _snapshot_rows(snapshot, "samples")
+    events = _snapshot_rows(snapshot, "staging_events")
+    stocked: set[str] = set()
+    for tray_code in candidates:
+        physically_stocked = any(
+            isinstance(sample, dict)
+            and normalize_text(sample.get("location")) == APPEARANCE_INSPECTION_LOCATION
+            and any(
+                isinstance(tray, dict)
+                and tray_code_text(tray) == tray_code
+                and status_text(tray) == APPEARANCE_INSPECTION_STOCKED_STATUS
+                for tray in as_list(sample.get("trays"))
+            )
+            for sample in samples
+        )
+        if not physically_stocked:
+            continue
+        already_transitioned = any(
+            isinstance(event, dict)
+            and staging_event_room(event) == APPEARANCE_EVENT_ROOM
+            and record_text(event, "tray_code", "trayCode") == tray_code
+            and record_text(event, "run_no", "runNo") == normalized_run_no
+            and record_text(event, "action") == APPEARANCE_STOCK_IN_ACTION
+            and record_text(event, "appearance_phase", "appearancePhase") == POST_EXPERIMENT_APPEARANCE_PHASE
+            and record_text(event, "source") == "experiment_completion"
+            for event in events
+        )
+        if already_transitioned:
+            stocked.add(tray_code)
+    return stocked
+
+
+def completed_mid_experiment_appearance_stock_is_recoverable(snapshot: Any, *, tray_code: str) -> bool:
+    """Recognize rows stranded by the legacy completion/status mismatch.
+
+    Recovery is deliberately narrow: the tray must still be in the appearance
+    room, its latest mid-inspection event must be a stock-in, and that exact
+    pause/run must have ended normally via completion criteria.
+    """
+
+    normalized_tray_code = normalize_text(tray_code)
+    completed_statuses = {"实验已完成", "实验完成", "实验已经完成"}
+    matching_samples = [
+        sample
+        for sample in _snapshot_rows(snapshot, "samples")
+        if isinstance(sample, dict)
+        and normalize_text(sample.get("location")) == APPEARANCE_INSPECTION_LOCATION
+        and any(
+            isinstance(tray, dict)
+            and tray_code_text(tray) == normalized_tray_code
+            and status_text(tray) in completed_statuses
+            for tray in as_list(sample.get("trays"))
+        )
+    ]
+    if not matching_samples:
+        return False
+
+    events: list[tuple[datetime, int, dict[str, Any]]] = []
+    for index, event in enumerate(_snapshot_rows(snapshot, "staging_events")):
+        if not isinstance(event, dict):
+            continue
+        if staging_event_room(event) != APPEARANCE_EVENT_ROOM:
+            continue
+        if record_text(event, "appearance_phase", "appearancePhase") != MID_EXPERIMENT_APPEARANCE_PHASE:
+            continue
+        if record_text(event, "tray_code", "trayCode") != normalized_tray_code:
+            continue
+        events.append((parse_datetime_value(event.get("time")) or datetime.min, index, event))
+    events.sort(key=lambda item: (item[0], item[1]))
+    latest_event = events[-1][2] if events else None
+    if record_text(latest_event, "action") != APPEARANCE_STOCK_IN_ACTION:
+        return False
+    run_no = record_text(latest_event, "run_no", "runNo")
+    pause_no = record_text(latest_event, "pause_no", "pauseNo")
+    if not run_no or not pause_no:
+        return False
+
+    pause_completed_normally = any(
+        isinstance(pause, dict)
+        and record_text(pause, "pause_no", "pauseNo") == pause_no
+        and record_text(pause, "run_no", "runNo") == run_no
+        and record_text(pause, "status", "pause_status", "pauseStatus") == "实验已停止"
+        and record_text(pause, "termination_type", "terminationType") == "completion_criteria"
+        for pause in _snapshot_rows(snapshot, "experiment_run_pauses")
+    )
+    run_completed = any(
+        isinstance(run, dict)
+        and record_text(run, "run_no", "runNo", "id") == run_no
+        and record_text(run, "status", "run_status", "runStatus") in completed_statuses
+        for run in _snapshot_rows(snapshot, "experiment_runs")
+    )
+    relation_completed = any(
+        isinstance(relation, dict)
+        and record_text(relation, "run_no", "runNo") == run_no
+        and record_text(relation, "tray_code", "trayCode", "tray_no", "trayNo") == normalized_tray_code
+        and record_text(relation, "run_tray_status", "runTrayStatus", "status") in completed_statuses
+        for relation in _snapshot_rows(snapshot, "experiment_run_trays")
+    )
+    return pause_completed_normally and run_completed and relation_completed
 
 
 def validate_mid_experiment_trays_ready_for_resume(snapshot: Any, pause_record: Any) -> None:

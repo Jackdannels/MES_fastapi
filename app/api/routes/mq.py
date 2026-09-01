@@ -141,7 +141,7 @@ class SaltPauseRequest(BaseModel):
     lab_code: str = Field(min_length=1)
     experiment_code: str = Field(min_length=1)
     run_no: str = Field(min_length=1, validation_alias=AliasChoices("run_no", "runNo"))
-    inspection_tray_codes: list[str] = Field(min_length=1, validation_alias=AliasChoices("inspection_tray_codes", "inspectionTrayCodes"))
+    inspection_tray_codes: list[str] = Field(default_factory=list, validation_alias=AliasChoices("inspection_tray_codes", "inspectionTrayCodes"))
     pause_reason: str = Field(min_length=1, max_length=500, validation_alias=AliasChoices("pause_reason", "pauseReason"))
 
     @field_validator("task_code", "lab_code", "experiment_code", "run_no", "pause_reason", mode="before")
@@ -413,15 +413,17 @@ def publish_salt_pause_request(request: SaltPauseRequest) -> dict[str, Any]:
     if str(run.get("run_status") or "").strip() != RUNNING:
         raise HTTPException(status_code=409, detail="只有实验进行中的盐雾实验可以暂停")
     stored_run_trays = get_storage_backend().read("mes.experiment_run_trays")
-    run_trays = set([
+    run_trays = sorted({
         str(row.get("tray_code") or row.get("tray_no") or "").strip()
         for row in stored_run_trays
         if str(row.get("run_no") or "").strip() == request.run_no
-    ])
-    if not set(request.inspection_tray_codes).issubset(run_trays):
-        raise HTTPException(status_code=409, detail="中途检查托盘必须全部属于当前实验运行")
+        and str(row.get("tray_code") or row.get("tray_no") or "").strip()
+    })
+    if not run_trays:
+        raise HTTPException(status_code=409, detail="当前盐雾实验没有可暂停的运行托盘")
     pause_no = f"pause-{uuid4().hex}"
     payload = request.model_dump()
+    payload["inspection_tray_codes"] = run_trays
     payload["pause_no"] = pause_no
     try:
         result = publish_laboratory_command("PAUSE_REQUEST", payload)

@@ -3,7 +3,7 @@ param(
     [int]$BackendPort = 8000,
     [string]$FrontendHost = "0.0.0.0",
     [int]$FrontendPort = 5173,
-    [string]$FrontendNetworkHost = "192.168.110.15",
+    [string]$FrontendNetworkHost = "",
     [string]$LimsSimulatorHost = "127.0.0.1",
     [int]$LimsSimulatorPort = 8900,
     [int]$UpperComputerSimulatorPort = 8899,

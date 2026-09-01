@@ -727,7 +727,7 @@
             </button>
             <button
               v-if="isSaltSprayLaboratory && !runningModalExperiment.completed && runningModalExperiment.isPaused && !controlSubmitting && !controlAwaitingConfirmation"
-              class="action-btn success"
+              class="action-btn success laboratory-salt-resume-button"
               data-testid="laboratory-salt-resume"
               type="button"
               :disabled="!canResume"
@@ -742,7 +742,7 @@
               type="button"
               @click="openStopModal"
             >
-              停止实验
+              提前结束
             </button>
             <div
               v-if="!runningModalExperiment.completed && (completionSubmitting || completionAwaitingConfirmation)"
@@ -818,19 +818,15 @@
         @close="closePauseModal"
       >
       <div class="laboratory-modal-body laboratory-salt-control-form">
-        <p>选择本次需要进入外观检测间的托盘。命令发送后，只有收到上位机暂停确认，托盘才会被放行。</p>
-        <fieldset>
-          <legend>检查托盘（默认全选）</legend>
-          <label v-for="trayCode in inspectionTrayOptions" :key="`salt-pause-${trayCode}`" class="laboratory-salt-tray-option">
-            <input
-              type="checkbox"
-              :checked="inspectionTrayCodes.includes(trayCode)"
-              :disabled="controlSubmitting"
-              @change="toggleInspectionTray(trayCode)"
-            />
-            <span>{{ trayCode }}</span>
-          </label>
-        </fieldset>
+        <p>暂停命令将作用于当前盐雾实验的全部托盘。只有收到上位机暂停确认后，托盘才会被放行至外观检测间。</p>
+        <section class="laboratory-salt-all-trays" aria-label="本次暂停的全部托盘">
+          <strong>全部托盘（{{ pauseTrayCodes.length }}）</strong>
+          <div class="laboratory-running-tags">
+            <span v-for="trayCode in pauseTrayCodes" :key="`salt-pause-${trayCode}`" class="laboratory-tray-chip">
+              {{ trayCode }}
+            </span>
+          </div>
+        </section>
         <label class="laboratory-salt-field">
           <span>暂停原因</span>
           <textarea v-model="pauseReason" :disabled="controlSubmitting" rows="3"></textarea>
@@ -842,7 +838,7 @@
           class="action-btn"
           data-testid="laboratory-salt-pause-confirm"
           type="button"
-          :disabled="controlSubmitting || !inspectionTrayCodes.length || !pauseReason.trim()"
+          :disabled="controlSubmitting || !pauseTrayCodes.length || !pauseReason.trim()"
           @click="confirmPause"
         >
           {{ controlSubmitting ? "发送中…" : "发送暂停命令" }}
@@ -858,24 +854,13 @@
         :close-on-esc="!controlSubmitting"
         class="laboratory-operation-modal laboratory-salt-control-modal--priority"
         data-testid="laboratory-salt-stop-modal"
-        title="停止盐雾实验"
+        title="提前结束盐雾实验"
         @close="closeStopModal"
       >
       <div class="laboratory-modal-body laboratory-salt-control-form">
-        <p>停止结果会影响任务是否能按正常完成流转，请选择真实原因。</p>
-        <fieldset>
-          <legend>停止类型</legend>
-          <label class="laboratory-salt-tray-option">
-            <input v-model="stopType" type="radio" value="completion_criteria" :disabled="controlSubmitting" />
-            <span>达到外观检查终止条件（正常完成）</span>
-          </label>
-          <label class="laboratory-salt-tray-option">
-            <input v-model="stopType" type="radio" value="abnormal" :disabled="controlSubmitting" />
-            <span>异常提前终止（不判定任务完成）</span>
-          </label>
-        </fieldset>
+        <p>提前结束将按达到外观检查终止条件处理，并进入正常完成流程。</p>
         <label class="laboratory-salt-field">
-          <span>终止依据或异常原因</span>
+          <span>提前结束依据</span>
           <textarea v-model="stopReason" :disabled="controlSubmitting" rows="4"></textarea>
         </label>
       </div>
@@ -888,7 +873,7 @@
           :disabled="controlSubmitting || !stopReason.trim()"
           @click="confirmStop"
         >
-          {{ controlSubmitting ? "发送中…" : "确认停止" }}
+          {{ controlSubmitting ? "发送中…" : "确认提前结束" }}
         </button>
       </template>
       </AppModal>
@@ -976,8 +961,6 @@ const {
   currentTask,
   hideRunningModal,
   activePauseInspectionTrayCodes,
-  inspectionTrayCodes,
-  inspectionTrayOptions,
   isSaltSprayLaboratory,
   logoutAttendance,
   installModalOpen,
@@ -1008,6 +991,7 @@ const {
   simulationSubmitting,
   pauseModalOpen,
   pauseReason,
+  pauseTrayCodes,
   scheduleRows,
   selectedTask,
   selectedTrayFlow,
@@ -1026,8 +1010,6 @@ const {
   confirmStop,
   stopModalOpen,
   stopReason,
-  stopType,
-  toggleInspectionTray,
   taskListModalOpen,
   trayFlowTask,
 } = useLaboratoryPage({ selectedLabName });

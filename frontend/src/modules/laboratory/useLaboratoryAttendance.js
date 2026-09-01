@@ -18,7 +18,20 @@ import {
 
 const ATTENDANCE_LOGOUT_COUNTDOWN_SECONDS = 30;
 
-function useLaboratoryAttendance({ laboratoryConfig, tickNow }) {
+const computeAttendanceElapsedSeconds = ({ now, pauseStartedAt = "", workStartedAt = "" } = {}) => {
+  const workStartedTime = workStartedAt ? parseBusinessDateTimeToMs(workStartedAt) : null;
+  if (!Number.isFinite(workStartedTime)) {
+    return 0;
+  }
+  const currentTime = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  const pauseStartedTime = pauseStartedAt ? parseBusinessDateTimeToMs(pauseStartedAt) : null;
+  const effectiveEndTime = Number.isFinite(pauseStartedTime) ? pauseStartedTime : currentTime;
+  return Number.isFinite(effectiveEndTime)
+    ? Math.max(0, Math.floor((effectiveEndTime - workStartedTime) / 1000))
+    : 0;
+};
+
+function useLaboratoryAttendance({ attendancePauseStartedAt, laboratoryConfig, tickNow }) {
   const attendanceSession = ref({ active: false });
   const attendanceLoginModalOpen = ref(false);
   const attendanceLoginMode = ref("qr");
@@ -54,10 +67,11 @@ function useLaboratoryAttendance({ laboratoryConfig, tickNow }) {
     }
     const loggedInAt = normalizeText(attendanceSession.value?.loggedInAt || attendanceSession.value?.logged_in_at);
     const workStartedAt = attendanceWorkStartedAt.value;
-    const workStartedTime = workStartedAt ? parseBusinessDateTimeToMs(workStartedAt) : null;
-    const elapsedSeconds = !Number.isFinite(workStartedTime)
-      ? 0
-      : Math.floor((tickNow.value.getTime() - workStartedTime) / 1000);
+    const elapsedSeconds = computeAttendanceElapsedSeconds({
+      now: tickNow.value,
+      pauseStartedAt: attendancePauseStartedAt?.value,
+      workStartedAt,
+    });
     return {
       detail: `${loggedInAt ? formatFlowTimeForAttendance(loggedInAt) : "--:--"} 登录 / 当前 ${formatAttendanceDuration(elapsedSeconds)}`,
       employeeName: normalizeText(
@@ -328,4 +342,4 @@ function useLaboratoryAttendance({ laboratoryConfig, tickNow }) {
   };
 }
 
-export { useLaboratoryAttendance };
+export { computeAttendanceElapsedSeconds, useLaboratoryAttendance };

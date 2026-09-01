@@ -183,6 +183,9 @@ const findActiveExperimentRunTrayRelations = ({ device, experimentCode, experime
         return false;
       }
       const run = runByNo.get(resolveRelationRunNo(relation));
+      if (!run || !RUNNING_EXPERIMENT_RUN_STATUSES.has(resolveRunStatus(run))) {
+        return false;
+      }
       if (normalizedScheduleId && run && resolveRunScheduleId(run) && resolveRunScheduleId(run) !== normalizedScheduleId) {
         return false;
       }

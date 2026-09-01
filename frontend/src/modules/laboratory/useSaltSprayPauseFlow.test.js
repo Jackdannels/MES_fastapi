@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { useSaltSprayPauseFlow } from "./useSaltSprayPauseFlow";
 
-const mountFlow = ({ labCode = "LAB_SALT", paused = false } = {}) => {
+const mountFlow = ({ labCode = "LAB_SALT", paused = false, trayCodes = ["TRAY-1"] } = {}) => {
   const run = {
     experiment_code: "EXP-SALT",
     run_no: "RUN-SALT",
@@ -37,7 +37,7 @@ const mountFlow = ({ labCode = "LAB_SALT", paused = false } = {}) => {
         requestResume,
         requestStop,
         runWithAttendance: async (callback) => callback(),
-        runningExperiment: ref({ active: true, experimentCode: "EXP-SALT", runNo: "RUN-SALT", taskCode: "TASK-SALT", trayCodes: ["TRAY-1"] }),
+        runningExperiment: ref({ active: true, experimentCode: "EXP-SALT", runNo: "RUN-SALT", taskCode: "TASK-SALT", trayCodes }),
         samples,
         stagingEvents,
       });
@@ -50,9 +50,9 @@ const mountFlow = ({ labCode = "LAB_SALT", paused = false } = {}) => {
 describe("useSaltSprayPauseFlow", () => {
   afterEach(() => vi.useRealTimers());
 
-  test("is scoped to LAB_SALT and sends pause_reason without locally changing run status", async () => {
+  test("is scoped to LAB_SALT and requests one pause for every tray without client-side tray selection", async () => {
     vi.useFakeTimers();
-    const salt = mountFlow();
+    const salt = mountFlow({ trayCodes: ["TRAY-1", "TRAY-2"] });
     const other = mountFlow({ labCode: "LAB_IMPACT" });
 
     expect(salt.flow.isSaltSprayLaboratory.value).toBe(true);
@@ -64,10 +64,11 @@ describe("useSaltSprayPauseFlow", () => {
     await salt.flow.confirmPause();
 
     expect(salt.requestPause).toHaveBeenCalledWith(expect.objectContaining({
-      inspection_tray_codes: ["TRAY-1"],
       pause_reason: "中途外观检查",
       run_no: "RUN-SALT",
     }));
+    expect(salt.requestPause.mock.calls[0][0]).not.toHaveProperty("inspection_tray_codes");
+    expect(salt.flow.pauseTrayCodes.value).toEqual(["TRAY-1", "TRAY-2"]);
     expect(salt.flow.isPaused.value).toBe(false);
     expect(salt.flow.controlAwaitingConfirmation.value?.action).toBe("pause");
     salt.wrapper.unmount();
@@ -141,18 +142,17 @@ describe("useSaltSprayPauseFlow", () => {
     mounted.wrapper.unmount();
   });
 
-  test("includes pause_no and termination classification in stop request", async () => {
+  test("always classifies the only early-end action as completion criteria", async () => {
     vi.useFakeTimers();
     const mounted = mountFlow({ paused: true });
     mounted.flow.openStopModal();
-    mounted.flow.stopType.value = "abnormal";
-    mounted.flow.stopReason.value = "设备故障";
+    mounted.flow.stopReason.value = "达到外观检查终止条件";
     await mounted.flow.confirmStop();
 
     expect(mounted.requestStop).toHaveBeenCalledWith(expect.objectContaining({
       pause_no: "PAUSE-1",
-      termination_reason: "设备故障",
-      termination_type: "abnormal",
+      termination_reason: "达到外观检查终止条件",
+      termination_type: "completion_criteria",
     }));
     expect(mounted.flow.isPaused.value).toBe(true);
     mounted.wrapper.unmount();

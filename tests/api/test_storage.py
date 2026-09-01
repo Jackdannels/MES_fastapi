@@ -60,6 +60,7 @@ class ScopedTrayActionStorage(FakeStorage):
         self.tray_task_codes = dict(tray_task_codes or {})
         self.scope_reads = []
         self.scope_writes = []
+        self.read_many_calls = []
 
     def read_all(self):
         raise AssertionError("scoped tray actions must not read the full snapshot")
@@ -82,6 +83,11 @@ class ScopedTrayActionStorage(FakeStorage):
                 if str(row.get("code") if key == "mes.tasks" else row.get("task_code") or "").strip() in normalized
             ]
         return result
+
+    def read_many(self, keys):
+        requested = tuple(keys)
+        self.read_many_calls.append(requested)
+        return {key: deepcopy(self.payloads.get(key, [])) for key in requested}
 
     def write_task_scope(self, updates, *, task_codes):
         normalized = {str(code or "").strip() for code in task_codes}
@@ -2313,6 +2319,239 @@ def test_storage_tray_stock_out_action_updates_only_target_tray_and_publishes_me
             {"source": "staging-management", "request_id": "tray-write-1"},
         )
     ]
+
+
+def _storage_lab_occupancy_stock_out_payload(*, occupant_status: str, same_task: bool = False, pushed_out: bool = False):
+    target_task_code = "TASK-LAB-OCCUPANCY-TARGET"
+    occupant_task_code = target_task_code if same_task else "TASK-LAB-OCCUPANCY-OTHER"
+    target_tray_code = "TP-LAB-OCCUPANCY-TARGET"
+    occupant_tray_code = "TP-LAB-OCCUPANCY-OCCUPANT"
+    occupant_run_status = occupant_status
+    occupant_location = "恒温恒湿间（实验后暂存间）" if pushed_out else "冲击一室"
+    occupant_tray_status = "实验后暂存间存放" if pushed_out else occupant_status
+    target_experiment_code = "EXP-LAB-OCCUPANCY-TARGET"
+    occupant_experiment_code = "EXP-LAB-OCCUPANCY-OCCUPANT"
+    samples = [
+        {
+            "code": "SP-LAB-OCCUPANCY-TARGET",
+            "task_code": target_task_code,
+            "location": "恒温恒湿间（暂存间）",
+            "status": "已到达暂存间",
+            "flow_status": "已到达暂存间",
+            "trays": [{"tray_code": target_tray_code, "status": "已到达暂存间", "quantity": 1}],
+        },
+        {
+            "code": "SP-LAB-OCCUPANCY-OCCUPANT",
+            "task_code": occupant_task_code,
+            "location": occupant_location,
+            "status": occupant_tray_status,
+            "flow_status": occupant_tray_status,
+            "trays": [
+                {
+                    "tray_code": occupant_tray_code,
+                    "status": occupant_tray_status,
+                    "quantity": 1,
+                    "target_lab": "冲击一室",
+                    "target_lab_code": "LAB_IMPACT_1",
+                    "target_experiment_code": occupant_experiment_code,
+                }
+            ],
+        },
+    ]
+    schedules = [
+        {
+            "id": "SCH-LAB-OCCUPANCY-TARGET",
+            "task_code": target_task_code,
+            "experiment_code": target_experiment_code,
+            "device": "冲击一室",
+            "lab_code": "LAB_IMPACT_1",
+            "status": "已排程",
+            "start_at": "2099-01-01 09:00:00",
+        },
+        {
+            "id": "SCH-LAB-OCCUPANCY-OCCUPANT",
+            "task_code": occupant_task_code,
+            "experiment_code": occupant_experiment_code,
+            "device": "冲击一室",
+            "lab_code": "LAB_IMPACT_1",
+            "status": occupant_status,
+            "start_at": "2026-08-30 09:00:00",
+        },
+    ]
+    payloads = {
+        "mes.samples": samples,
+        "mes.staging_events": [],
+        "mes.schedules": schedules,
+        "mes.experiments": [
+            {
+                "task_code": occupant_task_code,
+                "experiment_code": occupant_experiment_code,
+                "experiment_name": "冲击试验",
+                "device": "冲击一室",
+                "lab_code": "LAB_IMPACT_1",
+                "status": occupant_status,
+            }
+        ],
+        "mes.experiment_runs": [
+            {
+                "run_no": "RUN-LAB-OCCUPANCY",
+                "schedule_id": "SCH-LAB-OCCUPANCY-OCCUPANT",
+                "task_code": occupant_task_code,
+                "experiment_code": occupant_experiment_code,
+                "device": "冲击一室",
+                "lab_name": "冲击一室",
+                "lab_code": "LAB_IMPACT_1",
+                "status": occupant_run_status,
+                "tray_codes": [occupant_tray_code],
+                "started_at": "2026-08-30 09:10:00",
+            }
+        ],
+        "mes.experiment_run_trays": [
+            {
+                "run_no": "RUN-LAB-OCCUPANCY",
+                "task_code": occupant_task_code,
+                "experiment_code": occupant_experiment_code,
+                "tray_code": occupant_tray_code,
+                "run_tray_status": occupant_status,
+            }
+        ],
+        "mes.experiment_trays": [
+            {
+                "task_code": target_task_code,
+                "experiment_code": target_experiment_code,
+                "tray_code": target_tray_code,
+            },
+            {
+                "task_code": occupant_task_code,
+                "experiment_code": occupant_experiment_code,
+                "tray_code": occupant_tray_code,
+            },
+        ],
+    }
+    request = {
+        "targetLab": "冲击一室",
+        "targetLabCode": "LAB_IMPACT_1",
+        "targetExperimentCode": target_experiment_code,
+        "targetExperimentName": "冲击试验",
+        "scheduleId": "SCH-LAB-OCCUPANCY-TARGET",
+        "targetType": "lab",
+    }
+    return payloads, request, target_tray_code
+
+
+@pytest.mark.parametrize(
+    ("occupant_status", "same_task"),
+    [
+        pytest.param("实验进行中", False, id="other-task-running"),
+        pytest.param("实验进行中", True, id="same-task-other-tray-running"),
+        pytest.param("实验已完成", False, id="completed-but-tray-not-pushed-out"),
+    ],
+)
+def test_storage_stock_out_rejects_lab_occupied_by_unreleased_run(monkeypatch, occupant_status, same_task):
+    payloads, request, target_tray_code = _storage_lab_occupancy_stock_out_payload(
+        occupant_status=occupant_status,
+        same_task=same_task,
+    )
+    client, storage = build_client(monkeypatch, payloads)
+    original_samples = storage.read("mes.samples")
+
+    response = client.post(
+        f"/api/storage/rooms/staging/trays/{target_tray_code}/stock-out",
+        json=request,
+    )
+
+    assert response.status_code == 409
+    assert "尚未推出" in response.json()["detail"]
+    assert storage.read("mes.samples") == original_samples
+    assert storage.read("mes.staging_events") == []
+
+
+def test_storage_scoped_stock_out_reads_global_lab_occupancy_before_task_scoped_write(monkeypatch):
+    payloads, request, target_tray_code = _storage_lab_occupancy_stock_out_payload(
+        occupant_status="实验进行中",
+    )
+    storage = ScopedTrayActionStorage(
+        payloads,
+        tray_task_codes={target_tray_code: "TASK-LAB-OCCUPANCY-TARGET"},
+    )
+    client, _storage = build_client_with_storage(monkeypatch, storage)
+
+    response = client.post(
+        f"/api/storage/rooms/staging/trays/{target_tray_code}/stock-out",
+        json=request,
+    )
+
+    assert response.status_code == 409
+    assert storage.scope_reads[-1][0] == {"TASK-LAB-OCCUPANCY-TARGET"}
+    assert storage.read_many_calls == [
+        ("mes.samples", "mes.experiment_runs", "mes.experiment_run_trays")
+    ]
+    assert storage.scope_writes == []
+
+
+def test_storage_scoped_stock_out_keeps_global_occupancy_rows_out_of_task_write(monkeypatch):
+    payloads, request, target_tray_code = _storage_lab_occupancy_stock_out_payload(
+        occupant_status="实验已完成",
+        pushed_out=True,
+    )
+    storage = ScopedTrayActionStorage(
+        payloads,
+        tray_task_codes={target_tray_code: "TASK-LAB-OCCUPANCY-TARGET"},
+    )
+    client, _storage = build_client_with_storage(monkeypatch, storage)
+
+    response = client.post(
+        f"/api/storage/rooms/staging/trays/{target_tray_code}/stock-out",
+        json=request,
+    )
+
+    assert response.status_code == 200
+    assert storage.read_many_calls == [
+        ("mes.samples", "mes.experiment_runs", "mes.experiment_run_trays")
+    ]
+    written_samples = storage.scope_writes[-1][1]["mes.samples"]
+    assert {sample["task_code"] for sample in written_samples} == {"TASK-LAB-OCCUPANCY-TARGET"}
+    assert any(sample["task_code"] == "TASK-LAB-OCCUPANCY-OTHER" for sample in storage.payloads["mes.samples"])
+
+
+def test_storage_stock_out_allows_lab_after_completed_run_tray_is_pushed_out(monkeypatch):
+    payloads, request, target_tray_code = _storage_lab_occupancy_stock_out_payload(
+        occupant_status="实验已完成",
+        pushed_out=True,
+    )
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post(
+        f"/api/storage/rooms/staging/trays/{target_tray_code}/stock-out",
+        json=request,
+    )
+
+    assert response.status_code == 200, response.json()
+    target_sample = next(sample for sample in storage.read("mes.samples") if sample["code"] == "SP-LAB-OCCUPANCY-TARGET")
+    assert target_sample["trays"][0]["status"] == "送至实验室"
+
+
+def test_storage_stock_out_allows_same_experiment_trays_before_run_starts(monkeypatch):
+    payloads, request, target_tray_code = _storage_lab_occupancy_stock_out_payload(
+        occupant_status="已到达实验室",
+        same_task=True,
+    )
+    payloads["mes.experiment_runs"] = []
+    payloads["mes.experiment_run_trays"] = []
+    payloads["mes.schedules"] = [payloads["mes.schedules"][0]]
+    payloads["mes.experiments"] = []
+    payloads["mes.samples"][1]["trays"][0]["target_experiment_code"] = request["targetExperimentCode"]
+    payloads["mes.experiment_trays"][1]["experiment_code"] = request["targetExperimentCode"]
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post(
+        f"/api/storage/rooms/staging/trays/{target_tray_code}/stock-out",
+        json=request,
+    )
+
+    assert response.status_code == 200
+    target_sample = next(sample for sample in storage.read("mes.samples") if sample["code"] == "SP-LAB-OCCUPANCY-TARGET")
+    assert target_sample["trays"][0]["status"] == "送至实验室"
 
 
 def test_storage_tray_action_validates_against_single_loaded_snapshot(monkeypatch):

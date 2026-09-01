@@ -367,6 +367,8 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.find(".transfer-system-header .eyebrow").exists()).toBe(false);
     expect(wrapper.find(".transfer-system-subtitle").exists()).toBe(false);
     expect(wrapper.get(".transfer-overview-shell__head .transfer-overview-page-title").text()).toBe("接驳任务总览");
+    expect(wrapper.find(".search-input").exists()).toBe(false);
+    expect(wrapper.find(".transfer-overview-select").exists()).toBe(false);
     expect(wrapper.get('[data-testid="handover-nav-overview"]').classes()).toContain("is-active");
     expect(wrapper.find('[data-testid="transfer-dispatch-panel"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("总任务清单");

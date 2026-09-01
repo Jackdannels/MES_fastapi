@@ -89,7 +89,7 @@
           </div>
 
           <div class="transfer-overview-toolbar-frame">
-            <div class="transfer-overview-toolbar">
+            <div v-if="mode !== 'handover'" class="transfer-overview-toolbar">
               <input
                 v-model="searchText"
                 class="search-input"
@@ -189,7 +189,7 @@
 
               <div v-else class="transfer-table__empty" data-testid="transfer-empty-state">
                 <strong>{{ taskOverview.length ? "当前筛选条件下没有任务" : "当前没有接驳任务" }}</strong>
-                <span>{{ taskOverview.length ? "切换到到货或全部视图，或清空筛选条件后重试。" : "新任务到样后会自动出现在这里。" }}</span>
+                <span>{{ taskOverview.length ? (mode === "handover" ? "切换到到货或全部视图后重试。" : "切换到到货或全部视图，或清空筛选条件后重试。") : "新任务到样后会自动出现在这里。" }}</span>
                 <div class="transfer-empty-actions">
                   <button
                     v-if="taskOverview.length && taskStatusFilter !== storedStatus"
@@ -209,7 +209,7 @@
                     查看全部
                   </button>
                   <button
-                    v-if="searchText || taskTypeFilter"
+                    v-if="mode !== 'handover' && (searchText || taskTypeFilter)"
                     class="action-btn secondary"
                     type="button"
                     @click="clearFilters"

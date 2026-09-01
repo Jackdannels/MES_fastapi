@@ -2,6 +2,7 @@ import pytest
 
 from app.core.legacy_fallback import reset_legacy_fallback_hits
 from app.services import mq_event_processor
+from app.services.appearance_inspection import completion_transitioned_appearance_stocked_trays_for_run
 from app.services.laboratory_completion import (
     complete_storage_laboratory_experiment,
     tray_assigned_experiments_are_completed,
@@ -13,6 +14,11 @@ from app.services.laboratory_axis_steps import (
 )
 from app.services.laboratory_operations import apply_laboratory_task_operation
 from app.services.laboratory_start import start_storage_laboratory_experiment
+from app.services.laboratory_termination import terminate_storage_laboratory_experiment
+from app.services.storage_tray_actions import (
+    StorageTrayActionError,
+    build_stock_out_updates,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -141,6 +147,83 @@ def test_laboratory_operation_records_tray_code_in_comparison_history():
     assert "TP-1" in history["detail"]
     assert "振动试验" in history["detail"]
 
+
+def test_abnormal_termination_closes_run_trays_and_waiting_resume_samples_without_completing_task():
+    snapshot = {
+        "tasks": [{"code": "TASK-SALT", "status": "任务进行中"}],
+        "experiments": [
+            {
+                "task_code": "TASK-SALT",
+                "experiment_code": "EXP-SALT",
+                "experiment_name": "盐雾试验",
+                "status": "实验进行中",
+            }
+        ],
+        "schedules": [
+            {
+                "id": "SCHEDULE-SALT",
+                "task_code": "TASK-SALT",
+                "experiment_code": "EXP-SALT",
+                "status": "实验进行中",
+            }
+        ],
+        "experiment_runs": [
+            {
+                "run_no": "RUN-SALT",
+                "schedule_id": "SCHEDULE-SALT",
+                "task_code": "TASK-SALT",
+                "experiment_code": "EXP-SALT",
+                "status": "实验暂停",
+            }
+        ],
+        "experiment_run_trays": [
+            {
+                "run_no": "RUN-SALT",
+                "task_code": "TASK-SALT",
+                "experiment_code": "EXP-SALT",
+                "tray_code": tray_code,
+                "run_tray_status": "实验进行中",
+            }
+            for tray_code in ("TP-1", "TP-2")
+        ],
+        "experiment_samples": [
+            {"task_code": "TASK-SALT", "experiment_code": "EXP-SALT", "sample_code": sample_code}
+            for sample_code in ("SP-1", "SP-2")
+        ],
+        "samples": [
+            _sample("SP-1", "TASK-SALT", "TP-1", "等待恢复实验", "盐雾试验室"),
+            _sample("SP-2", "TASK-SALT", "TP-2", "等待恢复实验", "盐雾试验室"),
+        ],
+    }
+
+    result = terminate_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-SALT",
+        experiment_code="EXP-SALT",
+        run_no="RUN-SALT",
+        terminated_at="2026-08-31 20:11:52",
+        termination_reason="设备故障",
+    )
+
+    assert result["experimentRuns"][0]["status"] == "实验异常终止"
+    assert result["experimentRuns"][0]["ended_at"] == "2026-08-31 20:11:52"
+    assert {
+        relation["run_tray_status"] for relation in result["experimentRunTrays"]
+    } == {"实验异常终止"}
+    assert {sample["status"] for sample in result["samples"]} == {"实验异常终止"}
+    assert {
+        tray["status"]
+        for sample in result["samples"]
+        for tray in sample["trays"]
+    } == {"实验异常终止"}
+    assert result["experiments"][0]["status"] == "实验异常终止"
+    assert result["schedules"][0]["status"] == "实验异常终止"
+    assert result["tasks"][0]["status"] != "任务已完成"
+    history = result["samples"][0]["history"][0]
+    assert history["action"] == "异常终止实验"
+    assert history["time"] == "2026-08-31 20:11:52"
+    assert history["tray_code"] == "TP-1"
+    assert "设备故障" in history["detail"]
 
 def test_laboratory_compare_rejects_tray_still_stocked_in_appearance_room():
     snapshot = {
@@ -2501,3 +2584,209 @@ def test_complete_does_not_mark_run_completed_from_run_tray_codes_without_struct
 
     assert result["affectedTrayCodes"] == ["TP-A"]
     assert result["experimentRuns"][0]["status"] == "实验进行中"
+
+
+def _paused_salt_tray_in_appearance_snapshot():
+    return {
+        "experiments": [
+            {
+                "task_code": "TASK-SALT-STOP",
+                "experiment_code": "EXP-SALT-STOP",
+                "experiment_name": "盐雾试验",
+                "status": "实验暂停",
+            }
+        ],
+        "schedules": [
+            {
+                "id": "SCH-SALT-STOP",
+                "task_code": "TASK-SALT-STOP",
+                "experiment_code": "EXP-SALT-STOP",
+                "device": "盐雾试验室",
+                "status": "实验暂停",
+            }
+        ],
+        "experiment_runs": [
+            {
+                "run_no": "RUN-SALT-STOP",
+                "schedule_id": "SCH-SALT-STOP",
+                "task_code": "TASK-SALT-STOP",
+                "experiment_code": "EXP-SALT-STOP",
+                "device": "盐雾试验室",
+                "lab_code": "LAB_SALT",
+                "status": "实验暂停",
+            }
+        ],
+        "experiment_run_pauses": [
+            {
+                "pause_no": "PAUSE-SALT-STOP",
+                "run_no": "RUN-SALT-STOP",
+                "task_code": "TASK-SALT-STOP",
+                "experiment_code": "EXP-SALT-STOP",
+                "lab_code": "LAB_SALT",
+                "status": "实验暂停",
+                "inspection_tray_codes": ["TP-SALT-STOP"],
+            }
+        ],
+        "experiment_run_trays": [
+            {
+                "run_no": "RUN-SALT-STOP",
+                "task_code": "TASK-SALT-STOP",
+                "experiment_code": "EXP-SALT-STOP",
+                "tray_code": "TP-SALT-STOP",
+                "run_tray_status": "实验暂停",
+            }
+        ],
+        "experiment_trays": [
+            {
+                "task_code": "TASK-SALT-STOP",
+                "experiment_code": "EXP-SALT-STOP",
+                "tray_code": "TP-SALT-STOP",
+            }
+        ],
+        "experiment_samples": [
+            {
+                "task_code": "TASK-SALT-STOP",
+                "experiment_code": "EXP-SALT-STOP",
+                "sample_code": "SP-SALT-STOP",
+            }
+        ],
+        "samples": [
+            _sample(
+                "SP-SALT-STOP",
+                "TASK-SALT-STOP",
+                "TP-SALT-STOP",
+                "中途外观检查中",
+                "外观检测间",
+            )
+        ],
+        "staging_events": [
+            {
+                "id": "staging-event-mid-in",
+                "tray_code": "TP-SALT-STOP",
+                "task_code": "TASK-SALT-STOP",
+                "room": "appearance",
+                "action": "stock_in",
+                "appearance_phase": "mid_experiment",
+                "run_no": "RUN-SALT-STOP",
+                "pause_no": "PAUSE-SALT-STOP",
+                "status": "中途外观检查中",
+                "location": "外观检测间",
+                "time": "2026-08-31 10:05:00",
+            }
+        ],
+    }
+
+
+def test_completion_criteria_keeps_mid_inspection_tray_stocked_in_appearance_room():
+    snapshot = _paused_salt_tray_in_appearance_snapshot()
+
+    result = complete_storage_laboratory_experiment(
+        snapshot,
+        task_code="TASK-SALT-STOP",
+        experiment_code="EXP-SALT-STOP",
+        run_no="RUN-SALT-STOP",
+        completed_at="2026-08-31 10:10:00",
+    )
+
+    completed_sample = result["samples"][0]
+    assert completed_sample["location"] == "外观检测间"
+    assert completed_sample["status"] == "实验后外观检测间存放"
+    assert completed_sample["flow_status"] == "实验后外观检测间存放"
+    assert completed_sample["trays"][0]["status"] == "实验后外观检测间存放"
+    assert result["experimentRuns"][0]["status"] == "实验已完成"
+    assert result["experimentRunTrays"][0]["run_tray_status"] == "实验已完成"
+    assert completed_sample["history"][0]["action"] == "实验结束外观收口"
+    assert completed_sample["history"][0]["run_no"] == "RUN-SALT-STOP"
+    assert result["stagingEvents"][-1] == {
+        "id": "staging-event-TP-SALT-STOP-2",
+        "tray_code": "TP-SALT-STOP",
+        "task_code": "TASK-SALT-STOP",
+        "room": "appearance",
+        "action": "stock_in",
+        "appearance_phase": "post_experiment",
+        "experiment_code": "EXP-SALT-STOP",
+        "run_no": "RUN-SALT-STOP",
+        "source": "experiment_completion",
+        "status": "实验后外观检测间存放",
+        "location": "外观检测间",
+        "time": "2026-08-31 10:10:00",
+    }
+
+    repeated_snapshot = {
+        **snapshot,
+        "samples": result["samples"],
+        "experiments": result["experiments"],
+        "schedules": result["schedules"],
+        "experiment_runs": result["experimentRuns"],
+        "experiment_run_trays": result["experimentRunTrays"],
+        "staging_events": result["stagingEvents"],
+    }
+    assert completion_transitioned_appearance_stocked_trays_for_run(
+        repeated_snapshot,
+        run_no="RUN-SALT-STOP",
+        tray_codes={"TP-SALT-STOP"},
+    ) == {"TP-SALT-STOP"}
+    repeated = complete_storage_laboratory_experiment(
+        repeated_snapshot,
+        task_code="TASK-SALT-STOP",
+        experiment_code="EXP-SALT-STOP",
+        run_no="RUN-SALT-STOP",
+        completed_at="2026-08-31 10:10:00",
+    )
+    assert repeated["samples"][0]["status"] == "实验后外观检测间存放"
+    assert "stagingEvents" not in repeated
+    assert sum(
+        entry.get("action") == "实验结束外观收口"
+        for entry in repeated["samples"][0]["history"]
+    ) == 1
+
+
+def _legacy_stranded_mid_appearance_snapshot(*, termination_type: str = "completion_criteria"):
+    snapshot = _paused_salt_tray_in_appearance_snapshot()
+    sample = snapshot["samples"][0]
+    sample["status"] = "实验已完成"
+    sample["flow_status"] = "实验已完成"
+    sample["trays"][0]["status"] = "实验已完成"
+    snapshot["experiment_runs"][0]["status"] = "实验已完成"
+    snapshot["experiment_run_trays"][0]["run_tray_status"] = "实验已完成"
+    snapshot["experiment_run_pauses"][0].update(
+        {
+            "status": "实验已停止",
+            "termination_type": termination_type,
+            "stopped_at": "2026-08-31 10:10:00",
+        }
+    )
+    return {f"mes.{key}": value for key, value in snapshot.items()}
+
+
+def test_legacy_completion_criteria_record_can_leave_appearance_room_safely():
+    updates = build_stock_out_updates(
+        _legacy_stranded_mid_appearance_snapshot(),
+        room="appearance",
+        tray_code="TP-SALT-STOP",
+        payload={
+            "targetLab": "恒温恒湿间（暂存间）",
+            "targetType": "staging",
+            "operator": "回归测试",
+        },
+        now="2026-08-31 10:20:00",
+    )
+
+    updated_sample = updates["mes.samples"][0]
+    assert updated_sample["location"] == "恒温恒湿间（暂存间）"
+    assert updated_sample["status"] == "送至暂存间"
+    assert updates["mes.staging_events"][-1]["appearance_phase"] == "post_experiment"
+
+
+def test_legacy_abnormal_stop_does_not_use_normal_completion_recovery():
+    with pytest.raises(StorageTrayActionError, match="尚未完成外观检测间扫码入库"):
+        build_stock_out_updates(
+            _legacy_stranded_mid_appearance_snapshot(termination_type="abnormal"),
+            room="appearance",
+            tray_code="TP-SALT-STOP",
+            payload={
+                "targetLab": "恒温恒湿间（暂存间）",
+                "targetType": "staging",
+            },
+            now="2026-08-31 10:20:00",
+        )

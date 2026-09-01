@@ -639,6 +639,7 @@ def test_mq_realtime_update_publishes_experiment_run_trays(monkeypatch):
         "mes.experiment_run_steps",
         "mes.samples",
         "mes.schedules",
+        "mes.staging_events",
         "mes.conflicts",
     ]]
 

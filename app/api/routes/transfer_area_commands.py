@@ -22,6 +22,10 @@ from app.services.appearance_inspection import (
 )
 from app.services.laboratory_operations import clear_fixture_ready_marker
 from app.services.laboratory_completion import tray_assigned_experiments_are_completed
+from app.services.laboratory_occupancy import (
+    find_laboratory_occupancy_in_snapshot,
+    laboratory_occupancy_conflict_detail,
+)
 from app.api.routes.transfer_area_views import as_list, normalize_text, sample_code, sample_key, task_code
 
 TASK_STATUS_PENDING = "未入库"
@@ -342,6 +346,7 @@ def apply_tray_withdrawal(snapshot: dict[str, list[dict[str, Any]]], task: dict[
 def apply_dispatch(
     snapshot: dict[str, list[dict[str, Any]]], task: dict[str, Any], tray_samples: list[dict[str, Any]], tray_code: str,
     request: Any, *, partial_axis_batch_completed: bool, serialize_dispatch: Callable[..., dict[str, Any]], update_source: str = "", update_request_id: str = "", write_snapshot: Callable[..., Any],
+    occupancy_snapshot: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
     current_status = ""
     current_target_sub_experiment_code = ""
@@ -396,6 +401,18 @@ def apply_dispatch(
         unavailable = find_unavailable_device(snapshot, target_name)
         if unavailable:
             raise HTTPException(status_code=400, detail=f"{normalize_text(unavailable.get('code')) or target_name}设备维修中，禁止送至该实验室")
+        occupancy_data = occupancy_snapshot or snapshot
+        occupancy = find_laboratory_occupancy_in_snapshot(
+            occupancy_data,
+            target_lab_name=normalize_text(matched.get("targetName")) or target_name,
+            target_lab_code=normalize_text(matched.get("targetLabCode")),
+            excluded_tray_code=tray_code,
+        )
+        if occupancy is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=laboratory_occupancy_conflict_detail(occupancy),
+            )
         if current_status in TRAY_OUTBOUND_STATUSES and current_status not in TRAY_LAB_REDISPATCH_STATUSES and not partial_axis_batch_completed:
             raise HTTPException(status_code=400, detail="该托盘已送往目标位置，请勿重复操作")
         next_status, next_location, detail = "送至实验室", target_name, f"{normalize_text(tray_code)} -> {target_name}"

@@ -401,11 +401,18 @@
   gap: 10px;
 }
 
-.laboratory-salt-control-form fieldset {
+.laboratory-salt-control-form fieldset,
+.laboratory-salt-all-trays {
   margin: 0;
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
+}
+
+.laboratory-salt-all-trays {
+  display: grid;
+  gap: 10px;
+  background: var(--bg-panel-strong);
 }
 
 .laboratory-salt-tray-option {
@@ -1385,6 +1392,18 @@
   max-width: calc(100vw - 24px);
   max-height: calc(100dvh - 24px);
   overflow-y: auto;
+}
+
+.laboratory-salt-resume-button,
+.laboratory-salt-resume-button:disabled {
+  background: #059669;
+  border-color: #047857;
+  color: #ffffff;
+}
+
+.laboratory-salt-resume-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .laboratory-operation-modal .modal-header {

@@ -25,9 +25,7 @@ function useSaltSprayPauseFlow({
 }) {
   const pauseModalOpen = ref(false);
   const stopModalOpen = ref(false);
-  const inspectionTrayCodes = ref([]);
   const pauseReason = ref("");
-  const stopType = ref("completion_criteria");
   const stopReason = ref("");
   const controlSubmitting = ref(false);
   const controlAwaitingConfirmation = ref(null);
@@ -44,7 +42,7 @@ function useSaltSprayPauseFlow({
   });
   const activePause = computed(() => findActivePause(experimentRunPauses.value, runningExperiment.value?.runNo));
   const isPaused = computed(() => normalizeText(activeRun.value?.status || currentTask.value?.runStatus) === "实验暂停");
-  const inspectionTrayOptions = computed(() => (runningExperiment.value?.trayCodes || []).map((trayCode) => normalizeText(trayCode)).filter(Boolean));
+  const pauseTrayCodes = computed(() => (runningExperiment.value?.trayCodes || []).map((trayCode) => normalizeText(trayCode)).filter(Boolean));
   const activePauseInspectionTrayCodes = computed(() => {
     const values = activePause.value?.inspection_tray_codes || activePause.value?.inspectionTrayCodes || [];
     return (Array.isArray(values) ? values : []).map(normalizeText).filter(Boolean);
@@ -107,7 +105,6 @@ function useSaltSprayPauseFlow({
     if (!isSaltSprayLaboratory.value || isPaused.value || controlAwaitingConfirmation.value) {
       return;
     }
-    inspectionTrayCodes.value = [...inspectionTrayOptions.value];
     pauseReason.value = "中途外观检查";
     controlConfirmationError.value = "";
     pauseModalOpen.value = true;
@@ -116,18 +113,10 @@ function useSaltSprayPauseFlow({
     if (!isSaltSprayLaboratory.value || !isPaused.value || controlAwaitingConfirmation.value) {
       return;
     }
-    stopType.value = "completion_criteria";
     stopReason.value = "";
     controlConfirmationError.value = "";
     stopModalOpen.value = true;
   };
-  const toggleInspectionTray = (trayCode) => {
-    const normalized = normalizeText(trayCode);
-    inspectionTrayCodes.value = inspectionTrayCodes.value.includes(normalized)
-      ? inspectionTrayCodes.value.filter((code) => code !== normalized)
-      : [...inspectionTrayCodes.value, normalized];
-  };
-
   const commonPayload = () => ({
     experiment_code: normalizeText(currentTask.value?.experimentCode || runningExperiment.value?.experimentCode),
     lab_code: SALT_SPRAY_LAB_CODE,
@@ -211,14 +200,13 @@ function useSaltSprayPauseFlow({
   };
 
   const confirmPause = async () => {
-    if (!inspectionTrayCodes.value.length || !normalizeText(pauseReason.value)) {
+    if (!pauseTrayCodes.value.length || !normalizeText(pauseReason.value)) {
       return;
     }
     await runWithAttendance(async () => {
       pauseModalOpen.value = false;
       await publishControl("pause", requestPause, {
         ...commonPayload(),
-        inspection_tray_codes: inspectionTrayCodes.value,
         pause_reason: normalizeText(pauseReason.value),
       });
     });
@@ -243,7 +231,7 @@ function useSaltSprayPauseFlow({
     }
     const pauseNo = activePauseNo();
     if (!pauseNo) {
-      controlConfirmationError.value = "未找到当前暂停记录，暂不能停止实验。";
+      controlConfirmationError.value = "未找到当前暂停记录，暂不能提前结束实验。";
       return;
     }
     await runWithAttendance(async () => {
@@ -252,7 +240,7 @@ function useSaltSprayPauseFlow({
         ...commonPayload(),
         pause_no: pauseNo,
         termination_reason: normalizeText(stopReason.value),
-        termination_type: stopType.value,
+        termination_type: "completion_criteria",
       });
     });
   };
@@ -291,21 +279,18 @@ function useSaltSprayPauseFlow({
     controlAwaitingConfirmation,
     controlConfirmationError,
     controlSubmitting,
-    inspectionTrayCodes,
-    inspectionTrayOptions,
     isPaused,
     isSaltSprayLaboratory,
     openPauseModal,
     openStopModal,
     pauseModalOpen,
     pauseReason,
+    pauseTrayCodes,
     requestContinue,
     simulatePauseConfirmation,
     simulationSubmitting,
     stopModalOpen,
     stopReason,
-    stopType,
-    toggleInspectionTray,
   };
 }
 

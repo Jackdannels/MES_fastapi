@@ -8,12 +8,17 @@ from app.services.experiment_schedule_sequence import (
     ExperimentScheduleSequenceError,
     assert_expected_next_scheduled_step,
 )
+from app.services.laboratory_occupancy import (
+    find_laboratory_occupancy_in_snapshot,
+    laboratory_occupancy_conflict_detail,
+)
 from app.services.appearance_inspection import (
     APPEARANCE_STOCK_IN_ACTION,
     APPEARANCE_STOCK_OUT_ACTION,
     MID_EXPERIMENT_APPEARANCE_PHASE,
     MID_EXPERIMENT_APPEARANCE_STATUS,
     MID_EXPERIMENT_RETURNED_STATUS,
+    completed_mid_experiment_appearance_stock_is_recoverable,
     latest_mid_experiment_appearance_action,
     resolve_mid_experiment_appearance_context,
 )
@@ -319,6 +324,14 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
     if not matches:
         raise StorageTrayActionError("未找到对应的出库托盘。", status_code=404)
     current_status = primary_status(matches)
+    if (
+        config["event_room"] == APPEARANCE_ROOM
+        and current_status in {"实验已完成", "实验完成", "实验已经完成"}
+        and completed_mid_experiment_appearance_stock_is_recoverable(snapshot, tray_code=tray_code)
+    ):
+        # Compatibility for records produced before normal completion preserved
+        # the tray's physical appearance-room storage state.
+        current_status = "实验后外观检测间存放"
     if current_status not in config["current_statuses"]:
         raise StorageTrayActionError(config["requires_stock_in_error"], status_code=409)
 
@@ -386,6 +399,17 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
         target_lab = next_step["lab_name"]
         target_lab_code = next_step["lab_code"]
         target_lab_id = next_step["lab_id"]
+        occupancy = find_laboratory_occupancy_in_snapshot(
+            snapshot,
+            target_lab_name=target_lab,
+            target_lab_code=target_lab_code,
+            excluded_tray_code=normalized_tray_code,
+        )
+        if occupancy is not None:
+            raise StorageTrayActionError(
+                laboratory_occupancy_conflict_detail(occupancy),
+                status_code=409,
+            )
     appearance_metadata: dict[str, Any] = {}
     if config["event_room"] == APPEARANCE_ROOM:
         phase = appearance_phase(current_status)

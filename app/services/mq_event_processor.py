@@ -41,6 +41,7 @@ from app.services.laboratory_operations import (
     write_laboratory_updates,
 )
 from app.services.laboratory_start import start_storage_laboratory_experiment
+from app.services.laboratory_termination import terminate_storage_laboratory_experiment
 from app.services.schedule_cascade_runtime import apply_run_schedule_cascade, run_forecast_end_at
 from app.services.salt_spray_pause import (
     ABNORMAL, PAUSED, PAUSE_RESUMED, PAUSE_STOPPED, RUNNING, SALT_LAB_CODE,
@@ -220,6 +221,7 @@ def publish_realtime_update() -> None:
             "mes.experiment_run_steps",
             "mes.samples",
             "mes.schedules",
+            "mes.staging_events",
             "mes.conflicts",
     ])
 
@@ -503,11 +505,10 @@ class MySQLMqEventRepository:
                         return
                 if normalize_text(run.get("run_status")) != RUNNING:
                     raise ValueError("当前实验状态必须为实验进行中")
-                placeholders = ", ".join(["%s"] * len(trays))
-                cursor.execute(f"SELECT tray_no FROM biz_experiment_run_tray WHERE run_no=%s AND tray_no IN ({placeholders})", [run_no, *trays])
+                cursor.execute("SELECT tray_no FROM biz_experiment_run_tray WHERE run_no=%s", (run_no,))
                 existing = {normalize_text(row.get("tray_no")) for row in cursor_rows_as_dicts(cursor)}
                 if existing != set(trays):
-                    raise ValueError("中途检查托盘必须全部属于当前实验运行")
+                    raise ValueError("盐雾实验暂停必须包含当前运行的全部托盘")
                 cursor.execute(
                     """INSERT INTO biz_experiment_run_pause
                     (pause_no,run_no,task_no,experiment_no,lab_code,pause_status,inspection_tray_codes_json,pause_reason,paused_at)
@@ -556,26 +557,81 @@ class MySQLMqEventRepository:
         cascade_run: dict[str, Any] = {}
         with get_connection() as connection:
             with connection.cursor() as cursor:
-                cursor.execute("""SELECT p.pause_status,p.paused_at,er.schedule_no
+                cursor.execute("""SELECT p.pause_status,p.paused_at,p.termination_type,er.schedule_no
                     FROM biz_experiment_run_pause p JOIN biz_experiment_run er ON er.run_no=p.run_no
                     WHERE p.pause_no=%s AND p.run_no=%s FOR UPDATE""", (pause_no,run_no))
                 pause = cursor_row_as_dict(cursor) or {}
                 if normalize_text(pause.get("pause_status")) == PAUSE_STOPPED:
-                    return
-                if normalize_text(pause.get("pause_status")) != PAUSED:
+                    if normalize_text(pause.get("termination_type")) == TERMINATION_ABNORMAL:
+                        cascade_run = {"run_no": run_no, "schedule_id": pause.get("schedule_no")}
+                elif normalize_text(pause.get("pause_status")) != PAUSED:
                     raise ValueError("当前实验不存在可停止的暂停区间")
-                paused_at, stopped_at = parse_beijing_datetime(pause.get("paused_at")), parse_beijing_datetime(occurred_at)
-                seconds = max(0, int((stopped_at-paused_at).total_seconds())) if paused_at and stopped_at else 0
-                cursor.execute("""UPDATE biz_experiment_run_pause SET pause_status=%s,stopped_at=%s,pause_seconds=%s,
-                    termination_type=%s,termination_reason=%s,updated_at=%s WHERE pause_no=%s""",
-                    (PAUSE_STOPPED,mysql_datetime_text(occurred_at),seconds,termination_type,reason or None,mysql_datetime_text(occurred_at),pause_no))
-                if termination_type == TERMINATION_ABNORMAL:
-                    cursor.execute("UPDATE biz_experiment_run SET run_status=%s,ended_at=%s,updated_at=%s WHERE run_no=%s AND run_status=%s", (ABNORMAL,mysql_datetime_text(occurred_at),mysql_datetime_text(occurred_at),run_no,PAUSED))
-                    cascade_run = {"run_no": run_no, "schedule_id": pause.get("schedule_no")}
+                else:
+                    paused_at, stopped_at = parse_beijing_datetime(pause.get("paused_at")), parse_beijing_datetime(occurred_at)
+                    seconds = max(0, int((stopped_at-paused_at).total_seconds())) if paused_at and stopped_at else 0
+                    cursor.execute("""UPDATE biz_experiment_run_pause SET pause_status=%s,stopped_at=%s,pause_seconds=%s,
+                        termination_type=%s,termination_reason=%s,updated_at=%s WHERE pause_no=%s""",
+                        (PAUSE_STOPPED,mysql_datetime_text(occurred_at),seconds,termination_type,reason or None,mysql_datetime_text(occurred_at),pause_no))
+                    if termination_type == TERMINATION_ABNORMAL:
+                        cursor.execute("UPDATE biz_experiment_run SET run_status=%s,ended_at=%s,updated_at=%s WHERE run_no=%s AND run_status=%s", (ABNORMAL,mysql_datetime_text(occurred_at),mysql_datetime_text(occurred_at),run_no,PAUSED))
+                        cascade_run = {"run_no": run_no, "schedule_id": pause.get("schedule_no")}
             connection.commit()
         if cascade_run:
+            self._mark_storage_run_abnormally_stopped(
+                run_no=run_no,
+                occurred_at=occurred_at,
+                reason=reason,
+            )
+
+    def _mark_storage_run_abnormally_stopped(self, *, run_no: str, occurred_at: str, reason: str) -> None:
+        storage = get_storage_backend()
+        with acquire_laboratory_storage_commit_lock():
+            snapshot, task_scope = self._storage_snapshot_for_run(storage, run_no)
+            run = run_context_from_snapshot(snapshot, run_no)
+            task_no = normalize_text(run.get("task_code") or run.get("task_no")) or task_scope
+            experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
+            tray_codes = [
+                normalize_text(item.get("tray_code") or item.get("tray_no"))
+                for item in snapshot.get("experiment_run_trays", [])
+                if normalize_text(item.get("run_no") or item.get("runNo")) == normalize_text(run_no)
+                and normalize_text(item.get("task_code") or item.get("task_no")) == task_no
+                and normalize_text(item.get("experiment_code") or item.get("experiment_no")) == experiment_no
+                and normalize_text(item.get("tray_code") or item.get("tray_no"))
+            ]
+            if not tray_codes:
+                raise ValueError("experiment_run_trays are required for abnormal termination")
+            scoped_snapshot = scope_snapshot_samples_for_experiment(
+                snapshot,
+                task_code=task_no,
+                experiment_code=experiment_no,
+                tray_codes=tray_codes,
+            )
+            result = terminate_storage_laboratory_experiment(
+                scoped_snapshot,
+                task_code=task_no,
+                experiment_code=experiment_no,
+                run_no=run_no,
+                tray_codes=tray_codes,
+                terminated_at=occurred_at,
+                termination_reason=reason,
+            )
+            write_laboratory_updates(
+                storage,
+                {
+                    "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
+                    "mes.experiments": result["experiments"],
+                    "mes.schedules": result["schedules"],
+                    "mes.experiment_runs": result["experimentRuns"],
+                    "mes.experiment_run_trays": result["experimentRunTrays"],
+                },
+                scoped_samples=result["affectedSamples"],
+                task_codes={task_no},
+            )
             apply_run_schedule_cascade(
-                get_storage_backend(), cascade_run, new_end_at=occurred_at, reason="盐雾实验异常停止"
+                storage,
+                {"run_no": run_no, "schedule_id": run.get("schedule_id") or run.get("schedule_no")},
+                new_end_at=occurred_at,
+                reason="盐雾实验异常停止",
             )
 
     def find_current_context_by_lab(
@@ -996,6 +1052,8 @@ class MySQLMqEventRepository:
                     "mes.experiment_run_trays": result["experimentRunTrays"],
                     "mes.experiment_run_steps": result.get("experimentRunSteps", snapshot.get("experiment_run_steps", [])),
                 }
+            if "stagingEvents" in result:
+                updates["mes.staging_events"] = result["stagingEvents"]
             write_laboratory_updates(
                 storage,
                 updates,
@@ -1276,6 +1334,22 @@ def process_laboratory_event(
             repo.mark_axis_step_started(run_no, payload_axis_code, occurred_at)
         elif not created_run_from_context:
             repo.mark_run_started(run_no, occurred_at)
+        get_attendance_service().start_work_interval(
+            lab_code=lab_code,
+            lab_name=normalize_text((run or {}).get("device_name") or (run or {}).get("device")),
+            run_no=run_no,
+            task_code=task_no,
+            experiment_code=experiment_no,
+            source="mqtt",
+            started_at=occurred_at,
+        )
+    elif message_type == "EXPERIMENT_PAUSED":
+        get_attendance_service().finish_work_interval(
+            run_no=run_no,
+            lab_code=lab_code,
+            ended_at=occurred_at,
+        )
+    elif message_type == "EXPERIMENT_RESUMED":
         get_attendance_service().start_work_interval(
             lab_code=lab_code,
             lab_name=normalize_text((run or {}).get("device_name") or (run or {}).get("device")),

@@ -79,8 +79,23 @@ describe("laboratory workbench layout", () => {
   });
 
   test("keeps salt-spray reason textareas on the laboratory dark surface", () => {
+    expect(pageSource).toContain("暂停命令将作用于当前盐雾实验的全部托盘");
+    expect(pageSource).not.toContain('type="checkbox"');
     expect(stylesSource).toMatch(/\.laboratory-salt-field textarea\s*\{[^}]*background:\s*var\(--bg-panel-strong\)[^}]*color:\s*var\(--text\)/i);
     expect(stylesSource).toMatch(/\.laboratory-salt-field textarea:focus\s*\{[^}]*border-color:\s*var\(--border-strong\)/i);
+  });
+
+  test("offers one salt-spray early-end action without an abnormal termination choice", () => {
+    expect(pageSource).toContain("提前结束盐雾实验");
+    expect(pageSource).toContain("确认提前结束");
+    expect(pageSource).not.toContain("异常提前终止");
+    expect(pageSource).not.toContain('value="abnormal"');
+    expect(pageSource).not.toContain('v-model="stopType"');
+  });
+
+  test("presents continue experiment as the green primary recovery action", () => {
+    expect(pageSource).toMatch(/class="action-btn success laboratory-salt-resume-button"[^>]*data-testid="laboratory-salt-resume"/i);
+    expect(stylesSource).toMatch(/\.laboratory-salt-resume-button,\s*\.laboratory-salt-resume-button:disabled\s*\{[^}]*background:\s*#059669[^}]*color:\s*#ffffff/i);
   });
 
   test("renders employee login as a large touch-friendly dialog", () => {

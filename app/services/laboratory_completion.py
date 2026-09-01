@@ -5,6 +5,15 @@ from typing import Any
 from app.core.axis_codes import canonical_axis_code
 from app.core.storage_backend import apply_terminal_experiments_for_returned_trays
 from app.core.time_utils import format_business_datetime, now_business_text
+from app.services.appearance_inspection import (
+    APPEARANCE_EVENT_ROOM,
+    APPEARANCE_INSPECTION_LOCATION,
+    APPEARANCE_INSPECTION_STOCKED_STATUS,
+    APPEARANCE_STOCK_IN_ACTION,
+    POST_EXPERIMENT_APPEARANCE_PHASE,
+    completion_transitioned_appearance_stocked_trays_for_run,
+    mid_experiment_appearance_stocked_trays_for_run,
+)
 from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
 from app.services.laboratory_operations import clear_fixture_ready_marker
 from app.services.laboratory_run_lifecycle import close_superseded_running_runs_for_trays
@@ -383,6 +392,17 @@ def complete_storage_laboratory_experiment(
     if not affected_tray_codes:
         raise ValueError("current experiment has no matching tray samples")
 
+    mid_appearance_stocked_tray_codes = mid_experiment_appearance_stocked_trays_for_run(
+        snapshot,
+        run_no=normalized_run_no,
+        tray_codes=affected_tray_codes,
+    )
+    already_transitioned_appearance_tray_codes = completion_transitioned_appearance_stocked_trays_for_run(
+        snapshot,
+        run_no=normalized_run_no,
+        tray_codes=affected_tray_codes,
+    )
+
     completed_experiment_tray_codes = run_tray_completed_statuses_for_experiment(
         experiment_runs,
         completed_tray_codes=affected_tray_codes,
@@ -518,6 +538,7 @@ def complete_storage_laboratory_experiment(
 
     detail = f"{normalized_task_code} / {experiment_name} / {sample_completion_status}"
     affected_sample_count = 0
+    transitioned_mid_appearance_tray_codes: set[str] = set()
     for sample in samples:
         if not sample_matches_current_experiment(sample):
             continue
@@ -528,9 +549,21 @@ def complete_storage_laboratory_experiment(
         for tray in sample.get("trays", []):
             tray_code = normalize_text(tray.get("tray_code"))
             if tray_code in affected_tray_codes:
+                remains_in_appearance = (
+                    sample_completion_status == COMPLETED_STATUS
+                    and previous_location == APPEARANCE_INSPECTION_LOCATION
+                    and tray_code in (
+                        mid_appearance_stocked_tray_codes
+                        | already_transitioned_appearance_tray_codes
+                    )
+                )
                 next_tray = {
                     **tray,
-                    "status": sample_completion_status,
+                    "status": (
+                        APPEARANCE_INSPECTION_STOCKED_STATUS
+                        if remains_in_appearance
+                        else sample_completion_status
+                    ),
                     "updated_at": completed_time,
                 }
                 for target_key in ("target_lab", "targetLab", "target_experiment_code", "targetExperimentCode"):
@@ -540,12 +573,21 @@ def complete_storage_laboratory_experiment(
                 clear_fixture_ready_marker(next_tray)
                 touched = True
                 touched_tray_codes.append(tray_code)
+                if remains_in_appearance and tray_code in mid_appearance_stocked_tray_codes:
+                    transitioned_mid_appearance_tray_codes.add(tray_code)
             else:
                 next_tray = tray
             next_trays.append(next_tray)
         if not touched:
             continue
-        if next_trays and all(
+        sample_transitioned_trays = set(touched_tray_codes).intersection(transitioned_mid_appearance_tray_codes)
+        sample_appearance_stocked_trays = set(touched_tray_codes).intersection(
+            mid_appearance_stocked_tray_codes | already_transitioned_appearance_tray_codes
+        )
+        if sample_appearance_stocked_trays:
+            sample["status"] = APPEARANCE_INSPECTION_STOCKED_STATUS
+            sample["flow_status"] = APPEARANCE_INSPECTION_STOCKED_STATUS
+        elif next_trays and all(
             normalize_text(tray.get("status")) in EXPERIMENT_TRAY_FINISHED_STATUSES
             or normalize_text(tray.get("status")) == sample_completion_status
             for tray in next_trays
@@ -575,6 +617,33 @@ def complete_storage_laboratory_experiment(
             )
             if not duplicate:
                 sample["history"] = [history_entry, *sample.get("history", [])]
+        if sample_transitioned_trays:
+            transition_tray_codes = sorted(sample_transitioned_trays)
+            transition_detail = (
+                f"{', '.join(transition_tray_codes)} 实验结束，"
+                f"中途外观检查转为{APPEARANCE_INSPECTION_STOCKED_STATUS}"
+            )
+            transition_history: dict[str, Any] = {
+                "action": "实验结束外观收口",
+                "detail": transition_detail,
+                "location": APPEARANCE_INSPECTION_LOCATION,
+                "owner": normalize_text(sample.get("owner")),
+                "status": APPEARANCE_INSPECTION_STOCKED_STATUS,
+                "time": completed_time,
+                "run_no": normalized_run_no,
+            }
+            if len(transition_tray_codes) == 1:
+                transition_history["tray_code"] = transition_tray_codes[0]
+            else:
+                transition_history["tray_codes"] = transition_tray_codes
+            duplicate_transition = any(
+                normalize_text(entry.get("action")) == transition_history["action"]
+                and normalize_text(entry.get("run_no") or entry.get("runNo")) == normalized_run_no
+                and normalize_text(entry.get("time")) == completed_time
+                for entry in sample.get("history", [])
+            )
+            if not duplicate_transition:
+                sample["history"] = [transition_history, *sample.get("history", [])]
         affected_sample_count += 1
 
     if affected_sample_count == 0:
@@ -728,7 +797,7 @@ def complete_storage_laboratory_experiment(
     schedules = terminal_snapshot["mes.schedules"]
     experiment_run_trays = terminal_snapshot["mes.experiment_run_trays"]
 
-    return {
+    result = {
         "affectedSampleCount": affected_sample_count,
         "affectedTrayCodes": sorted(affected_tray_codes),
         "completedAt": completed_time,
@@ -738,3 +807,24 @@ def complete_storage_laboratory_experiment(
         "samples": samples,
         "schedules": schedules,
     }
+    if transitioned_mid_appearance_tray_codes:
+        staging_events = [dict(item) for item in snapshot.get("staging_events", []) if isinstance(item, dict)]
+        for tray_code in sorted(transitioned_mid_appearance_tray_codes):
+            staging_events.append(
+                {
+                    "id": f"staging-event-{tray_code}-{len(staging_events) + 1}",
+                    "tray_code": tray_code,
+                    "task_code": normalized_task_code,
+                    "room": APPEARANCE_EVENT_ROOM,
+                    "action": APPEARANCE_STOCK_IN_ACTION,
+                    "appearance_phase": POST_EXPERIMENT_APPEARANCE_PHASE,
+                    "experiment_code": normalized_experiment_code,
+                    "run_no": normalized_run_no,
+                    "source": "experiment_completion",
+                    "status": APPEARANCE_INSPECTION_STOCKED_STATUS,
+                    "location": APPEARANCE_INSPECTION_LOCATION,
+                    "time": completed_time,
+                }
+            )
+        result["stagingEvents"] = staging_events
+    return result

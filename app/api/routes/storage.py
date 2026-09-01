@@ -16,6 +16,11 @@ from app.services.appearance_inspection import (
     target_requires_appearance_inspection,
 )
 from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
+from app.services.laboratory_occupancy import (
+    LABORATORY_OCCUPANCY_RUNS_KEY,
+    LABORATORY_OCCUPANCY_RUN_TRAYS_KEY,
+    LABORATORY_OCCUPANCY_SAMPLES_KEY,
+)
 from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
 from app.services.experiment_schedule_sequence import (
     ExperimentScheduleSequenceError,
@@ -125,6 +130,16 @@ TRAY_ACTION_SCOPE_KEYS = (
     "mes.staging_events",
     "mes.devices",
 )
+LAB_OCCUPANCY_READ_KEYS = (
+    "mes.samples",
+    "mes.experiment_runs",
+    "mes.experiment_run_trays",
+)
+LAB_OCCUPANCY_SNAPSHOT_KEYS = {
+    "mes.samples": LABORATORY_OCCUPANCY_SAMPLES_KEY,
+    "mes.experiment_runs": LABORATORY_OCCUPANCY_RUNS_KEY,
+    "mes.experiment_run_trays": LABORATORY_OCCUPANCY_RUN_TRAYS_KEY,
+}
 SAMPLE_UPDATE_DEPENDENCY_KEYS = {
     "mes.tasks",
     "mes.samples",
@@ -875,15 +890,37 @@ def _publish_tray_action_update(updates: dict[str, Any], *, source: str = "", re
     publish_storage_update(keys)
 
 
-def _read_tray_action_snapshot(storage: Any, tray_code: str) -> tuple[dict[str, Any], str, bool]:
+def _read_tray_action_snapshot(
+    storage: Any,
+    tray_code: str,
+    *,
+    include_global_lab_occupancy: bool = False,
+) -> tuple[dict[str, Any], str, bool]:
     task_resolver = getattr(storage, "find_task_code_by_tray", None)
     scope_reader = getattr(storage, "read_task_scope", None)
     scope_writer = getattr(storage, "write_task_scope", None)
     if callable(task_resolver) and callable(scope_reader) and callable(scope_writer):
         task_code = _normalize_text(task_resolver(tray_code))
         if task_code:
-            return scope_reader({task_code}, TRAY_ACTION_SCOPE_KEYS), task_code, True
+            snapshot = scope_reader({task_code}, TRAY_ACTION_SCOPE_KEYS)
+            if include_global_lab_occupancy:
+                read_many = getattr(storage, "read_many", None)
+                occupancy_snapshot = (
+                    read_many(LAB_OCCUPANCY_READ_KEYS)
+                    if callable(read_many)
+                    else storage.read_all()
+                )
+                for storage_key, snapshot_key in LAB_OCCUPANCY_SNAPSHOT_KEYS.items():
+                    snapshot[snapshot_key] = occupancy_snapshot.get(storage_key, [])
+            return snapshot, task_code, True
     return storage.read_all(), "", False
+
+
+def _stock_out_targets_laboratory(update_builder: Any, payload: dict[str, Any]) -> bool:
+    if update_builder is not build_stock_out_updates:
+        return False
+    target_type = _normalize_text(payload.get("targetType") or payload.get("target_type")) or "lab"
+    return target_type == "lab"
 
 
 def _read_storage_update_snapshot(storage: Any, update_keys: Any) -> dict[str, Any]:
@@ -915,7 +952,11 @@ def _run_storage_tray_action(
     normalized_tray_code = _normalize_tray_scan_code(tray_code)
     try:
         with acquire_laboratory_storage_commit_lock():
-            snapshot, task_code, scoped = _read_tray_action_snapshot(storage, normalized_tray_code)
+            snapshot, task_code, scoped = _read_tray_action_snapshot(
+                storage,
+                normalized_tray_code,
+                include_global_lab_occupancy=_stock_out_targets_laboratory(update_builder, payload),
+            )
             updates = update_builder(snapshot, room=room, tray_code=normalized_tray_code, payload=payload, now=action_time)
             _validate_storage_update(
                 storage,

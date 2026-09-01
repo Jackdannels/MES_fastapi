@@ -129,6 +129,7 @@ function useLaboratoryPage(options = {}) {
   const axisReadySubmitting = ref(false);
   const axisReadyPendingKey = ref("");
   const tickNow = ref(readNow());
+  const attendancePauseStartedAt = ref("");
   const structuralNow = ref(tickNow.value);
   let temporalBoundaryState = null;
   let tickTimer = null;
@@ -175,7 +176,7 @@ function useLaboratoryPage(options = {}) {
     startWorkForRunningExperiment,
     submitAttendanceLogin,
     submitAttendanceQrLogin,
-  } = useLaboratoryAttendance({ laboratoryConfig, tickNow });
+  } = useLaboratoryAttendance({ attendancePauseStartedAt, laboratoryConfig, tickNow });
 
   const resetTemporalBoundaryState = () => {
     temporalBoundaryState = buildTemporalBoundaryState({
@@ -277,12 +278,45 @@ function useLaboratoryPage(options = {}) {
       return "";
     }
     const runNo = normalizeText(runningExperiment.value?.runNo);
+    const activeRunStatus = normalizeText(currentTask.value?.activeRun?.status || currentTask.value?.runStatus);
+    if (activeRunStatus === "实验暂停") {
+      return "";
+    }
+    const hasSaltPauseHistory = normalizeText(laboratoryConfig.value.labCode) === "LAB_SALT"
+      && experimentRunPauses.value.some((row) => normalizeText(row?.run_no || row?.runNo) === runNo);
+    if (hasSaltPauseHistory && !attendanceWorkStartedAt.value) {
+      return "";
+    }
     const taskCode = normalizeText(runningExperiment.value?.taskCode || currentTask.value?.taskCode);
     const experimentCode = normalizeText(runningExperiment.value?.experimentCode || currentTask.value?.experimentCode);
     const labName = normalizeText(laboratoryConfig.value.labName);
     const employeeKey = attendanceLoggedIn.value ? normalizeText(attendanceSession.value?.username) : "";
     return [labName, employeeKey, runNo || `${taskCode}:${experimentCode}`].filter(Boolean).join("::");
   });
+  const activeAttendancePauseStartedAt = computed(() => {
+    const activeRun = currentTask.value?.activeRun || null;
+    if (normalizeText(activeRun?.status || currentTask.value?.runStatus) !== "实验暂停") {
+      return "";
+    }
+    const runNo = normalizeText(activeRun?.runNo || activeRun?.run_no || runningExperiment.value?.runNo);
+    const activePause = findActivePause(experimentRunPauses.value, runNo);
+    return normalizeText(
+      activeRun?.active_pause_started_at
+      || activeRun?.activePauseStartedAt
+      || activePause?.paused_at
+      || activePause?.pausedAt,
+    );
+  });
+  watch(
+    activeAttendancePauseStartedAt,
+    (nextPauseStartedAt, previousPauseStartedAt) => {
+      attendancePauseStartedAt.value = nextPauseStartedAt;
+      if (previousPauseStartedAt && !nextPauseStartedAt) {
+        void loadAttendanceSession();
+      }
+    },
+    { immediate: true },
+  );
   const axisContinuation = computed(() => buildLaboratoryAxisContinuation({
     currentTask: currentTask.value,
     experimentRuns: experimentRuns.value,
@@ -418,6 +452,7 @@ function useLaboratoryPage(options = {}) {
           activePause: findActivePause(experimentRunPauses.value, base?.runNo),
           activeRun,
           now: tickNow.value,
+          pauseRows: experimentRunPauses.value,
           runningExperiment: base,
         })
       : null;
@@ -482,7 +517,7 @@ function useLaboratoryPage(options = {}) {
     refreshAuthoritativeState: () => load({ silent: true }),
     requestPause: (payload) => publishLaboratoryMqSafely(publishLaboratoryPauseRequest, payload, "暂停实验"),
     requestResume: (payload) => publishLaboratoryMqSafely(publishLaboratoryResumeRequest, payload, "继续实验"),
-    requestStop: (payload) => publishLaboratoryMqSafely(publishLaboratoryStopRequest, payload, "停止实验"),
+    requestStop: (payload) => publishLaboratoryMqSafely(publishLaboratoryStopRequest, payload, "提前结束实验"),
     runWithAttendance,
     runningExperiment,
     samples,

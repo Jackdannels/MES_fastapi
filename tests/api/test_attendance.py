@@ -78,7 +78,32 @@ def test_attendance_numeric_account_321_login_regression(client):
     assert session_response.json() == payload
 
 
-def test_attendance_operation_logs_are_recorded_from_the_active_lab_session_and_admin_only(client):
+def test_attendance_work_start_is_idempotently_blocked_while_experiment_is_paused(client, monkeypatch):
+    class PausedRunStorage:
+        @staticmethod
+        def read(key):
+            assert key == "mes.experiment_runs"
+            return [{"device": "盐雾试验室", "run_no": "RUN-PAUSED", "status": "实验暂停"}]
+
+    monkeypatch.setattr(attendance_route, "get_storage_backend", lambda: PausedRunStorage())
+    login = client.post(
+        "/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/login",
+        json={"username": "zhangsan", "password": "123"},
+    )
+    started = client.post(
+        "/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/work/start",
+        json={},
+    )
+
+    assert login.status_code == 200
+    assert started.status_code == 200
+    assert started.json()["workStartedAt"] is None
+    worker = next(row for row in client.get("/api/attendance/work-times").json() if row["username"] == "zhangsan")
+    assert worker["activeWorkIntervalCount"] == 0
+
+
+def test_attendance_operation_logs_are_recorded_from_the_active_lab_session_and_admin_only(client, monkeypatch):
+    monkeypatch.setattr(attendance_route, "_laboratory_has_paused_run", lambda _lab_name: False)
     login_response = client.post(
         "/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/login",
         json={"username": "zhangsan", "password": "123"},
@@ -376,6 +401,7 @@ def test_attendance_work_time_date_filter_is_accepted(client):
 
 
 def test_attendance_work_time_starts_when_laboratory_step_begins(client, monkeypatch):
+    monkeypatch.setattr(attendance_route, "_laboratory_has_paused_run", lambda _lab_name: False)
     current_time = {"value": datetime(2026, 7, 2, 8, 0, 0, tzinfo=timezone.utc)}
     set_attendance_service_for_tests(
         AttendanceService(

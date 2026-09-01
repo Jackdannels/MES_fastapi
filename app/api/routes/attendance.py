@@ -6,6 +6,7 @@ from urllib.parse import unquote
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
+from app.core.storage_backend import get_storage_backend
 from app.services.attendance_service import AttendanceError, get_attendance_service, normalize_text
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
@@ -62,6 +63,18 @@ def _normalize_lab_name(value: str) -> str:
 
 def _service_error(exc: AttendanceError) -> HTTPException:
     return HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+def _laboratory_has_paused_run(lab_name: str) -> bool:
+    normalized_lab_name = normalize_text(lab_name)
+    if not normalized_lab_name:
+        return False
+    runs = get_storage_backend().read("mes.experiment_runs")
+    return any(
+        normalize_text(run.get("status") or run.get("run_status")) == "实验暂停"
+        and normalize_text(run.get("device") or run.get("device_name")) == normalized_lab_name
+        for run in runs
+    )
 
 
 def _verify_admin_credentials(payload: AttendanceAdminRequest) -> None:
@@ -185,6 +198,8 @@ def logout_lab(lab_name: str, payload: AttendanceLogoutRequest) -> dict[str, Any
 def start_lab_work(lab_name: str) -> dict[str, Any]:
     normalized_lab_name = _normalize_lab_name(lab_name)
     try:
+        if _laboratory_has_paused_run(normalized_lab_name):
+            return get_attendance_service().read_lab_session(normalized_lab_name)
         return get_attendance_service().start_lab_work(normalized_lab_name)
     except AttendanceError as exc:
         raise _service_error(exc) from exc

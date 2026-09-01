@@ -5953,6 +5953,65 @@ describe("laboratory model", () => {
     expect(view.currentTaskStatus).not.toBe("实验进行中");
   });
 
+  test("does not reopen a running modal from a stale run-tray relation after abnormal stop", () => {
+    const view = buildLaboratoryWorkbenchView({
+      experimentRuns: [
+        {
+          id: "RUN-ABNORMAL",
+          run_no: "RUN-ABNORMAL",
+          schedule_id: "schedule-abnormal",
+          task_code: "TASK-ABNORMAL",
+          experiment_code: "EXP-SALT",
+          device: "盐雾试验室",
+          status: "实验异常终止",
+          started_at: "2026-08-31T20:10:49+08:00",
+          ended_at: "2026-08-31T20:11:52+08:00",
+        },
+      ],
+      experimentRunTrays: [
+        {
+          run_no: "RUN-ABNORMAL",
+          task_code: "TASK-ABNORMAL",
+          experiment_code: "EXP-SALT",
+          tray_code: "TP-ABNORMAL",
+          run_tray_status: "实验进行中",
+        },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-ABNORMAL", experiment_code: "EXP-SALT", tray_code: "TP-ABNORMAL" },
+      ],
+      experiments: [
+        { task_code: "TASK-ABNORMAL", experiment_code: "EXP-SALT", experiment_name: "盐雾试验", status: "实验进行中" },
+      ],
+      labName: "盐雾试验室",
+      now: NOW,
+      samples: [
+        {
+          code: "SP-ABNORMAL",
+          location: "盐雾试验室",
+          status: "等待恢复实验",
+          task_code: "TASK-ABNORMAL",
+          trays: [{ tray_code: "TP-ABNORMAL", quantity: 1, status: "等待恢复实验" }],
+        },
+      ],
+      schedules: [
+        {
+          id: "schedule-abnormal",
+          task_code: "TASK-ABNORMAL",
+          experiment_code: "EXP-SALT",
+          device: "盐雾试验室",
+          status: "实验进行中",
+          start_at: "2026-08-31T20:10:49+08:00",
+          end_at: "2026-08-31T21:10:49+08:00",
+        },
+      ],
+      tasks: [{ code: "TASK-ABNORMAL", name: "异常停止任务", test_type: "盐雾试验" }],
+    });
+
+    expect(view.runningExperiment.active).toBe(false);
+    expect(view.currentTaskStatus).not.toBe("实验进行中");
+  });
+
   test("hides run-tray completed schedules even when sample tray status has not refreshed yet", () => {
     const view = buildLaboratoryWorkbenchView({
       experimentRunTrays: [

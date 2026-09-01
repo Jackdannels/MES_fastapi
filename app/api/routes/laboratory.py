@@ -74,6 +74,7 @@ LABORATORY_COMPLETION_STORAGE_UPDATE_KEYS = (
     "mes.experiment_runs",
     "mes.experiment_run_trays",
     "mes.experiment_run_steps",
+    "mes.staging_events",
 )
 LABORATORY_START_STORAGE_UPDATE_KEYS = (
     "mes.tasks",

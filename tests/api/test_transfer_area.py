@@ -974,6 +974,82 @@ def test_transfer_area_dispatch_rejects_later_schedule_but_allows_future_next_sc
     assert next_step.status_code == 200
 
 
+def test_transfer_area_lab_dispatch_rejects_cross_task_started_run_until_tray_is_pushed_out(monkeypatch):
+    client, storage = build_client(monkeypatch)
+    seed_task_102_dispatch_data(
+        storage,
+        [
+            {
+                "id": "schedule-102-b",
+                "task_code": "SYLU-2026-03-102",
+                "experiment_code": "SYLU-2026-03-102-B",
+                "device": "振动一室",
+                "start_at": "2099-03-20T09:00:00",
+            }
+        ],
+    )
+    storage.write(
+        "mes.samples",
+        [
+            *storage.read("mes.samples"),
+            {
+                "code": "OTHER-SP-001",
+                "task_code": "OTHER-TASK",
+                "status": "实验已完成",
+                "flow_status": "实验已完成",
+                "location": "振动一室",
+                "trays": [{"tray_code": "OTHER-TP-001", "status": "实验已完成"}],
+            },
+        ],
+    )
+    storage.write(
+        "mes.experiment_runs",
+        [
+            {
+                "run_no": "OTHER-RUN-001",
+                "task_code": "OTHER-TASK",
+                "experiment_code": "OTHER-EXP-001",
+                "device": "振动一室",
+                "status": "实验已完成",
+                "started_at": "2026-08-30 09:00:00",
+                "ended_at": "2026-08-30 10:00:00",
+            }
+        ],
+    )
+    storage.write(
+        "mes.experiment_run_trays",
+        [
+            {
+                "run_no": "OTHER-RUN-001",
+                "task_code": "OTHER-TASK",
+                "experiment_code": "OTHER-EXP-001",
+                "tray_code": "OTHER-TP-001",
+                "run_tray_status": "实验已完成",
+            }
+        ],
+    )
+
+    response = client.post(
+        "/api/transfer-area/trays/SYLU-2026-03-102-TP-001/dispatch",
+        json={
+            "targetType": "lab",
+            "targetName": "振动一室",
+            "experimentCode": "SYLU-2026-03-102-B",
+            "scheduleId": "schedule-102-b",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "振动一室仍有已开始实验的托盘尚未推出，暂不能接收新托盘"
+    incoming_samples = [
+        sample
+        for sample in storage.read("mes.samples")
+        if sample.get("task_code") == "SYLU-2026-03-102"
+    ]
+    assert {sample["location"] for sample in incoming_samples} == {"接驳区"}
+    assert {sample["trays"][0]["status"] for sample in incoming_samples} == {"到货"}
+
+
 def test_transfer_area_dispatch_to_staging_updates_tray_samples_and_history(monkeypatch):
     client, storage = build_client(monkeypatch)
     seed_task_102_dispatch_data(storage, [])

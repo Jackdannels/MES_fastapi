@@ -35,6 +35,8 @@ def completion_updates(result: dict[str, Any]) -> dict[str, Any]:
     }
     if "experimentRunSteps" in result:
         payload["mes.experiment_run_steps"] = result["experimentRunSteps"]
+    if "stagingEvents" in result:
+        payload["mes.staging_events"] = result["stagingEvents"]
     return payload
 
 

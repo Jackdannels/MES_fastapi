@@ -104,6 +104,8 @@ Describe "MES service controller" {
         $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
         $publicServerSource = Get-Content -LiteralPath (Join-Path $projectRoot "frontend\scripts\serve-public.mjs") -Raw
 
+        $startScript | Should Match '\[string\]\$FrontendNetworkHost = ""'
+        $startScript | Should Match '\$frontendNetworkHost = if \(\[string\]::IsNullOrWhiteSpace\(\$FrontendNetworkHost\)\) \{ Resolve-PrimaryLanIpv4 \}'
         $startScript | Should Match 'frontendUrl = \$frontendNetworkUrl'
         $startScript | Should Match 'FRONTEND_PUBLIC_URL=\$frontendNetworkUrl'
         $publicServerSource | Should Match 'Network: \$\{publicUrl\}'

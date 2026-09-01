@@ -12,6 +12,11 @@ from app.services.laboratory_operations import (
     acquire_laboratory_storage_commit_lock,
     with_laboratory_storage_commit_lock,
 )
+from app.services.laboratory_occupancy import (
+    LABORATORY_OCCUPANCY_RUNS_KEY,
+    LABORATORY_OCCUPANCY_RUN_TRAYS_KEY,
+    LABORATORY_OCCUPANCY_SAMPLES_KEY,
+)
 from app.services.storage_atomic import merge_concurrent_storage_updates
 from app.services.read_through_cache import read_snapshot_cache, storage_cache_identity
 from app.api.routes.transfer_area_commands import (
@@ -605,6 +610,20 @@ def dispatch_tray(
         raise HTTPException(status_code=400, detail=STAGING_STOCKED_TRANSFER_BLOCK_DETAIL)
     ensure_tray_currently_in_handover(task_samples, tray_code)
 
+    occupancy_snapshot = None
+    if normalize_text(request.target_type) == "lab":
+        # Dispatch reads are task-scoped on MySQL. Laboratory occupancy is a
+        # cross-task resource rule, so its minimal inputs must be read globally
+        # while the shared laboratory/storage commit lock is still held.
+        global_occupancy_rows = read_snapshot(
+            ("samples", "experiment_runs", "experiment_run_trays")
+        )
+        occupancy_snapshot = {
+            LABORATORY_OCCUPANCY_SAMPLES_KEY: global_occupancy_rows["samples"],
+            LABORATORY_OCCUPANCY_RUNS_KEY: global_occupancy_rows["experiment_runs"],
+            LABORATORY_OCCUPANCY_RUN_TRAYS_KEY: global_occupancy_rows["experiment_run_trays"],
+        }
+
     partial_axis_batch_completed = tray_has_scoped_partial_axis_batch_completion(
         task_code=task_code(task),
         tray_code=tray_code,
@@ -623,6 +642,7 @@ def dispatch_tray(
         request,
         partial_axis_batch_completed=partial_axis_batch_completed,
         serialize_dispatch=serialize_tray_dispatch_payload,
+        occupancy_snapshot=occupancy_snapshot,
         update_source=update_source,
         update_request_id=update_request_id,
         write_snapshot=lambda current_snapshot, **kwargs: write_snapshot(
