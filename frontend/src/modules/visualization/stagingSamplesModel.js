@@ -42,6 +42,8 @@ const STORAGE_SNAPSHOT_KEYS = {
   tasks: "mes.tasks",
   schedules: "mes.schedules",
   experiments: "mes.experiments",
+  experiment_run_pauses: "mes.experiment_run_pauses",
+  experiment_runs: "mes.experiment_runs",
   experiment_run_trays: "mes.experiment_run_trays",
   experiment_trays: "mes.experiment_trays",
   samples: "mes.samples",
@@ -142,6 +144,8 @@ const buildStorageSnapshot = (input = {}) => ({
   [STORAGE_SNAPSHOT_KEYS.tasks]: input.tasks,
   [STORAGE_SNAPSHOT_KEYS.schedules]: input.schedules,
   [STORAGE_SNAPSHOT_KEYS.experiments]: input.experiments,
+  [STORAGE_SNAPSHOT_KEYS.experiment_run_pauses]: firstNonEmptyArray(input.experimentRunPauses, input.experiment_run_pauses),
+  [STORAGE_SNAPSHOT_KEYS.experiment_runs]: firstNonEmptyArray(input.experimentRuns, input.experiment_runs),
   [STORAGE_SNAPSHOT_KEYS.experiment_run_trays]: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
   [STORAGE_SNAPSHOT_KEYS.experiment_trays]: input.experimentTrays || input.experiment_trays,
   [STORAGE_SNAPSHOT_KEYS.samples]: input.samples,
@@ -491,6 +495,7 @@ function buildStagingSamplesView(input = {}) {
       const experimentType = row.experimentLabels.join(" / ") || row.testType || row.sampleTypeFallback || "待确认实验";
       const sampleCodes = row.sampleCodes.slice().sort(compareText);
       return {
+        displayRemark: appearanceRowByKey.get(rowKey)?.displayRemark || stagingRowByKey.get(rowKey)?.displayRemark || "",
         experimentType,
         overflowSampleCount: Math.max(0, sampleCodes.length - 5),
         sampleCodes,

@@ -144,7 +144,7 @@ export const LabProcessScreen = {
                               type: "button",
                               onClick: () => setSelectedTray(lab.name, tray.trayCode),
                             },
-                            [h("strong", tray.trayCode), h("small", tray.status || "-")],
+                            [h("strong", tray.trayCode), h("small", [tray.status || "-", tray.displayRemark].filter(Boolean).join(" · "))],
                           ),
                         )),
                       ])
@@ -158,6 +158,7 @@ export const LabProcessScreen = {
                         h("div", { class: "visual-tray-flow-head" }, [
                           h("strong", `任务编号：${tray.taskCode}`),
                           h("span", `托盘编号：${tray.trayCode}`),
+                          tray.displayRemark ? h("span", `备注：${tray.displayRemark}`) : null,
                         ]),
                         h(
                           "div",

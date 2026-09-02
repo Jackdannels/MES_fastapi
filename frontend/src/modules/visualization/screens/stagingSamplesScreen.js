@@ -200,7 +200,7 @@ export const StagingSamplesScreen = {
                     [
                       h("strong", tray.trayCode),
                       h("span", tray.experimentType),
-                      h("small", `${tray.stagingKindLabel || ""} ${tray.status}`.trim()),
+                      h("small", [`${tray.stagingKindLabel || ""} ${tray.status}`.trim(), tray.displayRemark].filter(Boolean).join(" · ")),
                     ],
                   ),
               )
@@ -213,6 +213,9 @@ export const StagingSamplesScreen = {
                     h("strong", selectedTray.trayCode),
                   ]),
                   h("div", { class: "visual-staging-tray-status" }, selectedTray.stagingKindLabel || selectedTray.status),
+                  selectedTray.displayRemark
+                    ? h("div", { class: "visual-staging-tray-status" }, `备注：${selectedTray.displayRemark}`)
+                    : null,
                 ]),
                 h("div", { class: "visual-staging-tray-meta" }, [
                   h("div", [h("span", "实验类型"), h("strong", selectedTray.experimentType)]),

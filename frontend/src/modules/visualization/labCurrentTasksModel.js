@@ -3,6 +3,7 @@ import { serverNowMs } from "@/lib/serverClock";
 import { buildDeviceRows } from "@/modules/devices/model";
 import { buildLaboratoryWorkbenchView } from "@/modules/laboratory/model";
 import { formatDateTime } from "@/modules/schedule/sharedModel";
+import { resolveSaltSprayPauseRemark } from "@/lib/saltSprayPauseDisplay";
 
 const URGENT_REMAINING_SECONDS = 30 * 60;
 const COMPLETED_STATUS_TEXTS = new Set(["实验已完成", "实验完成", "实验已经完成", "已完成"]);
@@ -177,6 +178,12 @@ const buildLabCard = ({ deviceRow, labName, now, rawDevice, snapshot }) => {
   const issueTone = resolveDeviceIssueTone(rawDevice?.status, deviceRow?.status, deviceRow?.safetyStatus);
   const repair = Boolean(issueTone) || statusIsRepair(deviceRow?.status) || statusIsRepair(deviceRow?.safetyStatus);
   const taskCode = normalizeText(displayTask?.taskCode);
+  const displayRemark = resolveSaltSprayPauseRemark({
+    experimentRunPauses: snapshot.experimentRunPauses,
+    experimentRuns: snapshot.experimentRuns,
+    experimentRunTrays: snapshot.experimentRunTrays,
+    runNo: workbench.runningExperiment?.runNo,
+  });
   const statusTone = repair
     ? issueTone || "repair"
     : countdown.active || normalizeText(deviceRow?.status) === "工作中"
@@ -187,7 +194,7 @@ const buildLabCard = ({ deviceRow, labName, now, rawDevice, snapshot }) => {
   const statusLabel = repair
     ? issueTone === "upkeep" ? "保养" : "维修"
     : countdown.active
-      ? "实验进行中"
+      ? displayRemark || "实验进行中"
       : taskCode
         ? "已排程"
         : "未排程";
@@ -196,6 +203,7 @@ const buildLabCard = ({ deviceRow, labName, now, rawDevice, snapshot }) => {
 
   return {
     countdown,
+    displayRemark,
     deviceStatus: normalizeText(deviceRow?.status) || "-",
     endAt,
     experimentName: normalizeText(displayTask?.experimentName) || "-",
@@ -225,6 +233,7 @@ function buildLabCurrentTaskMatrixView(input = {}) {
   const snapshot = {
     devices: asArray(input.devices),
     experimentRuns: asArray(input.experimentRuns || input.experiment_runs),
+    experimentRunPauses: asArray(input.experimentRunPauses || input.experiment_run_pauses),
     experimentRunSteps: asArray(input.experimentRunSteps || input.experiment_run_steps),
     experimentRunTrays: asArray(input.experimentRunTrays || input.experiment_run_trays),
     experimentTrays: asArray(input.experimentTrays || input.experiment_trays),

@@ -561,10 +561,6 @@ def pre_experiment_appearance_already_dispatched(
             or event.get("experiment_code")
             or event.get("experimentCode")
         )
-        if action == STOCK_OUT_WITHDRAW_ACTION:
-            if not event_target_code or event_target_code == target_code:
-                dispatched = False
-            continue
         if event_target_code != target_code:
             continue
         if action in {APPEARANCE_STOCK_IN_ACTION, APPEARANCE_STOCK_OUT_ACTION} and phase == "pre_experiment":

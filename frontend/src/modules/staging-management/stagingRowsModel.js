@@ -1,5 +1,6 @@
 import { APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS } from "@/modules/samples/sampleFlow.constants";
 import { serverNowDate } from "@/lib/serverClock";
+import { resolveSaltSprayPauseRemark } from "@/lib/saltSprayPauseDisplay";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
 import {
   COMPLETED_EXPERIMENT_STATUSES,
@@ -514,8 +515,15 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         taskCode: row.taskCode,
         trayCode: row.trayCode,
       });
+      const displayRemark = resolveSaltSprayPauseRemark({
+        experimentRunPauses,
+        experimentRuns,
+        experimentRunTrays,
+        trayCode: row.trayCode,
+      });
 
       return {
+        displayRemark,
         id: row.id,
         ...inboundKind,
         location: status === "已出库" ? "已完成出库" : normalizeText(row.location) || config.currentLocation,

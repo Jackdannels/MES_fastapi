@@ -785,7 +785,7 @@ def test_staging_arrival_does_not_complete_assigned_experiment_for_post_staging_
     )
 
 
-def test_pre_experiment_appearance_dispatch_marker_blocks_repeat_until_withdrawn():
+def test_pre_experiment_appearance_dispatch_marker_survives_withdrawal_for_same_target():
     from app.services.appearance_inspection import pre_experiment_appearance_already_dispatched
 
     sample = {
@@ -864,7 +864,7 @@ def test_pre_experiment_appearance_dispatch_marker_blocks_repeat_until_withdrawn
                 "time": "2026-06-06T21:55:00",
         },
     ]
-    assert not pre_experiment_appearance_already_dispatched(sample, tray, withdrawn_events)
+    assert pre_experiment_appearance_already_dispatched(sample, tray, withdrawn_events)
 
 
 def _axis_snapshot():

@@ -1088,7 +1088,7 @@ def test_storage_allows_pre_experiment_appearance_stock_for_next_target_after_sa
     assert storage.read("mes.samples")[0]["trays"][0]["target_experiment_code"] == "EXP-HOT-HUMID"
 
 
-def test_storage_allows_pre_experiment_appearance_stock_after_appearance_dispatch_withdrawn(monkeypatch):
+def test_storage_rejects_repeat_pre_experiment_appearance_after_withdrawal_and_staging_redispatch(monkeypatch):
     samples = [
         {
             "code": "SP-PRE-APPEARANCE-WITHDRAWN",
@@ -1151,6 +1151,25 @@ def test_storage_allows_pre_experiment_appearance_stock_after_appearance_dispatc
                     "target_experiment_code": "EXP-SALT",
                     "time": "2026-06-06T21:55:00",
                 },
+                {
+                    "id": "staging-in-after-withdraw",
+                    "tray_code": "TP-PRE-APPEARANCE-WITHDRAWN",
+                    "task_code": "TASK-PRE-APPEARANCE-WITHDRAWN",
+                    "room": "staging",
+                    "action": "stock_in",
+                    "time": "2026-06-06T22:00:00",
+                },
+                {
+                    "id": "staging-out-to-salt",
+                    "tray_code": "TP-PRE-APPEARANCE-WITHDRAWN",
+                    "task_code": "TASK-PRE-APPEARANCE-WITHDRAWN",
+                    "room": "staging",
+                    "action": "stock_out",
+                    "target_lab": "盐雾试验室",
+                    "target_experiment_code": "EXP-SALT",
+                    "target_type": "lab",
+                    "time": "2026-06-06T22:05:00",
+                },
             ],
         },
     )
@@ -1163,9 +1182,9 @@ def test_storage_allows_pre_experiment_appearance_stock_after_appearance_dispatc
 
     response = client.put("/api/storage/mes.samples", json=attempted)
 
-    assert response.status_code == 200
-    assert storage.read("mes.samples")[0]["status"] == "实验前外观检测间存放"
-    assert storage.read("mes.samples")[0]["trays"][0]["status"] == "实验前外观检测间存放"
+    assert response.status_code == 400
+    assert response.json()["detail"] == "该托盘已完成实验前外观检测并出库，不能重复入库外观检测间。"
+    assert storage.read("mes.samples") == samples
 
 
 def test_storage_rejects_pre_experiment_appearance_stock_when_not_from_handover_or_staging(monkeypatch):

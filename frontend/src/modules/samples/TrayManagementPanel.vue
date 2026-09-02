@@ -155,6 +155,13 @@
 
         <section class="sample-flow-card section" data-testid="samples-tray-flow">
           <div class="sample-flow-title">统一托盘流程图</div>
+          <div
+            v-if="selectedTrayFlow.displayRemark"
+            class="sample-flow-status"
+            data-testid="samples-tray-flow-remark"
+          >
+            备注：{{ selectedTrayFlow.displayRemark }}
+          </div>
           <ol class="sample-flow-unified sample-flow-unified--timed">
             <li
               v-for="(step, index) in selectedTrayFlow.steps"
@@ -561,6 +568,7 @@ const selectedTaskFlow = computed(() => {
 
 const selectedTrayFlow = computed(() =>
   buildTrayFlowView({
+    experimentRunPauses: props.samplesFlow.rawExperimentRunPauses,
     experimentRuns: props.samplesFlow.rawExperimentRuns,
     experimentRunSteps: props.samplesFlow.rawExperimentRunSteps,
     experimentRunTrays: props.samplesFlow.rawExperimentRunTrays,

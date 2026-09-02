@@ -19,6 +19,48 @@ const buildSamplesFlow = (overrides = {}) => ({
 });
 
 describe("TrayManagementPanel", () => {
+  test("shows the salt-spray pause remark without replacing the tray flow status", async () => {
+    const taskCode = "TASK-SALT-PAUSED";
+    const experimentCode = "EXP-SALT-PAUSED";
+    const trayCode = "TP-SALT-PAUSED";
+    const pausedFlow = buildSamplesFlow({
+      rawExperiments: [{ task_code: taskCode, experiment_code: experimentCode, experiment_name: "盐雾试验" }],
+      rawExperimentRunPauses: [{ lab_code: "LAB_SALT", pause_no: "PAUSE-1", run_no: "RUN-1", status: "实验暂停" }],
+      rawExperimentRuns: [{ experiment_code: experimentCode, run_no: "RUN-1", status: "实验暂停", task_code: taskCode }],
+      rawExperimentRunTrays: [{ experiment_code: experimentCode, run_no: "RUN-1", run_tray_status: "实验进行中", task_code: taskCode, tray_code: trayCode }],
+      rawExperimentTrays: [{ experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode }],
+      rawSamples: [{
+        code: "SP-SALT-PAUSED",
+        flow_status: "中途外观检查中",
+        location: "外观检测间",
+        status: "中途外观检查中",
+        task_code: taskCode,
+        trays: [{ quantity: 1, status: "中途外观检查中", tray_code: trayCode }],
+      }],
+      trayRows: [{ sampleCodes: ["SP-SALT-PAUSED"], sampleCount: 1, status: "中途外观检查中", taskCode, trayCode }],
+    });
+    const wrapper = mount(TrayManagementPanel, { props: { samplesFlow: pausedFlow } });
+
+    expect(wrapper.get('[data-testid="samples-tray-flow-remark"]').text())
+      .toBe("备注：实验进行中（暂停）");
+
+    await wrapper.setProps({
+      samplesFlow: {
+        ...pausedFlow,
+        rawExperimentRunPauses: [{
+          lab_code: "LAB_SALT",
+          pause_no: "PAUSE-1",
+          resumed_at: "2026-09-02 10:10:00",
+          run_no: "RUN-1",
+          status: "实验已恢复",
+        }],
+        rawExperimentRuns: [{ experiment_code: experimentCode, run_no: "RUN-1", status: "实验进行中", task_code: taskCode }],
+      },
+    });
+
+    expect(wrapper.find('[data-testid="samples-tray-flow-remark"]').exists()).toBe(false);
+  });
+
   test("renders tray table without task info/current status columns and collapses long sample code lists", async () => {
     const wrapper = mount(TrayManagementPanel, {
       props: {

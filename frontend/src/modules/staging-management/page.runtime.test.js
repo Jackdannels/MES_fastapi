@@ -904,6 +904,7 @@ describe("StagingManagementPage runtime", () => {
       location: "外观检测间",
       status: "中途外观检查中",
     });
+    expect(mounted.text()).toContain("备注：实验进行中（暂停）");
   });
 
   test("stock-in scan accepts tray QR payloads and persists the plain tray code", async () => {

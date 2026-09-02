@@ -280,6 +280,7 @@ describe("VisualizationPage runtime", () => {
       .sort();
     expect(requestedKeys).toEqual([
       "mes.devices",
+      "mes.experiment_run_pauses",
       "mes.experiment_run_steps",
       "mes.experiment_run_trays",
       "mes.experiment_runs",

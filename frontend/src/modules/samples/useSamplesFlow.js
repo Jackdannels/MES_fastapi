@@ -64,6 +64,7 @@ const parseCodeList = (value) =>
 
 const SAMPLES_SNAPSHOT_KEYS = [
   STORAGE_KEYS.experiments,
+  STORAGE_KEYS.experiment_run_pauses,
   STORAGE_KEYS.experiment_runs,
   STORAGE_KEYS.experiment_run_steps,
   STORAGE_KEYS.experiment_run_trays,
@@ -98,6 +99,7 @@ function useSamplesFlow() {
   const stagingTaskOptionItems = ref([]);
   const fullSamplesLoaded = ref(false);
   const rawExperiments = ref([]);
+  const rawExperimentRunPauses = ref([]);
   const rawExperimentRuns = ref([]);
   const rawExperimentRunSteps = ref([]);
   const rawExperimentRunTrays = ref([]);
@@ -210,6 +212,7 @@ function useSamplesFlow() {
     const status = String(trayRow?.status || detailSampleTray.value?.status || "").trim();
     return buildTrayFlowView({
       experimentRuns: rawExperimentRuns.value,
+      experimentRunPauses: rawExperimentRunPauses.value,
       experimentRunSteps: rawExperimentRunSteps.value,
       experimentRunTrays: rawExperimentRunTrays.value,
       experimentTrays: rawExperimentTrays.value,
@@ -356,6 +359,13 @@ function useSamplesFlow() {
       }
       if (refreshKeySet.has(STORAGE_KEYS.experiment_runs)) {
         rawExperimentRuns.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.experiment_runs], rawExperimentRuns.value, preserveExisting);
+      }
+      if (refreshKeySet.has(STORAGE_KEYS.experiment_run_pauses)) {
+        rawExperimentRunPauses.value = selectArraySnapshot(
+          snapshot?.[STORAGE_KEYS.experiment_run_pauses],
+          rawExperimentRunPauses.value,
+          preserveExisting,
+        );
       }
       if (refreshKeySet.has(STORAGE_KEYS.experiment_run_steps)) {
         rawExperimentRunSteps.value = selectArraySnapshot(
@@ -743,6 +753,7 @@ function useSamplesFlow() {
     query,
     rawSamples,
     rawExperiments,
+    rawExperimentRunPauses,
     rawExperimentRuns,
     rawExperimentRunSteps,
     rawExperimentRunTrays,

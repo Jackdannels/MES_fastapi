@@ -126,10 +126,6 @@ const hasAppearanceStockInBeforeLatestLabDispatch = ({ config, latestStorageEven
         return;
       }
       const action = normalizeText(event?.action);
-      if (action === "stock_out_withdraw") {
-        dispatched = false;
-        return;
-      }
       if (
         (action === "stock_in" || action === "stock_out")
         && normalizeText(event?.appearance_phase || event?.appearancePhase) === "pre_experiment"

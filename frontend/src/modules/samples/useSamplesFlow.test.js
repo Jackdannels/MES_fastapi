@@ -514,6 +514,7 @@ describe("useSamplesFlow", () => {
       .mockResolvedValueOnce({
         "mes.samples": [],
         "mes.experiments": [],
+        "mes.experiment_run_pauses": [],
         "mes.experiment_runs": [],
         "mes.experiment_run_steps": [],
         "mes.experiment_run_trays": [],
@@ -537,6 +538,7 @@ describe("useSamplesFlow", () => {
     expect(mocks.requestedSnapshotKeys).toEqual(expect.arrayContaining([
       [
         "mes.experiments",
+        "mes.experiment_run_pauses",
         "mes.experiment_runs",
         "mes.experiment_run_steps",
         "mes.experiment_run_trays",

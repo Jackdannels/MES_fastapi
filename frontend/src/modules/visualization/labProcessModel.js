@@ -209,6 +209,7 @@ const buildTrayRowsByLab = ({
   samples,
   experiments,
   experimentRuns,
+  experimentRunPauses,
   experimentRunSteps,
   experimentRunTrays,
   experimentTrays,
@@ -320,6 +321,7 @@ const buildTrayRowsByLab = ({
         const flow = buildTrayFlow({
           currentExperimentCode: entry.currentExperimentCode,
           dispatchTargetLab: entry.dispatchTargetLab,
+          experimentRunPauses,
           experimentRuns,
           experimentRunTrays,
           experimentTrays,
@@ -335,6 +337,7 @@ const buildTrayRowsByLab = ({
         });
         return {
           canonicalStatus: flow.canonicalStatus || flow.status || "-",
+          displayRemark: flow.displayRemark || "",
           quantity: aggregate.quantity,
           sampleCodes: Array.from(aggregate.sampleCodeSet).sort(compareText),
           status: flow.status || "-",
@@ -358,6 +361,7 @@ function buildLabProcessPanels(input = {}) {
   const samples = asArray(input.samples);
   const experiments = asArray(input.experiments);
   const experimentRuns = asArray(input.experimentRuns || input.experiment_runs);
+  const experimentRunPauses = asArray(input.experimentRunPauses || input.experiment_run_pauses);
   const experimentRunSteps = firstNonEmptyArray(input.experimentRunSteps, input.experiment_run_steps);
   const experimentRunTrays = firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays);
   const experimentTrays = asArray(input.experimentTrays || input.experiment_trays);
@@ -367,6 +371,7 @@ function buildLabProcessPanels(input = {}) {
     samples,
     experiments,
     experimentRuns,
+    experimentRunPauses,
     experimentRunSteps,
     experimentRunTrays,
     experimentTrays,

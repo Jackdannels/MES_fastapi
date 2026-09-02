@@ -22,6 +22,7 @@ import { buildOrderedTrayExperiments } from "./sampleFlow.experimentOrder";
 import { hidePendingFlowStepTimes } from "./sampleFlow.flowTimeHelpers";
 import { resolveEffectiveTrayLifecycleStatus } from "./sampleFlow.trayLifecycle";
 import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
+import { resolveSaltSprayPauseRemark } from "@/lib/saltSprayPauseDisplay";
 import { buildTrayFlowTimeMap } from "./sampleFlow.flowTimeMap";
 import {
   APPEARANCE_SENT_STATUS_LABEL,
@@ -51,6 +52,12 @@ function buildTrayFlowEngine(input = {}) {
     ? effectiveInput.experimentFlow
     : buildTrayExperimentFlow(effectiveInput);
   const trayCode = normalizeText(effectiveInput.trayCode);
+  const displayRemark = resolveSaltSprayPauseRemark({
+    experimentRunPauses: input.experimentRunPauses || input.experiment_run_pauses,
+    experimentRuns: input.experimentRuns || input.experiment_runs,
+    experimentRunTrays: input.experimentRunTrays || input.experiment_run_trays,
+    trayCode,
+  });
   if (experimentFlow.length > 0) {
     const latestWithdrawalRestoreTarget = resolveLatestWithdrawalRestoreTarget({
       taskCode: effectiveInput.taskCode,
@@ -644,14 +651,20 @@ function buildTrayFlowEngine(input = {}) {
 
     return {
       canonicalStatus: currentStatus,
+      displayRemark,
       trayCode,
       status: displayCurrentStatus,
-      currentStatus: trayCode ? `当前托盘：${trayCode} | 当前状态：${displayCurrentStatus}` : `当前状态：${displayCurrentStatus}`,
+      currentStatus: `${trayCode ? `当前托盘：${trayCode} | ` : ""}当前状态：${displayCurrentStatus}${displayRemark ? ` | 备注：${displayRemark}` : ""}`,
       steps,
     };
   }
 
-  return buildSingleExperimentTrayFlow(input, { effectiveInput, stepTimeMap, trayCode });
+  const singleFlow = buildSingleExperimentTrayFlow(input, { effectiveInput, stepTimeMap, trayCode });
+  return {
+    ...singleFlow,
+    displayRemark,
+    currentStatus: `${singleFlow.currentStatus}${displayRemark ? ` | 备注：${displayRemark}` : ""}`,
+  };
 }
 
 export { buildTrayFlowEngine };

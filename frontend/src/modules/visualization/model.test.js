@@ -679,6 +679,83 @@ describe("visualization model", () => {
     ]);
   });
 
+  test("keeps the salt-spray pause remark on the laboratory flow while the tray is in appearance", () => {
+    const taskCode = "TASK-SALT-PAUSED";
+    const experimentCode = "EXP-SALT-PAUSED";
+    const trayCode = "TP-SALT-PAUSED";
+    const baseInput = {
+      labNames: ["盐雾试验室"],
+      experimentRunPauses: [{
+        inspection_tray_codes: [trayCode],
+        lab_code: "LAB_SALT",
+        pause_no: "PAUSE-SALT-1",
+        run_no: "RUN-SALT-1",
+        status: "实验暂停",
+      }],
+      experimentRuns: [{
+        device: "盐雾试验室",
+        experiment_code: experimentCode,
+        run_no: "RUN-SALT-1",
+        status: "实验暂停",
+        task_code: taskCode,
+      }],
+      experimentRunTrays: [{
+        experiment_code: experimentCode,
+        run_no: "RUN-SALT-1",
+        run_tray_status: "实验进行中",
+        task_code: taskCode,
+        tray_code: trayCode,
+      }],
+      experiments: [{
+        experiment_code: experimentCode,
+        experiment_name: "盐雾试验",
+        required_device: "盐雾试验室",
+        task_code: taskCode,
+      }],
+      experimentTrays: [{ experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode }],
+      samples: [{
+        code: "SP-SALT-PAUSED",
+        flow_status: "中途外观检查中",
+        location: "外观检测间",
+        status: "中途外观检查中",
+        task_code: taskCode,
+        trays: [{
+          quantity: 1,
+          status: "中途外观检查中",
+          target_experiment_code: experimentCode,
+          target_lab: "盐雾试验室",
+          tray_code: trayCode,
+        }],
+      }],
+      schedules: [{ device: "盐雾试验室", experiment_code: experimentCode, status: "实验暂停", task_code: taskCode }],
+    };
+
+    const pausedTray = buildLabProcessPanels(baseInput)[0]?.trays[0];
+    expect(pausedTray).toEqual(expect.objectContaining({
+      displayRemark: "实验进行中（暂停）",
+      trayCode,
+    }));
+
+    const resumedTray = buildLabProcessPanels({
+      ...baseInput,
+      experimentRunPauses: [{
+        lab_code: "LAB_SALT",
+        pause_no: "PAUSE-SALT-1",
+        resumed_at: "2026-09-02 10:10:00",
+        run_no: "RUN-SALT-1",
+        status: "实验已恢复",
+      }],
+      experimentRuns: [{
+        device: "盐雾试验室",
+        experiment_code: experimentCode,
+        run_no: "RUN-SALT-1",
+        status: "实验进行中",
+        task_code: taskCode,
+      }],
+    })[0]?.trays[0];
+    expect(resumedTray?.displayRemark).toBe("");
+  });
+
   test("buildLabProcessPanels traverses shared projection inputs once for multiple laboratories", () => {
     const traversalCounts = { experimentTrays: 0, samples: 0, stagingEvents: 0 };
     const trackForEach = (values, key) => new Proxy(values, {

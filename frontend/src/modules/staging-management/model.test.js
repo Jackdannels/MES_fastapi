@@ -184,6 +184,7 @@ describe("salt pause mid-experiment appearance", () => {
 
     const inboundRows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
     expect(inboundRows[0]).toMatchObject({
+      displayRemark: "实验进行中（暂停）",
       isMidExperimentAppearanceInbound: true,
       status: "待入库",
       midExperimentRunNo: "RUN-SALT-MID",
@@ -201,6 +202,12 @@ describe("salt pause mid-experiment appearance", () => {
       pause_no: "PAUSE-SALT-MID-1",
       run_no: "RUN-SALT-MID",
     });
+    expect(buildZancunRowsFromSnapshot(stocked.snapshot, { now: TODAY, room: "appearance" }))
+      .toContainEqual(expect.objectContaining({
+        displayRemark: "实验进行中（暂停）",
+        status: "中途外观检查中",
+        trayCode,
+      }));
 
     const optionalResult = applyZancunInventoryAction({
       now: TODAY,

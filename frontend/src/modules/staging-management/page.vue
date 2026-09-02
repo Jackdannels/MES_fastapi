@@ -31,6 +31,7 @@
                   </div>
                   <div class="zancun-console-slot__meta">
                     <span class="zancun-console-slot__quantity">样品数量 <strong>{{ slot.row.quantity }}</strong></span>
+                    <span v-if="slot.row.displayRemark" class="muted">备注：{{ slot.row.displayRemark }}</span>
                   </div>
                 </template>
                 <div v-else class="zancun-console-slot__empty muted">
@@ -68,6 +69,7 @@
                   </div>
                   <div class="zancun-console-slot__meta">
                     <span class="zancun-console-slot__quantity">样品数量 <strong>{{ slot.row.quantity }}</strong></span>
+                    <span v-if="slot.row.displayRemark" class="muted">备注：{{ slot.row.displayRemark }}</span>
                   </div>
                 </template>
                 <div v-else class="zancun-console-slot__empty muted">
