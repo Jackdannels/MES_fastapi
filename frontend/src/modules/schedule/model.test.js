@@ -261,6 +261,24 @@ describe("schedulePageModel", () => {
     expect(result.error).toBe("自定义开始时间不能早于当前时间");
   });
 
+  test.each(["24:00", "09:60", "9:30", "09:3"])(
+    "resolveScheduleTimes rejects nonstandard custom start %s",
+    (customStart) => {
+      const result = resolveScheduleTimes(
+        {
+          custom_start: customStart,
+          device: "Lab-A",
+          planned_hours: 1,
+          schedule_date: "2099-03-20",
+          time_slot: "custom",
+        },
+        new Date("2099-03-19T09:30:00"),
+      );
+
+      expect(result.error).toBe("请输入有效的自定义开始时间（小时00-23，分钟00-59）");
+    },
+  );
+
   test("resolveScheduleTimes converts custom day durations to hours", () => {
     const result = resolveScheduleTimes(
       {

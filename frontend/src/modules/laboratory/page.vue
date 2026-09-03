@@ -615,6 +615,67 @@
       </template>
     </AppModal>
 
+    <AppModal
+      :open="cancellationReasonModalOpen"
+      class="laboratory-operation-modal"
+      data-testid="laboratory-mold-cancel-reason-modal"
+      title="取消本次霉菌实验"
+      @close="closeCancellationReasonModal"
+    >
+      <div class="laboratory-modal-body">
+        <div class="laboratory-danger-panel" role="alert">
+          <strong>本次运行将被终止，但霉菌试验不会标记为完成</strong>
+          <p>取消确认后，原排程将由系统回收，霉菌试验仍可重新排程。</p>
+        </div>
+        <label class="form-field">
+          <span>取消原因</span>
+          <textarea
+            v-model="cancellationReason"
+            data-testid="laboratory-mold-cancel-reason"
+            rows="3"
+            :disabled="cancellationSubmitting"
+            @input="cancellationReasonError = ''"
+          ></textarea>
+        </label>
+        <AppFeedback
+          v-if="cancellationReasonError"
+          :message="cancellationReasonError"
+          tone="error"
+          data-testid="laboratory-mold-cancel-reason-error"
+          @close="cancellationReasonError = ''"
+        />
+      </div>
+      <template #footer>
+        <button class="action-btn secondary" type="button" :disabled="cancellationSubmitting" @click="closeCancellationReasonModal">返回</button>
+        <button class="action-btn danger" data-testid="laboratory-mold-cancel-continue" type="button" :disabled="cancellationSubmitting" @click="continueCancellationConfirmation">
+          继续确认
+        </button>
+      </template>
+    </AppModal>
+
+    <AppModal
+      :open="cancellationDangerModalOpen"
+      :close-on-backdrop="!cancellationSubmitting"
+      :close-on-esc="!cancellationSubmitting"
+      class="laboratory-operation-modal"
+      data-testid="laboratory-mold-cancel-danger-modal"
+      title="危险操作确认"
+      @close="closeCancellationDangerModal"
+    >
+      <div class="laboratory-modal-body">
+        <div class="laboratory-danger-panel" role="alert">
+          <strong>确定取消当前运行批次的全部霉菌实验托盘？</strong>
+          <p>取消原因：{{ cancellationReason }}</p>
+        </div>
+      </div>
+      <template #footer>
+        <button class="action-btn secondary" type="button" :disabled="cancellationSubmitting" @click="closeCancellationDangerModal">返回修改</button>
+        <button class="action-btn danger" data-testid="laboratory-mold-cancel-confirm" type="button" :disabled="cancellationSubmitting" @click="confirmMoldCancellation">
+          {{ cancellationSubmitting ? "取消命令发送中…" : "确认取消本次实验" }}
+        </button>
+      </template>
+    </AppModal>
+
     <Teleport v-if="runningModalExperiment.active && runningModalVisible" to="body">
       <div class="laboratory-running-overlay" data-testid="laboratory-running-overlay">
         <button
@@ -695,6 +756,37 @@
           </div>
           <div class="laboratory-running-actions">
             <div
+              v-if="!runningModalExperiment.completed && (cancellationSubmitting || cancellationAwaitingConfirmation)"
+              class="laboratory-running-completion-pending"
+              data-testid="laboratory-mold-cancel-awaiting-confirmation"
+              role="status"
+              aria-live="polite"
+            >
+              <span class="laboratory-running-completion-pending__spinner" aria-hidden="true"></span>
+              <span>
+                <strong>{{ cancellationSubmitting ? "正在发送取消命令…" : "等待上位机取消确认…" }}</strong>
+                <small>收到确认前，当前运行和托盘状态不会在本地改变</small>
+              </span>
+            </div>
+            <div
+              v-if="!runningModalExperiment.completed && cancellationConfirmationError"
+              class="laboratory-running-completion-error"
+              data-testid="laboratory-mold-cancel-confirmation-error"
+              role="alert"
+            >
+              <strong>未收到取消确认</strong>
+              <span>{{ cancellationConfirmationError }}</span>
+            </div>
+            <button
+              v-if="canCancelMoldExperiment"
+              class="action-btn danger"
+              data-testid="laboratory-mold-cancel-experiment"
+              type="button"
+              @click="openCancellationReasonModal"
+            >
+              取消本次霉菌实验
+            </button>
+            <div
               v-if="!runningModalExperiment.completed && (controlSubmitting || controlAwaitingConfirmation)"
               class="laboratory-running-completion-pending"
               data-testid="laboratory-salt-control-awaiting-confirmation"
@@ -770,6 +862,8 @@
               v-if="!runningModalExperiment.completed
                 && !completionSubmitting
                 && !completionAwaitingConfirmation
+                && !cancellationSubmitting
+                && !cancellationAwaitingConfirmation
                 && !(isSaltSprayLaboratory && runningModalExperiment.isPaused)
                 && !currentAxisCompletion.enabled"
               class="action-btn laboratory-running-complete-button"
@@ -783,6 +877,8 @@
               v-if="!runningModalExperiment.completed
                 && !completionSubmitting
                 && !completionAwaitingConfirmation
+                && !cancellationSubmitting
+                && !cancellationAwaitingConfirmation
                 && currentAxisCompletion.enabled"
               class="action-btn success"
               data-testid="laboratory-complete-axis-continue"
@@ -921,11 +1017,21 @@ const {
   canSimulatePauseConfirmation,
   canTeleportScheduleAction,
   canCompleteCompare,
+  canCancelMoldExperiment,
   canResume,
   canResetCurrentTask,
   canSelectTaskKey,
   checklist,
+  cancellationAwaitingConfirmation,
+  cancellationConfirmationError,
+  cancellationDangerModalOpen,
+  cancellationReason,
+  cancellationReasonError,
+  cancellationReasonModalOpen,
+  cancellationSubmitting,
   closeAttendanceLogin,
+  closeCancellationDangerModal,
+  closeCancellationReasonModal,
   completeExperimentNow,
   completionAwaitingConfirmation,
   completionConfirmationError,
@@ -945,6 +1051,7 @@ const {
   closeTaskList,
   compareModalOpen,
   confirmCurrentTask,
+  confirmMoldCancellation,
   confirmCompare,
   confirmResetPrompt,
   confirmResetTask,
@@ -968,6 +1075,7 @@ const {
   laboratoryMqError,
   labName,
   openCompare,
+  openCancellationReasonModal,
   openPauseModal,
   openStopModal,
   openInstall,
@@ -1008,6 +1116,7 @@ const {
   closeStopModal,
   confirmPause,
   confirmStop,
+  continueCancellationConfirmation,
   stopModalOpen,
   stopReason,
   taskListModalOpen,

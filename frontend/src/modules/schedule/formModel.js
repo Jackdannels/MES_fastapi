@@ -302,7 +302,10 @@ function resolveScheduleTimes(form, now = serverNowDate(), schedules = []) {
     // 自定义时段优先使用手填开始时间，如未填计划时长则从结束时间反推。
     startTime = normalizeText(form?.custom_start);
     if (!startTime) {
-      return { error: "Custom start time required" };
+      return { error: "请输入自定义开始时间" };
+    }
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(startTime)) {
+      return { error: "请输入有效的自定义开始时间（小时00-23，分钟00-59）" };
     }
     const customStartAt = parseDate(`${dateValue}T${startTime}:00`);
     const earliestCustomStart = truncateToMinute(now) || serverNowDate();

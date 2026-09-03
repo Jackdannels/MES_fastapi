@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
+  publishLaboratoryCancelRequest,
   publishLaboratoryEndRequest,
   publishLaboratoryFixtureInstall,
   publishLaboratoryPauseRequest,
@@ -54,6 +55,32 @@ describe("laboratoryMqApi", () => {
         run_no: "RUN-1",
         task_code: "TASK-1",
       }),
+    }));
+  });
+
+  test("publishes a mold cancellation request without changing local experiment state", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: async () => ({ cancelRequestId: "CANCEL-1", ok: true, published: true }),
+    });
+    vi.stubGlobal("fetch", fetch);
+    const payload = {
+      cancel_reason: "霉菌未按预期繁殖",
+      experiment_code: "EXP-MOLD",
+      lab_code: "LAB_MOLD",
+      run_no: "RUN-MOLD",
+      task_code: "TASK-MOLD",
+    };
+
+    await expect(publishLaboratoryCancelRequest(payload)).resolves.toEqual(expect.objectContaining({
+      cancelRequestId: "CANCEL-1",
+      published: true,
+    }));
+    expect(fetch).toHaveBeenCalledWith("/api/mq/laboratory/cancel-request", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify(payload),
     }));
   });
 

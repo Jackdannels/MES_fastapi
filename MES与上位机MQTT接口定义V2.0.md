@@ -166,6 +166,38 @@ Payload：
 | experiment_code | string | 是 | 当前试验编号 |
 | run_no | string | 是 | MES 预生成的实验批次号，上位机后续事件必须原样带回 |
 
+### 4.3 实验结束请求
+
+Topic：
+
+```text
+mes/v1/labs/{lab_code}/commands/experiment-end-request
+```
+
+正常完成沿用原有字段。取消正在运行的霉菌实验时，MES 额外下发：
+
+```json
+{
+  "task_code": "SYLU-2026-06-001",
+  "lab_code": "LAB_MOLD",
+  "experiment_code": "SYLU-2026-06-001-A",
+  "run_no": "run-20260607193000123456",
+  "end_mode": "cancel",
+  "cancel_reason": "霉菌未按预期繁殖",
+  "cancel_request_id": "cancel-0123456789abcdef"
+}
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| task_code | string | 是 | 当前任务号 |
+| lab_code | string | 是 | 当前试验间编号；取消霉菌实验时必须为 `LAB_MOLD` |
+| experiment_code | string | 是 | 当前实验编号 |
+| run_no | string | 是 | 当前运行批次号 |
+| end_mode | string | 取消时是 | 取消霉菌实验时固定为 `cancel`；正常完成省略 |
+| cancel_reason | string | 取消时是 | MES 操作人员填写的取消原因 |
+| cancel_request_id | string | 取消时是 | MES 生成的取消请求标识，上位机确认时必须原样返回 |
+
 ## 5. 上位机发送给 MES
 
 ### 5.1 夹具安装完成，启动准备就绪
@@ -254,9 +286,25 @@ Payload：
 | sub_experiment_code | string | 轴向任务是 | MES 下发的分段实验编号，原样带回 |
 | axis_code | string | 轴向任务是 | 本次完成的轴向；非轴向任务不传 |
 | next_axis_code | string | 否 | MES 结束请求中存在下一轴向时原样带回；最终轴向不传 |
+| end_mode | string | 取消时是 | 确认取消霉菌实验时原样返回 `cancel`；正常完成省略 |
+| cancel_request_id | string | 取消时是 | 确认取消霉菌实验时原样返回 MES 下发的标识 |
 | ended_at | string | 是 | 实验结束时间，北京时间 |
 
+霉菌取消确认示例：
+
+```json
+{
+  "lab_code": "LAB_MOLD",
+  "run_no": "run-20260607193000123456",
+  "end_mode": "cancel",
+  "cancel_request_id": "cancel-0123456789abcdef",
+  "ended_at": "2026-06-01 11:30:00"
+}
+```
+
 同一 `run_no` 可以包含多个轴向结束事件。上位机应按 `run_no + sub_experiment_code + axis_code` 保证轴向结束事件幂等，不能在首个轴向结束后屏蔽该运行批次的后续轴向。
+
+霉菌取消确认必须同时匹配 `run_no + end_mode + cancel_request_id`。MES 在收到匹配确认前不会释放运行批次、托盘或排程；缺少取消标识的普通 `experiment-ended` 仍按正常实验完成处理。
 
 ### 5.4 实验结果接收
 

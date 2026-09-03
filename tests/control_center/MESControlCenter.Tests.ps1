@@ -37,16 +37,20 @@ Describe "MES control center integration" {
         $source | Should Match 'ValidateLayout\(\)'
     }
 
-    It "exposes v2.1 and four independently visible service states" {
-        $source | Should Match 'AssemblyVersion\("2\.1\.0\.0"\)'
-        $source | Should Match 'MES 控制中心 v2\.1'
-        $build | Should Match 'MES控制中心_v2\.1\.exe'
+    It "exposes v2.2 and four independently visible service states" {
+        $source | Should Match 'AssemblyVersion\("2\.2\.0\.0"\)'
+        $source | Should Match 'MES 控制中心 v2\.2'
+        $build | Should Match 'MES控制中心_v2\.2\.exe'
         $source | Should Match 'AddServiceLine\(lines, "后端服务", ":8000"\)'
         $source | Should Match 'AddServiceLine\(lines, "前端服务", ":5173"\)'
         $source | Should Match 'AddServiceLine\(lines, "LIMS 模拟器", ":8900"\)'
         $source | Should Match 'AddServiceLine\(lines, "上位机服务", ":8899"\)'
         $source | Should Match 'indicator\.Status\.Text = ready \? "运行" : "未运行"'
         $source | Should Match 'indicator\.Dot\.BackColor = ready \? Theme\.Accent : Theme\.Danger'
+    }
+
+    It "defaults terminal management to the stable MES hostname" {
+        $source | Should Match 'http://mes-server:5173'
     }
 
     It "uses real health contracts and reports partial readiness" {

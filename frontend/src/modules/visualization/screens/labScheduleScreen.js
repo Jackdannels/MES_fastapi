@@ -101,7 +101,11 @@ export const LabScheduleScreen = {
 
     return () => {
       const view = props.scheduleView || { days: [], periodCounts: [], rows: [], summary: {} };
-      const rows = Array.isArray(view.rows) ? view.rows.slice(0, props.compact ? 5 : 10) : [];
+      const rows = Array.isArray(view.rows)
+        ? props.compact
+          ? view.rows.slice(0, 5)
+          : view.rows
+        : [];
       return h("div", { class: ["visual-board", "visual-schedule-board", props.compact ? "is-compact" : ""] }, [
         h("div", { class: "visual-board-top" }, [
           h("div", { class: "visual-board-title-group" }, [

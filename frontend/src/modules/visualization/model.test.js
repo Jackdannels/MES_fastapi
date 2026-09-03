@@ -733,7 +733,12 @@ describe("visualization model", () => {
     const pausedTray = buildLabProcessPanels(baseInput)[0]?.trays[0];
     expect(pausedTray).toEqual(expect.objectContaining({
       displayRemark: "实验进行中（暂停）",
+      status: "盐雾试验进行中（暂停）",
       trayCode,
+    }));
+    expect(pausedTray?.steps).toContainEqual(expect.objectContaining({
+      active: true,
+      label: "盐雾试验进行中（暂停）",
     }));
 
     const resumedTray = buildLabProcessPanels({
@@ -754,6 +759,11 @@ describe("visualization model", () => {
       }],
     })[0]?.trays[0];
     expect(resumedTray?.displayRemark).toBe("");
+    expect(resumedTray?.status).toBe("盐雾试验进行中");
+    expect(resumedTray?.steps).toContainEqual(expect.objectContaining({
+      active: true,
+      label: "盐雾试验进行中",
+    }));
   });
 
   test("buildLabProcessPanels traverses shared projection inputs once for multiple laboratories", () => {

@@ -8,6 +8,7 @@ import {
 } from "@/lib/hostInterfaceMode";
 import { serverNowDate } from "@/lib/serverClock";
 import {
+  publishLaboratoryCancelRequest,
   publishLaboratoryEndRequest,
   publishLaboratoryFixtureInstall,
   publishLaboratoryPauseRequest,
@@ -58,9 +59,11 @@ import { completionConfirmationMatches, useLaboratoryCompletionFlow } from "./us
 import { updateRunningExperimentClock } from "./laboratoryPresentation";
 import { useSaltSprayPauseFlow } from "./useSaltSprayPauseFlow";
 import { buildSaltSprayRunPresentation, findActivePause } from "./saltSprayPausePresentation";
+import { moldCancellationConfirmationMatches, useMoldCancellationFlow } from "./useMoldCancellationFlow";
 
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 const COMPLETION_CONFIRMATION_TIMEOUT_MS = 10_000;
+const CANCELLATION_CONFIRMATION_TIMEOUT_MS = 10_000;
 function useLaboratoryPage(options = {}) {
   const now = options.now;
   const readNow = typeof now === "function" ? now : () => now || serverNowDate();
@@ -124,6 +127,13 @@ function useLaboratoryPage(options = {}) {
   const completionAwaitingConfirmation = ref(null);
   const completionConfirmationError = ref("");
   const completionSubmitting = ref(false);
+  const cancellationAwaitingConfirmation = ref(null);
+  const cancellationConfirmationError = ref("");
+  const cancellationDangerModalOpen = ref(false);
+  const cancellationReason = ref("");
+  const cancellationReasonError = ref("");
+  const cancellationReasonModalOpen = ref(false);
+  const cancellationSubmitting = ref(false);
   const runningModalVisible = ref(false);
   const completedRunningExperiment = ref(null);
   const axisReadySubmitting = ref(false);
@@ -134,6 +144,7 @@ function useLaboratoryPage(options = {}) {
   let temporalBoundaryState = null;
   let tickTimer = null;
   let completionConfirmationTimer = null;
+  let cancellationConfirmationTimer = null;
   let latestSnapshotLoadRequest = 0;
   let ignoreNextSamplesUpdatedRefresh = () => {};
   let flushPendingRealtimeRefresh = () => false;
@@ -146,6 +157,12 @@ function useLaboratoryPage(options = {}) {
       window.clearTimeout(completionConfirmationTimer);
     }
     completionConfirmationTimer = null;
+  };
+  const clearCancellationConfirmationTimer = () => {
+    if (cancellationConfirmationTimer && typeof window !== "undefined") {
+      window.clearTimeout(cancellationConfirmationTimer);
+    }
+    cancellationConfirmationTimer = null;
   };
 
   const getSelectedLabName = () => normalizeSelectedLabName(unref(options.selectedLabName));
@@ -523,6 +540,25 @@ function useLaboratoryPage(options = {}) {
     samples,
     stagingEvents,
   });
+  const moldCancellationFlow = useMoldCancellationFlow({
+    cancellationAwaitingConfirmation,
+    cancellationConfirmationError,
+    cancellationDangerModalOpen,
+    cancellationReason,
+    cancellationReasonError,
+    cancellationReasonModalOpen,
+    cancellationSubmitting,
+    completionAwaitingConfirmation,
+    completionSubmitting,
+    currentTask,
+    laboratoryConfig,
+    requestCancellation: (payload) => publishLaboratoryMqSafely(
+      publishLaboratoryCancelRequest,
+      payload,
+      "取消本次霉菌实验",
+    ),
+    runningExperiment,
+  });
 
   const closeFullInteractionState = () => {
     selectedTaskCode.value = "";
@@ -551,6 +587,13 @@ function useLaboratoryPage(options = {}) {
     completionAwaitingConfirmation.value = null;
     completionConfirmationError.value = "";
     clearCompletionConfirmationTimer();
+    cancellationAwaitingConfirmation.value = null;
+    cancellationConfirmationError.value = "";
+    cancellationDangerModalOpen.value = false;
+    cancellationReason.value = "";
+    cancellationReasonError.value = "";
+    cancellationReasonModalOpen.value = false;
+    clearCancellationConfirmationTimer();
     resetAttendanceInteraction();
     clearRunningModalRestoreTimer();
     clearFixtureConfirmTimer();
@@ -754,6 +797,7 @@ function useLaboratoryPage(options = {}) {
       window.removeEventListener(HOST_INTERFACE_MODE_CHANGED_EVENT, handleHostInterfaceModeChanged);
     }
     clearCompletionConfirmationTimer();
+    clearCancellationConfirmationTimer();
   });
 
   const openScheduleBoard = () => {
@@ -902,6 +946,35 @@ function useLaboratoryPage(options = {}) {
       completionAwaitingConfirmation.value = null;
       completionConfirmationError.value = "";
       clearCompletionConfirmationTimer();
+    },
+    { deep: true },
+  );
+  watch(
+    cancellationAwaitingConfirmation,
+    (pending) => {
+      clearCancellationConfirmationTimer();
+      if (!pending || typeof window === "undefined") {
+        return;
+      }
+      cancellationConfirmationTimer = window.setTimeout(() => {
+        if (cancellationAwaitingConfirmation.value !== pending) {
+          return;
+        }
+        cancellationAwaitingConfirmation.value = null;
+        cancellationConfirmationError.value = "取消命令已发送，但 10 秒内未收到上位机取消确认。请确认设备状态后重试。";
+        cancellationConfirmationTimer = null;
+      }, CANCELLATION_CONFIRMATION_TIMEOUT_MS);
+    },
+  );
+  watch(
+    [cancellationAwaitingConfirmation, experimentRuns],
+    ([pending, currentRuns]) => {
+      if (!moldCancellationConfirmationMatches(pending, currentRuns)) {
+        return;
+      }
+      cancellationAwaitingConfirmation.value = null;
+      cancellationConfirmationError.value = "";
+      clearCancellationConfirmationTimer();
     },
     { deep: true },
   );
@@ -1118,6 +1191,7 @@ function useLaboratoryPage(options = {}) {
   };
 
   return {
+    ...moldCancellationFlow,
     ...saltSprayPauseFlow,
     actionState,
     attendanceLoggedIn,
@@ -1135,6 +1209,13 @@ function useLaboratoryPage(options = {}) {
     attendanceSubmitting,
     canRequestFixtureInstall,
     canRequestReady,
+    cancellationAwaitingConfirmation,
+    cancellationConfirmationError,
+    cancellationDangerModalOpen,
+    cancellationReason,
+    cancellationReasonError,
+    cancellationReasonModalOpen,
+    cancellationSubmitting,
     canTeleportScheduleAction,
     checklist,
     closeAttendanceLogin,

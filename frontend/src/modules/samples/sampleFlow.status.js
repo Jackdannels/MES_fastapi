@@ -51,6 +51,11 @@ const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS
   if (isAxisPartialProgressStatus(currentStatus)) {
     return currentStatus;
   }
+  // 实验取消是后端产生的系统状态。即使托盘仍在实验室，也必须保留该状态，
+  // 避免后续按实验室位置兜底成“已到达实验室”。
+  if (currentStatus === "实验已取消") {
+    return currentStatus;
+  }
   if (isPostRetention && isAmbiguousStagingStatus(currentStatus)) {
     return POST_EXPERIMENT_STAGING_STOCKED_STATUS;
   }

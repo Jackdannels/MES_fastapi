@@ -1,6 +1,87 @@
 <template>
-  <span ref="rootElement" class="picker-only-input">
+  <span
+    ref="rootElement"
+    class="picker-only-input"
+    :class="{ 'picker-only-input--manual-time': manualTimeEntryEnabled }"
+  >
+    <span
+      v-if="manualTimeEntryEnabled"
+      ref="inputElement"
+      class="picker-only-input__manual-control"
+      :class="inputClass"
+      role="group"
+      aria-label="开始时间"
+    >
+      <label
+        class="picker-only-input__manual-part"
+        :class="{ 'is-invalid': manualHourError }"
+      >
+        <input
+          :aria-describedby="manualHintId"
+          :aria-invalid="manualHourError ? 'true' : 'false'"
+          aria-label="小时，允许输入00到23"
+          autocomplete="off"
+          data-testid="manual-time-hour"
+          :disabled="manualInputDisabled"
+          inputmode="numeric"
+          maxlength="2"
+          :name="manualHourName"
+          placeholder="00"
+          :readonly="manualInputReadonly"
+          type="text"
+          :value="manualHour"
+          @blur="handleManualBlur('hour')"
+          @input="handleManualInput('hour', $event)"
+        />
+        <span aria-hidden="true">时</span>
+      </label>
+      <span class="picker-only-input__manual-separator" aria-hidden="true">:</span>
+      <label
+        class="picker-only-input__manual-part"
+        :class="{ 'is-invalid': manualMinuteError }"
+      >
+        <input
+          :aria-describedby="manualHintId"
+          :aria-invalid="manualMinuteError ? 'true' : 'false'"
+          aria-label="分钟，允许输入00到59"
+          autocomplete="off"
+          data-testid="manual-time-minute"
+          :disabled="manualInputDisabled"
+          inputmode="numeric"
+          maxlength="2"
+          :name="manualMinuteName"
+          placeholder="00"
+          :readonly="manualInputReadonly"
+          type="text"
+          :value="manualMinute"
+          @blur="handleManualBlur('minute')"
+          @input="handleManualInput('minute', $event)"
+        />
+        <span aria-hidden="true">分</span>
+      </label>
+      <button
+        class="picker-only-input__manual-trigger"
+        type="button"
+        :aria-expanded="pickerOpen ? 'true' : 'false'"
+        aria-haspopup="dialog"
+        aria-label="打开时间选择器"
+        :disabled="isExternallyReadonly"
+        @click="openPicker"
+      >
+        <span class="picker-only-input__indicator picker-only-input__indicator--time" aria-hidden="true"></span>
+      </button>
+    </span>
+    <span
+      v-if="manualTimeEntryEnabled"
+      :id="manualHintId"
+      class="picker-only-input__manual-hint"
+      :class="{ 'is-error': manualValidationMessage }"
+      :role="manualValidationMessage ? 'alert' : undefined"
+    >
+      {{ manualValidationMessage || "小时 00–23，分钟 00–59" }}
+    </span>
     <input
+      v-else
       ref="inputElement"
       v-bind="inputAttrs"
       :aria-expanded="pickerOpen ? 'true' : 'false'"
@@ -19,8 +100,9 @@
       @paste.prevent
       @click="openPicker"
     />
-    <span v-if="!modelValue" class="picker-only-input__hint" aria-hidden="true">{{ emptyDisplayHint }}</span>
+    <span v-if="!manualTimeEntryEnabled && !modelValue" class="picker-only-input__hint" aria-hidden="true">{{ emptyDisplayHint }}</span>
     <span
+      v-if="!manualTimeEntryEnabled"
       class="picker-only-input__indicator"
       :class="{ 'picker-only-input__indicator--time': type === 'time' }"
       aria-hidden="true"
@@ -173,6 +255,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  manualTimeEntry: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(["update:modelValue"]);
@@ -182,6 +268,10 @@ const calendarCursor = ref(serverNowDate());
 const draftDate = ref("");
 const draftHour = ref("00");
 const draftMinute = ref("00");
+const manualHour = ref("");
+const manualMinute = ref("");
+const manualTouched = ref({ hour: false, minute: false });
+const lastEmittedModelValue = ref(null);
 const rootElement = ref(null);
 const inputElement = ref(null);
 const popoverElement = ref(null);
@@ -197,8 +287,16 @@ const inputAttrs = computed(() => {
   delete rest.class;
   return rest;
 });
+const hasBooleanAttr = (value) => value !== undefined && value !== null && value !== false;
 const isExternallyReadonly = computed(() => [inputAttrs.value.readonly, inputAttrs.value.disabled]
-  .some((value) => value !== undefined && value !== null && value !== false));
+  .some(hasBooleanAttr));
+const manualTimeEntryEnabled = computed(() => props.manualTimeEntry && props.type === "time");
+const manualInputDisabled = computed(() => hasBooleanAttr(inputAttrs.value.disabled));
+const manualInputReadonly = computed(() => hasBooleanAttr(inputAttrs.value.readonly));
+const manualFieldName = computed(() => String(inputAttrs.value.name || "time"));
+const manualHourName = computed(() => `${manualFieldName.value}_hour`);
+const manualMinuteName = computed(() => `${manualFieldName.value}_minute`);
+const manualHintId = `picker-time-hint-${Math.random().toString(36).slice(2, 9)}`;
 const hasCalendar = computed(() => props.type !== "time");
 const hasTime = computed(() => props.type !== "date");
 const displayValue = computed(() => {
@@ -257,6 +355,14 @@ const parseTimeValue = (value) => {
   return { hour: matched[1], minute: matched[2] };
 };
 
+const normalizeManualPart = (value) => String(value ?? "").replace(/\D/g, "").slice(0, 2);
+const manualPartIsValid = (part, value) => {
+  if (!/^\d{1,2}$/.test(value)) {
+    return false;
+  }
+  return Number(value) <= (part === "hour" ? 23 : 59);
+};
+
 const parseDateTimeValue = (value) => {
   const matched = String(value || "").match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})(?::\d{2})?$/);
   const date = parseDateValue(matched?.[1]);
@@ -301,6 +407,42 @@ const isValueWithinBounds = (value) => (
   (!normalizedMin.value || value >= normalizedMin.value)
   && (!normalizedMax.value || value <= normalizedMax.value)
 );
+
+const normalizedManualValue = computed(() => {
+  if (!manualPartIsValid("hour", manualHour.value) || !manualPartIsValid("minute", manualMinute.value)) {
+    return "";
+  }
+  return `${manualHour.value.padStart(2, "0")}:${manualMinute.value.padStart(2, "0")}`;
+});
+const rawManualValue = computed(() => `${manualHour.value}:${manualMinute.value}`);
+const manualHourError = computed(() => (
+  manualTouched.value.hour && !manualPartIsValid("hour", manualHour.value)
+));
+const manualMinuteError = computed(() => (
+  manualTouched.value.minute && !manualPartIsValid("minute", manualMinute.value)
+));
+const manualValidationMessage = computed(() => {
+  if (manualHourError.value) {
+    return manualHour.value ? "小时应为 00–23" : "请输入小时";
+  }
+  if (manualMinuteError.value) {
+    return manualMinute.value ? "分钟应为 00–59" : "请输入分钟";
+  }
+  if (
+    (manualTouched.value.hour || manualTouched.value.minute)
+    && normalizedManualValue.value
+    && !isValueWithinBounds(normalizedManualValue.value)
+  ) {
+    if (normalizedMin.value && normalizedManualValue.value < normalizedMin.value) {
+      return `开始时间不能早于 ${normalizedMin.value}`;
+    }
+    if (normalizedMax.value && normalizedManualValue.value > normalizedMax.value) {
+      return `开始时间不能晚于 ${normalizedMax.value}`;
+    }
+    return "时间超出允许范围";
+  }
+  return "";
+});
 
 const isDateWithinBounds = (value) => {
   if (props.type === "date") {
@@ -385,6 +527,52 @@ const initializeDraft = () => {
   }
 };
 
+const syncManualFields = (value) => {
+  const parsed = parseTimeValue(value);
+  manualHour.value = parsed?.hour || "";
+  manualMinute.value = parsed?.minute || "";
+  manualTouched.value = { hour: false, minute: false };
+};
+
+const emitModelValue = (value) => {
+  lastEmittedModelValue.value = value;
+  emit("update:modelValue", value);
+};
+
+const commitManualValue = () => {
+  const value = normalizedManualValue.value;
+  emitModelValue(value && isValueWithinBounds(value) ? value : rawManualValue.value);
+};
+
+const handleManualInput = (part, event) => {
+  if (isExternallyReadonly.value) {
+    return;
+  }
+  const value = normalizeManualPart(event?.target?.value);
+  if (event?.target) {
+    event.target.value = value;
+  }
+  if (part === "hour") {
+    manualHour.value = value;
+  } else {
+    manualMinute.value = value;
+  }
+  commitManualValue();
+};
+
+const handleManualBlur = (part) => {
+  const current = part === "hour" ? manualHour.value : manualMinute.value;
+  if (manualPartIsValid(part, current)) {
+    if (part === "hour") {
+      manualHour.value = current.padStart(2, "0");
+    } else {
+      manualMinute.value = current.padStart(2, "0");
+    }
+  }
+  manualTouched.value = { ...manualTouched.value, [part]: true };
+  commitManualValue();
+};
+
 const updatePopoverPosition = () => {
   if (!pickerOpen.value || !inputElement.value || !popoverElement.value) {
     return;
@@ -414,6 +602,18 @@ watch(
     if (!pickerOpen.value) {
       calendarCursor.value = resolveCalendarCursor();
     }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.modelValue,
+  (value) => {
+    if (value === lastEmittedModelValue.value) {
+      lastEmittedModelValue.value = null;
+      return;
+    }
+    syncManualFields(value);
   },
   { immediate: true },
 );
@@ -504,7 +704,10 @@ const clearValue = () => {
   if (isExternallyReadonly.value) {
     return;
   }
-  emit("update:modelValue", "");
+  if (manualTimeEntryEnabled.value) {
+    syncManualFields("");
+  }
+  emitModelValue("");
   closePicker();
 };
 
@@ -512,7 +715,10 @@ const confirmValue = () => {
   if (isExternallyReadonly.value || !draftValueIsValid.value) {
     return;
   }
-  emit("update:modelValue", draftValue.value);
+  if (manualTimeEntryEnabled.value) {
+    syncManualFields(draftValue.value);
+  }
+  emitModelValue(draftValue.value);
   closePicker();
 };
 

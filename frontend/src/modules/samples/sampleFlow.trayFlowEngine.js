@@ -22,7 +22,10 @@ import { buildOrderedTrayExperiments } from "./sampleFlow.experimentOrder";
 import { hidePendingFlowStepTimes } from "./sampleFlow.flowTimeHelpers";
 import { resolveEffectiveTrayLifecycleStatus } from "./sampleFlow.trayLifecycle";
 import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
-import { resolveSaltSprayPauseRemark } from "@/lib/saltSprayPauseDisplay";
+import {
+  resolveSaltSprayPauseFlowLabel,
+  resolveSaltSprayPauseRemark,
+} from "@/lib/saltSprayPauseDisplay";
 import { buildTrayFlowTimeMap } from "./sampleFlow.flowTimeMap";
 import {
   APPEARANCE_SENT_STATUS_LABEL,
@@ -35,6 +38,7 @@ import { buildTrayExperimentFlow } from "./sampleFlow.trayExperimentFlow";
 import { buildSingleExperimentTrayFlow } from "./sampleFlow.trayFlowSingle";
 import { createTrayFlowStepTools } from "./sampleFlow.trayFlowStepHelpers";
 import { buildCompletedTrayFlowState } from "./sampleFlow.trayFlowCompleted";
+import { decorateMoldCancellationSteps } from "./sampleFlow.moldCancellation";
 
 function buildTrayFlowEngine(input = {}) {
   const effectiveStatus = resolveEffectiveTrayLifecycleStatus(input);
@@ -647,24 +651,37 @@ function buildTrayFlowEngine(input = {}) {
       reorderExperimentSteps();
     }
     hidePendingFlowStepTimes(steps);
+    steps.forEach((step) => {
+      if (step.active) {
+        step.label = resolveSaltSprayPauseFlowLabel(step.label, displayRemark);
+      }
+    });
     const displayCurrentStatus = normalizeText(steps.find((step) => step.active)?.label) || currentStatus;
 
-    return {
+    return decorateMoldCancellationSteps({
       canonicalStatus: currentStatus,
       displayRemark,
       trayCode,
       status: displayCurrentStatus,
       currentStatus: `${trayCode ? `当前托盘：${trayCode} | ` : ""}当前状态：${displayCurrentStatus}${displayRemark ? ` | 备注：${displayRemark}` : ""}`,
       steps,
-    };
+    }, effectiveInput);
   }
 
   const singleFlow = buildSingleExperimentTrayFlow(input, { effectiveInput, stepTimeMap, trayCode });
-  return {
+  const steps = singleFlow.steps.map((step) => (
+    step.active
+      ? { ...step, label: resolveSaltSprayPauseFlowLabel(step.label, displayRemark) }
+      : step
+  ));
+  const displayCurrentStatus = normalizeText(steps.find((step) => step.active)?.label) || singleFlow.status;
+  return decorateMoldCancellationSteps({
     ...singleFlow,
     displayRemark,
-    currentStatus: `${singleFlow.currentStatus}${displayRemark ? ` | 备注：${displayRemark}` : ""}`,
-  };
+    status: displayCurrentStatus,
+    currentStatus: `${trayCode ? `当前托盘：${trayCode} | ` : ""}当前状态：${displayCurrentStatus}${displayRemark ? ` | 备注：${displayRemark}` : ""}`,
+    steps,
+  }, effectiveInput);
 }
 
 export { buildTrayFlowEngine };

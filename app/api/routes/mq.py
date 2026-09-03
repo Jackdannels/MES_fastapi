@@ -23,6 +23,7 @@ from app.services.experiment_schedule_sequence import (
 )
 from app.services.fixture_installations import mark_fixture_installation_failed, normalize_tray_codes, register_pending_fixture_installation
 from app.services.laboratory_operations import read_laboratory_task_payload
+from app.services.laboratory_termination import MOLD_LAB_CODE, MOLD_LAB_NAME
 from app.services.mq_event_processor import (
     MySQLMqEventRepository,
     generated_run_no,
@@ -136,6 +137,23 @@ class ExperimentEndRequest(BaseModel):
         return str(value or "").strip()
 
 
+class MoldCancelRequest(BaseModel):
+    task_code: str = Field(min_length=1)
+    lab_code: str = Field(min_length=1)
+    experiment_code: str = Field(min_length=1)
+    run_no: str = Field(min_length=1, validation_alias=AliasChoices("run_no", "runNo"))
+    cancel_reason: str = Field(
+        min_length=1,
+        max_length=500,
+        validation_alias=AliasChoices("cancel_reason", "cancelReason"),
+    )
+
+    @field_validator("task_code", "lab_code", "experiment_code", "run_no", "cancel_reason", mode="before")
+    @classmethod
+    def trim_cancel_text(cls, value: Any) -> str:
+        return str(value or "").strip()
+
+
 class SaltPauseRequest(BaseModel):
     task_code: str = Field(min_length=1)
     lab_code: str = Field(min_length=1)
@@ -197,6 +215,69 @@ def _reject_pending_salt_command(repository: MySQLMqEventRepository, run_no: str
     pending = finder(run_no) if callable(finder) else {}
     if pending:
         raise HTTPException(status_code=409, detail="当前实验已有等待上位机确认的控制命令")
+
+
+def _validate_mold_cancel_request(
+    request: MoldCancelRequest,
+) -> tuple[MySQLMqEventRepository, dict[str, Any]]:
+    if request.lab_code != MOLD_LAB_CODE:
+        raise HTTPException(status_code=422, detail=f"取消本次霉菌实验仅支持 {MOLD_LAB_CODE}")
+    repository = MySQLMqEventRepository()
+    run = repository.find_run_by_no(request.run_no) or {}
+    if not run:
+        raise HTTPException(status_code=404, detail="实验运行不存在")
+    if str(run.get("lab_code") or "").strip() != MOLD_LAB_CODE:
+        raise HTTPException(status_code=409, detail="实验运行不属于霉菌试验室")
+    if str(run.get("device_name") or run.get("device") or "").strip() != MOLD_LAB_NAME:
+        raise HTTPException(status_code=409, detail="实验运行不属于霉菌试验室")
+    if (
+        str(run.get("task_no") or run.get("task_code") or "").strip() != request.task_code
+        or str(run.get("experiment_no") or run.get("experiment_code") or "").strip() != request.experiment_code
+    ):
+        raise HTTPException(status_code=409, detail="实验运行上下文不匹配")
+    if str(run.get("run_status") or run.get("status") or "").strip() != RUNNING:
+        raise HTTPException(status_code=409, detail="只有实验进行中的霉菌实验可以取消")
+
+    snapshot = storage_completion_snapshot(
+        read_laboratory_task_payload(get_storage_backend(), request.task_code)
+    )
+    experiment = next(
+        (
+            item
+            for item in snapshot["experiments"]
+            if str(item.get("task_code") or item.get("task_no") or "").strip() == request.task_code
+            and str(item.get("experiment_code") or item.get("experiment_no") or "").strip() == request.experiment_code
+        ),
+        None,
+    )
+    experiment_name = str(
+        (experiment or {}).get("experiment_name")
+        or (experiment or {}).get("experiment_type")
+        or (experiment or {}).get("test_type")
+        or ""
+    ).strip()
+    if "霉菌" not in experiment_name:
+        raise HTTPException(status_code=409, detail="当前实验不是霉菌试验")
+    if not str(run.get("schedule_no") or run.get("schedule_id") or "").strip():
+        raise HTTPException(status_code=409, detail="当前霉菌实验缺少排程标识，不能取消")
+    run_trays = [
+        item
+        for item in snapshot["experiment_run_trays"]
+        if str(item.get("run_no") or item.get("runNo") or "").strip() == request.run_no
+        and str(item.get("task_code") or item.get("task_no") or "").strip() == request.task_code
+        and str(item.get("experiment_code") or item.get("experiment_no") or "").strip() == request.experiment_code
+    ]
+    if not run_trays:
+        raise HTTPException(status_code=409, detail="当前霉菌实验没有运行托盘")
+    if any(
+        str(item.get("run_tray_status") or item.get("status") or "").strip() != RUNNING
+        for item in run_trays
+    ):
+        raise HTTPException(status_code=409, detail="霉菌实验取消必须包含当前运行中的全部托盘")
+    finder = getattr(repository, "find_pending_mold_cancel", None)
+    if callable(finder) and finder(request.run_no):
+        raise HTTPException(status_code=409, detail="当前霉菌实验已有等待上位机确认的取消请求")
+    return repository, run
 
 
 class InterfaceModeRequest(BaseModel):
@@ -403,6 +484,32 @@ def publish_experiment_end_request(request: ExperimentEndRequest) -> dict[str, A
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"ok": True, "payload": payload, **result}
+
+
+@router.post("/laboratory/cancel-request")
+def publish_mold_cancel_request(request: MoldCancelRequest) -> dict[str, Any]:
+    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_EXPERIMENT_END_REQUEST)
+    _validate_mold_cancel_request(request)
+    cancel_request_id = f"cancel-{uuid4().hex}"
+    payload = {
+        "task_code": request.task_code,
+        "lab_code": request.lab_code,
+        "experiment_code": request.experiment_code,
+        "run_no": request.run_no,
+        "end_mode": "cancel",
+        "cancel_reason": request.cancel_reason,
+        "cancel_request_id": cancel_request_id,
+    }
+    try:
+        result = publish_laboratory_command("END_REQUEST", payload)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "cancelRequestId": cancel_request_id,
+        "payload": payload,
+        **result,
+    }
 
 
 @router.post("/laboratory/pause-request")

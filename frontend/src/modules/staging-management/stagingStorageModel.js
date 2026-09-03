@@ -24,6 +24,7 @@ const APPEARANCE_SENT_STATUS = "送至外观检测间";
 const APPEARANCE_STOCKED_STATUS = "实验后外观检测间存放";
 const MID_EXPERIMENT_APPEARANCE_STATUS = "中途外观检查中";
 const MID_EXPERIMENT_RETURNED_STATUS = "等待恢复实验";
+const MOLD_CANCELED_STATUS = "实验已取消";
 const WITHDRAWAL_HISTORY_ACTIONS = new Set(["撤回出库", "实验任务撤回", "任务切换撤回"]);
 const PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS = new Set(["任务比对", "样品安装", "实验确认", "开始实验", "实验开始"]);
 const ACTIVE_EXPERIMENT_RUN_TRAY_STATUSES = new Set(["已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", "实验中"]);
@@ -34,12 +35,14 @@ const STOCK_IN_CANDIDATE_STATUSES = new Set([
   ...PRE_STAGING_STATUSES,
   "实验已完成",
   "实验完成",
+  MOLD_CANCELED_STATUS,
   POST_EXPERIMENT_STAGING_STATUS,
   POST_EXPERIMENT_STAGING_SENT_STATUS,
 ]);
 const APPEARANCE_STOCK_IN_CANDIDATE_STATUSES = new Set([
   ...PRE_APPEARANCE_STATUSES,
   APPEARANCE_STOCKED_STATUS,
+  MOLD_CANCELED_STATUS,
 ]);
 
 const normalizeText = (value) => String(value ?? "").trim();

@@ -2,8 +2,63 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.mysql_storage_codecs import SAMPLE_META_PREFIX, normalize_text
-from app.core.storage_backend import normalize_experiment_status_text
+from app.core.mysql_storage_codecs import SAMPLE_META_PREFIX, format_iso_storage_datetime, normalize_text
+from app.core.storage_backend import normalize_experiment_detail_text, normalize_experiment_status_text
+
+
+# The visualization profile needs event timestamps to distinguish confirmed flow
+# milestones from inferred progress.  Keep this projection bounded to workflow
+# transitions instead of loading the complete sample audit history.
+VISUALIZATION_FLOW_EVENT_ACTIONS = (
+    "样品运输中",
+    "样品分装托盘",
+    "任务已确认入库",
+    "任务重新载装",
+    "任务重新入库",
+    "送至暂存间",
+    "暂存间扫码入库",
+    "暂存间扫码出库",
+    "接驳区扫码出库",
+    "送至实验室",
+    "任务比对",
+    "样品安装",
+    "实验确认",
+    "开始实验",
+    "实验完成",
+    "实验结束外观收口",
+    "取消本次霉菌实验",
+    "异常终止实验",
+    "外观检测间扫码入库",
+    "外观检测间扫码出库",
+    "厂家收回",
+    "撤回出库",
+    "实验任务撤回",
+    "任务切换撤回",
+)
+
+VISUALIZATION_FLOW_EVENT_STATUSES = (
+    "运输中",
+    "样品运输中",
+    "到货",
+    "送至暂存间",
+    "已到达暂存间",
+    "暂存间存放",
+    "实验前外观检测间存放",
+    "送至实验室",
+    "已到达实验室",
+    "工装夹具安装",
+    "实验准备就绪",
+    "实验进行中",
+    "实验中",
+    "实验已完成",
+    "实验完成",
+    "实验已取消",
+    "实验异常终止",
+    "送至外观检测间",
+    "实验后外观检测间存放",
+    "实验后暂存间存放",
+    "厂家收回",
+)
 
 
 def load_operational_samples(cursor: Any, *, task_codes: set[str] | None = None) -> list[dict[str, Any]]:
@@ -67,6 +122,34 @@ def load_operational_samples(cursor: Any, *, task_codes: set[str] | None = None)
             "updated_at": row.get("updated_at"),
         })
 
+    action_placeholders = ", ".join(["%s"] * len(VISUALIZATION_FLOW_EVENT_ACTIONS))
+    status_placeholders = ", ".join(["%s"] * len(VISUALIZATION_FLOW_EVENT_STATUSES))
+    cursor.execute(
+        f"""
+        SELECT event_id, sample_id, sample_no, action_type, location_desc,
+               owner_name, sample_status, detail, event_time
+        FROM biz_sample_event
+        WHERE sample_id IN ({placeholders})
+          AND (
+            action_type IN ({action_placeholders})
+            OR sample_status IN ({status_placeholders})
+          )
+        ORDER BY event_time DESC, event_id DESC
+        """,
+        [*sample_ids, *VISUALIZATION_FLOW_EVENT_ACTIONS, *VISUALIZATION_FLOW_EVENT_STATUSES],
+    )
+    history_by_sample: dict[Any, list[dict[str, Any]]] = {}
+    for row in cursor.fetchall():
+        history_by_sample.setdefault(row.get("sample_id"), []).append({
+            "id": normalize_text(row.get("event_id") or row.get("sample_no")),
+            "time": format_iso_storage_datetime(row.get("event_time")),
+            "action": normalize_text(row.get("action_type")),
+            "location": normalize_text(row.get("location_desc")),
+            "owner": normalize_text(row.get("owner_name")),
+            "status": normalize_experiment_status_text(row.get("sample_status")),
+            "detail": normalize_experiment_detail_text(row.get("detail")),
+        })
+
     samples: list[dict[str, Any]] = []
     for row in sample_rows:
         sample_code = normalize_text(row.get("sample_no"))
@@ -83,7 +166,7 @@ def load_operational_samples(cursor: Any, *, task_codes: set[str] | None = None)
             "flow_status": normalize_experiment_status_text(row.get("flow_status")),
             "updated_at": row.get("updated_at"),
             "trays": trays_by_sample.get(row.get("sample_id"), []),
-            "history": [],
+            "history": history_by_sample.get(row.get("sample_id"), []),
         })
     return samples
 

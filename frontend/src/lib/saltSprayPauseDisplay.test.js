@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { SALT_SPRAY_PAUSE_REMARK, resolveSaltSprayPauseRemark } from "./saltSprayPauseDisplay";
+import {
+  SALT_SPRAY_PAUSE_REMARK,
+  resolveSaltSprayPauseFlowLabel,
+  resolveSaltSprayPauseRemark,
+} from "./saltSprayPauseDisplay";
 
 const input = (overrides = {}) => ({
   experimentRunPauses: [{
@@ -39,5 +43,13 @@ describe("saltSprayPauseDisplay", () => {
     expect(resolveSaltSprayPauseRemark(input({
       experimentRunPauses: [{ lab_code: "LAB_MOLD", run_no: "RUN-1", status: "实验暂停" }],
     }))).toBe("");
+  });
+
+  test("decorates only the active salt-spray running label while a pause is active", () => {
+    expect(resolveSaltSprayPauseFlowLabel("盐雾试验进行中", SALT_SPRAY_PAUSE_REMARK))
+      .toBe("盐雾试验进行中（暂停）");
+    expect(resolveSaltSprayPauseFlowLabel("盐雾试验进行中", "")).toBe("盐雾试验进行中");
+    expect(resolveSaltSprayPauseFlowLabel("振动试验进行中", SALT_SPRAY_PAUSE_REMARK))
+      .toBe("振动试验进行中");
   });
 });

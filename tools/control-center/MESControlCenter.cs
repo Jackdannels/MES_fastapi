@@ -15,8 +15,8 @@ using MESTerminalManager;
 [assembly: AssemblyDescription("MES 服务控制与固定工作台终端管理")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Control Center")]
-[assembly: AssemblyVersion("2.1.0.0")]
-[assembly: AssemblyFileVersion("2.1.0.0")]
+[assembly: AssemblyVersion("2.2.0.0")]
+[assembly: AssemblyFileVersion("2.2.0.0")]
 
 namespace MESControlCenter
 {
@@ -168,7 +168,7 @@ namespace MESControlCenter
         internal ControlCenterForm(string scriptPath, bool autoStart)
         {
             controlScript = scriptPath;
-            Text = "MES 控制中心 v2.1";
+            Text = "MES 控制中心 v2.2";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(1160, 700);
             ClientSize = new Size(1420, 820);
@@ -215,7 +215,7 @@ namespace MESControlCenter
             Panel brand = new Panel { Dock = DockStyle.Top, Height = 70 };
             BrandIcon brandIcon = new BrandIcon { Location = new Point(6, 2) };
             Label brandTitle = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), Location = new Point(58, 6), Text = "MES 控制中心" };
-            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font("Segoe UI", 8F), Location = new Point(59, 31), Text = "CONTROL CENTER  v2.1" };
+            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font("Segoe UI", 8F), Location = new Point(59, 31), Text = "CONTROL CENTER  v2.2" };
             brand.Controls.AddRange(new Control[] { brandIcon, brandTitle, brandVersion });
             sidebar.Controls.Add(brand);
 
@@ -386,7 +386,7 @@ namespace MESControlCenter
         {
             Panel page = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Visible = false };
             Panel connection = new Panel { Dock = DockStyle.Top, Height = 98, BackColor = Theme.Surface, Padding = new Padding(16) };
-            serverText = AddInput(connection, "MES 地址", "http://192.168.110.15:5173", 16, 22, 300, false);
+            serverText = AddInput(connection, "MES 地址", "http://mes-server:5173", 16, 22, 300, false);
             usernameText = AddInput(connection, "管理员", "admin", 332, 22, 138, false);
             passwordText = AddInput(connection, "密码", "123", 486, 22, 138, true);
             connectButton = CreateButton("连接", Theme.AccentStrong, Color.FromArgb(4, 27, 23), 96);
@@ -1040,7 +1040,7 @@ namespace MESControlCenter
             {
                 try
                 {
-                    TerminalManagerClient.NormalizeServerUrl("http://192.168.110.15:5173");
+                    TerminalManagerClient.NormalizeServerUrl("http://mes-server:5173");
                     if (!File.Exists(scriptPath)) return 4;
                     using (ControlCenterForm form = new ControlCenterForm(scriptPath, false)) return form.ValidateLayout() ? 0 : 3;
                 }

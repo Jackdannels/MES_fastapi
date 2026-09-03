@@ -102,6 +102,10 @@ const buildSingleRunningLabSnapshot = () => ({
       trays: [{ tray_code: "TRAY-VIS-001", status: "实验进行中", quantity: 1 }],
       history: [
         { status: "到货", time: "2026-05-22T09:00:00+08:00" },
+        { action: "暂存间扫码出库", detail: "TRAY-VIS-001 送至 振动一室", location: "振动一室", status: "送至实验室", time: "2026-05-22T09:30:00+08:00" },
+        { action: "任务比对", detail: "TASK-VIS-001 / 振动试验 / 已到达实验室 / 托盘：TRAY-VIS-001", location: "振动一室", status: "已到达实验室", time: "2026-05-22T09:35:00+08:00" },
+        { action: "样品安装", detail: "TASK-VIS-001 / 振动试验 / 工装夹具安装 / 托盘：TRAY-VIS-001", location: "振动一室", status: "工装夹具安装", time: "2026-05-22T09:40:00+08:00" },
+        { action: "实验确认", detail: "TASK-VIS-001 / 振动试验 / 实验准备就绪 / 托盘：TRAY-VIS-001", location: "振动一室", status: "实验准备就绪", time: "2026-05-22T09:45:00+08:00" },
         { detail: "TASK-VIS-001 / 振动试验 / 实验进行中", time: "2026-05-22T10:00:00+08:00" },
       ],
     },
@@ -818,8 +822,15 @@ describe("VisualizationPage runtime", () => {
     const flowSteps = wrapper.findAll('[data-testid="visual-single-preview"] .visual-flow-step');
     const runningStep = flowSteps.find((step) => step.get("strong").text() === "振动试验进行中");
     const stagingStep = flowSteps.find((step) => step.get("strong").text() === "送至暂存间");
+    const confirmedSteps = ["送至振动一室", "已到达实验室", "工装夹具安装", "实验准备就绪"]
+      .map((label) => flowSteps.find((step) => step.get("strong").text() === label));
     expect(runningStep?.classes()).toContain("is-active");
     expect(runningStep?.attributes("title")).toBe("05-22 10:00:00");
+    confirmedSteps.forEach((step) => {
+      expect(step?.classes()).toContain("is-done");
+      expect(step?.classes()).not.toContain("is-inferred");
+      expect(step?.attributes("title")).toMatch(/^05-22 09:/);
+    });
     expect(stagingStep?.classes()).toContain("is-inferred");
     expect(stagingStep?.attributes("title")).toBe("推导节点，暂无实际时间记录");
   });

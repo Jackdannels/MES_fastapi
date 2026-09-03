@@ -35,6 +35,65 @@ import { collectTrayRows } from "./laboratoryTrayRows";
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
+const MOLD_CANCELED_STATUS = "实验已取消";
+const MOLD_LAB = "霉菌试验室";
+
+const resolveRunNo = (entry) => normalizeText(entry?.run_no || entry?.runNo || entry?.id);
+const resolveRunScheduleId = (entry) => normalizeText(entry?.schedule_id || entry?.scheduleId || entry?.schedule_no);
+const resolveRunStatus = (entry) => normalizeText(entry?.status || entry?.run_status || entry?.runStatus);
+const runTrayEventTime = (entry) => {
+  const value = entry?.ended_at || entry?.endedAt || entry?.updated_at || entry?.updatedAt || entry?.started_at || entry?.startedAt;
+  const time = Date.parse(String(value || ""));
+  return Number.isFinite(time) ? time : 0;
+};
+
+const markCanceledMoldRerunEligibility = ({
+  device,
+  experimentCode,
+  experimentName,
+  experimentRuns,
+  experimentRunTrays,
+  scheduleId,
+  taskCode,
+  trayRows,
+}) => {
+  if (device !== MOLD_LAB || !experimentName.includes("霉菌")) {
+    return;
+  }
+  const runByNo = new Map(
+    asArray(experimentRuns)
+      .map((run) => [resolveRunNo(run), run])
+      .filter(([runNo]) => Boolean(runNo)),
+  );
+  asArray(trayRows).forEach((row) => {
+    const trayCode = normalizeText(row?.trayCode);
+    const latest = asArray(experimentRunTrays)
+      .map((relation, index) => ({ index, relation, time: runTrayEventTime(relation) }))
+      .filter(({ relation }) => (
+        resolveRelationTaskCode(relation) === taskCode
+        && resolveRelationExperimentCode(relation) === experimentCode
+        && resolveRelationTrayCode(relation) === trayCode
+      ))
+      .sort((left, right) => left.time - right.time || left.index - right.index)
+      .at(-1);
+    const relation = latest?.relation;
+    const run = relation ? runByNo.get(resolveRunNo(relation)) : null;
+    const canceledScheduleId = resolveRunScheduleId(run);
+    row.canceledMoldRerunEligible = Boolean(
+      relation
+      && run
+      && resolveRelationStatus(relation) === MOLD_CANCELED_STATUS
+      && resolveRunStatus(run) === MOLD_CANCELED_STATUS
+      && canceledScheduleId
+      && scheduleId
+      && canceledScheduleId !== scheduleId
+    );
+    if (row.canceledMoldRerunEligible) {
+      row.canceledMoldRunNo = resolveRunNo(relation);
+      row.canceledMoldScheduleId = canceledScheduleId;
+    }
+  });
+};
 
 const buildLaboratoryScheduleRow = ({
   experimentMap,
@@ -84,6 +143,16 @@ const buildLaboratoryScheduleRow = ({
     relatedSamples,
     schedule,
     taskCode,
+  });
+  markCanceledMoldRerunEligibility({
+    device,
+    experimentCode,
+    experimentName,
+    experimentRuns,
+    experimentRunTrays,
+    scheduleId,
+    taskCode,
+    trayRows,
   });
   const currentTaskContext = {
     device,

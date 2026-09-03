@@ -282,7 +282,12 @@ def record_laboratory_command(command: str, topic: str, payload: dict[str, Any],
                 "direction": "MES_TO_HOST",
                 "topic": topic,
                 "message_type": command,
-                "correlation_id": normalize_text(payload.get("fixture_install_id") or payload.get("fixtureInstallId")),
+                "correlation_id": normalize_text(
+                    payload.get("fixture_install_id")
+                    or payload.get("fixtureInstallId")
+                    or payload.get("cancel_request_id")
+                    or payload.get("cancelRequestId")
+                ),
                 "lab_code": lab_code,
                 "task_no": task_no,
                 "experiment_no": normalize_text(payload.get("experiment_code")),

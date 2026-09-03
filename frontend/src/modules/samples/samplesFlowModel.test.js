@@ -5093,6 +5093,8 @@ describe("samplesFlowModel", () => {
       "实验后暂存间存放",
       "厂家收回",
     ]);
+    expect(TRAY_STATUS_OPTIONS).not.toContain("实验已取消");
+    expect(DETAIL_STATUS_OPTIONS_FROM_CONSTANTS).not.toContain("实验已取消");
   });
 
   test("keeps the samples flow model public compatibility exports stable", () => {
@@ -5140,6 +5142,11 @@ describe("samplesFlowModel", () => {
     expect(samplesFlowModelPublicApi.normalizeLifecycleStatus("", "已入库")).toBe("样品运输中");
     expect(samplesFlowModelPublicApi.normalizeLifecycleStatus("恒温恒湿间（暂存间）", "已入库")).toBe("已到达暂存间");
     expect(samplesFlowModelPublicApi.normalizeLifecycleStatus("", "放置暂存间")).toBe("已到达暂存间");
+  });
+
+  test("preserves the system-only canceled status while a tray remains in the mold laboratory", () => {
+    expect(samplesFlowModelPublicApi.normalizeLifecycleStatus("霉菌试验室", "实验已取消")).toBe("实验已取消");
+    expect(samplesFlowModelPublicApi.normalizeLifecycleStatus("", "实验已取消")).toBe("实验已取消");
   });
 
   test("normalizeSamplesSnapshot preserves partial axis statuses during reload", () => {
@@ -10299,5 +10306,111 @@ describe("samplesFlowModel", () => {
       expect.objectContaining({ label: "冲击试验已完成", reached: true, time: "2026-07-22 14:13:07" }),
     ]);
     expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：厂家收回`);
+  });
+
+  test("buildTrayFlowView keeps canceled mold history beside the still-unfinished requirement and later completion", () => {
+    const taskCode = "TASK-MOLD-CANCEL";
+    const trayCode = `${taskCode}-TP-001`;
+    const moldCode = `${taskCode}-A-MOLD`;
+    const experiments = [
+      { experiment_code: moldCode, experiment_name: "霉菌试验", required_device: "霉菌试验室", task_code: taskCode },
+      { experiment_code: `${taskCode}-B-IMPACT`, experiment_name: "冲击试验", required_device: "冲击一室", task_code: taskCode },
+    ];
+    const experimentTrays = experiments.map((experiment) => ({
+      experiment_code: experiment.experiment_code,
+      task_code: taskCode,
+      tray_code: trayCode,
+    }));
+    const canceledRelation = {
+      ended_at: "2026-09-03 10:10:00",
+      experiment_code: moldCode,
+      run_no: "RUN-MOLD-CANCELED",
+      run_tray_status: "实验已取消",
+      task_code: taskCode,
+      tray_code: trayCode,
+    };
+
+    const canceledView = buildTrayFlowView({
+      currentExperimentCode: moldCode,
+      experiments,
+      experimentRunTrays: [canceledRelation],
+      experimentTrays,
+      location: "霉菌试验室",
+      samples: [{
+        code: `${taskCode}-SP-001`,
+        history: [
+          { status: "样品运输中", time: "2026-09-03 08:00:00" },
+          { status: "到货", time: "2026-09-03 08:30:00" },
+        ],
+        location: "霉菌试验室",
+        status: "实验已取消",
+        task_code: taskCode,
+        trays: [{ status: "实验已取消", tray_code: trayCode }],
+      }],
+      status: "实验已取消",
+      taskCode,
+      trayCode,
+    });
+    const canceledIndex = canceledView.steps.findIndex((step) => step.label === "霉菌试验已取消");
+    const stagingDispatchIndex = canceledView.steps.findIndex((step) => step.label === "送至暂存间");
+    const moldDispatchIndex = canceledView.steps.findIndex((step) => step.label === "送至霉菌试验室");
+    const unfinishedIndex = canceledView.steps.findIndex((step) => step.label === "霉菌试验未完成");
+    expect(canceledIndex).toBeGreaterThan(-1);
+    expect(stagingDispatchIndex).toBe(canceledIndex + 1);
+    expect(stagingDispatchIndex).toBeLessThan(moldDispatchIndex);
+    expect(moldDispatchIndex).toBeLessThan(unfinishedIndex);
+    expect(canceledView.steps[canceledIndex]).toEqual(expect.objectContaining({
+      active: true,
+      reached: true,
+      time: "2026-09-03 10:10:00",
+    }));
+    expect(canceledView.steps.find((step) => step.label === "样品运输中")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-09-03 08:00:00" }),
+    );
+    expect(canceledView.steps.find((step) => step.label === "到货")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-09-03 08:30:00" }),
+    );
+    expect(canceledView.steps.slice(stagingDispatchIndex).every((step) => (
+      step.active === false && step.reached === false
+    ))).toBe(true);
+    expect(canceledView.canonicalStatus).toBe("实验已取消");
+    expect(canceledView.status).toBe("霉菌试验已取消");
+    expect(canceledView.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：霉菌试验已取消`);
+
+    const completedView = buildTrayFlowView({
+      currentExperimentCode: moldCode,
+      experiments: [experiments[0]],
+      experimentRunTrays: [
+        canceledRelation,
+        {
+          ended_at: "2026-09-04 10:10:00",
+          experiment_code: moldCode,
+          run_no: "RUN-MOLD-COMPLETED",
+          run_tray_status: "实验已完成",
+          task_code: taskCode,
+          tray_code: trayCode,
+        },
+      ],
+      experimentTrays: [experimentTrays[0]],
+      location: "霉菌试验室",
+      samples: [],
+      status: "实验已完成",
+      taskCode,
+      trayCode,
+    });
+    const completedCancelIndex = completedView.steps.findIndex((step) => step.label === "霉菌试验已取消");
+    const completedStagingDispatchIndex = completedView.steps.findIndex((step) => step.label === "送至暂存间");
+    const completedDispatchIndex = completedView.steps.findIndex((step) => step.label === "送至霉菌试验室");
+    expect(completedStagingDispatchIndex).toBe(completedCancelIndex + 1);
+    expect(completedStagingDispatchIndex).toBeLessThan(completedDispatchIndex);
+    expect(completedView.steps.find((step) => step.label === "霉菌试验已取消")).toEqual(
+      expect.objectContaining({ active: false, reached: true }),
+    );
+    expect(completedView.steps[completedDispatchIndex]).toEqual(
+      expect.objectContaining({ reached: true }),
+    );
+    expect(completedView.steps.find((step) => step.label === "霉菌试验已完成")).toEqual(
+      expect.objectContaining({ active: true, reached: false }),
+    );
   });
 });

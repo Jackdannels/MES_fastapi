@@ -6396,6 +6396,121 @@ describe("laboratory model", () => {
     }));
   });
 
+  test("validateLaboratoryTrayScan allows a canceled mold tray to compare against a new mold schedule in place", () => {
+    const taskCode = "TASK-MOLD-RERUN";
+    const experimentCode = `${taskCode}-A`;
+    const trayCode = `${taskCode}-TP-001`;
+    const buildView = ({ location = "霉菌试验室", scheduleId = "SCHEDULE-MOLD-NEW", status = "实验已取消" } = {}) =>
+      buildLaboratoryWorkbenchView({
+        experimentRuns: [{
+          device: "霉菌试验室",
+          ended_at: "2026-09-03 09:00:00",
+          experiment_code: experimentCode,
+          run_no: "RUN-MOLD-CANCELED",
+          schedule_id: "SCHEDULE-MOLD-OLD",
+          status: "实验已取消",
+          task_code: taskCode,
+        }],
+        experimentRunTrays: [{
+          ended_at: "2026-09-03 09:00:00",
+          experiment_code: experimentCode,
+          run_no: "RUN-MOLD-CANCELED",
+          run_tray_status: "实验已取消",
+          status: "实验已取消",
+          task_code: taskCode,
+          tray_code: trayCode,
+        }],
+        experiments: [{
+          experiment_code: experimentCode,
+          experiment_name: "霉菌试验",
+          required_device: "霉菌试验室",
+          status: "已排程",
+          task_code: taskCode,
+        }],
+        experimentTrays: [{ experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode }],
+        labCode: "LAB_MOLD",
+        labName: "霉菌试验室",
+        now: new Date("2026-09-03T09:30:00+08:00"),
+        samples: [{
+          code: `${taskCode}-SP-001`,
+          flow_status: status,
+          history: [{
+            action: "取消本次霉菌实验",
+            detail: `${taskCode} / 霉菌试验 / 实验已取消 / 原因：霉菌未按预期繁殖`,
+            location: "霉菌试验室",
+            status: "实验已取消",
+            time: "2026-09-03 09:00:00",
+            tray_code: trayCode,
+          }],
+          location,
+          status,
+          task_code: taskCode,
+          trays: [{ quantity: 1, status, tray_code: trayCode }],
+        }],
+        schedules: [{
+          device: "霉菌试验室",
+          end_at: "2026-09-04 10:00:00",
+          experiment_code: experimentCode,
+          id: scheduleId,
+          lab_code: "LAB_MOLD",
+          start_at: "2026-09-03 10:00:00",
+          status: "已排程",
+          task_code: taskCode,
+        }],
+        selectedTrayCode: trayCode,
+        tasks: [{ code: taskCode, name: "霉菌取消后重排", test_type: "霉菌试验" }],
+      });
+
+    const view = buildView();
+    expect(view.currentTask?.trayRows[0]).toEqual(expect.objectContaining({
+      canceledMoldRerunEligible: true,
+      canceledMoldRunNo: "RUN-MOLD-CANCELED",
+      canceledMoldScheduleId: "SCHEDULE-MOLD-OLD",
+      currentLocation: "霉菌试验室",
+      lifecycleStatus: "实验已取消",
+      trayStatus: "实验已取消",
+    }));
+    expect(view.selectedTrayFlow.currentStatus).toBe(
+      `当前托盘：${trayCode} | 当前状态：霉菌试验已取消`,
+    );
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: trayCode,
+      scheduleRows: view.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "比对正确",
+      ok: true,
+      tone: "success",
+      trayCode,
+    }));
+
+    const stagedView = buildView({ location: "恒温恒湿间（暂存间）", status: "已到达暂存间" });
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: stagedView.allScheduleRows,
+      currentTask: stagedView.currentTask,
+      scanCode: trayCode,
+      scheduleRows: stagedView.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "托盘尚未出库",
+      ok: false,
+      trayCode,
+    }));
+
+    const staleScheduleView = buildView({ scheduleId: "SCHEDULE-MOLD-OLD" });
+    expect(staleScheduleView.currentTask?.trayRows[0]?.canceledMoldRerunEligible).toBe(false);
+    expect(validateLaboratoryTrayScan({
+      allScheduleRows: staleScheduleView.allScheduleRows,
+      currentTask: staleScheduleView.currentTask,
+      scanCode: trayCode,
+      scheduleRows: staleScheduleView.scheduleRows,
+    })).toEqual(expect.objectContaining({
+      message: "托盘尚未出库",
+      ok: false,
+      trayCode,
+    }));
+  });
+
   test("validateLaboratoryTrayScan accepts lab dispatch restored from latest stock-out history", () => {
     const taskCode = "SYLU-2026-06-024";
     const trayCode = `${taskCode}-TP-001`;

@@ -485,11 +485,29 @@ const latestCompletedExperimentEvent = ({ samples, taskCode, trayCode, experimen
 };
 
 const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experiments, experimentRunSteps, experimentRunTrays }) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedTrayCode = normalizeText(trayCode);
+  const experimentMap = buildExperimentMap(experiments);
+  const hasCanceledMoldRun = asArray(experimentRunTrays).some((entry) => {
+    if (
+      normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) !== normalizedTaskCode
+      || normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo) !== normalizedTrayCode
+      || normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status) !== "实验已取消"
+    ) {
+      return false;
+    }
+    const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo);
+    const experiment = experimentMap.get(experimentCode);
+    return resolveExperimentName(experiment, experimentCode).includes("霉菌")
+      || normalizeText(experiment?.required_device || experiment?.requiredDevice).includes("霉菌");
+  });
+  if (hasCanceledMoldRun) {
+    return true;
+  }
   const latestCompleted = latestCompletedExperimentEvent({ experiments, experimentRunSteps, experimentRunTrays, samples, taskCode, trayCode });
   if (appearanceExperimentIsAllowed(latestCompleted?.experimentName)) {
     return true;
   }
-  const experimentMap = buildExperimentMap(experiments);
   return asArray(samples).some((sample) => (
     normalizeText(sample?.task_code) === normalizeText(taskCode)
     && asArray(sample?.trays).some((tray) => {

@@ -20,15 +20,15 @@ using Microsoft.Win32;
 [assembly: AssemblyDescription("MES 固定工作台配置、启动与自我检查客户端")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Workstation Configurator")]
-[assembly: AssemblyVersion("2.1.0.0")]
-[assembly: AssemblyFileVersion("2.1.0.0")]
+[assembly: AssemblyVersion("2.2.0.0")]
+[assembly: AssemblyFileVersion("2.2.0.0")]
 
 namespace MESWorkstationConfigurator
 {
     [Serializable]
     public class LauncherConfig
     {
-        public string ServerUrl = "http://192.168.110.15:5173";
+        public string ServerUrl = LauncherRuntime.DefaultServerUrl;
         public string StationKey = "handover";
         public int ZoomPercent = 100;
         public string TerminalId = "";
@@ -126,7 +126,7 @@ namespace MESWorkstationConfigurator
 
     internal static class LauncherRuntime
     {
-        internal const string Version = "v2.1";
+        internal const string Version = "v2.2";
         internal const int HeartbeatIntervalMilliseconds = 5000;
         internal const int WatchdogCheckIntervalMilliseconds = 15000;
         internal const int StartupDesktopSettleMilliseconds = 8000;
@@ -137,7 +137,12 @@ namespace MESWorkstationConfigurator
         internal const int AutomaticRestartPauseMilliseconds = 5 * 60 * 1000;
         internal static readonly int[] FocusRetryDelaysMilliseconds = new int[] { 500, 1500, 3000 };
         internal const int WorkstationZoomPercent = 100;
-        internal const string DefaultServerUrl = "http://192.168.110.15:5173";
+        internal const string DefaultServerUrl = "http://mes-server:5173";
+        internal static readonly string[] LegacyDefaultServerUrls = new string[]
+        {
+            "http://192.168.110.15:5173",
+            "http://192.168.110.90:5173"
+        };
         internal const string RunValueName = "MESWorkstationLauncher";
         internal const string ManagedAgentMutexName = @"Local\MESWorkstationManagedAgent";
         internal static readonly string InstallDirectory = Path.Combine(
@@ -225,16 +230,26 @@ namespace MESWorkstationConfigurator
                 {
                     return new LauncherConfig();
                 }
+                LauncherConfig config;
                 using (FileStream stream = File.OpenRead(ConfigPath))
                 {
-                    LauncherConfig config = (LauncherConfig)new XmlSerializer(typeof(LauncherConfig)).Deserialize(stream);
-                    if (String.IsNullOrWhiteSpace(config.ServerUrl) || String.Equals(config.ServerUrl.TrimEnd('/'), "http://192.168.110.90:5173", StringComparison.OrdinalIgnoreCase))
-                    {
-                        config.ServerUrl = DefaultServerUrl;
-                    }
-                    config.ZoomPercent = WorkstationZoomPercent;
-                    return config;
+                    config = (LauncherConfig)new XmlSerializer(typeof(LauncherConfig)).Deserialize(stream);
                 }
+                bool migrated = MigrateLegacyServerUrl(config);
+                config.ZoomPercent = WorkstationZoomPercent;
+                if (migrated)
+                {
+                    try
+                    {
+                        SaveConfig(config);
+                        Log("已将历史 MES IP 地址迁移为稳定主机名：" + DefaultServerUrl);
+                    }
+                    catch (Exception exception)
+                    {
+                        Log("MES 地址迁移已在当前进程生效，但保存迁移结果失败：" + exception.Message);
+                    }
+                }
+                return config;
             }
             catch (Exception exception)
             {
@@ -250,6 +265,57 @@ namespace MESWorkstationConfigurator
             {
                 new XmlSerializer(typeof(LauncherConfig)).Serialize(stream, config);
             }
+        }
+
+        internal static bool MigrateLegacyServerUrl(LauncherConfig config)
+        {
+            if (config == null) return false;
+            string configuredUrl = (config.ServerUrl ?? String.Empty).Trim().TrimEnd('/');
+            if (configuredUrl.Length == 0)
+            {
+                config.ServerUrl = DefaultServerUrl;
+                return true;
+            }
+            if (!IsLegacyDefaultServerUrl(configuredUrl)) return false;
+
+            config.ServerUrl = DefaultServerUrl;
+            string registeredUrl = (config.RegisteredServerUrl ?? String.Empty).Trim().TrimEnd('/');
+            if (IsLegacyDefaultServerUrl(registeredUrl))
+            {
+                // The hostname points to the same MES deployment. Preserve the terminal ID and
+                // DPAPI-protected secret instead of rotating credentials during address migration.
+                config.RegisteredServerUrl = DefaultServerUrl;
+            }
+            return true;
+        }
+
+        private static bool IsLegacyDefaultServerUrl(string value)
+        {
+            string normalized = (value ?? String.Empty).Trim().TrimEnd('/');
+            foreach (string legacyUrl in LegacyDefaultServerUrls)
+            {
+                if (String.Equals(normalized, legacyUrl, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        internal static bool RunServerAddressMigrationSelfTest()
+        {
+            LauncherConfig legacy = new LauncherConfig();
+            legacy.ServerUrl = "http://192.168.110.15:5173/";
+            legacy.RegisteredServerUrl = "http://192.168.110.15:5173";
+            legacy.TerminalId = "terminal-preserved";
+            legacy.ProtectedTerminalSecret = "secret-preserved";
+            if (!MigrateLegacyServerUrl(legacy)) return false;
+            if (!String.Equals(legacy.ServerUrl, DefaultServerUrl, StringComparison.Ordinal)) return false;
+            if (!String.Equals(legacy.RegisteredServerUrl, DefaultServerUrl, StringComparison.Ordinal)) return false;
+            if (legacy.TerminalId != "terminal-preserved" || legacy.ProtectedTerminalSecret != "secret-preserved") return false;
+
+            LauncherConfig custom = new LauncherConfig();
+            custom.ServerUrl = "http://192.168.110.77:5173";
+            custom.RegisteredServerUrl = custom.ServerUrl;
+            if (MigrateLegacyServerUrl(custom)) return false;
+            return custom.ServerUrl == "http://192.168.110.77:5173";
         }
 
         internal static StationOption FindStation(string key)
@@ -280,7 +346,7 @@ namespace MESWorkstationConfigurator
             if (!Uri.TryCreate(normalized, UriKind.Absolute, out uri)
                 || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             {
-                throw new InvalidOperationException("MES 地址格式不正确，例如：http://192.168.110.15:5173");
+                throw new InvalidOperationException("MES 地址格式不正确，例如：http://mes-server:5173");
             }
             bool hasExplicitPort = uri.Authority.LastIndexOf(':') > uri.Authority.LastIndexOf(']');
             if (!hasExplicitPort && uri.Scheme == Uri.UriSchemeHttp)
@@ -1276,6 +1342,11 @@ namespace MESWorkstationConfigurator
             if (args.Length > 0 && String.Equals(args[0], "--watchdog-self-test", StringComparison.OrdinalIgnoreCase))
             {
                 return LauncherRuntime.RunWatchdogSelfTest() ? 0 : 4;
+            }
+
+            if (args.Length > 0 && String.Equals(args[0], "--server-address-migration-self-test", StringComparison.OrdinalIgnoreCase))
+            {
+                return LauncherRuntime.RunServerAddressMigrationSelfTest() ? 0 : 6;
             }
 
             if (args.Length > 0 && String.Equals(args[0], "--self-test", StringComparison.OrdinalIgnoreCase))

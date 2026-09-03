@@ -1,4 +1,5 @@
 const SALT_SPRAY_PAUSE_REMARK = "实验进行中（暂停）";
+const SALT_SPRAY_PAUSE_SUFFIX = "（暂停）";
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
@@ -55,4 +56,19 @@ function resolveSaltSprayPauseRemark({
   return relationMatches || runMatches || pauseMatches ? SALT_SPRAY_PAUSE_REMARK : "";
 }
 
-export { SALT_SPRAY_PAUSE_REMARK, resolveSaltSprayPauseRemark };
+function resolveSaltSprayPauseFlowLabel(label, displayRemark) {
+  const normalizedLabel = normalizeText(label);
+  if (
+    displayRemark !== SALT_SPRAY_PAUSE_REMARK
+    || !/盐雾(?:试验|实验)进行中$/.test(normalizedLabel)
+  ) {
+    return normalizedLabel;
+  }
+  return `${normalizedLabel}${SALT_SPRAY_PAUSE_SUFFIX}`;
+}
+
+export {
+  SALT_SPRAY_PAUSE_REMARK,
+  resolveSaltSprayPauseFlowLabel,
+  resolveSaltSprayPauseRemark,
+};

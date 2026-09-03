@@ -99,6 +99,81 @@ describe("PickerOnlyInput", () => {
     expect(wrapper.find(".picker-only-calendar").exists()).toBe(false);
   });
 
+  test("allows opt-in manual hour and minute entry with two-digit limits", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      props: {
+        manualTimeEntry: true,
+        modelValue: "08:30",
+        type: "time",
+      },
+    });
+    const hourInput = wrapper.get('[data-testid="manual-time-hour"]');
+    const minuteInput = wrapper.get('[data-testid="manual-time-minute"]');
+
+    expect(hourInput.attributes("inputmode")).toBe("numeric");
+    expect(hourInput.attributes("maxlength")).toBe("2");
+    expect(minuteInput.attributes("maxlength")).toBe("2");
+
+    await hourInput.setValue("123abc");
+    expect(hourInput.element.value).toBe("12");
+
+    await minuteInput.setValue("60");
+    await minuteInput.trigger("blur");
+    expect(wrapper.get(".picker-only-input__manual-hint").text()).toBe("分钟应为 00–59");
+    expect(minuteInput.attributes("aria-invalid")).toBe("true");
+    expect(wrapper.emitted("update:modelValue").at(-1)).toEqual(["12:60"]);
+
+    await minuteInput.setValue("9");
+    await minuteInput.trigger("blur");
+    expect(minuteInput.element.value).toBe("09");
+    expect(wrapper.emitted("update:modelValue").at(-1)).toEqual(["12:09"]);
+  });
+
+  test("rejects hour 24 and manual values earlier than the configured minimum", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      attrs: {
+        min: "09:30",
+      },
+      props: {
+        manualTimeEntry: true,
+        modelValue: "10:00",
+        type: "time",
+      },
+    });
+    const hourInput = wrapper.get('[data-testid="manual-time-hour"]');
+    const minuteInput = wrapper.get('[data-testid="manual-time-minute"]');
+
+    await hourInput.setValue("24");
+    await hourInput.trigger("blur");
+    expect(wrapper.get(".picker-only-input__manual-hint").text()).toBe("小时应为 00–23");
+    expect(wrapper.emitted("update:modelValue").at(-1)).toEqual(["24:00"]);
+
+    await hourInput.setValue("09");
+    await minuteInput.setValue("29");
+    await minuteInput.trigger("blur");
+    expect(wrapper.get(".picker-only-input__manual-hint").text()).toBe("开始时间不能早于 09:30");
+    expect(wrapper.emitted("update:modelValue").at(-1)).toEqual(["09:29"]);
+  });
+
+  test("keeps manual fields synchronized with the existing time wheel", async () => {
+    const wrapper = mount(PickerOnlyInput, {
+      props: {
+        manualTimeEntry: true,
+        modelValue: "08:30",
+        type: "time",
+      },
+    });
+
+    await wrapper.get(".picker-only-input__manual-trigger").trigger("click");
+    await wrapper.get('.picker-only-time__field--hour [data-wheel-value="09"]').trigger("click");
+    await wrapper.get('.picker-only-time__field--minute [data-wheel-value="31"]').trigger("click");
+    await wrapper.get(".picker-only-calendar__confirm").trigger("click");
+
+    expect(wrapper.get('[data-testid="manual-time-hour"]').element.value).toBe("09");
+    expect(wrapper.get('[data-testid="manual-time-minute"]').element.value).toBe("31");
+    expect(wrapper.emitted("update:modelValue").at(-1)).toEqual(["09:31"]);
+  });
+
   test("closes the custom picker with Escape without changing the value", async () => {
     const wrapper = mount(PickerOnlyInput, {
       props: {

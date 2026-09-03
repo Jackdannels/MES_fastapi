@@ -56,7 +56,7 @@ describe("laboratory workbench layout", () => {
 
   test("enlarges compare, install, ready, and salt-spray control dialogs", () => {
     expect(pageSource).toContain('class="laboratory-operation-modal laboratory-operation-modal--compare"');
-    expect(pageSource.match(/class="laboratory-operation-modal(?:\s[^"]*)?"/g)).toHaveLength(5);
+    expect(pageSource.match(/class="laboratory-operation-modal(?:\s[^"]*)?"/g)).toHaveLength(7);
     expect(pageSource).toContain('data-testid="laboratory-salt-pause-modal"');
     expect(pageSource).toContain('data-testid="laboratory-salt-stop-modal"');
     expect(pageSource).toContain("laboratory-operation-modal-button");
@@ -69,6 +69,14 @@ describe("laboratory workbench layout", () => {
     expect(pageSource).toContain("laboratory-compare-complete-button");
     expect(stylesSource).toMatch(/\[data-testid="laboratory-compare-modal"\] \.form-actions\s*\{[^}]*width:\s*100%[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/i);
     expect(stylesSource).toMatch(/\.laboratory-compare-complete-button\s*\{[^}]*width:\s*100%[^}]*height:\s*72px[^}]*min-height:\s*72px[^}]*font-size:\s*20px/i);
+  });
+
+  test("keeps mold cancellation separate from reset and normal completion", () => {
+    expect(pageSource).toContain('data-testid="laboratory-mold-cancel-experiment"');
+    expect(pageSource).toContain('v-if="canCancelMoldExperiment"');
+    expect(pageSource).toContain('data-testid="laboratory-mold-cancel-reason-modal"');
+    expect(pageSource).toContain('data-testid="laboratory-mold-cancel-danger-modal"');
+    expect(pageSource).toContain('data-testid="laboratory-mold-cancel-awaiting-confirmation"');
   });
 
   test("teleports salt-spray control confirmations above the running experiment overlay", () => {

@@ -1440,6 +1440,8 @@ class FakeMqEventRepository:
         self.started = []
         self.axis_steps_started = []
         self.ended = []
+        self.mold_canceled = []
+        self.pending_mold_cancels = {}
         self.started_contexts = []
         self.context_payloads = []
         self.completed_runs_by_lab = {}
@@ -1533,6 +1535,15 @@ class FakeMqEventRepository:
                 }
                 del self.runs_by_lab[lab_code]
                 break
+
+    def find_pending_mold_cancel(self, run_no, cancel_request_id=""):
+        command = self.pending_mold_cancels.get(run_no, {})
+        if cancel_request_id and command.get("cancel_request_id") != cancel_request_id:
+            return {}
+        return command
+
+    def mark_mold_run_canceled(self, run_no, occurred_at, reason):
+        self.mold_canceled.append((run_no, occurred_at, reason))
 
 
 def test_process_laboratory_event_allows_hot_humid_laboratory_two_start_and_end():
@@ -4503,6 +4514,171 @@ def test_process_experiment_ended_marks_active_run_by_lab_code():
     assert repository.events[0]["task_no"] == "SYLU-2026-03-001"
     assert repository.events[0]["experiment_no"] == "SYLU-2026-03-001-A"
     assert repository.events[0]["sub_experiment_code"] == "SYLU-2026-03-001-A-AXIS-Y"
+
+
+def test_process_mold_experiment_ended_applies_matching_cancel_request(monkeypatch):
+    repository = FakeMqEventRepository()
+    repository.runs_by_lab["LAB_MOLD"] = {
+        "run_no": "RUN-MOLD-001",
+        "task_no": "TASK-MOLD",
+        "experiment_no": "EXP-MOLD",
+        "lab_code": "LAB_MOLD",
+        "device_name": "霉菌试验室",
+        "run_status": "实验进行中",
+    }
+    repository.pending_mold_cancels["RUN-MOLD-001"] = {
+        "run_no": "RUN-MOLD-001",
+        "end_mode": "cancel",
+        "cancel_request_id": "CANCEL-001",
+        "cancel_reason": "霉菌未按预期繁殖",
+    }
+    finish_calls = []
+    monkeypatch.setattr(
+        "app.services.mq_event_processor.get_attendance_service",
+        lambda: type(
+            "Attendance",
+            (),
+            {"finish_work_interval": lambda _self, **kwargs: finish_calls.append(kwargs)},
+        )(),
+    )
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_MOLD/events/experiment-ended",
+        {
+            "message_id": "MSG-MOLD-CANCEL",
+            "lab_code": "LAB_MOLD",
+            "run_no": "RUN-MOLD-001",
+            "end_mode": "cancel",
+            "cancel_request_id": "CANCEL-001",
+        },
+        received_at="2026-09-03 11:20:00",
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.mold_canceled == [
+        ("RUN-MOLD-001", "2026-09-03 11:20:00", "霉菌未按预期繁殖")
+    ]
+    assert repository.ended == []
+    assert repository.events[0]["payload"]["cancel_request_id"] == "CANCEL-001"
+    assert finish_calls == [
+        {
+            "run_no": "RUN-MOLD-001",
+            "lab_code": "LAB_MOLD",
+            "ended_at": "2026-09-03 11:20:00",
+        }
+    ]
+
+
+def test_process_mold_cancel_confirmation_rejects_unknown_request_identity():
+    repository = FakeMqEventRepository()
+    repository.runs_by_lab["LAB_MOLD"] = {
+        "run_no": "RUN-MOLD-001",
+        "task_no": "TASK-MOLD",
+        "experiment_no": "EXP-MOLD",
+        "lab_code": "LAB_MOLD",
+        "device_name": "霉菌试验室",
+        "run_status": "实验进行中",
+    }
+
+    with pytest.raises(ValueError, match="matching mold cancellation request"):
+        process_laboratory_event(
+            "mes/v1/labs/LAB_MOLD/events/experiment-ended",
+            {
+                "message_id": "MSG-MOLD-CANCEL-UNKNOWN",
+                "lab_code": "LAB_MOLD",
+                "run_no": "RUN-MOLD-001",
+                "end_mode": "cancel",
+                "cancel_request_id": "CANCEL-UNKNOWN",
+            },
+            repository=repository,
+        )
+
+    assert repository.mold_canceled == []
+    assert repository.messages == []
+    assert repository.events == []
+
+
+def test_process_normal_mold_experiment_ended_still_completes_normally():
+    repository = FakeMqEventRepository()
+    repository.runs_by_lab["LAB_MOLD"] = {
+        "run_no": "RUN-MOLD-NORMAL",
+        "task_no": "TASK-MOLD",
+        "experiment_no": "EXP-MOLD",
+        "lab_code": "LAB_MOLD",
+        "device_name": "霉菌试验室",
+        "run_status": "实验进行中",
+    }
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_MOLD/events/experiment-ended",
+        {
+            "message_id": "MSG-MOLD-NORMAL",
+            "lab_code": "LAB_MOLD",
+            "run_no": "RUN-MOLD-NORMAL",
+        },
+        received_at="2026-09-03 12:00:00",
+        repository=repository,
+    )
+
+    assert ack["status"] == "PROCESSED"
+    assert repository.ended == [
+        ("RUN-MOLD-NORMAL", "2026-09-03 12:00:00", "", "", "")
+    ]
+    assert repository.mold_canceled == []
+
+
+def test_process_mold_cancel_confirmation_requires_request_identity():
+    repository = FakeMqEventRepository()
+    repository.runs_by_lab["LAB_MOLD"] = {
+        "run_no": "RUN-MOLD-001",
+        "task_no": "TASK-MOLD",
+        "experiment_no": "EXP-MOLD",
+        "lab_code": "LAB_MOLD",
+        "device_name": "霉菌试验室",
+        "run_status": "实验进行中",
+    }
+    repository.pending_mold_cancels["RUN-MOLD-001"] = {
+        "run_no": "RUN-MOLD-001",
+        "end_mode": "cancel",
+        "cancel_request_id": "CANCEL-001",
+        "cancel_reason": "霉菌未按预期繁殖",
+    }
+
+    with pytest.raises(ValueError, match="cancel_request_id is required"):
+        process_laboratory_event(
+            "mes/v1/labs/LAB_MOLD/events/experiment-ended",
+            {
+                "message_id": "MSG-MOLD-CANCEL-NO-ID",
+                "lab_code": "LAB_MOLD",
+                "run_no": "RUN-MOLD-001",
+                "end_mode": "cancel",
+            },
+            repository=repository,
+        )
+
+    assert repository.ended == []
+    assert repository.mold_canceled == []
+
+
+def test_duplicate_mold_cancel_confirmation_is_idempotent():
+    repository = FakeMqEventRepository(existing_message_ids={"MSG-MOLD-CANCEL-DUPLICATE"})
+
+    ack = process_laboratory_event(
+        "mes/v1/labs/LAB_MOLD/events/experiment-ended",
+        {
+            "message_id": "MSG-MOLD-CANCEL-DUPLICATE",
+            "lab_code": "LAB_MOLD",
+            "run_no": "RUN-MOLD-001",
+            "end_mode": "cancel",
+            "cancel_request_id": "CANCEL-001",
+        },
+        repository=repository,
+    )
+
+    assert ack["status"] == "DUPLICATE"
+    assert repository.ended == []
+    assert repository.mold_canceled == []
 
 
 def test_process_experiment_ended_uses_mes_receive_time_as_business_time(monkeypatch):

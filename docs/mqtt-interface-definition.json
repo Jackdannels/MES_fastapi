@@ -48,7 +48,10 @@
         "run_no": "MES实验运行批次号",
         "sub_experiment_code": "轴向分段实验编号，非轴向省略",
         "axis_code": "当前轴向，非轴向省略",
-        "next_axis_code": "下一轴向，最终轴向省略"
+        "next_axis_code": "下一轴向，最终轴向省略",
+        "end_mode": "正常完成省略；仅取消霉菌实验时为 cancel",
+        "cancel_reason": "end_mode=cancel 时必填的取消原因",
+        "cancel_request_id": "end_mode=cancel 时由 MES 生成的取消请求标识"
       }
     }
   ],
@@ -85,6 +88,8 @@
         "sub_experiment_code": "轴向任务的分段实验编号，非轴向省略",
         "axis_code": "本次完成轴向，非轴向省略",
         "next_axis_code": "下一轴向，最终轴向省略",
+        "end_mode": "正常完成省略；确认取消霉菌实验时原样返回 cancel",
+        "cancel_request_id": "确认取消霉菌实验时必须原样返回 MES 下发的取消请求标识",
         "ended_at": "2026-05-16 17:30:00"
       }
     },

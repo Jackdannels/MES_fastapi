@@ -15,6 +15,8 @@ import {
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
+const MOLD_CANCELED_STATUS = "实验已取消";
+const MOLD_LAB = "霉菌试验室";
 
 const experimentHistoryStatusIsWithdrawal = (status) => normalizeText(status).startsWith("撤回至");
 
@@ -71,6 +73,23 @@ const trayLaboratoryLocation = (row) => normalizeText(
   || row?.lifecycleLocation
   || row?.location,
 );
+
+const trayCanRestartCanceledMoldInPlace = (row, currentTask) => {
+  const statuses = [
+    row?.trayStatus,
+    row?.displayStatus,
+    row?.lifecycleStatus,
+  ].map(normalizeText);
+  return Boolean(
+    row?.canceledMoldRerunEligible === true
+    && !normalizeText(currentTask?.runNo)
+    && normalizeText(currentTask?.device) === MOLD_LAB
+    && normalizeText(currentTask?.experimentName).includes("霉菌")
+    && trayLaboratoryLocation(row) === MOLD_LAB
+    && statuses.includes(MOLD_CANCELED_STATUS)
+    && row?.completedForCurrentExperiment !== true
+  );
+};
 
 const rowCompletedExperimentCodeSet = (row) =>
   new Set(asArray(row?.completedExperimentCodes).map((code) => normalizeText(code)).filter(Boolean));
@@ -593,6 +612,7 @@ export {
   trayCanEnterCurrentExperimentAfterOtherCompletion,
   trayHasActiveRunForCurrentExperiment,
   trayIsCompletedForCurrentExperiment,
+  trayCanRestartCanceledMoldInPlace,
   trayIsDispatchedToCurrentLaboratory,
   trayIsOccupiedByDifferentLaboratory,
   trayLaboratoryLocation,

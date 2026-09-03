@@ -89,6 +89,7 @@ from app.services.storage_staging_policy import (
 from app.services.storage_schedule_lock_policy import (
     validate_fixture_locked_schedules as _validate_fixture_locked_schedules,
 )
+from app.services.laboratory_termination import MOLD_CANCELED_STATUS
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 
@@ -226,7 +227,6 @@ def _run_trays_have_allowed_appearance_source(
         if (
             _normalize_text(entry.get("task_code") or entry.get("task_no")) != task_code
             or _normalize_text(entry.get("tray_code") or entry.get("tray_no")) != tray_code
-            or _normalize_text(entry.get("status") or entry.get("run_tray_status")) not in COMPLETED_EXPERIMENT_STATUSES
         ):
             continue
         experiment_code = _normalize_text(entry.get("experiment_code") or entry.get("experiment_no"))
@@ -235,6 +235,11 @@ def _run_trays_have_allowed_appearance_source(
             or _normalize_text(entry.get("experiment_name"))
             or experiment_code
         )
+        relation_status = _normalize_text(entry.get("status") or entry.get("run_tray_status"))
+        is_completed = relation_status in COMPLETED_EXPERIMENT_STATUSES
+        is_canceled_mold = relation_status == MOLD_CANCELED_STATUS and "霉菌" in experiment_name
+        if not (is_completed or is_canceled_mold):
+            continue
         if experiment_requires_appearance_inspection(experiment_name):
             return True
     return False

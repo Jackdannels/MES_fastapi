@@ -41,7 +41,11 @@ from app.services.laboratory_operations import (
     write_laboratory_updates,
 )
 from app.services.laboratory_start import start_storage_laboratory_experiment
-from app.services.laboratory_termination import terminate_storage_laboratory_experiment
+from app.services.laboratory_termination import (
+    MOLD_LAB_CODE,
+    cancel_storage_mold_experiment,
+    terminate_storage_laboratory_experiment,
+)
 from app.services.schedule_cascade_runtime import apply_run_schedule_cascade, run_forecast_end_at
 from app.services.salt_spray_pause import (
     ABNORMAL, PAUSED, PAUSE_RESUMED, PAUSE_STOPPED, RUNNING, SALT_LAB_CODE,
@@ -106,6 +110,20 @@ class MqEventRepository(Protocol):
         axis_code: str = "",
         next_axis_code: str = "",
         sub_experiment_code: str = "",
+    ) -> None: ...
+
+
+    def find_pending_mold_cancel(
+        self,
+        run_no: str,
+        cancel_request_id: str = "",
+    ) -> dict[str, Any]: ...
+
+    def mark_mold_run_canceled(
+        self,
+        run_no: str,
+        occurred_at: str,
+        reason: str,
     ) -> None: ...
 
 
@@ -491,6 +509,70 @@ class MySQLMqEventRepository:
         payload = decode_command_payload(row.get("payload_json"))
         return {"command": normalize_text(row.get("message_type")), "payload": payload} if payload else {}
 
+    def find_pending_mold_cancel(
+        self,
+        run_no: str,
+        cancel_request_id: str = "",
+    ) -> dict[str, Any]:
+        normalized_request_id = normalize_text(cancel_request_id)
+        request_filter = ""
+        params: list[Any] = [MOLD_LAB_CODE, normalize_text(run_no)]
+        if normalized_request_id:
+            request_filter = "AND JSON_UNQUOTE(JSON_EXTRACT(command.payload_json, '$.cancel_request_id'))=%s"
+            params.append(normalized_request_id)
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT command.message_log_id, command.payload_json,
+                           TIMESTAMPDIFF(SECOND, command.created_at, NOW()) AS pending_seconds
+                    FROM biz_mq_message_log command
+                    WHERE command.direction='MES_TO_HOST'
+                      AND command.lab_code=%s
+                      AND command.message_type='END_REQUEST'
+                      AND JSON_UNQUOTE(JSON_EXTRACT(command.payload_json, '$.end_mode'))='cancel'
+                      AND JSON_UNQUOTE(JSON_EXTRACT(command.payload_json, '$.run_no'))=%s
+                      {request_filter}
+                      AND command.process_status NOT IN ('FAILED','SKIPPED')
+                      AND NOT EXISTS (
+                        SELECT 1 FROM biz_experiment_event event
+                        WHERE event.event_type='EXPERIMENT_ENDED'
+                          AND JSON_UNQUOTE(JSON_EXTRACT(event.payload_json, '$.end_mode'))='cancel'
+                          AND JSON_UNQUOTE(JSON_EXTRACT(event.payload_json, '$.cancel_request_id')) =
+                              JSON_UNQUOTE(JSON_EXTRACT(command.payload_json, '$.cancel_request_id'))
+                      )
+                    ORDER BY command.created_at DESC, command.message_log_id DESC
+                    LIMIT 1 FOR UPDATE
+                    """,
+                    params,
+                )
+                row = cursor_row_as_dict(cursor) or {}
+                if not row:
+                    return {}
+                try:
+                    pending_seconds = int(row.get("pending_seconds") or 0)
+                except (TypeError, ValueError):
+                    pending_seconds = 0
+                if pending_seconds >= COMMAND_CONFIRMATION_TIMEOUT_SECONDS:
+                    cursor.execute(
+                        """
+                        UPDATE biz_mq_message_log
+                        SET process_status='FAILED',
+                            error_code='CONFIRMATION_TIMEOUT',
+                            error_message=%s,
+                            processed_at=NOW()
+                        WHERE message_log_id=%s
+                          AND process_status NOT IN ('FAILED','SKIPPED')
+                        """,
+                        (
+                            f"上位机确认超时（{COMMAND_CONFIRMATION_TIMEOUT_SECONDS}秒）",
+                            row.get("message_log_id"),
+                        ),
+                    )
+                    connection.commit()
+                    return {}
+        return decode_command_payload(row.get("payload_json"))
+
     def mark_salt_run_paused(self, run_no: str, pause_no: str, occurred_at: str, command_payload: dict[str, Any]) -> None:
         trays = inspection_tray_codes(command_payload)
         if not trays:
@@ -632,6 +714,34 @@ class MySQLMqEventRepository:
                 {"run_no": run_no, "schedule_id": run.get("schedule_id") or run.get("schedule_no")},
                 new_end_at=occurred_at,
                 reason="盐雾实验异常停止",
+            )
+
+    def mark_mold_run_canceled(self, run_no: str, occurred_at: str, reason: str) -> None:
+        storage = get_storage_backend()
+        with acquire_laboratory_storage_commit_lock():
+            snapshot, task_scope = self._storage_snapshot_for_run(storage, run_no)
+            run = run_context_from_snapshot(snapshot, run_no)
+            task_no = normalize_text(run.get("task_code") or run.get("task_no")) or task_scope
+            experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
+            result = cancel_storage_mold_experiment(
+                snapshot,
+                task_code=task_no,
+                experiment_code=experiment_no,
+                run_no=run_no,
+                canceled_at=occurred_at,
+                cancel_reason=reason,
+            )
+            write_laboratory_updates(
+                storage,
+                {
+                    "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
+                    "mes.experiments": result["experiments"],
+                    "mes.schedules": result["schedules"],
+                    "mes.experiment_runs": result["experimentRuns"],
+                    "mes.experiment_run_trays": result["experimentRunTrays"],
+                },
+                scoped_samples=result["affectedSamples"],
+                task_codes={task_no},
             )
 
     def find_current_context_by_lab(
@@ -1199,6 +1309,8 @@ def process_laboratory_event(
     payload_sub_experiment_code = first_text(payload, "sub_experiment_code", "subExperimentCode", "sub_experiment_no", "subExperimentNo")
     payload_axis_code = first_text(payload, "axis_code", "axisCode", "current_axis_code", "currentAxisCode")
     payload_next_axis_code = first_text(payload, "next_axis_code", "nextAxisCode")
+    payload_end_mode = first_text(payload, "end_mode", "endMode")
+    payload_cancel_request_id = first_text(payload, "cancel_request_id", "cancelRequestId")
     if message_type == "EXPERIMENT_RESULT" and not payload_run_no:
         raise ValueError("run_no is required for experiment result")
     run = None
@@ -1226,6 +1338,27 @@ def process_laboratory_event(
                 )
     if message_type == "EXPERIMENT_ENDED" and not run:
         raise ValueError(f"active experiment run is required for lab_code: {lab_code}")
+    mold_cancel_command: dict[str, Any] = {}
+    if message_type == "EXPERIMENT_ENDED" and lab_code == MOLD_LAB_CODE:
+        finder = getattr(repo, "find_pending_mold_cancel", None)
+        resolved_run_no = payload_run_no or normalize_text((run or {}).get("run_no"))
+        pending_cancel = finder(resolved_run_no, payload_cancel_request_id) if callable(finder) and resolved_run_no else {}
+        if payload_end_mode == "cancel":
+            if not payload_run_no:
+                raise ValueError("run_no is required for mold cancellation confirmation")
+            if not payload_cancel_request_id:
+                raise ValueError("cancel_request_id is required for mold cancellation confirmation")
+            if not pending_cancel:
+                raise ValueError("matching mold cancellation request is required")
+            if normalize_text((run or {}).get("lab_code")) != MOLD_LAB_CODE:
+                raise ValueError("run_no does not belong to LAB_MOLD")
+            if normalize_text((run or {}).get("run_status") or (run or {}).get("status")) != RUNNING:
+                raise ValueError("只有实验进行中的霉菌实验可以取消")
+            mold_cancel_command = pending_cancel
+        elif pending_cancel:
+            raise ValueError("experiment-ended must confirm the pending mold cancellation request")
+    elif message_type == "EXPERIMENT_ENDED" and payload_end_mode == "cancel":
+        raise ValueError("mold cancellation confirmation is only supported for LAB_MOLD")
     if message_type in {"EXPERIMENT_PAUSED", "EXPERIMENT_RESUMED", "EXPERIMENT_STOPPED"}:
         if lab_code != SALT_LAB_CODE:
             raise ValueError("盐雾暂停事件仅支持 LAB_SALT")
@@ -1259,7 +1392,13 @@ def process_laboratory_event(
     context_sub_experiment_code = record_sub_experiment_code(run or {}) or record_sub_experiment_code(context or {})
     sub_experiment_code = context_sub_experiment_code or payload_sub_experiment_code
     run_no = normalize_text((run or {}).get("run_no"))
-    correlation_id = first_text(payload, "correlation_id", "correlationId")
+    correlation_id = first_text(
+        payload,
+        "correlation_id",
+        "correlationId",
+        "cancel_request_id",
+        "cancelRequestId",
+    )
     pause_no = pause_no_from_payload(payload)
     salt_command = {
         "EXPERIMENT_PAUSED": "PAUSE_REQUEST",
@@ -1289,6 +1428,11 @@ def process_laboratory_event(
             repo.mark_salt_run_stopped(run_no, pause_no, occurred_at, termination_type, termination_reason)
             if termination_type != TERMINATION_ABNORMAL:
                 repo.mark_run_ended(run_no, occurred_at, "", "", sub_experiment_code)
+    if mold_cancel_command:
+        cancel_reason = normalize_text(mold_cancel_command.get("cancel_reason"))
+        if not cancel_reason:
+            raise ValueError("cancel_reason is required for mold cancellation")
+        repo.mark_mold_run_canceled(run_no, occurred_at, cancel_reason)
     message_log_id = repo.record_message(
         {
             "message_id": message_id,
@@ -1360,8 +1504,9 @@ def process_laboratory_event(
             started_at=occurred_at,
         )
     elif message_type == "EXPERIMENT_ENDED":
-        repo.mark_run_ended(run_no, occurred_at, payload_axis_code, payload_next_axis_code, sub_experiment_code)
-        if should_finish_work_interval_for_completion(axis_code=payload_axis_code, next_axis_code=payload_next_axis_code):
+        if not mold_cancel_command:
+            repo.mark_run_ended(run_no, occurred_at, payload_axis_code, payload_next_axis_code, sub_experiment_code)
+        if mold_cancel_command or should_finish_work_interval_for_completion(axis_code=payload_axis_code, next_axis_code=payload_next_axis_code):
             get_attendance_service().finish_work_interval(
                 run_no=run_no,
                 lab_code=lab_code,

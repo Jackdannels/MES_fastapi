@@ -5547,4 +5547,62 @@ describe("staging-management model", () => {
     expect(result.error).toBe("该托盘已完成全部实验，当前应保留在暂存间。");
     expect(result.snapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_out" && event.tray_code === "SYLU-2026-03-001-TP-002")).toHaveLength(0);
   });
+
+  test("allows a canceled mold tray into staging or appearance without treating all experiments as completed", () => {
+    const taskCode = "TASK-MOLD-CANCELED";
+    const experimentCode = `${taskCode}-MOLD`;
+    const trayCode = `${taskCode}-TP-001`;
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({ code: taskCode, test_type: "霉菌试验" });
+    snapshot[STORAGE_KEYS.experiments].push({
+      experiment_code: experimentCode,
+      experiment_name: "霉菌试验",
+      required_device: "霉菌试验室",
+      status: "待排程",
+      task_code: taskCode,
+    });
+    snapshot[STORAGE_KEYS.experiment_trays].push({ experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode });
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [{
+      experiment_code: experimentCode,
+      run_no: "RUN-MOLD-CANCELED",
+      run_tray_status: "实验已取消",
+      task_code: taskCode,
+      tray_code: trayCode,
+    }];
+    snapshot[STORAGE_KEYS.samples].push({
+      code: `${taskCode}-SP-001`,
+      flow_status: "实验已取消",
+      location: "霉菌试验室",
+      status: "实验已取消",
+      task_code: taskCode,
+      trays: [{ quantity: 1, status: "实验已取消", tray_code: trayCode }],
+    });
+
+    const stagingRow = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "staging" })
+      .find((row) => row.trayCode === trayCode);
+    const appearanceRow = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" })
+      .find((row) => row.trayCode === trayCode);
+    expect(stagingRow).toEqual(expect.objectContaining({
+      inboundKind: "allowed",
+      isPostExperimentInbound: false,
+      status: "待入库",
+    }));
+    expect(appearanceRow).toEqual(expect.objectContaining({
+      inboundKind: "appearance",
+      isPostExperimentInbound: false,
+      status: "待入库",
+    }));
+
+    const stockIn = applyZancunInventoryAction({
+      now: TODAY,
+      payload: { code: trayCode, mode: "stockIn" },
+      room: "staging",
+      snapshot,
+    });
+    expect(stockIn.error).toBe("");
+    expect(stockIn.snapshot[STORAGE_KEYS.samples].find((sample) => sample.task_code === taskCode)).toMatchObject({
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+    });
+  });
 });

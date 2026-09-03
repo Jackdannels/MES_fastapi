@@ -2,11 +2,23 @@ $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Pat
 $sourcePath = Join-Path $projectRoot "scripts\client\MESWorkstationConfigurator.cs"
 $buildScript = Join-Path $projectRoot "scripts\build_workstation_configurator.ps1"
 
-Describe "MES workstation configurator v2.1" {
+Describe "MES workstation configurator v2.2" {
+    It "uses a stable MES hostname and safely migrates only historical defaults" {
+        $source = Get-Content -Raw -LiteralPath $sourcePath
+
+        $source | Should Match 'Version = "v2\.2"'
+        $source | Should Match 'DefaultServerUrl = "http://mes-server:5173"'
+        $source | Should Match 'LegacyDefaultServerUrls'
+        $source | Should Match 'MigrateLegacyServerUrl'
+        $source | Should Match 'config\.RegisteredServerUrl = DefaultServerUrl'
+        $source | Should Match 'terminal-preserved'
+        $source | Should Match '192\.168\.110\.77:5173'
+    }
+
     It "uses dedicated Edge and browser-page health for automatic recovery" {
         $source = Get-Content -Raw -LiteralPath $sourcePath
 
-        $source | Should Match 'Version = "v2\.1"'
+        $source | Should Match 'Version = "v2\.2"'
         $source | Should Match 'IsDedicatedEdgeRunning'
         $source | Should Match 'pageActive'
         $source | Should Match 'WorkstationWatchdog'
@@ -36,9 +48,9 @@ Describe "MES workstation configurator v2.1" {
         $source | Should Match '"/laboratory\?lab=" \+ labCode'
     }
 
-    It "builds v2.1 and passes the deterministic runtime self-tests" {
-        $outputDirectory = Join-Path $TestDrive "workstation-v2.1"
-        $outputPath = Join-Path $outputDirectory "MES工作台设置_v2.1.exe"
+    It "builds v2.2 and passes the deterministic runtime self-tests" {
+        $outputDirectory = Join-Path $TestDrive "workstation-v2.2"
+        $outputPath = Join-Path $outputDirectory "MES工作台设置_v2.2.exe"
 
         & $buildScript -ProjectRoot $projectRoot -OutputDirectory $outputDirectory -OutputPath $outputPath -DesktopCopyPath "" -LegacyDesktopCopyPath ""
         $LASTEXITCODE | Should Be 0
@@ -48,6 +60,8 @@ Describe "MES workstation configurator v2.1" {
         $LASTEXITCODE | Should Be 0
         & $outputPath --window-focus-self-test
         $LASTEXITCODE | Should Be 0
-        [Diagnostics.FileVersionInfo]::GetVersionInfo($outputPath).FileVersion | Should Be "2.1.0.0"
+        & $outputPath --server-address-migration-self-test
+        $LASTEXITCODE | Should Be 0
+        [Diagnostics.FileVersionInfo]::GetVersionInfo($outputPath).FileVersion | Should Be "2.2.0.0"
     }
 }

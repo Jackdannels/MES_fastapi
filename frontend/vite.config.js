@@ -19,7 +19,7 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5173,
-    allowedHosts: ["192.168.110.15", "820rbhs27834.vicp.fun"],
+    allowedHosts: ["mes-server", "192.168.110.15", "820rbhs27834.vicp.fun"],
     proxy: devServerProxy,
   },
 });

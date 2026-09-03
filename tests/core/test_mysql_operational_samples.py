@@ -15,8 +15,12 @@ class Cursor:
         return self.batches.pop(0)
 
 
-def test_operational_sample_loader_keeps_workflow_fields_without_reading_event_history() -> None:
+def test_operational_sample_loader_includes_only_flow_milestone_history() -> None:
     updated_at = datetime(2026, 8, 4, 12, 30)
+    dispatched_at = datetime(2026, 8, 4, 12, 0)
+    compared_at = datetime(2026, 8, 4, 12, 10)
+    installed_at = datetime(2026, 8, 4, 12, 20)
+    ready_at = datetime(2026, 8, 4, 12, 25)
     cursor = Cursor([
         [{
             "sample_id": 1,
@@ -39,12 +43,65 @@ def test_operational_sample_loader_keeps_workflow_fields_without_reading_event_h
             "target_sub_experiment_code": "EXP-VIB",
             "updated_at": updated_at,
         }],
+        [
+            {
+                "event_id": 14,
+                "sample_id": 1,
+                "sample_no": "TASK-001-SP-001",
+                "action_type": "实验确认",
+                "location_desc": "振动一室",
+                "owner_name": "操作员甲",
+                "sample_status": "实验准备就绪",
+                "detail": "TASK-001 / 振动试验 / 实验准备就绪 / 托盘：TASK-001-TP-001",
+                "event_time": ready_at,
+            },
+            {
+                "event_id": 13,
+                "sample_id": 1,
+                "sample_no": "TASK-001-SP-001",
+                "action_type": "样品安装",
+                "location_desc": "振动一室",
+                "owner_name": "操作员甲",
+                "sample_status": "工装夹具安装",
+                "detail": "TASK-001 / 振动试验 / 工装夹具安装 / 托盘：TASK-001-TP-001",
+                "event_time": installed_at,
+            },
+            {
+                "event_id": 12,
+                "sample_id": 1,
+                "sample_no": "TASK-001-SP-001",
+                "action_type": "任务比对",
+                "location_desc": "振动一室",
+                "owner_name": "操作员甲",
+                "sample_status": "已到达实验室",
+                "detail": "TASK-001 / 振动试验 / 已到达实验室 / 托盘：TASK-001-TP-001",
+                "event_time": compared_at,
+            },
+            {
+                "event_id": 11,
+                "sample_id": 1,
+                "sample_no": "TASK-001-SP-001",
+                "action_type": "暂存间扫码出库",
+                "location_desc": "振动一室",
+                "owner_name": "操作员甲",
+                "sample_status": "送至实验室",
+                "detail": "TASK-001-TP-001 送至 振动一室",
+                "event_time": dispatched_at,
+            },
+        ],
     ])
 
     samples = load_operational_samples(cursor)
 
-    assert len(cursor.executed) == 2
-    assert all("biz_sample_event" not in statement for statement, _params in cursor.executed)
+    assert len(cursor.executed) == 3
+    event_statement, event_params = cursor.executed[2]
+    assert "FROM biz_sample_event" in event_statement
+    assert "action_type IN" in event_statement
+    assert "sample_status IN" in event_statement
+    assert event_params[0] == 1
+    assert "任务比对" in event_params
+    assert "工装夹具安装" in event_params
+    assert "实验准备就绪" in event_params
     assert samples == [{
         "id": "TASK-001-SP-001",
         "code": "TASK-001-SP-001",
@@ -67,7 +124,44 @@ def test_operational_sample_loader_keeps_workflow_fields_without_reading_event_h
             "targetExperimentCode": "EXP-VIB",
             "updated_at": updated_at,
         }],
-        "history": [],
+        "history": [
+            {
+                "id": "14",
+                "time": "2026-08-04 12:25:00",
+                "action": "实验确认",
+                "location": "振动一室",
+                "owner": "操作员甲",
+                "status": "实验准备就绪",
+                "detail": "TASK-001 / 振动试验 / 实验准备就绪 / 托盘：TASK-001-TP-001",
+            },
+            {
+                "id": "13",
+                "time": "2026-08-04 12:20:00",
+                "action": "样品安装",
+                "location": "振动一室",
+                "owner": "操作员甲",
+                "status": "工装夹具安装",
+                "detail": "TASK-001 / 振动试验 / 工装夹具安装 / 托盘：TASK-001-TP-001",
+            },
+            {
+                "id": "12",
+                "time": "2026-08-04 12:10:00",
+                "action": "任务比对",
+                "location": "振动一室",
+                "owner": "操作员甲",
+                "status": "已到达实验室",
+                "detail": "TASK-001 / 振动试验 / 已到达实验室 / 托盘：TASK-001-TP-001",
+            },
+            {
+                "id": "11",
+                "time": "2026-08-04 12:00:00",
+                "action": "暂存间扫码出库",
+                "location": "振动一室",
+                "owner": "操作员甲",
+                "status": "送至实验室",
+                "detail": "TASK-001-TP-001 送至 振动一室",
+            },
+        ],
     }]
 
 

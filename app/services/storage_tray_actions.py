@@ -28,6 +28,8 @@ SAMPLES_KEY = "mes.samples"
 STAGING_EVENTS_KEY = "mes.staging_events"
 TASKS_KEY = "mes.tasks"
 SCHEDULES_KEY = "mes.schedules"
+EXPERIMENTS_KEY = "mes.experiments"
+EXPERIMENT_RUN_TRAYS_KEY = "mes.experiment_run_trays"
 
 STAGING_ROOM = "staging"
 APPEARANCE_ROOM = "appearance"
@@ -35,6 +37,7 @@ STAGING_LOCATION = "恒温恒湿间（暂存间）"
 POST_EXPERIMENT_STAGING_LOCATION = "恒温恒湿间（实验后暂存间）"
 APPEARANCE_LOCATION = "外观检测间"
 RETURNED_STATUS = "厂家收回"
+MOLD_CANCELED_STATUS = "实验已取消"
 
 ROOM_CONFIGS = {
     STAGING_ROOM: {
@@ -131,6 +134,83 @@ def allows_completed_post_experiment_appearance_stock_in(config: dict[str, Any],
         and current_status in {"实验已完成", "实验完成", "实验已经完成"}
         and requested_status == "实验后外观检测间存放"
     )
+
+
+def canceled_mold_experiment_code(
+    snapshot: dict[str, Any],
+    *,
+    task_code: str,
+    tray_code: str,
+) -> str:
+    """Return the mold experiment behind the tray's latest canceled run.
+
+    Cancellation is a routing exception, not a globally completed experiment
+    status.  Keep the authorization tied to the authoritative run-tray relation
+    and its task-scoped experiment metadata so an unrelated/stale cancellation
+    cannot unlock storage actions.
+    """
+    normalized_task_code = normalize_text(task_code)
+    normalized_tray_code = normalize_text(tray_code)
+    if not normalized_task_code or not normalized_tray_code:
+        return ""
+
+    matching_run_trays = [
+        relation
+        for relation in as_list(snapshot.get(EXPERIMENT_RUN_TRAYS_KEY))
+        if isinstance(relation, dict)
+        and task_code_value(relation) == normalized_task_code
+        and tray_code_value(relation) == normalized_tray_code
+    ]
+    if not matching_run_trays:
+        return ""
+
+    mold_experiment_codes = {
+        normalize_text(
+            item.get("experiment_code")
+            or item.get("experimentCode")
+            or item.get("experiment_no")
+            or item.get("experimentNo")
+            or item.get("code")
+        )
+        for item in as_list(snapshot.get(EXPERIMENTS_KEY))
+        if isinstance(item, dict)
+        and task_code_value(item) == normalized_task_code
+        and "霉菌"
+        in normalize_text(
+            item.get("experiment_name")
+            or item.get("experimentName")
+            or item.get("experiment_type")
+            or item.get("test_type")
+        )
+    }
+    mold_experiment_codes.discard("")
+
+    # MySQL returns run-tray relations ordered by experiment and run number.
+    # Evaluate the latest relation within each experiment rather than across
+    # the whole tray, because an older unrelated experiment may sort last.
+    for experiment_code in mold_experiment_codes:
+        experiment_relations = [
+            relation
+            for relation in matching_run_trays
+            if normalize_text(
+                relation.get("experiment_code")
+                or relation.get("experimentCode")
+                or relation.get("experiment_no")
+                or relation.get("experimentNo")
+            )
+            == experiment_code
+        ]
+        if not experiment_relations:
+            continue
+        latest_relation = experiment_relations[-1]
+        latest_status = normalize_text(
+            latest_relation.get("run_tray_status")
+            or latest_relation.get("runTrayStatus")
+            or latest_relation.get("status")
+        )
+        if latest_status == MOLD_CANCELED_STATUS:
+            return experiment_code
+    return ""
 
 
 def appearance_phase(status: str) -> str:
@@ -480,6 +560,18 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
     current_status = primary_status(matches)
     if current_status in config["current_statuses"]:
         raise StorageTrayActionError(config["duplicate_stock_in_error"], status_code=409)
+    normalized_tray_code = normalize_text(tray_code)
+    task_code = primary_task_code(matches)
+    canceled_mold_code = (
+        canceled_mold_experiment_code(
+            snapshot,
+            task_code=task_code,
+            tray_code=normalized_tray_code,
+        )
+        if current_status == MOLD_CANCELED_STATUS
+        else ""
+    )
+    allows_canceled_mold_stock_in = bool(canceled_mold_code)
     allows_partial_axis_stock_in = (
         config["event_room"] == STAGING_ROOM
         and is_partial_axis_completion_status(current_status)
@@ -520,11 +612,10 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
         and not allows_pre_experiment_appearance_stock_in
         and not allows_post_experiment_appearance_stock_in
         and not allows_mid_experiment_appearance_stock_in
+        and not allows_canceled_mold_stock_in
     ):
         raise StorageTrayActionError(config["stock_in_blocked_error"], status_code=400)
 
-    normalized_tray_code = normalize_text(tray_code)
-    task_code = primary_task_code(matches)
     owner = normalize_text(payload.get("operator")) or "扫码登记"
     requested_status = normalize_text(payload.get("status"))
     # The server-side pause record is authoritative. A page opened before the
@@ -532,12 +623,18 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
     # an otherwise authorized tray because of that stale presentation value.
     if mid_context is not None:
         requested_status = MID_EXPERIMENT_APPEARANCE_STATUS
-    status = MID_EXPERIMENT_APPEARANCE_STATUS if mid_context is not None else (requested_status or config["stock_in_status"])
-    location = normalize_text(payload.get("location")) or config["stock_in_location"]
+    if allows_canceled_mold_stock_in:
+        status = config["stock_in_status"]
+        location = config["stock_in_location"]
+    else:
+        status = MID_EXPERIMENT_APPEARANCE_STATUS if mid_context is not None else (requested_status or config["stock_in_status"])
+        location = normalize_text(payload.get("location")) or config["stock_in_location"]
     appearance_metadata: dict[str, Any] = {}
     if config["event_room"] == APPEARANCE_ROOM:
         phase = appearance_phase(status)
         target_experiment_code = tray_target_experiment_code(matches[0][1])
+        if allows_canceled_mold_stock_in:
+            target_experiment_code = canceled_mold_code
         if phase:
             appearance_metadata["appearance_phase"] = phase
         if target_experiment_code:

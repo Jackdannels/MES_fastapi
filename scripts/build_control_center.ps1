@@ -1,6 +1,6 @@
 param(
     [string]$ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path,
-    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.1.exe"),
+    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.2.exe"),
     [string]$IconPath = (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path "assets\mes-control-center.ico"),
     [switch]$NoAdminManifest
 )

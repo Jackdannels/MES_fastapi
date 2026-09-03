@@ -11,6 +11,7 @@ param(
 $ErrorActionPreference = "Stop"
 $backendPort = 8000
 $frontendPort = 5173
+$frontendNetworkHost = "mes-server"
 $limsSimulatorPort = 8900
 $upperComputerSimulatorPort = 8899
 
@@ -264,7 +265,7 @@ function Start-MesSystem {
     New-Item -ItemType Directory -Force -Path $bootstrapLogDirectory | Out-Null
     $bootstrapStdout = Join-Path $bootstrapLogDirectory "bootstrap.stdout.log"
     $bootstrapStderr = Join-Path $bootstrapLogDirectory "bootstrap.stderr.log"
-    $startArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$startScript`" -Production -DisableAutoOpenBrowser -StateFile `"$StateFile`""
+    $startArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$startScript`" -Production -DisableAutoOpenBrowser -FrontendNetworkHost `"$frontendNetworkHost`" -StateFile `"$StateFile`""
     $startProcess = Start-Process -FilePath "powershell.exe" -ArgumentList $startArguments `
         -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput $bootstrapStdout -RedirectStandardError $bootstrapStderr

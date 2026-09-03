@@ -150,7 +150,13 @@
         </div>
         <div class="form-field" :class="{ 'is-hidden': scheduleForm.time_slot !== 'custom' }">
           <label>{{ uiText.startTime }}</label>
-          <PickerOnlyInput v-model="scheduleForm.custom_start" type="time" name="custom_start" :min="scheduleCustomStartMinTime" />
+          <PickerOnlyInput
+            v-model="scheduleForm.custom_start"
+            manual-time-entry
+            type="time"
+            name="custom_start"
+            :min="scheduleCustomStartMinTime"
+          />
         </div>
       </div>
       <div class="form-actions">
@@ -679,7 +685,13 @@
       </div>
       <div class="form-field" :class="{ 'is-hidden': editForm.time_slot !== 'custom' }">
         <label>{{ uiText.startTime }}</label>
-        <PickerOnlyInput v-model="editForm.custom_start" type="time" name="custom_start" :min="editCustomStartMinTime" />
+        <PickerOnlyInput
+          v-model="editForm.custom_start"
+          manual-time-entry
+          type="time"
+          name="edit_custom_start"
+          :min="editCustomStartMinTime"
+        />
       </div>
       <AppFeedback :message="editWarning" tone="warning" style="grid-column: 1 / -1;" @close="editWarning = ''" />
       <div class="form-actions" style="grid-column: 1 / -1;">

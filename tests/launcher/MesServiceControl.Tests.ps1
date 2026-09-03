@@ -112,6 +112,13 @@ Describe "MES service controller" {
         $publicServerSource | Should Match 'Binding: http://\$\{host\}:\$\{port\}'
     }
 
+    It "advertises the stable MES hostname when the control center starts production" {
+        $controllerSource = Get-Content -LiteralPath $controller -Raw
+
+        $controllerSource | Should Match '\$frontendNetworkHost = "mes-server"'
+        $controllerSource | Should Match '-FrontendNetworkHost `"\$frontendNetworkHost`"'
+    }
+
     It "tags both terminal commands with a launcher session for precise process cleanup" {
         $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
 

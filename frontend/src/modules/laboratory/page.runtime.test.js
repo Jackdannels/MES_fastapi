@@ -59,6 +59,8 @@ const interfaceModeCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/mq/interface-mode") && (options.method || "GET") === "POST");
 const laboratoryEndRequestCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/mq/laboratory/end-request") && (options.method || "GET") === "POST");
+const laboratoryCancelRequestCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/mq/laboratory/cancel-request") && (options.method || "GET") === "POST");
 const laboratoryStartCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/") && String(input).includes("/start") && (options.method || "GET") === "POST");
 const laboratoryOperationCalls = () =>
@@ -6199,6 +6201,89 @@ describe("LaboratoryPage runtime", () => {
     vi.advanceTimersByTime(30_000);
     await flushPageUpdates();
     expect(attendanceLogoutCalls()).toHaveLength(0);
+  });
+
+  test("shows a two-step cancellation only for a running mold experiment and waits for MQTT confirmation", async () => {
+    useHostInterfaceMode(HOST_INTERFACE_MODES.mqtt);
+    reactiveRoute.query = { lab: "霉菌试验室" };
+    masterLabsState = [
+      { code: "LAB_MOLD", name: "霉菌试验室", type: "实验室", testTypeName: "霉菌试验", status: 1 },
+    ];
+    snapshotState = {
+      ...createSnapshot(),
+      [STORAGE_KEYS.tasks]: [
+        { code: "TASK-MOLD-CANCEL", name: "霉菌培养任务", test_type: "霉菌试验" },
+      ],
+      [STORAGE_KEYS.experiments]: [
+        { experiment_code: "EXP-MOLD-CANCEL", experiment_name: "霉菌试验", status: "实验进行中", task_code: "TASK-MOLD-CANCEL" },
+      ],
+      [STORAGE_KEYS.experiment_trays]: [
+        { experiment_code: "EXP-MOLD-CANCEL", task_code: "TASK-MOLD-CANCEL", tray_code: "TP-MOLD-CANCEL" },
+      ],
+      [STORAGE_KEYS.schedules]: [
+        {
+          device: "霉菌试验室",
+          end_at: "2026-04-02T11:00:00.000Z",
+          experiment_code: "EXP-MOLD-CANCEL",
+          id: "SCHEDULE-MOLD-CANCEL",
+          start_at: "2026-04-02T09:00:00.000Z",
+          status: "实验进行中",
+          task_code: "TASK-MOLD-CANCEL",
+        },
+      ],
+      [STORAGE_KEYS.samples]: [
+        {
+          code: "SAMPLE-MOLD-CANCEL",
+          flow_status: "实验进行中",
+          location: "霉菌试验室",
+          owner: "王工",
+          status: "实验进行中",
+          task_code: "TASK-MOLD-CANCEL",
+          trays: [{ quantity: 1, status: "实验进行中", tray_code: "TP-MOLD-CANCEL" }],
+        },
+      ],
+    };
+    addActiveExperimentRun({
+      device: "霉菌试验室",
+      experimentCode: "EXP-MOLD-CANCEL",
+      runNo: "RUN-MOLD-CANCEL",
+      scheduleId: "SCHEDULE-MOLD-CANCEL",
+      taskCode: "TASK-MOLD-CANCEL",
+      trayCodes: ["TP-MOLD-CANCEL"],
+    });
+
+    await mountPage();
+    const cancelButton = document.body.querySelector('[data-testid="laboratory-mold-cancel-experiment"]');
+    expect(cancelButton?.textContent || "").toContain("取消本次霉菌实验");
+    cancelButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPageUpdates();
+    const reasonInput = document.body.querySelector('[data-testid="laboratory-mold-cancel-reason"]');
+    expect(reasonInput?.value).toBe("霉菌未按预期繁殖");
+    reasonInput.value = "培养物未按预期繁殖";
+    reasonInput.dispatchEvent(new Event("input", { bubbles: true }));
+    document.body.querySelector('[data-testid="laboratory-mold-cancel-continue"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPageUpdates();
+    expect(document.body.querySelector('[data-testid="laboratory-mold-cancel-danger-modal"].is-open')).toBeTruthy();
+
+    document.body.querySelector('[data-testid="laboratory-mold-cancel-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await waitForLaboratoryMqCall("/api/mq/laboratory/cancel-request");
+    const body = JSON.parse(String(laboratoryCancelRequestCalls().at(-1)?.[1]?.body || "{}"));
+    expect(body).toEqual({
+      cancel_reason: "培养物未按预期繁殖",
+      experiment_code: "EXP-MOLD-CANCEL",
+      lab_code: "LAB_MOLD",
+      run_no: "RUN-MOLD-CANCEL",
+      task_code: "TASK-MOLD-CANCEL",
+    });
+    expect(snapshotState[STORAGE_KEYS.experiment_runs][0].status).toBe("实验进行中");
+    expect(document.body.querySelector('[data-testid="laboratory-mold-cancel-awaiting-confirmation"]')).toBeTruthy();
+    expect(document.body.querySelector('[data-testid="laboratory-complete-experiment"]')).toBeNull();
+    expect(laboratoryCancelRequestCalls()).toHaveLength(1);
+
+    vi.advanceTimersByTime(10_000);
+    await flushPageUpdates();
+    expect(document.body.querySelector('[data-testid="laboratory-mold-cancel-confirmation-error"]')?.textContent || "").toContain("10 秒内未收到");
+    expect(snapshotState[STORAGE_KEYS.experiment_runs][0].status).toBe("实验进行中");
   });
 
   test("allows continuing axes from the active run schedule when the selected schedule row has different axes", async () => {

@@ -43,6 +43,7 @@ describe("TrayManagementPanel", () => {
 
     expect(wrapper.get('[data-testid="samples-tray-flow-remark"]').text())
       .toBe("备注：实验进行中（暂停）");
+    expect(wrapper.text()).toContain("盐雾试验进行中（暂停）");
 
     await wrapper.setProps({
       samplesFlow: {
@@ -59,6 +60,8 @@ describe("TrayManagementPanel", () => {
     });
 
     expect(wrapper.find('[data-testid="samples-tray-flow-remark"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain("盐雾试验进行中");
+    expect(wrapper.text()).not.toContain("盐雾试验进行中（暂停）");
   });
 
   test("renders tray table without task info/current status columns and collapses long sample code lists", async () => {

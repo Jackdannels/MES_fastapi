@@ -529,11 +529,16 @@ describe("SchedulePage runtime", () => {
 
     expect(wrapper.find(".drawer.is-open").exists()).toBe(true);
 
-    await wrapper.get('[data-testid="schedule-edit-device"]').setValue(SECONDARY_LAB);
+    const editDrawer = wrapper.get(".drawer.is-open");
+    await editDrawer.get('[data-testid="schedule-edit-device"]').setValue(SECONDARY_LAB);
+    await editDrawer.get('select[name="time_slot"]').setValue("custom");
+    await editDrawer.get('input[name="edit_custom_start_hour"]').setValue("09");
+    await editDrawer.get('input[name="edit_custom_start_minute"]').setValue("30");
     await wrapper.get('[data-testid="schedule-update"]').trigger("click");
     await settle(wrapper);
 
     expect(getStorage(SCHEDULES_KEY)[0].device).toBe(SECONDARY_LAB);
+    expect(getStorage(SCHEDULES_KEY)[0].start_at).toContain(`${future.isoDate} 09:30`);
 
     await wrapper.get('[data-testid="open-schedule-drawer-0"]').trigger("click");
     await settle(wrapper);
@@ -655,7 +660,8 @@ describe("SchedulePage runtime", () => {
     await wrapper.get('select[name="device"]').setValue(SECONDARY_LAB);
     await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
     await wrapper.get('select[name="time_slot"]').setValue("custom");
-    await wrapper.get('input[name="custom_start"]').setValue("08:00");
+    await wrapper.get('input[name="custom_start_hour"]').setValue("08");
+    await wrapper.get('input[name="custom_start_minute"]').setValue("00");
     await wrapper.get('input[name="planned_hours"]').setValue("1");
     await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
     await settle(wrapper);
@@ -1680,7 +1686,8 @@ describe("SchedulePage runtime", () => {
     await wrapper.get('select[name="device"]').setValue(PRIMARY_LAB);
     await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
     await wrapper.get('select[name="time_slot"]').setValue("custom");
-    await wrapper.get('input[name="custom_start"]').setValue("09:30");
+    await wrapper.get('input[name="custom_start_hour"]').setValue("09");
+    await wrapper.get('input[name="custom_start_minute"]').setValue("30");
     await wrapper.get('[data-testid="schedule-duration-unit-days"]').trigger("click");
     await wrapper.get('input[name="planned_hours"]').setValue("0.5");
     await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
@@ -1728,7 +1735,8 @@ describe("SchedulePage runtime", () => {
     await wrapper.get('select[name="device"]').setValue(PRIMARY_LAB);
     await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
     await wrapper.get('select[name="time_slot"]').setValue("custom");
-    await wrapper.get('input[name="custom_start"]').setValue("09:30");
+    await wrapper.get('input[name="custom_start_hour"]').setValue("09");
+    await wrapper.get('input[name="custom_start_minute"]').setValue("30");
     await wrapper.get('input[name="planned_hours"]').setValue("999999999");
     await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
     await settle(wrapper);
