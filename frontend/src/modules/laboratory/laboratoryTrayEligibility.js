@@ -91,6 +91,32 @@ const trayCanRestartCanceledMoldInPlace = (row, currentTask) => {
   );
 };
 
+const trayCanEnterNextExperimentAfterMoldCancellation = (row, currentTask) => {
+  const statuses = [
+    row?.trayStatus,
+    row?.displayStatus,
+    row?.lifecycleStatus,
+  ].map(normalizeText);
+  const trayCode = normalizeText(row?.trayCode);
+  const currentExperimentCode = normalizeText(currentTask?.experimentCode);
+  const currentExperimentName = normalizeText(currentTask?.experimentName);
+  const currentExperimentIsAssigned = asArray(row?.experimentCodes)
+    .map(normalizeText)
+    .includes(currentExperimentCode);
+  const sequenceEligibleTrayCodes = asArray(currentTask?.sequenceEligibleTrayCodes)
+    .map(normalizeText);
+  return Boolean(
+    statuses.includes(MOLD_CANCELED_STATUS)
+    && !normalizeText(currentTask?.runNo)
+    && currentExperimentCode
+    && !currentExperimentName.includes("霉菌")
+    && currentExperimentIsAssigned
+    && row?.completedForCurrentExperiment !== true
+    && currentTask?.sequenceEligible !== false
+    && sequenceEligibleTrayCodes.includes(trayCode)
+  );
+};
+
 const rowCompletedExperimentCodeSet = (row) =>
   new Set(asArray(row?.completedExperimentCodes).map((code) => normalizeText(code)).filter(Boolean));
 
@@ -249,6 +275,9 @@ const taskHasDispatchValidationScope = (task) =>
   Boolean(normalizeText(task?.experimentCode) || normalizeText(task?.device));
 
 const trayIsDispatchedToCurrentLaboratory = (row, currentTask) => {
+  if (trayCanEnterNextExperimentAfterMoldCancellation(row, currentTask)) {
+    return true;
+  }
   const trayStatus = normalizeText(row?.trayStatus) || normalizeText(row?.displayStatus);
   const targetExperimentCode = normalizeText(row?.targetExperimentCode || row?.target_experiment_code);
   const currentExperimentCode = normalizeText(currentTask?.experimentCode);
@@ -368,6 +397,7 @@ const trayLocationMatchesCurrentLaboratory = (row, currentTask) => {
 
 const trayCanUseImplicitLaboratoryWorkflowScope = (row, currentTask) =>
   trayHasExplicitLaboratoryWorkflowScope(row)
+  || trayCanEnterNextExperimentAfterMoldCancellation(row, currentTask)
   || rowCanEnterCurrentExperimentAfterOtherCompletion(row, currentTask)
   || rowHasCompletedAxisSubExperimentForOtherExperiment(row, currentTask)
   || !trayLaboratoryLocation(row)
@@ -610,6 +640,7 @@ export {
   taskHasCurrentLaboratoryDispatch,
   taskHasWrongLaboratoryDispatch,
   trayCanEnterCurrentExperimentAfterOtherCompletion,
+  trayCanEnterNextExperimentAfterMoldCancellation,
   trayHasActiveRunForCurrentExperiment,
   trayIsCompletedForCurrentExperiment,
   trayCanRestartCanceledMoldInPlace,

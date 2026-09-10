@@ -266,7 +266,7 @@ def latest_mold_cancel_recovery_stock_in(
         and normalize_text(event.get("room")) == APPEARANCE_ROOM
         and normalize_text(event.get("appearance_phase") or event.get("appearancePhase")) == MOLD_CANCEL_RECOVERY_PHASE
     ]
-    if not matches or normalize_text(matches[-1].get("action")) != "stock_in":
+    if not matches or normalize_text(matches[-1].get("action")) not in {"stock_in", "stock_out_withdraw"}:
         return None
     return matches[-1]
 
@@ -551,14 +551,6 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
         target_lab = next_step["lab_name"]
         target_lab_code = next_step["lab_code"]
         target_lab_id = next_step["lab_id"]
-        if mold_recovery_context is not None:
-            source_experiment_code = normalize_text(
-                mold_recovery_context.get("source_experiment_code")
-                or mold_recovery_context.get("experiment_code")
-                or mold_recovery_context.get("target_experiment_code")
-            )
-            if target_experiment_code != source_experiment_code or "霉菌" not in target_lab:
-                raise StorageTrayActionError("霉菌取消恢复处理只能送至该霉菌实验的新排程。", status_code=409)
         occupancy = find_laboratory_occupancy_in_snapshot(
             snapshot,
             target_lab_name=target_lab,

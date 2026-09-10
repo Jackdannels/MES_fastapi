@@ -39,6 +39,7 @@ from app.services.storage_tray_actions import (
 from app.services.storage_schedule_patch import (
     PATCHABLE_KEYS,
     StorageSchedulePatchError,
+    build_schedule_dispatch_withdrawal_updates,
     build_schedule_patch_updates,
     validate_maintenance_time_order,
     validate_schedule_maintenance_conflicts,
@@ -155,8 +156,10 @@ SAMPLE_UPDATE_DEPENDENCY_KEYS = {
     "mes.devices",
 }
 SCHEDULE_UPDATE_DEPENDENCY_KEYS = {
+    "mes.tasks",
     "mes.schedules",
     "mes.samples",
+    "mes.staging_events",
     "mes.experiment_runs",
     "mes.experiment_run_trays",
     "mes.experiment_trays",
@@ -997,6 +1000,11 @@ def _run_storage_schedule_patch(
             snapshot = _read_storage_update_snapshot(storage, {*PATCHABLE_KEYS, "mes.devices"})
             updates = build_schedule_patch_updates(snapshot, payload if isinstance(payload, dict) else {})
             _validate_storage_update(storage, updates, snapshot)
+            withdrawal_updates, withdrawn_trays = build_schedule_dispatch_withdrawal_updates(
+                snapshot,
+                payload if isinstance(payload, dict) else {},
+            )
+            updates.update(withdrawal_updates)
             storage.write_many(updates)
     except StorageSchedulePatchError as error:
         raise HTTPException(status_code=error.status_code, detail=error.detail) from error
@@ -1004,6 +1012,7 @@ def _run_storage_schedule_patch(
     return {
         "ok": True,
         "updatedKeys": list(updates.keys()),
+        "withdrawnTrays": withdrawn_trays,
     }
 
 

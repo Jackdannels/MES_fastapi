@@ -52,6 +52,7 @@ import {
   taskHasCurrentLaboratoryDispatch,
   taskHasWrongLaboratoryDispatch,
   trayCanEnterCurrentExperimentAfterOtherCompletion,
+  trayCanEnterNextExperimentAfterMoldCancellation,
   trayCanRestartCanceledMoldInPlace,
   trayIsCompletedForCurrentExperiment,
   trayIsDispatchedToCurrentLaboratory,
@@ -810,6 +811,16 @@ function validateLaboratoryTrayScan({ currentTask = null, scheduleRows = [], all
       return buildWrongLaboratoryDispatchResult(normalizedScanCode, matchedTray, currentTask);
     }
     if (trayCanRestartCanceledMoldInPlace(matchedTray, currentTask)) {
+      return {
+        guidance: `${normalizedScanCode} 属于当前任务 ${currentTask.taskCode}`,
+        matchedRow: currentTask,
+        message: "比对正确",
+        ok: true,
+        tone: "success",
+        trayCode: normalizedScanCode,
+      };
+    }
+    if (trayCanEnterNextExperimentAfterMoldCancellation(matchedTray, currentTask)) {
       return {
         guidance: `${normalizedScanCode} 属于当前任务 ${currentTask.taskCode}`,
         matchedRow: currentTask,

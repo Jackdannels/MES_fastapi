@@ -522,6 +522,41 @@
   </AppModal>
 
   <AppModal
+    :open="scheduleDeleteWithdrawalOpen"
+    title="确认删除排程"
+    data-testid="schedule-delete-withdrawal-confirm"
+    @close="closeScheduleDeleteWithdrawalConfirm"
+  >
+    <div class="schedule-danger-confirmation">
+      <strong>托盘正在送往该排程的目标试验间</strong>
+      <p>
+        删除排程后，系统将立即撤回运输中的托盘并恢复到发货点。
+      </p>
+      <p v-if="scheduleDeleteWithdrawalDetail?.affectedTrays?.length" data-testid="schedule-delete-withdrawal-trays">
+        涉及托盘：{{ scheduleDeleteWithdrawalDetail.affectedTrays.map((item) => item.trayCode).join("、") }}
+      </p>
+    </div>
+    <template #footer>
+      <button
+        class="action-btn secondary"
+        data-testid="schedule-delete-withdrawal-cancel"
+        type="button"
+        @click="closeScheduleDeleteWithdrawalConfirm"
+      >
+        取消
+      </button>
+      <button
+        class="action-btn danger"
+        data-testid="schedule-delete-withdrawal-confirm-ok"
+        type="button"
+        @click="confirmScheduleDeleteWithdrawal"
+      >
+        删除并撤回
+      </button>
+    </template>
+  </AppModal>
+
+  <AppModal
     :open="scheduleConflictOpen"
     content-class="schedule-conflict-modal-content"
     :title="scheduleConflictDetail?.level === 'full' ? uiText.fullConflictTitle : uiText.partialConflictTitle"
@@ -813,9 +848,11 @@ const {
   canResetGanttWindow,
   canShowPreviousGanttWindow,
   closeExceptionModal,
+  closeScheduleDeleteWithdrawalConfirm,
   closeScheduleDrawer,
   closeTaskDetailModal,
   confirmScheduleConflict,
+  confirmScheduleDeleteWithdrawal,
   editForm,
   editCustomStartMinTime,
   editWarning,
@@ -846,6 +883,8 @@ const {
   setScheduleDurationUnit,
   scheduleConflictDetail,
   scheduleConflictOpen,
+  scheduleDeleteWithdrawalDetail,
+  scheduleDeleteWithdrawalOpen,
   taskDetailModalOpen,
   scheduleDrawerOpen,
   scheduleForm,

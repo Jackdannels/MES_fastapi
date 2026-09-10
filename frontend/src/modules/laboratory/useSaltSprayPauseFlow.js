@@ -116,6 +116,8 @@ function useSaltSprayPauseFlow({
   const resumePreparationReady = computed(() => actionCompleteForAllPauseTrays("resume_preparation_ready"));
   const canStartResumePreparation = computed(() => returnedFromAppearance.value && !resumePreparationActive.value);
   const canResume = computed(() => canStartResumePreparation.value);
+  const canStopPausedExperiment = computed(() => isPaused.value && !resumePreparationCompared.value);
+  const stopBlockedAfterCompareMessage = "已完成继续实验重新比对，请完成安装和准备就绪后恢复实验，不能再提前结束。";
 
   const clearConfirmationTimer = () => {
     if (confirmationTimer && typeof window !== "undefined") {
@@ -144,6 +146,10 @@ function useSaltSprayPauseFlow({
   };
   const openStopModal = () => {
     if (!isSaltSprayLaboratory.value || !isPaused.value || controlAwaitingConfirmation.value) {
+      return;
+    }
+    if (!canStopPausedExperiment.value) {
+      controlConfirmationError.value = stopBlockedAfterCompareMessage;
       return;
     }
     stopReason.value = "";
@@ -286,6 +292,11 @@ function useSaltSprayPauseFlow({
     }
   };
   const confirmStop = async () => {
+    if (!canStopPausedExperiment.value) {
+      stopModalOpen.value = false;
+      controlConfirmationError.value = stopBlockedAfterCompareMessage;
+      return;
+    }
     if (!normalizeText(stopReason.value)) {
       return;
     }
@@ -333,6 +344,7 @@ function useSaltSprayPauseFlow({
     canSimulatePauseConfirmation,
     canResume,
     canStartResumePreparation,
+    canStopPausedExperiment,
     closePauseModal,
     closeStopModal,
     confirmPause,

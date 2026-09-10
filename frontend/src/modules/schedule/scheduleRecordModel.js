@@ -403,9 +403,51 @@ function deleteScheduleRecord({
   };
 }
 
+function findDispatchedTraysForSchedule({ samples = [], schedule }) {
+  const scheduleId = normalizeText(schedule?.id || schedule?.schedule_id || schedule?.scheduleId);
+  const taskCode = normalizeText(schedule?.task_code || schedule?.taskCode);
+  const experimentCode = normalizeText(schedule?.experiment_code || schedule?.experimentCode);
+  const scheduleTargets = new Set([
+    normalizeText(schedule?.device),
+    normalizeText(schedule?.lab_code || schedule?.labCode),
+  ].filter(Boolean));
+  const affected = new Map();
+
+  (Array.isArray(samples) ? samples : []).forEach((sample) => {
+    if (normalizeText(sample?.task_code || sample?.taskCode || sample?.task_no) !== taskCode) {
+      return;
+    }
+    (Array.isArray(sample?.trays) ? sample.trays : []).forEach((tray) => {
+      if (normalizeText(tray?.status) !== "送至实验室") {
+        return;
+      }
+      const trayCode = normalizeText(tray?.tray_code || tray?.trayCode || tray?.tray_no);
+      const targetScheduleId = normalizeText(tray?.target_schedule_id || tray?.targetScheduleId);
+      let matches = Boolean(scheduleId && targetScheduleId === scheduleId);
+      if (!targetScheduleId) {
+        const targetExperimentCode = normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
+        const targetLab = normalizeText(tray?.target_lab || tray?.targetLab);
+        const targetLabCode = normalizeText(tray?.target_lab_code || tray?.targetLabCode);
+        const targetMatchesLab = (!targetLab && !targetLabCode)
+          || scheduleTargets.has(targetLab)
+          || scheduleTargets.has(targetLabCode);
+        matches = Boolean(targetExperimentCode && targetExperimentCode === experimentCode && targetMatchesLab);
+      }
+      if (trayCode && matches) {
+        affected.set(trayCode, {
+          targetLab: normalizeText(schedule?.device || tray?.target_lab),
+          trayCode,
+        });
+      }
+    });
+  });
+  return [...affected.values()].sort((left, right) => left.trayCode.localeCompare(right.trayCode));
+}
+
 
 export {
   createScheduleRecord,
   deleteScheduleRecord,
+  findDispatchedTraysForSchedule,
   updateScheduleRecord,
 };

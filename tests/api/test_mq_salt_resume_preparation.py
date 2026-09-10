@@ -29,6 +29,9 @@ class _Storage:
             "mes.staging_events": self.snapshot["staging_events"],
         }
 
+    def read(self, key):
+        return self.read_all().get(key, [])
+
 
 def _advance(snapshot, operation):
     result = apply_salt_resume_preparation_operation(
@@ -71,3 +74,61 @@ def test_resume_request_requires_all_current_pause_preparation_evidence(monkeypa
         "task_code": "TASK-1", "experiment_code": "EXP-SALT-1", "lab_code": "LAB_SALT",
         "run_no": "RUN-SALT-1", "pause_no": "PAUSE-1",
     })]
+
+
+def test_stop_request_is_rejected_after_current_pause_resume_comparison(monkeypatch):
+    snapshot = _advance(_snapshot(), "start")
+    snapshot = _advance(snapshot, "compare")
+    storage = _Storage(snapshot)
+    published = []
+    monkeypatch.setattr(mq_route, "MySQLMqEventRepository", _Repository)
+    monkeypatch.setattr(mq_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(mq_route, "require_mqtt_laboratory", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        mq_route,
+        "publish_laboratory_command",
+        lambda command, payload: published.append((command, payload)) or {"published": True},
+    )
+    request = mq_route.SaltStopRequest(
+        task_code="TASK-1",
+        experiment_code="EXP-SALT-1",
+        lab_code="LAB_SALT",
+        run_no="RUN-SALT-1",
+        pause_no="PAUSE-1",
+        termination_type="completion_criteria",
+        termination_reason="达到外观检查终止条件",
+    )
+
+    with pytest.raises(HTTPException, match="不能再提前结束") as error:
+        mq_route.publish_salt_stop_request(request)
+
+    assert error.value.status_code == 409
+    assert published == []
+
+
+def test_stop_request_still_publishes_before_resume_comparison(monkeypatch):
+    snapshot = _advance(_snapshot(), "start")
+    storage = _Storage(snapshot)
+    published = []
+    monkeypatch.setattr(mq_route, "MySQLMqEventRepository", _Repository)
+    monkeypatch.setattr(mq_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(mq_route, "require_mqtt_laboratory", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        mq_route,
+        "publish_laboratory_command",
+        lambda command, payload: published.append((command, payload)) or {"published": True},
+    )
+    request = mq_route.SaltStopRequest(
+        task_code="TASK-1",
+        experiment_code="EXP-SALT-1",
+        lab_code="LAB_SALT",
+        run_no="RUN-SALT-1",
+        pause_no="PAUSE-1",
+        termination_type="completion_criteria",
+        termination_reason="达到外观检查终止条件",
+    )
+
+    result = mq_route.publish_salt_stop_request(request)
+
+    assert result["published"] is True
+    assert published[0][0] == "STOP_REQUEST"

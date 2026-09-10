@@ -163,4 +163,65 @@ describe("tray audit log", () => {
     expect(buildTrayAuditSvg({ events: log.events, taskCode, trayCode })).toContain("中途外观结论：未填写");
     expect(buildTrayAuditCsv({ events: log.events, taskCode, trayCode })).toContain("中途外观结论：轻微腐蚀，继续实验");
   });
+
+  test("maps salt resume preparation records to business events instead of run identifiers", () => {
+    const taskCode = "SYLU-2026-09-021";
+    const trayCode = `${taskCode}-TP-001`;
+    const runNo = "run-20260909191517492336";
+    const pauseNo = "pause-58e6a08cd4414a3c87dbc05d45ba7ba8";
+    const resumeEvent = (action, time) => ({
+      action,
+      pause_no: pauseNo,
+      room: "laboratory_resume_preparation",
+      run_no: runNo,
+      task_code: taskCode,
+      time,
+      tray_code: trayCode,
+    });
+    const historyEntry = (action, status, time) => ({
+      action,
+      detail: `${taskCode} / 继续实验准备 / ${status} / 托盘：${trayCode} / run_no：${runNo} / pause_no：${pauseNo}`,
+      status,
+      time,
+      tray_code: trayCode,
+    });
+    const log = buildTrayAuditLog({
+      samples: [{
+        code: `${taskCode}-SP-001`,
+        history: [
+          historyEntry("继续实验任务比对", "已到达实验室", "2026-09-09 19:15:38"),
+          historyEntry("继续实验样品安装", "工装夹具安装", "2026-09-09 19:15:40"),
+          historyEntry("继续实验准备确认", "实验准备就绪", "2026-09-09 19:15:55"),
+          historyEntry("继续实验", "实验进行中", "2026-09-09 19:15:55"),
+        ],
+        task_code: taskCode,
+        trays: [{ tray_code: trayCode }],
+      }],
+      stagingEvents: [
+        resumeEvent("resume_preparation_started", "2026-09-09 19:15:31"),
+        resumeEvent("resume_preparation_compared", "2026-09-09 19:15:38"),
+        resumeEvent("resume_preparation_installed", "2026-09-09 19:15:40"),
+        resumeEvent("resume_preparation_fixture_ready", "2026-09-09 19:15:40"),
+        resumeEvent("resume_preparation_ready", "2026-09-09 19:15:55"),
+      ],
+      taskCode,
+      trayCode,
+    });
+    const labels = log.events.map((event) => event.label);
+
+    expect(labels).toEqual(expect.arrayContaining([
+      "开始继续实验准备",
+      "继续实验重新比对",
+      "继续实验重新安装",
+      "夹具安装确认完成",
+      "继续实验准备就绪",
+      "盐雾实验继续进行",
+    ]));
+    expect(labels).toHaveLength(6);
+    expect(labels.some((label) => label.includes("run_no") || label.includes("pause_no"))).toBe(false);
+    expect(log.events.find((event) => event.label === "继续实验重新比对"))
+      .toEqual(expect.objectContaining({ source: "暂存事件 / 样品历史", stage: "实验" }));
+    expect(log.events.find((event) => event.label === "夹具安装确认完成"))
+      .toEqual(expect.objectContaining({ source: "暂存事件", stage: "实验" }));
+  });
 });

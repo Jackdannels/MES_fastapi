@@ -27,6 +27,7 @@ export {
 export {
   createScheduleRecord,
   deleteScheduleRecord,
+  findDispatchedTraysForSchedule,
   updateScheduleRecord,
 } from "./scheduleRecordModel";
 export {

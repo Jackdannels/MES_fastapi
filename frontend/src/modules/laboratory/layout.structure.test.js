@@ -94,6 +94,10 @@ describe("laboratory workbench layout", () => {
     expect(stylesSource).toMatch(/\.modal\.laboratory-salt-control-modal--priority\s*\{[^}]*z-index:\s*80/i);
   });
 
+  test("binds salt-spray early stop availability to resume comparison completion", () => {
+    expect(pageSource).toContain(':disabled="!canStopPausedExperiment"');
+  });
+
   test("keeps resume-preparation operation dialogs above the running experiment overlay", () => {
     expect(pageSource.match(/laboratory-resume-preparation-modal--priority/g)?.length).toBeGreaterThanOrEqual(5);
     expect(stylesSource).toMatch(/\.modal\.laboratory-resume-preparation-modal--priority\s*\{[^}]*z-index:\s*80/i);

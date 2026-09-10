@@ -308,6 +308,97 @@ def test_mold_cancel_recovery_outbound_binds_new_schedule_and_cannot_be_reused()
         )
 
 
+def test_mold_cancel_recovery_can_dispatch_directly_to_the_next_other_experiment():
+    snapshot = canceled_mold_storage_snapshot()
+    stock_in = build_stock_in_updates(
+        snapshot,
+        room="appearance",
+        tray_code="TP-1",
+        payload={},
+        now="2026-09-03 11:30:00",
+    )
+    recovery_snapshot = {
+        **snapshot,
+        **stock_in,
+        "mes.schedules": [
+            {
+                "id": "SCH-OTHER",
+                "task_code": "TASK-MOLD",
+                "experiment_code": "EXP-OTHER",
+                "device": "四综合实验室",
+                "lab_code": "LAB_COMPREHENSIVE",
+                "status": "已排程",
+            }
+        ],
+        "mes.experiment_trays": [
+            {"task_code": "TASK-MOLD", "experiment_code": "EXP-OTHER", "tray_code": "TP-1"}
+        ],
+    }
+
+    stock_out = build_stock_out_updates(
+        recovery_snapshot,
+        room="appearance",
+        tray_code="TP-1",
+        payload={
+            "targetLab": "四综合实验室",
+            "targetLabCode": "LAB_COMPREHENSIVE",
+            "targetExperimentCode": "EXP-OTHER",
+            "scheduleId": "SCH-OTHER",
+        },
+        now="2026-09-03 11:40:00",
+    )
+
+    outbound_event = stock_out["mes.staging_events"][-1]
+    assert outbound_event["appearance_phase"] == "mold_cancel_recovery"
+    assert outbound_event["source_run_no"] == "RUN-MOLD"
+    assert outbound_event["source_experiment_code"] == "EXP-MOLD"
+    assert outbound_event["target_experiment_code"] == "EXP-OTHER"
+    assert outbound_event["target_schedule_id"] == "SCH-OTHER"
+    sample = stock_out["mes.samples"][0]
+    assert sample["location"] == "四综合实验室"
+    assert sample["status"] == "送至实验室"
+    assert sample["trays"][0]["target_experiment_code"] == "EXP-OTHER"
+
+    restored_snapshot = {**recovery_snapshot, **stock_out}
+    restored_sample = restored_snapshot["mes.samples"][0]
+    restored_sample["location"] = "外观检测间"
+    restored_sample["status"] = "霉菌取消后恢复处理中"
+    restored_sample["flow_status"] = "霉菌取消后恢复处理中"
+    restored_sample["trays"][0]["status"] = "霉菌取消后恢复处理中"
+    restored_snapshot["mes.staging_events"].append(
+        {
+            "action": "stock_out_withdraw",
+            "appearance_phase": "mold_cancel_recovery",
+            "recovery_cycle_id": "RUN-MOLD",
+            "room": "appearance",
+            "source_experiment_code": "EXP-MOLD",
+            "source_run_no": "RUN-MOLD",
+            "status": "霉菌取消后恢复处理中",
+            "target_experiment_code": "EXP-OTHER",
+            "target_lab": "四综合实验室",
+            "task_code": "TASK-MOLD",
+            "time": "2026-09-03 11:45:00",
+            "tray_code": "TP-1",
+        }
+    )
+
+    repeated_stock_out = build_stock_out_updates(
+        restored_snapshot,
+        room="appearance",
+        tray_code="TP-1",
+        payload={
+            "targetLab": "四综合实验室",
+            "targetLabCode": "LAB_COMPREHENSIVE",
+            "targetExperimentCode": "EXP-OTHER",
+            "scheduleId": "SCH-OTHER",
+        },
+        now="2026-09-03 11:50:00",
+    )
+
+    assert repeated_stock_out["mes.samples"][0]["status"] == "送至实验室"
+    assert repeated_stock_out["mes.staging_events"][-1]["appearance_phase"] == "mold_cancel_recovery"
+
+
 @pytest.mark.parametrize(
     "mutate",
     [

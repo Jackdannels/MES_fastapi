@@ -326,6 +326,58 @@ describe("useSchedulePage", () => {
     );
   });
 
+  test("confirms and withdraws a tray in transit before deleting its target schedule", async () => {
+    const snapshot = buildSnapshot();
+    snapshot["mes.samples"] = [
+      {
+        code: "SP-TRANSIT",
+        task_code: "SYLU-2026-03-006",
+        location: "冲击一室",
+        status: "送至实验室",
+        trays: [
+          {
+            status: "送至实验室",
+            target_experiment_code: "SYLU-2026-03-006-A",
+            target_lab: "冲击一室",
+            target_schedule_id: "schedule-1",
+            tray_code: "SYLU-2026-03-006-TP-001",
+          },
+        ],
+      },
+    ];
+    mocks.loadSnapshot.mockResolvedValue(snapshot);
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    wrapper.vm.openTaskDetailModal("schedule-1");
+    await wrapper.vm.removeTaskDetailSchedule();
+    await settle(wrapper);
+
+    expect(wrapper.vm.scheduleDeleteWithdrawalOpen).toBe(true);
+    expect(wrapper.vm.scheduleDeleteWithdrawalDetail.affectedTrays).toEqual([
+      {
+        targetLab: "冲击一室",
+        trayCode: "SYLU-2026-03-006-TP-001",
+      },
+    ]);
+    expect(mocks.writeStorageSchedulePatch).not.toHaveBeenCalled();
+
+    await wrapper.vm.confirmScheduleDeleteWithdrawal();
+    await settle(wrapper);
+
+    expect(mocks.writeStorageSchedulePatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        confirm_dispatched_tray_withdrawal: true,
+        deletes: expect.objectContaining({
+          "mes.schedules": expect.arrayContaining(["schedule-1"]),
+        }),
+      }),
+      expect.any(Object),
+    );
+    expect(wrapper.vm.scheduleDeleteWithdrawalOpen).toBe(false);
+    expect(wrapper.vm.taskDetailModalOpen).toBe(false);
+  });
+
   test("blocks deleting or rescheduling a task detail schedule after the experiment has started", async () => {
     mocks.loadSnapshot.mockResolvedValue({
       ...buildSnapshot(),

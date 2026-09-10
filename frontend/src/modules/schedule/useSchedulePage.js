@@ -20,6 +20,7 @@ import {
   createScheduleEditForm,
   createScheduleRecord,
   deleteScheduleRecord,
+  findDispatchedTraysForSchedule,
   formatDateTime,
   isRetentionDevice,
   normalizeText,
@@ -80,8 +81,10 @@ function useSchedulePage(options = {}) {
   const taskDetailModal = useDialogState();
   const ganttOverflowModal = useDialogState();
   const scheduleConflictModal = useDialogState();
+  const scheduleDeleteWithdrawalModal = useDialogState();
   const exceptionModal = useDialogState();
   const pendingScheduleDraft = ref(null);
+  const pendingScheduleDeletion = ref(null);
   const ignoredStorageRequestIds = ref(new Set());
   let schedulePatchRequestSeq = 0;
   let clockTimer = null;
@@ -413,11 +416,15 @@ function useSchedulePage(options = {}) {
     pendingExceptionCount.value > 0 ? `异常处理 ${pendingExceptionCount.value}` : "异常处理",
   );
 
-  const persistAll = async (updates) => {
+  const persistAll = async (updates, options = {}) => {
     const requestId = `schedule-page-${Date.now()}-${schedulePatchRequestSeq += 1}`;
     ignoredStorageRequestIds.value.add(requestId);
     try {
-      await writeStorageSchedulePatch(buildSchedulePatch(updates), { source: "schedule-page", requestId });
+      const patch = buildSchedulePatch(updates);
+      if (options.confirmDispatchedTrayWithdrawal === true) {
+        patch.confirm_dispatched_tray_withdrawal = true;
+      }
+      await writeStorageSchedulePatch(patch, { source: "schedule-page", requestId });
     } finally {
       window.setTimeout(() => {
         ignoredStorageRequestIds.value.delete(requestId);
@@ -778,7 +785,8 @@ function useSchedulePage(options = {}) {
     closeScheduleDrawer();
   };
 
-  const removeSchedule = async () => {
+  const buildScheduleDeletionDraft = (scheduleId, mode) => {
+    const schedule = rawSchedules.value.find((entry) => normalizeText(entry?.id) === normalizeText(scheduleId));
     const result = deleteScheduleRecord({
       experimentRuns: rawExperimentRuns.value,
       experimentRunSteps: rawExperimentRunSteps.value,
@@ -787,90 +795,102 @@ function useSchedulePage(options = {}) {
       experiments: rawExperiments.value,
       now: now.value,
       samples: rawSamples.value,
-      scheduleId: editForm.value.id,
+      scheduleId,
       schedules: rawSchedules.value,
       streams: rawStreams.value,
       tasks: rawTasks.value,
     });
-    if (result.error) {
-      editWarning.value = result.error;
+    return { mode, result, schedule, scheduleId: normalizeText(scheduleId) };
+  };
+
+  const closeScheduleDeleteWithdrawalConfirm = () => {
+    scheduleDeleteWithdrawalModal.close();
+    pendingScheduleDeletion.value = null;
+  };
+
+  const openScheduleDeleteWithdrawalConfirm = (draft, affectedTrays = []) => {
+    pendingScheduleDeletion.value = draft;
+    scheduleDeleteWithdrawalModal.openWith({
+      affectedTrays,
+      schedule: draft.schedule,
+    });
+  };
+
+  const performScheduleDeletion = async (draft, { confirmDispatchedTrayWithdrawal = false } = {}) => {
+    const { mode, result, schedule } = draft;
+    try {
+      await persistAll({
+        [STORAGE_KEYS.experiments]: result.experiments,
+        [STORAGE_KEYS.schedules]: result.schedules,
+        [STORAGE_KEYS.streams]: result.streams,
+        [STORAGE_KEYS.tasks]: result.tasks,
+      }, { confirmDispatchedTrayWithdrawal });
+    } catch (error) {
+      const message = normalizeText(error instanceof Error ? error.message : error);
+      if (!confirmDispatchedTrayWithdrawal && message.includes("删除后将自动撤回至发货点")) {
+        openScheduleDeleteWithdrawalConfirm(draft);
+        return false;
+      }
+      editWarning.value = buildFailureMessage("排程删除失败，请稍后重试", error);
+      return false;
+    }
+
+    closeScheduleDeleteWithdrawalConfirm();
+    if (mode === "drawer") {
+      closeScheduleDrawer();
+    } else if (mode === "reschedule") {
+      await replaceScheduleForm(buildScheduleRescheduleForm(schedule, now.value));
+      scheduleWarning.value = "";
+      closeTaskDetailModal();
+    } else {
+      closeTaskDetailModal();
+    }
+    return true;
+  };
+
+  const requestScheduleDeletion = async (scheduleId, mode) => {
+    if (!normalizeText(scheduleId)) {
+      if (mode !== "drawer") closeTaskDetailModal();
       return;
     }
-    await persistAll({
-      [STORAGE_KEYS.experiments]: result.experiments,
-      [STORAGE_KEYS.schedules]: result.schedules,
-      [STORAGE_KEYS.streams]: result.streams,
-      [STORAGE_KEYS.tasks]: result.tasks,
+    const draft = buildScheduleDeletionDraft(scheduleId, mode);
+    if (!draft.schedule) {
+      if (mode !== "drawer") closeTaskDetailModal();
+      return;
+    }
+    if (draft.result.error) {
+      editWarning.value = mode === "reschedule" ? RUNNING_SCHEDULE_RESCHEDULE_MESSAGE : draft.result.error;
+      return;
+    }
+    const affectedTrays = findDispatchedTraysForSchedule({
+      samples: rawSamples.value,
+      schedule: draft.schedule,
     });
-    closeScheduleDrawer();
+    if (affectedTrays.length) {
+      openScheduleDeleteWithdrawalConfirm(draft, affectedTrays);
+      return;
+    }
+    await performScheduleDeletion(draft);
+  };
+
+  const confirmScheduleDeleteWithdrawal = async () => {
+    if (!pendingScheduleDeletion.value) {
+      closeScheduleDeleteWithdrawalConfirm();
+      return;
+    }
+    await performScheduleDeletion(pendingScheduleDeletion.value, { confirmDispatchedTrayWithdrawal: true });
+  };
+
+  const removeSchedule = async () => {
+    await requestScheduleDeletion(editForm.value.id, "drawer");
   };
 
   const removeTaskDetailSchedule = async () => {
-    const scheduleId = normalizeText(taskDetailModal.payload.value?.id);
-    if (!scheduleId) {
-      closeTaskDetailModal();
-      return;
-    }
-    const result = deleteScheduleRecord({
-      experimentRuns: rawExperimentRuns.value,
-      experimentRunSteps: rawExperimentRunSteps.value,
-      experimentRunTrays: rawExperimentRunTrays.value,
-      experimentTrays: rawExperimentTrays.value,
-      experiments: rawExperiments.value,
-      now: now.value,
-      samples: rawSamples.value,
-      scheduleId,
-      schedules: rawSchedules.value,
-      streams: rawStreams.value,
-      tasks: rawTasks.value,
-    });
-    if (result.error) {
-      editWarning.value = result.error;
-      return;
-    }
-    await persistAll({
-      [STORAGE_KEYS.experiments]: result.experiments,
-      [STORAGE_KEYS.schedules]: result.schedules,
-      [STORAGE_KEYS.streams]: result.streams,
-      [STORAGE_KEYS.tasks]: result.tasks,
-    });
-    closeTaskDetailModal();
+    await requestScheduleDeletion(taskDetailModal.payload.value?.id, "detail");
   };
 
   const rescheduleFromTaskDetail = async () => {
-    const scheduleId = normalizeText(taskDetailModal.payload.value?.id);
-    const schedule = rawSchedules.value.find((entry) => normalizeText(entry?.id) === scheduleId);
-    if (!schedule) {
-      closeTaskDetailModal();
-      return;
-    }
-
-    const result = deleteScheduleRecord({
-      experimentRuns: rawExperimentRuns.value,
-      experimentRunSteps: rawExperimentRunSteps.value,
-      experimentRunTrays: rawExperimentRunTrays.value,
-      experimentTrays: rawExperimentTrays.value,
-      experiments: rawExperiments.value,
-      now: now.value,
-      samples: rawSamples.value,
-      scheduleId,
-      schedules: rawSchedules.value,
-      streams: rawStreams.value,
-      tasks: rawTasks.value,
-    });
-    if (result.error) {
-      editWarning.value = RUNNING_SCHEDULE_RESCHEDULE_MESSAGE;
-      return;
-    }
-    await persistAll({
-      [STORAGE_KEYS.experiments]: result.experiments,
-      [STORAGE_KEYS.schedules]: result.schedules,
-      [STORAGE_KEYS.streams]: result.streams,
-      [STORAGE_KEYS.tasks]: result.tasks,
-    });
-    await replaceScheduleForm(buildScheduleRescheduleForm(schedule, now.value));
-    scheduleWarning.value = "";
-    closeTaskDetailModal();
+    await requestScheduleDeletion(taskDetailModal.payload.value?.id, "reschedule");
   };
 
   const loadSchedulePage = async ({ resetForm: shouldResetForm = true } = {}) => {
@@ -968,9 +988,11 @@ function useSchedulePage(options = {}) {
     canResetGanttWindow,
     canShowPreviousGanttWindow,
     closeExceptionModal,
+    closeScheduleDeleteWithdrawalConfirm,
     closeScheduleDrawer,
     closeTaskDetailModal,
     confirmScheduleConflict,
+    confirmScheduleDeleteWithdrawal,
     conflictRows: filteredConflictRows,
     conflictSearch,
     editForm,
@@ -1007,6 +1029,8 @@ function useSchedulePage(options = {}) {
     setScheduleDurationUnit,
     scheduleConflictDetail: scheduleConflictModal.payload,
     scheduleConflictOpen: scheduleConflictModal.open,
+    scheduleDeleteWithdrawalDetail: scheduleDeleteWithdrawalModal.payload,
+    scheduleDeleteWithdrawalOpen: scheduleDeleteWithdrawalModal.open,
     scheduleDrawerOpen: scheduleDrawer.open,
     selectedTaskDetail,
     taskDetailModalOpen: taskDetailModal.open,

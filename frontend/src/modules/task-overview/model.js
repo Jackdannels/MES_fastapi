@@ -19,6 +19,10 @@ import { buildTrayFlowView, normalizeLifecycleStatus } from "@/modules/samples/s
 
 // 将任务、样品和排程整理为总览卡片和托盘汇总行数据。
 const STATUS_SCHEDULED = "已排程";
+const LAB_DISPATCH_STATUS = "送至实验室";
+const HANDOVER_LOCATION = "接驳区";
+const STAGING_LOCATION = "恒温恒湿间（暂存间）";
+const APPEARANCE_LOCATION = "外观检测间";
 const OVERDUE_MS = 24 * 60 * 60 * 1000;
 const SAMPLE_CODE_PREVIEW_LIMIT = 50;
 const SCHEDULED_EXPERIMENT_STATUSES = new Set([
@@ -72,6 +76,52 @@ function normalizeQuantity(value) {
 function parseTimeValue(value) {
   const parsed = Date.parse(String(value || ""));
   return Number.isFinite(parsed) ? parsed : -1;
+}
+
+function resolveDispatchOriginFromHistory(sample, trayCode, targetLocation) {
+  const normalizedTrayCode = normalizeText(trayCode);
+  const target = normalizeText(targetLocation);
+  const history = (Array.isArray(sample?.history) ? sample.history : [])
+    .filter((entry) => entry && typeof entry === "object")
+    .map((entry, index) => ({ entry, index, timestamp: parseTimeValue(entry?.time) }))
+    .sort((left, right) => right.timestamp - left.timestamp || left.index - right.index);
+  const outboundEntries = history.filter(({ entry }) =>
+    normalizeLifecycleStatus(entry?.location, entry?.status) === LAB_DISPATCH_STATUS,
+  );
+  const dispatch = outboundEntries.find(({ entry }) =>
+    normalizedTrayCode && normalizeText(entry?.detail).includes(normalizedTrayCode),
+  ) || outboundEntries[0];
+  if (!dispatch) {
+    return "";
+  }
+  const dispatchIndex = history.indexOf(dispatch);
+  const previousLocation = history.slice(dispatchIndex + 1)
+    .map(({ entry }) => resolveLaboratoryDisplayName(entry?.location))
+    .map(normalizeText)
+    .find((location) => location && location !== target);
+  if (previousLocation) {
+    return previousLocation;
+  }
+  const action = normalizeText(dispatch.entry?.action);
+  if (action.includes("接驳区")) {
+    return HANDOVER_LOCATION;
+  }
+  if (action.includes("外观检测间")) {
+    return APPEARANCE_LOCATION;
+  }
+  if (action.includes("暂存间")) {
+    return STAGING_LOCATION;
+  }
+  return "";
+}
+
+function resolveTrayCurrentLocation(sample, tray, status, fallbackLocation) {
+  const location = normalizeText(fallbackLocation);
+  if (normalizeLifecycleStatus(location, status) !== LAB_DISPATCH_STATUS) {
+    return location;
+  }
+  return resolveDispatchOriginFromHistory(sample, tray?.tray_code || tray?.trayCode, location)
+    || location;
 }
 
 function resolveFlowViewActiveStatus(flowView, fallbackStatus = "") {
@@ -712,8 +762,9 @@ function buildTrayOverviewRows({
       if (!trayCode || trayMap.has(trayMapKey)) {
         return;
       }
-      const location = summarizeUniqueTexts([resolveLaboratoryDisplayName(sample?.location)]);
-      const status = normalizeLifecycleStatus(location, normalizeText(tray?.status) || normalizeText(sample?.status));
+      const storedLocation = summarizeUniqueTexts([resolveLaboratoryDisplayName(sample?.location)]);
+      const status = normalizeLifecycleStatus(storedLocation, normalizeText(tray?.status) || normalizeText(sample?.status));
+      const location = resolveTrayCurrentLocation(sample, tray, status, storedLocation);
       if (
         isReturnedTrayStatus(status)
         || isReturnedTrayStatus(tray?.status)
@@ -732,7 +783,9 @@ function buildTrayOverviewRows({
         experimentRunTrays,
         experimentTrays: experimentTrayList,
         experiments: experimentList,
-        location,
+        // Workflow status still resolves against the destination stored by the
+        // transport command; only the displayed physical location stays at origin.
+        location: storedLocation,
         samples: sampleList,
         schedules: scheduleList,
         status,

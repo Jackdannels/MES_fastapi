@@ -6,6 +6,7 @@ from app.services.salt_spray_resume_preparation import (
     RESUME_PREPARATION_READY,
     apply_salt_resume_confirmation,
     apply_salt_resume_preparation_operation,
+    validate_salt_early_stop_allowed,
     validate_salt_resume_preparation_ready,
 )
 
@@ -78,6 +79,16 @@ def test_resume_is_rejected_until_ready_evidence_exists_for_every_pause_tray():
     snapshot, _ = _apply(_snapshot(), "start")
     with pytest.raises(ValueError, match="尚未完成重新比对"):
         validate_salt_resume_preparation_ready(snapshot, snapshot["experiment_run_pauses"][0])
+
+
+def test_early_stop_is_rejected_once_resume_comparison_is_complete():
+    snapshot, _ = _apply(_snapshot(), "start")
+    validate_salt_early_stop_allowed(snapshot, snapshot["experiment_run_pauses"][0])
+
+    snapshot, _ = _apply(snapshot, "compare")
+
+    with pytest.raises(ValueError, match="不能再提前结束"):
+        validate_salt_early_stop_allowed(snapshot, snapshot["experiment_run_pauses"][0])
 
 
 def test_resume_preparation_rejects_a_non_salt_run_even_when_pause_payload_claims_salt():

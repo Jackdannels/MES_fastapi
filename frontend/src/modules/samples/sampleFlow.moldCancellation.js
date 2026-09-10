@@ -1,9 +1,32 @@
 import { normalizeText } from "./sampleFlow.shared";
-import { asArray, resolveEntryExperimentCode, resolveEntryTaskCode, resolveEntryTrayCode } from "./sampleFlow.trayScope";
+import {
+  asArray,
+  parseTimeValue,
+  resolveEntryExperimentCode,
+  resolveEntryTaskCode,
+  resolveEntryTrayCode,
+} from "./sampleFlow.trayScope";
 
 const MOLD_CANCELED_STATUS = "实验已取消";
 const MOLD_CANCEL_RECOVERY_STATUS = "霉菌取消后恢复处理中";
 const MOLD_CANCEL_RECOVERY_PHASE = "mold_cancel_recovery";
+const COMPLETED_EXPERIMENT_STATUSES = new Set(["实验已完成", "实验完成", "实验已经完成"]);
+const ACTIVE_EXPERIMENT_ROUTE_STATUSES = new Set([
+  "送至实验室",
+  "已到达实验室",
+  "工装夹具安装",
+  "实验准备就绪",
+  "实验进行中",
+  "实验中",
+]);
+const SINGLE_EXPERIMENT_FOLD_KEYS = new Set([
+  "sent_to_lab",
+  "arrived_lab",
+  "fixture_install",
+  "ready",
+  "running",
+  "completed",
+]);
 
 const experimentDisplayName = (experiment = {}) => normalizeText(
   experiment?.displayName
@@ -45,6 +68,47 @@ const findCancellationInsertionIndex = (steps, resultIndex) => {
     }
   }
   return resultIndex >= 0 ? resultIndex : Math.max(0, steps.length - 1);
+};
+
+const findOccurredEventInsertionIndex = (steps, eventTime, fallbackIndex) => {
+  const timestamp = parseTimeValue(eventTime);
+  if (!timestamp) {
+    return fallbackIndex;
+  }
+  let latestPrior = null;
+  let earliestLater = null;
+  steps.forEach((step, index) => {
+    if (!step?.reached && !step?.active) {
+      return;
+    }
+    const stepTime = parseTimeValue(step?.time);
+    if (!stepTime) {
+      return;
+    }
+    if (stepTime <= timestamp) {
+      if (!latestPrior || stepTime > latestPrior.time || (stepTime === latestPrior.time && index > latestPrior.index)) {
+        latestPrior = { index, time: stepTime };
+      }
+      return;
+    }
+    if (!earliestLater || stepTime < earliestLater.time || (stepTime === earliestLater.time && index < earliestLater.index)) {
+      earliestLater = { index, time: stepTime };
+    }
+  });
+  const foundationalEndIndex = steps.reduce((latest, step, index) => (
+    ["in_transit", "arrival", "arrived"].includes(normalizeText(step?.key))
+      ? Math.max(latest, index + 1)
+      : latest
+  ), 0);
+  let insertionIndex = fallbackIndex;
+  if (latestPrior && (!earliestLater || latestPrior.index < earliestLater.index)) {
+    insertionIndex = latestPrior.index + 1;
+  } else if (earliestLater) {
+    insertionIndex = earliestLater.index;
+  } else if (latestPrior) {
+    insertionIndex = latestPrior.index + 1;
+  }
+  return Math.max(foundationalEndIndex, insertionIndex);
 };
 
 const foundationalMilestoneTime = (input, trayCode, kind) => {
@@ -90,17 +154,86 @@ const restoreFoundationalSteps = (steps, endIndex, input, trayCode) => {
   });
 };
 
+const isCanceledMoldExecutionStep = (step) => {
+  const label = normalizeText(step?.label);
+  return label === "送至实验室"
+    || (label.startsWith("送至") && label.includes("霉菌") && label.endsWith("试验室"))
+    || label === "已到达实验室"
+    || label === "工装夹具安装"
+    || label === "实验准备就绪";
+};
+
+const foldCurrentMoldAttempt = (steps, cancellationStep, recoveryStep, resultStep) => {
+  const resultKey = normalizeText(resultStep?.key);
+  const multiMatch = resultKey.match(/^experiment-current-(\d+)$/);
+  const multiRoutePrefix = multiMatch ? `route-${multiMatch[1]}-` : "";
+  const usesSingleTemplate = SINGLE_EXPERIMENT_FOLD_KEYS.has(resultKey);
+  if (!multiRoutePrefix && !usesSingleTemplate) {
+    return false;
+  }
+
+  const foldedSteps = new Set();
+  steps.forEach((step) => {
+    const key = normalizeText(step?.key);
+    if (
+      step === resultStep
+      || (usesSingleTemplate && SINGLE_EXPERIMENT_FOLD_KEYS.has(key))
+      || (multiRoutePrefix && key.startsWith(multiRoutePrefix) && isCanceledMoldExecutionStep(step))
+    ) {
+      foldedSteps.add(step);
+    }
+  });
+  const firstFoldedIndex = steps.findIndex((step) => foldedSteps.has(step));
+  if (firstFoldedIndex < 0) {
+    return false;
+  }
+  const foldedSummarySteps = new Set([cancellationStep, recoveryStep].filter(Boolean));
+  const insertionIndex = steps
+    .slice(0, firstFoldedIndex)
+    .filter((step) => !foldedSummarySteps.has(step) && !foldedSteps.has(step))
+    .length;
+  const retainedSteps = steps.filter((step) => !foldedSummarySteps.has(step) && !foldedSteps.has(step));
+  retainedSteps.splice(insertionIndex, 0, ...foldedSummarySteps);
+  steps.splice(0, steps.length, ...retainedSteps);
+  return true;
+};
+
+const trayTargetExperimentCode = (input, trayCode) => {
+  for (const sample of asArray(input.samples)) {
+    for (const tray of asArray(sample?.trays)) {
+      if (resolveEntryTrayCode(tray) !== trayCode) {
+        continue;
+      }
+      const experimentCode = normalizeText(tray?.target_experiment_code || tray?.targetExperimentCode);
+      if (experimentCode) {
+        return experimentCode;
+      }
+    }
+  }
+  return "";
+};
+
+const relationIsAfter = (candidate, reference, relations) => {
+  const candidateTime = parseTimeValue(relationTime(candidate));
+  const referenceTime = parseTimeValue(relationTime(reference));
+  if (candidateTime && referenceTime) {
+    return candidateTime > referenceTime;
+  }
+  return relations.indexOf(candidate) > relations.indexOf(reference);
+};
+
 const decorateMoldCancellationSteps = (flow, input = {}) => {
   const taskCode = normalizeText(input.taskCode);
   const trayCode = normalizeText(input.trayCode);
   const experiments = asArray(input.experiments);
+  const runTrayRelations = asArray(input.experimentRunTrays || input.experiment_run_trays);
   const experimentMap = new Map(experiments.map((experiment) => [
     resolveEntryExperimentCode(experiment),
     experiment,
   ]));
   const latestCancellationByExperiment = new Map();
 
-  asArray(input.experimentRunTrays || input.experiment_run_trays).forEach((relation) => {
+  runTrayRelations.forEach((relation) => {
     const relationTaskCode = resolveEntryTaskCode(relation);
     const relationTrayCode = resolveEntryTrayCode(relation);
     const experimentCode = resolveEntryExperimentCode(relation);
@@ -136,7 +269,12 @@ const decorateMoldCancellationSteps = (flow, input = {}) => {
       const label = normalizeText(step?.label);
       return label.startsWith(moldName) && (label.endsWith("未完成") || label.endsWith("已完成") || label.endsWith("进行中"));
     });
-    const insertionIndex = findCancellationInsertionIndex(steps, resultIndex);
+    const fallbackInsertionIndex = findCancellationInsertionIndex(steps, resultIndex);
+    const insertionIndex = findOccurredEventInsertionIndex(
+      steps,
+      relationTime(relation),
+      fallbackInsertionIndex,
+    );
     const resultStep = resultIndex >= 0 ? steps[resultIndex] : null;
     const cancellationStep = {
       active: false,
@@ -219,10 +357,54 @@ const decorateMoldCancellationSteps = (flow, input = {}) => {
       active: false,
       key: `mold-cancel-recovery-${normalizeText(latestRecoveryEvent?.recovery_cycle_id || latestRecoveryEvent?.source_run_no || latestRecoveryEvent?.id)}`,
       label: "霉菌取消后恢复处理",
-      reached: normalizeText(latestRecoveryEvent?.action) === "stock_out",
+      reached: ["stock_out", "stock_out_withdraw"].includes(normalizeText(latestRecoveryEvent?.action)),
       time: relationTime(latestRecoveryEvent),
     };
-    steps.splice(cancellationIndex >= 0 ? cancellationIndex + 1 : 2, 0, recoveryStep);
+    const fallbackRecoveryIndex = cancellationIndex >= 0 ? cancellationIndex + 1 : 2;
+    const occurredInsertionIndex = findOccurredEventInsertionIndex(
+      steps,
+      relationTime(latestRecoveryEvent),
+      fallbackRecoveryIndex,
+    );
+    const recoveryEventTime = parseTimeValue(relationTime(latestRecoveryEvent));
+    const recoveryAction = normalizeText(latestRecoveryEvent?.action);
+    const recoveryTargetType = normalizeText(latestRecoveryEvent?.target_type || latestRecoveryEvent?.targetType);
+    const recoveryTargetLab = normalizeText(latestRecoveryEvent?.target_lab || latestRecoveryEvent?.targetLab);
+    const recoveryTargetsStaging = recoveryTargetType === "staging" || recoveryTargetLab.includes("暂存间");
+    const outboundAtSameTimeIndex = recoveryAction === "stock_out" && recoveryEventTime
+      ? steps.findIndex((step) => {
+          if (parseTimeValue(step?.time) !== recoveryEventTime) {
+            return false;
+          }
+          const label = normalizeText(step?.label);
+          return recoveryTargetsStaging
+            ? label === "送至暂存间"
+            : label === "送至实验室" || (label.startsWith("送至") && label.includes(recoveryTargetLab));
+        })
+      : -1;
+    const recoveryInsertionIndex = outboundAtSameTimeIndex >= 0
+      ? Math.min(occurredInsertionIndex, outboundAtSameTimeIndex)
+      : occurredInsertionIndex;
+    steps.splice(recoveryInsertionIndex, 0, recoveryStep);
+  }
+
+  const latestRecoveryAction = normalizeText(latestRecoveryEvent?.action);
+  const latestRecoveryTargetType = normalizeText(latestRecoveryEvent?.target_type || latestRecoveryEvent?.targetType);
+  const latestRecoveryTargetLab = normalizeText(latestRecoveryEvent?.target_lab || latestRecoveryEvent?.targetLab);
+  const recoveryDispatchedDirectlyToLab = latestRecoveryAction === "stock_out"
+    && latestRecoveryTargetType !== "staging"
+    && !latestRecoveryTargetLab.includes("暂存间");
+  if (recoveryStep && recoveryDispatchedDirectlyToLab) {
+    steps.forEach((step) => {
+      const label = normalizeText(step?.label);
+      if (
+        !normalizeText(step?.time)
+        && (label === "送至暂存间" || label === "已到达暂存间")
+      ) {
+        step.active = false;
+        step.reached = false;
+      }
+    });
   }
 
   const cancellationIsCurrent = [input.status, input.flowStatus, input.flow_status]
@@ -245,7 +427,70 @@ const decorateMoldCancellationSteps = (flow, input = {}) => {
     .map(normalizeText)
     .includes(MOLD_CANCEL_RECOVERY_STATUS)
     && recoveryStep
-    && normalizeText(latestRecoveryEvent?.action) === "stock_in";
+    && ["stock_in", "stock_out_withdraw"].includes(normalizeText(latestRecoveryEvent?.action));
+  const currentCancellation = insertedCancellationByExperiment.get(latestCancellationExperimentCode);
+  const currentCancellationStep = currentCancellation?.cancellationStep;
+  if ((cancellationIsCurrent || recoveryIsCurrent) && currentCancellationStep) {
+    foldCurrentMoldAttempt(
+      steps,
+      currentCancellationStep,
+      recoveryStep,
+      currentCancellation?.resultStep,
+    );
+  }
+
+  const selectedExperimentCode = trayTargetExperimentCode(input, trayCode)
+    || normalizeText(input.currentExperimentCode);
+  const lifecycleStatus = normalizeText(input.status || input.flowStatus || input.flow_status);
+  const activeNewMoldCycle =
+    !cancellationIsCurrent
+    && !recoveryIsCurrent
+    && selectedExperimentCode === latestCancellationExperimentCode
+    && (
+      ACTIVE_EXPERIMENT_ROUTE_STATUSES.has(lifecycleStatus)
+      || (lifecycleStatus.startsWith("送至") && lifecycleStatus.endsWith("试验室"))
+    );
+  const completedAfterCancellation = runTrayRelations.some((relation) => (
+    resolveEntryTaskCode(relation) === taskCode
+    && resolveEntryTrayCode(relation) === trayCode
+    && resolveEntryExperimentCode(relation) === latestCancellationExperimentCode
+    && COMPLETED_EXPERIMENT_STATUSES.has(
+      normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status),
+    )
+    && relationIsAfter(relation, latestCancellationRelation, runTrayRelations)
+  ));
+  const currentMoldIsCompleted =
+    selectedExperimentCode === latestCancellationExperimentCode
+    && COMPLETED_EXPERIMENT_STATUSES.has(lifecycleStatus);
+  const unfinishedLabel = `${currentCancellation?.moldName || "霉菌试验"}未完成`;
+  const existingUnfinishedStep = steps.find((step) => normalizeText(step?.label) === unfinishedLabel);
+  const shouldShowUnfinished = !activeNewMoldCycle && !completedAfterCancellation && !currentMoldIsCompleted;
+  if (shouldShowUnfinished && currentCancellationStep) {
+    if (existingUnfinishedStep) {
+      existingUnfinishedStep.active = false;
+      existingUnfinishedStep.reached = false;
+      existingUnfinishedStep.time = "";
+    } else if (steps.includes(currentCancellation?.resultStep)) {
+      currentCancellation.resultStep.active = false;
+      currentCancellation.resultStep.label = unfinishedLabel;
+      currentCancellation.resultStep.reached = false;
+      currentCancellation.resultStep.time = "";
+    } else {
+      const unfinishedStep = {
+          active: false,
+          key: `mold-unfinished-${latestCancellationExperimentCode}`,
+          label: unfinishedLabel,
+          reached: false,
+          time: "",
+      };
+      const unfinishedAnchor = recoveryStep || currentCancellationStep;
+      const anchorIndex = steps.indexOf(unfinishedAnchor);
+      steps.splice(anchorIndex >= 0 ? anchorIndex + 1 : steps.length, 0, unfinishedStep);
+    }
+  } else if (existingUnfinishedStep) {
+    steps.splice(steps.indexOf(existingUnfinishedStep), 1);
+  }
+
   if (recoveryIsCurrent) {
     steps.forEach((step) => {
       step.active = false;
@@ -277,13 +522,8 @@ const decorateMoldCancellationSteps = (flow, input = {}) => {
   steps.forEach((step) => {
     step.active = false;
   });
-  const currentCancellation = insertedCancellationByExperiment.get(latestCancellationEntry?.[0]);
-  const currentCancellationStep = currentCancellation?.cancellationStep;
   if (!currentCancellationStep) {
     return { ...flow, steps };
-  }
-  if (currentCancellation.resultStep) {
-    currentCancellation.resultStep.label = `${currentCancellation.moldName}未完成`;
   }
   const currentCancellationIndex = steps.indexOf(currentCancellationStep);
   restoreFoundationalSteps(steps, currentCancellationIndex, input, trayCode);

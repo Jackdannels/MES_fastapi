@@ -2518,6 +2518,28 @@ def test_storage_stock_out_rejects_lab_occupied_by_unreleased_run(monkeypatch, o
     assert storage.read("mes.staging_events") == []
 
 
+@pytest.mark.parametrize("same_task", [False, True], ids=["other-task", "same-task-other-tray"])
+def test_storage_stock_out_rejects_lab_after_sample_installation_before_run_exists(monkeypatch, same_task):
+    payloads, request, target_tray_code = _storage_lab_occupancy_stock_out_payload(
+        occupant_status="工装夹具安装",
+        same_task=same_task,
+    )
+    payloads["mes.experiment_runs"] = []
+    payloads["mes.experiment_run_trays"] = []
+    client, storage = build_client(monkeypatch, payloads)
+    original_samples = storage.read("mes.samples")
+
+    response = client.post(
+        f"/api/storage/rooms/staging/trays/{target_tray_code}/stock-out",
+        json=request,
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "冲击一室已有托盘完成样品安装，暂不能接收其他托盘"
+    assert storage.read("mes.samples") == original_samples
+    assert storage.read("mes.staging_events") == []
+
+
 def test_storage_scoped_stock_out_reads_global_lab_occupancy_before_task_scoped_write(monkeypatch):
     payloads, request, target_tray_code = _storage_lab_occupancy_stock_out_payload(
         occupant_status="实验进行中",
@@ -2909,6 +2931,60 @@ def test_storage_tray_stock_in_action_allows_strictly_matched_canceled_mold_run(
     assert sample["location"] == "外观检测间"
     assert sample["trays"][0]["status"] == "霉菌取消后恢复处理中"
     assert storage.read("mes.staging_events")[-1]["status"] == "霉菌取消后恢复处理中"
+
+
+def test_storage_mold_cancel_recovery_can_stock_out_directly_to_next_other_experiment(monkeypatch):
+    tray_code = "TP-MOLD-CANCELED-NEXT"
+    task_code = "TASK-MOLD-CANCELED-NEXT"
+    payloads = canceled_mold_tray_payload(tray_code=tray_code, task_code=task_code)
+    payloads["mes.experiments"].append(
+        {
+            "task_code": task_code,
+            "experiment_code": "EXP-COMPREHENSIVE-NEXT",
+            "experiment_name": "四综合试验",
+            "status": "已排程",
+        }
+    )
+    payloads["mes.schedules"] = [
+        {
+            "id": "SCH-COMPREHENSIVE-NEXT",
+            "task_code": task_code,
+            "experiment_code": "EXP-COMPREHENSIVE-NEXT",
+            "device": "四综合实验室",
+            "lab_code": "LAB_COMPREHENSIVE",
+            "status": "已排程",
+        }
+    ]
+    payloads["mes.experiment_trays"] = [
+        {
+            "task_code": task_code,
+            "experiment_code": "EXP-COMPREHENSIVE-NEXT",
+            "tray_code": tray_code,
+        }
+    ]
+    client, storage = build_client(monkeypatch, payloads)
+
+    stocked = client.post(f"/api/storage/rooms/appearance/trays/{tray_code}/stock-in", json={})
+    response = client.post(
+        f"/api/storage/rooms/appearance/trays/{tray_code}/stock-out",
+        json={
+            "targetLab": "四综合实验室",
+            "targetLabCode": "LAB_COMPREHENSIVE",
+            "targetExperimentCode": "EXP-COMPREHENSIVE-NEXT",
+            "scheduleId": "SCH-COMPREHENSIVE-NEXT",
+            "targetType": "lab",
+        },
+    )
+
+    assert stocked.status_code == 200
+    assert response.status_code == 200
+    sample = storage.read("mes.samples")[0]
+    assert sample["location"] == "四综合实验室"
+    assert sample["status"] == "送至实验室"
+    event = storage.read("mes.staging_events")[-1]
+    assert event["appearance_phase"] == "mold_cancel_recovery"
+    assert event["source_experiment_code"] == "EXP-MOLD-CANCELED"
+    assert event["target_experiment_code"] == "EXP-COMPREHENSIVE-NEXT"
 
 
 def test_storage_tray_stock_in_action_rejects_canceled_mold_in_staging(monkeypatch):
@@ -4361,6 +4437,189 @@ def test_storage_schedule_patch_upserts_changed_rows_without_replacing_full_snap
     assert storage.read("mes.tasks") == [{"code": "TASK-NEW", "status": "已排程"}]
 
 
+def test_storage_schedule_patch_requires_confirmation_before_deleting_dispatched_schedule(monkeypatch):
+    schedule = {
+        "id": "schedule-dispatched",
+        "task_code": "TASK-DISPATCHED",
+        "experiment_code": "EXP-DISPATCHED",
+        "device": "冲击一室",
+        "start_at": "2026-09-10 08:00",
+        "end_at": "2026-09-10 10:00",
+    }
+    sample = {
+        "id": "sample-dispatched",
+        "code": "SP-DISPATCHED",
+        "task_code": "TASK-DISPATCHED",
+        "location": "冲击一室",
+        "status": "送至实验室",
+        "flow_status": "送至实验室",
+        "trays": [
+            {
+                "tray_code": "TP-DISPATCHED",
+                "status": "送至实验室",
+                "target_lab": "冲击一室",
+                "target_experiment_code": "EXP-DISPATCHED",
+                "target_schedule_id": "schedule-dispatched",
+            }
+        ],
+        "history": [
+            {
+                "action": "接驳区扫码出库",
+                "location": "冲击一室",
+                "status": "送至实验室",
+                "time": "2026-09-10 07:50:00",
+            }
+        ],
+    }
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.schedules": [schedule],
+            "mes.tasks": [{"code": "TASK-DISPATCHED"}],
+            "mes.samples": [sample],
+            "mes.staging_events": [],
+        },
+    )
+
+    response = client.post(
+        "/api/storage/schedules/patch",
+        json={"deletes": {"mes.schedules": ["schedule-dispatched"]}},
+    )
+
+    assert response.status_code == 409
+    assert "删除后将自动撤回至发货点" in response.json()["detail"]
+    assert "TP-DISPATCHED" in response.json()["detail"]
+    assert storage.read("mes.schedules") == [schedule]
+    assert storage.read("mes.samples") == [sample]
+
+
+def test_storage_schedule_patch_deletes_schedule_and_atomically_withdraws_dispatched_trays(monkeypatch):
+    schedule = {
+        "id": "schedule-dispatched",
+        "task_code": "TASK-DISPATCHED",
+        "experiment_code": "EXP-DISPATCHED",
+        "device": "冲击一室",
+        "start_at": "2026-09-10 08:00",
+        "end_at": "2026-09-10 10:00",
+    }
+    samples = [
+        {
+            "id": "sample-handover",
+            "code": "SP-HANDOVER",
+            "task_code": "TASK-DISPATCHED",
+            "location": "冲击一室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "trays": [{
+                "tray_code": "TP-HANDOVER",
+                "status": "送至实验室",
+                "target_lab": "冲击一室",
+                "target_experiment_code": "EXP-DISPATCHED",
+            }],
+            "history": [{
+                "action": "接驳区扫码出库",
+                "location": "冲击一室",
+                "status": "送至实验室",
+                "time": "2026-09-10 07:50:00",
+            }],
+        },
+        {
+            "id": "sample-staging",
+            "code": "SP-STAGING",
+            "task_code": "TASK-DISPATCHED",
+            "location": "冲击一室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "trays": [{
+                "tray_code": "TP-STAGING",
+                "status": "送至实验室",
+                "target_lab": "冲击一室",
+                "target_experiment_code": "EXP-DISPATCHED",
+                "target_schedule_id": "schedule-dispatched",
+            }],
+            "history": [{
+                "action": "暂存间扫码出库",
+                "location": "冲击一室",
+                "status": "送至实验室",
+                "time": "2026-09-10 07:55:00",
+            }],
+        },
+        {
+            "id": "sample-unrelated",
+            "code": "SP-UNRELATED",
+            "task_code": "TASK-DISPATCHED",
+            "location": "振动一室",
+            "status": "送至实验室",
+            "flow_status": "送至实验室",
+            "trays": [{
+                "tray_code": "TP-UNRELATED",
+                "status": "送至实验室",
+                "target_lab": "振动一室",
+                "target_experiment_code": "EXP-OTHER",
+                "target_schedule_id": "schedule-other",
+            }],
+            "history": [],
+        },
+    ]
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.schedules": [schedule],
+            "mes.tasks": [{"code": "TASK-DISPATCHED"}],
+            "mes.samples": samples,
+            "mes.staging_events": [
+                {
+                    "id": "old-handover-tray-staging-out",
+                    "tray_code": "TP-HANDOVER",
+                    "task_code": "TASK-DISPATCHED",
+                    "action": "stock_out",
+                    "target_lab": "旧试验间",
+                    "time": "2026-09-09 07:30:00",
+                },
+                {
+                    "id": "staging-in",
+                    "tray_code": "TP-STAGING",
+                    "task_code": "TASK-DISPATCHED",
+                    "action": "stock_in",
+                    "time": "2026-09-10 07:40:00",
+                },
+                {
+                    "id": "staging-out",
+                    "tray_code": "TP-STAGING",
+                    "task_code": "TASK-DISPATCHED",
+                    "action": "stock_out",
+                    "target_lab": "冲击一室",
+                    "target_experiment_code": "EXP-DISPATCHED",
+                    "time": "2026-09-10 07:55:00",
+                },
+            ],
+        },
+    )
+
+    response = client.post(
+        "/api/storage/schedules/patch",
+        json={
+            "deletes": {"mes.schedules": ["schedule-dispatched"]},
+            "confirm_dispatched_tray_withdrawal": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert storage.read("mes.schedules") == []
+    by_code = {sample["code"]: sample for sample in storage.read("mes.samples")}
+    handover = by_code["SP-HANDOVER"]
+    assert (handover["status"], handover["location"]) == ("到货", "接驳区")
+    assert handover["history"][0]["action"] == "撤回出库"
+    assert "target_schedule_id" not in handover["trays"][0]
+    staging = by_code["SP-STAGING"]
+    assert (staging["status"], staging["location"]) == ("已到达暂存间", "恒温恒湿间（暂存间）")
+    assert staging["history"][0]["action"] == "撤回出库"
+    unrelated = by_code["SP-UNRELATED"]
+    assert (unrelated["status"], unrelated["location"]) == ("送至实验室", "振动一室")
+    assert storage.read("mes.staging_events")[-1]["action"] == "stock_out_withdraw"
+    assert {row["trayCode"] for row in response.json()["withdrawnTrays"]} == {"TP-HANDOVER", "TP-STAGING"}
+
+
 def test_storage_schedule_patch_reads_bounded_key_set_without_full_snapshot(monkeypatch):
     existing_schedule = {
         "id": "schedule-existing",
@@ -4399,6 +4658,7 @@ def test_storage_schedule_patch_reads_bounded_key_set_without_full_snapshot(monk
         "mes.experiments",
         "mes.samples",
         "mes.schedules",
+        "mes.staging_events",
         "mes.streams",
         "mes.tasks",
     }

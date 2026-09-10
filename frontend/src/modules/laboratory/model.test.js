@@ -6570,6 +6570,109 @@ describe("laboratory model", () => {
     );
   });
 
+  test("canceled mold tray can enter the sequence-approved next high-low temperature humidity experiment", () => {
+    const taskCode = "SYLU-2026-09-003";
+    const trayCode = `${taskCode}-TP-001`;
+    const hotHumidCode = `${taskCode}-A`;
+    const moldCode = `${taskCode}-C`;
+    const canceledRunNo = "run-20260910193543903097";
+    const view = buildLaboratoryWorkbenchView({
+      experimentRuns: [{
+        ended_at: "2026-09-10 19:35:46",
+        experiment_code: moldCode,
+        run_no: canceledRunNo,
+        schedule_id: "schedule-mold-old",
+        started_at: "2026-09-10 19:35:44",
+        status: "实验已取消",
+        task_code: taskCode,
+      }],
+      experimentRunTrays: [{
+        ended_at: "2026-09-10 19:35:46",
+        experiment_code: moldCode,
+        run_no: canceledRunNo,
+        run_tray_status: "实验已取消",
+        started_at: "2026-09-10 19:35:44",
+        task_code: taskCode,
+        tray_code: trayCode,
+      }],
+      experiments: [
+        { experiment_code: hotHumidCode, experiment_name: "高低温湿热试验", required_device: "高低温湿热试验", status: "已排程", task_code: taskCode },
+        { experiment_code: moldCode, experiment_name: "霉菌试验", required_device: "霉菌试验", status: "已排程", task_code: taskCode },
+      ],
+      experimentTrays: [hotHumidCode, moldCode].map((experimentCode) => ({
+        experiment_code: experimentCode,
+        task_code: taskCode,
+        tray_code: trayCode,
+      })),
+      labCode: "LAB_HOT_HUMID",
+      labName: "高低温湿热一室",
+      now: new Date("2026-09-11T11:30:00+08:00"),
+      samples: [{
+        code: `${taskCode}-SP-001`,
+        flow_status: "实验已取消",
+        history: [{
+          action: "取消本次霉菌实验",
+          detail: `${taskCode} / 霉菌试验 / 实验已取消 / 原因：霉菌未按预期繁殖`,
+          location: "霉菌试验室",
+          status: "实验已取消",
+          time: "2026-09-10 19:35:46",
+          tray_code: trayCode,
+        }],
+        location: "霉菌试验室",
+        status: "实验已取消",
+        task_code: taskCode,
+        trays: [{
+          quantity: 1,
+          status: "实验已取消",
+          target_experiment_code: moldCode,
+          target_lab: "霉菌试验室",
+          tray_code: trayCode,
+        }],
+      }],
+      schedules: [
+        {
+          device: "高低温湿热一室",
+          experiment_code: hotHumidCode,
+          id: "schedule-1789040077952-194",
+          lab_code: "LAB_HOT_HUMID",
+          start_at: "2026-09-11 12:00:00",
+          status: "已排程",
+          task_code: taskCode,
+        },
+        {
+          device: "霉菌试验室",
+          experiment_code: moldCode,
+          id: "schedule-1789040162543-994",
+          lab_code: "LAB_MOLD",
+          start_at: "2026-09-11 12:00:00",
+          status: "已排程",
+          task_code: taskCode,
+        },
+      ],
+      selectedTrayCode: trayCode,
+      tasks: [{ code: taskCode, name: "演示任务003", test_type: "高低温湿热试验 / 霉菌试验" }],
+    });
+    const workflow = buildLaboratoryWorkflowFromTask(view.currentTask);
+    const scanResult = validateLaboratoryTrayScan({
+      allScheduleRows: view.allScheduleRows,
+      currentTask: view.currentTask,
+      scanCode: trayCode,
+      scheduleRows: view.scheduleRows,
+    });
+
+    expect(view.currentTask).toEqual(expect.objectContaining({
+      experimentCode: hotHumidCode,
+      sequenceEligible: true,
+      sequenceEligibleTrayCodes: [trayCode],
+    }));
+    expect(getLaboratoryActionState(workflow).canCompare).toBe(true);
+    expect(scanResult).toEqual(expect.objectContaining({
+      message: "比对正确",
+      ok: true,
+      trayCode,
+    }));
+  });
+
   test("validateLaboratoryTrayScan accepts lab dispatch restored from latest stock-out history", () => {
     const taskCode = "SYLU-2026-06-024";
     const trayCode = `${taskCode}-TP-001`;

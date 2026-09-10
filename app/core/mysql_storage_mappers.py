@@ -890,6 +890,7 @@ def build_storage_sample_item(
             continue
         tray_status = normalize_experiment_status_text(tray.get("status") or tray.get("test_state") or tray.get("tray_status"))
         tray_completed = tray_status in EXPERIMENT_COMPLETED_STATUSES
+        tray_mold_canceled = tray_status == "实验已取消"
         raw_target_lab = normalize_text(tray.get("target_lab") or tray.get("targetLab"))
         if tray_status == PRE_EXPERIMENT_APPEARANCE_STATUS and raw_target_lab == APPEARANCE_INSPECTION_LOCATION:
             raw_target_lab = ""
@@ -898,7 +899,7 @@ def build_storage_sample_item(
         staging_target_experiment_code = normalize_text(staging_target.get("target_experiment_code"))
         raw_target_experiment_code = normalize_text(tray.get("target_experiment_code") or tray.get("targetExperimentCode"))
         event_target_lab = "" if is_axis_partial_status(tray_status) else target_lab_by_tray_code.get(tray_code, "")
-        if tray_completed:
+        if tray_completed or tray_mold_canceled:
             target_lab = ""
             target_experiment_code = ""
         elif is_axis_partial_status(tray_status) and latest_withdrawal_restores_partial_axis(

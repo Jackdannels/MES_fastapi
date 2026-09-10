@@ -350,6 +350,18 @@ def validate_salt_resume_preparation_ready(snapshot: dict[str, Any], pause: dict
         raise ValueError(f"继续实验前尚未完成重新比对、安装和准备就绪：{', '.join(missing)}")
 
 
+def validate_salt_early_stop_allowed(snapshot: dict[str, Any], pause: dict[str, Any]) -> None:
+    """Reject early stop after every tray has completed resume comparison."""
+
+    run_no = _record_text(pause, "run_no", "runNo")
+    pause_no = _record_text(pause, "pause_no", "pauseNo")
+    required_trays = set(_selected_trays(pause))
+    completed = completed_resume_preparation_actions(snapshot, run_no=run_no, pause_no=pause_no)
+    compared_trays = completed.get(RESUME_PREPARATION_COMPARE, set())
+    if required_trays and required_trays.issubset(compared_trays):
+        raise ValueError("已完成继续实验重新比对，请完成安装和准备就绪后恢复实验，不能再提前结束")
+
+
 def apply_salt_resume_confirmation(
     snapshot: dict[str, Any], *, pause: dict[str, Any], occurred_at: str
 ) -> dict[str, Any]:

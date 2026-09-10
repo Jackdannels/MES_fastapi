@@ -25,6 +25,13 @@ BLOCK_WITHDRAW_TRAY_STATUSES = {
 STAGING_LOCATION = "恒温恒湿间（暂存间）"
 APPEARANCE_LOCATION = "外观检测间"
 APPEARANCE_STOCKED_STATUS = "实验后外观检测间存放"
+MOLD_CANCEL_RECOVERY_STATUS = "霉菌取消后恢复处理中"
+MOLD_CANCEL_RECOVERY_PHASE = "mold_cancel_recovery"
+APPEARANCE_STORAGE_STATUSES = {
+    APPEARANCE_STOCKED_STATUS,
+    PRE_EXPERIMENT_APPEARANCE_STATUS,
+    MOLD_CANCEL_RECOVERY_STATUS,
+}
 WITHDRAWAL_HISTORY_ACTIONS = {"撤回出库", "实验任务撤回", "任务切换撤回"}
 
 
@@ -242,16 +249,21 @@ def latest_appearance_origin_snapshot(
             continue
         event_time = parse_datetime_value(event.get("time")) or datetime.min
         if latest_withdrawal_time < event_time <= dispatch_time:
-            stable_entries.append({"time": event_time})
+            event_phase = normalize_text(event.get("appearance_phase") or event.get("appearancePhase"))
+            event_status = normalize_text(event.get("status"))
+            if event_phase == MOLD_CANCEL_RECOVERY_PHASE:
+                event_status = MOLD_CANCEL_RECOVERY_STATUS
+            if event_status in APPEARANCE_STORAGE_STATUSES:
+                stable_entries.append({"status": event_status, "time": event_time})
 
     for entry in as_list(sample.get("history")):
         action = normalize_text(entry.get("action"))
         status = normalize_text(entry.get("status"))
         entry_time = parse_datetime_value(entry.get("time")) or datetime.min
         marks_appearance_storage = (
-            status in {APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS}
+            status in APPEARANCE_STORAGE_STATUSES
             or action == "外观检测间扫码入库"
-            and status in {APPEARANCE_STOCKED_STATUS, PRE_EXPERIMENT_APPEARANCE_STATUS}
+            and status in APPEARANCE_STORAGE_STATUSES
         )
         is_prior_withdrawal_restore = action in WITHDRAWAL_HISTORY_ACTIONS and entry_time == latest_withdrawal_time
         if marks_appearance_storage and (latest_withdrawal_time < entry_time <= dispatch_time or is_prior_withdrawal_restore):

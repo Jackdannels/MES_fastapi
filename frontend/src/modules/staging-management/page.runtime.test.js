@@ -987,6 +987,36 @@ describe("StagingManagementPage runtime", () => {
     });
   });
 
+  test("keeps the tray in storage when the server rejects laboratory stock-out", async () => {
+    const originalFetch = fetch.getMockImplementation();
+    fetch.mockImplementation(async (url, options = {}) => {
+      if (String(url).includes("/api/storage/rooms/staging/trays/SYLU-2026-04-102-TP-001/stock-out")) {
+        return {
+          ok: false,
+          status: 409,
+          statusText: "Conflict",
+          json: async () => ({ detail: "振动一室已有托盘完成样品安装，暂不能接收其他托盘" }),
+        };
+      }
+      return originalFetch(url, options);
+    });
+    const mounted = await mountPage();
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-102-TP-001");
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+    await mounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
+    await settlePage(mounted);
+
+    expect(mounted.get('[data-testid="zancun-destination-modal"]').classes()).toContain("is-open");
+    expect(mounted.get('[data-testid="zancun-destination-modal"]').text()).toContain("已有托盘完成样品安装");
+    expect(mounted.get('[data-testid="zancun-current-staging-column"]').text()).toContain("SYLU-2026-04-102-TP-001");
+    expect(remoteSnapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-102-SP-001")).toMatchObject({
+      location: "恒温恒湿间（暂存间）",
+      status: "已到达暂存间",
+    });
+  });
+
   test("stock-out scan returns to waiting scan state after one tray is dispatched", async () => {
     const mounted = await mountPage();
 
@@ -1268,6 +1298,100 @@ describe("StagingManagementPage runtime", () => {
     });
   });
 
+  test("appearance stock-out accepts mold cancel recovery after a previous dispatch was withdrawn", async () => {
+    const taskCode = "SYLU-2026-04-102";
+    const trayCode = `${taskCode}-TP-001`;
+    const moldExperimentCode = `${taskCode}-A`;
+    const nextExperimentCode = `${taskCode}-B`;
+    const canceledRunNo = "RUN-MOLD-CANCELED";
+    remoteSnapshot = createAppearanceOriginalPlanSnapshot();
+    remoteSnapshot[STORAGE_KEYS.schedules] = remoteSnapshot[STORAGE_KEYS.schedules].filter(
+      (schedule) => schedule.experiment_code === nextExperimentCode,
+    );
+    remoteSnapshot[STORAGE_KEYS.experiment_run_trays] = [{
+      ended_at: "2026-04-01T10:00:00",
+      experiment_code: moldExperimentCode,
+      run_no: canceledRunNo,
+      run_tray_status: "实验已取消",
+      task_code: taskCode,
+      tray_code: trayCode,
+    }];
+    remoteSnapshot[STORAGE_KEYS.samples] = remoteSnapshot[STORAGE_KEYS.samples].map((sample) => (
+      sample.code === `${taskCode}-SP-001`
+        ? {
+            ...sample,
+            flow_status: "霉菌取消后恢复处理中",
+            location: "外观检测间",
+            status: "霉菌取消后恢复处理中",
+            trays: sample.trays.map((tray) => ({ ...tray, status: "霉菌取消后恢复处理中" })),
+          }
+        : sample
+    ));
+    remoteSnapshot[STORAGE_KEYS.staging_events] = [
+      {
+        action: "stock_in",
+        appearance_phase: "mold_cancel_recovery",
+        recovery_cycle_id: canceledRunNo,
+        room: "appearance",
+        source_experiment_code: moldExperimentCode,
+        source_run_no: canceledRunNo,
+        status: "霉菌取消后恢复处理中",
+        task_code: taskCode,
+        time: "2026-04-01T10:10:00",
+        tray_code: trayCode,
+      },
+      {
+        action: "stock_out",
+        appearance_phase: "mold_cancel_recovery",
+        recovery_cycle_id: canceledRunNo,
+        room: "appearance",
+        source_experiment_code: moldExperimentCode,
+        source_run_no: canceledRunNo,
+        target_experiment_code: nextExperimentCode,
+        target_lab: "盐雾试验室",
+        task_code: taskCode,
+        time: "2026-04-01T10:20:00",
+        tray_code: trayCode,
+      },
+      {
+        action: "stock_out_withdraw",
+        appearance_phase: "mold_cancel_recovery",
+        recovery_cycle_id: canceledRunNo,
+        room: "appearance",
+        source_experiment_code: moldExperimentCode,
+        source_run_no: canceledRunNo,
+        status: "霉菌取消后恢复处理中",
+        target_experiment_code: nextExperimentCode,
+        target_lab: "盐雾试验室",
+        task_code: taskCode,
+        time: "2026-04-01T10:30:00",
+        tray_code: trayCode,
+      },
+    ];
+    const mounted = await mountPage({ room: "appearance" });
+
+    await mounted.get('[data-testid="zancun-stock-out"]').trigger("click");
+    await mounted.get('[data-testid="zancun-scan-code"]').setValue(trayCode);
+    await mounted.get('[data-testid="zancun-scan-complete"]').trigger("click");
+
+    const destinationModal = mounted.get('[data-testid="zancun-destination-modal"]');
+    expect(destinationModal.classes()).toContain("is-open");
+    expect(destinationModal.text()).toContain("盐雾试验室");
+    expect(destinationModal.text()).not.toContain("该托盘尚未完成外观检测间扫码入库");
+
+    await mounted.get('[data-testid="zancun-destination-submit-0"]').trigger("click");
+    await settlePage(mounted);
+
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/api/storage/rooms/appearance/trays/${trayCode}/stock-out`),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(remoteSnapshot[STORAGE_KEYS.samples].find((sample) => sample.code === `${taskCode}-SP-001`)).toMatchObject({
+      location: "盐雾试验室",
+      status: "送至实验室",
+    });
+  });
+
   test("stock-out scan does not show fallback lab when the experiment is not scheduled", async () => {
     remoteSnapshot = {
       ...createSnapshot(),
@@ -1527,6 +1651,7 @@ describe("StagingManagementPage runtime", () => {
     await mounted.get('[data-testid="zancun-stock-in"]').trigger("click");
     await mounted.get('[data-testid="zancun-scan-code"]').setValue("SYLU-2026-04-107-TP-001");
     await mounted.get('[data-testid="zancun-scan-submit"]').trigger("click");
+    await settlePage(mounted);
 
     const updatedSample = remoteSnapshot[STORAGE_KEYS.samples].find((sample) => sample.code === "SYLU-2026-04-107-SP-001");
 

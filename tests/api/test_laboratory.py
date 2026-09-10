@@ -1831,6 +1831,100 @@ def test_laboratory_compare_operation_rewrites_stale_tray_target(monkeypatch):
     assert tray["target_lab"] == "高低温湿热一室"
 
 
+def test_laboratory_compare_accepts_canceled_mold_tray_for_sequence_approved_next_experiment(monkeypatch):
+    task_code = "SYLU-2026-09-003"
+    tray_code = f"{task_code}-TP-001"
+    hot_humid_code = f"{task_code}-A"
+    mold_code = f"{task_code}-C"
+    client, storage = build_client(
+        monkeypatch,
+        {
+            "mes.tasks": [{"id": task_code, "code": task_code, "name": "演示任务003"}],
+            "mes.experiments": [
+                {"task_code": task_code, "experiment_code": hot_humid_code, "experiment_name": "高低温湿热试验"},
+                {"task_code": task_code, "experiment_code": mold_code, "experiment_name": "霉菌试验"},
+            ],
+            "mes.schedules": [
+                {
+                    "id": "schedule-1789040077952-194",
+                    "task_code": task_code,
+                    "experiment_code": hot_humid_code,
+                    "device": "高低温湿热一室",
+                    "lab_code": "LAB_HOT_HUMID",
+                    "start_at": "2026-09-11 12:00:00",
+                },
+                {
+                    "id": "schedule-1789040162543-994",
+                    "task_code": task_code,
+                    "experiment_code": mold_code,
+                    "device": "霉菌试验室",
+                    "start_at": "2026-09-11 12:00:00",
+                },
+            ],
+            "mes.experiment_runs": [{
+                "ended_at": "2026-09-10 19:35:46",
+                "experiment_code": mold_code,
+                "run_no": "run-20260910193543903097",
+                "schedule_id": "schedule-mold-canceled",
+                "status": "实验已取消",
+                "task_code": task_code,
+            }],
+            "mes.experiment_run_trays": [{
+                "ended_at": "2026-09-10 19:35:46",
+                "experiment_code": mold_code,
+                "run_no": "run-20260910193543903097",
+                "run_tray_status": "实验已取消",
+                "task_code": task_code,
+                "tray_code": tray_code,
+            }],
+            "mes.experiment_trays": [
+                {"task_code": task_code, "experiment_code": hot_humid_code, "tray_code": tray_code},
+                {"task_code": task_code, "experiment_code": mold_code, "tray_code": tray_code},
+            ],
+            "mes.experiment_samples": [
+                {"task_code": task_code, "experiment_code": hot_humid_code, "sample_code": f"{task_code}-SP-001"},
+            ],
+            "mes.samples": [{
+                "code": f"{task_code}-SP-001",
+                "flow_status": "实验已取消",
+                "location": "霉菌试验室",
+                "status": "实验已取消",
+                "task_code": task_code,
+                "trays": [{
+                    "quantity": 1,
+                    "status": "实验已取消",
+                    "target_experiment_code": mold_code,
+                    "target_lab": "霉菌试验室",
+                    "tray_code": tray_code,
+                }],
+            }],
+        },
+    )
+
+    response = client.post(
+        "/api/laboratory/operations",
+        json={
+            "operationType": "compare",
+            "taskCode": task_code,
+            "experimentCode": hot_humid_code,
+            "labCode": "LAB_HOT_HUMID",
+            "labName": "高低温湿热一室",
+            "scheduleId": "schedule-1789040077952-194",
+            "trayCodes": [tray_code],
+            "occurredAt": "2026-09-11 11:40:00",
+        },
+    )
+
+    assert response.status_code == 200, response.json()
+    sample = storage.read("mes.samples")[0]
+    assert sample["location"] == "高低温湿热一室"
+    assert sample["status"] == "已到达实验室"
+    assert sample["flow_status"] == "已到达实验室"
+    assert sample["trays"][0]["status"] == "已到达实验室"
+    assert sample["trays"][0]["target_experiment_code"] == hot_humid_code
+    assert sample["trays"][0]["target_lab"] == "高低温湿热一室"
+
+
 def test_laboratory_operations_merge_against_latest_snapshot_when_parallel_labs_commit():
     class DelayedFirstWriteStorage(FakeLaboratoryStorage):
         def __init__(self, payloads):
@@ -2385,6 +2479,65 @@ def test_laboratory_withdraw_current_restores_appearance_storage_before_current_
     assert staging_events[-1]["action"] == "stock_out_withdraw"
     assert staging_events[-1]["room"] == "appearance"
     assert staging_events[-1]["target_experiment_code"] == "EXP-D"
+
+
+def test_laboratory_withdraw_current_restores_mold_cancel_recovery_after_direct_next_experiment_dispatch(monkeypatch):
+    from app.api.routes import laboratory as laboratory_route
+
+    monkeypatch.setattr(laboratory_route, "now_business_text", lambda: "2026-09-10 17:54:00")
+    canceled_run_no = "RUN-MOLD-CANCELED"
+    sample = sample_with_history(
+        "已到达实验室",
+        "四综合实验室",
+        [
+            {"action": "任务比对", "detail": "TASK-501 / 四综合试验 / 已到达实验室", "status": "已到达实验室", "location": "四综合实验室", "time": "2026-09-10 17:53:01"},
+            {"action": "外观检测间扫码出库", "detail": "TP-501 恢复处理完成，送至 四综合实验室", "status": "送至实验室", "location": "四综合实验室", "time": "2026-09-10 17:52:12"},
+            {"action": "外观检测间扫码入库", "detail": "TP-501 霉菌取消后恢复处理中", "status": "霉菌取消后恢复处理中", "location": "外观检测间", "time": "2026-09-10 17:51:13"},
+        ],
+    )
+    payloads = base_payloads(
+        [sample],
+        experiment_trays=[{"task_code": "TASK-501", "experiment_code": "EXP-D", "tray_code": "TP-501"}],
+        staging_events=[
+            {
+                "id": "mold-recovery-in", "tray_code": "TP-501", "task_code": "TASK-501", "room": "appearance",
+                "action": "stock_in", "status": "霉菌取消后恢复处理中", "appearance_phase": "mold_cancel_recovery",
+                "source_experiment_code": "EXP-B", "source_run_no": canceled_run_no,
+                "recovery_cycle_id": canceled_run_no, "time": "2026-09-10 17:51:13",
+            },
+            {
+                "id": "mold-recovery-out", "tray_code": "TP-501", "task_code": "TASK-501", "room": "appearance",
+                "action": "stock_out", "appearance_phase": "mold_cancel_recovery",
+                "source_experiment_code": "EXP-B", "source_run_no": canceled_run_no,
+                "recovery_cycle_id": canceled_run_no, "target_experiment_code": "EXP-D",
+                "target_lab": "四综合实验室", "time": "2026-09-10 17:52:12",
+            },
+        ],
+    )
+    payloads["mes.experiments"].append(
+        {"task_code": "TASK-501", "experiment_code": "EXP-D", "experiment_name": "四综合试验"}
+    )
+    payloads["mes.schedules"].append(
+        {"id": "SCH-D", "task_code": "TASK-501", "experiment_code": "EXP-D", "device": "四综合实验室"}
+    )
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post("/api/laboratory/tasks/TASK-501/experiments/EXP-D/withdraw-current", json={})
+
+    assert response.status_code == 200
+    assert response.json()["restoredStatus"] == "霉菌取消后恢复处理中"
+    updated = storage.read("mes.samples")[0]
+    assert updated["status"] == "霉菌取消后恢复处理中"
+    assert updated["flow_status"] == "霉菌取消后恢复处理中"
+    assert updated["location"] == "外观检测间"
+    assert updated["trays"][0]["status"] == "霉菌取消后恢复处理中"
+    compensation = storage.read("mes.staging_events")[-1]
+    assert compensation["action"] == "stock_out_withdraw"
+    assert compensation["status"] == "霉菌取消后恢复处理中"
+    assert compensation["appearance_phase"] == "mold_cancel_recovery"
+    assert compensation["source_experiment_code"] == "EXP-B"
+    assert compensation["source_run_no"] == canceled_run_no
+    assert compensation["recovery_cycle_id"] == canceled_run_no
 
 
 def test_laboratory_withdraw_current_restores_pre_experiment_appearance_storage(monkeypatch):

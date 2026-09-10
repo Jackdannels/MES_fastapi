@@ -892,6 +892,8 @@
               class="action-btn danger"
               data-testid="laboratory-salt-stop"
               type="button"
+              :disabled="!canStopPausedExperiment"
+              :title="canStopPausedExperiment ? '提前结束当前暂停实验' : '重新比对已完成，请继续安装并恢复实验'"
               @click="openStopModal"
             >
               提前结束
@@ -1128,6 +1130,7 @@ const {
   currentTask,
   hideRunningModal,
   activePauseInspectionTrayCodes,
+  canStopPausedExperiment,
   isSaltSprayLaboratory,
   logoutAttendance,
   installModalOpen,

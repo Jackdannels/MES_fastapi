@@ -6,6 +6,7 @@ from typing import Any
 
 from app.core.time_utils import now_business_datetime, parse_business_datetime
 from app.services.storage_atomic import generic_item_key
+from app.services.tray_dispatch_withdrawal import apply_tray_withdrawal
 
 
 PATCHABLE_KEYS = {
@@ -17,6 +18,11 @@ PATCHABLE_KEYS = {
 }
 SCHEDULES_KEY = "mes.schedules"
 DEVICES_KEY = "mes.devices"
+TASKS_KEY = "mes.tasks"
+SAMPLES_KEY = "mes.samples"
+STAGING_EVENTS_KEY = "mes.staging_events"
+LAB_DISPATCHED_STATUS = "送至实验室"
+SCHEDULE_DELETE_WITHDRAW_CONFIRMATION_DETAIL = "当前有托盘正在送往该排程试验间，删除后将自动撤回至发货点，请确认"
 STORAGE_AREA_CODES = {"AREA_STAGING_PRE", "AREA_STAGING_POST", "AREA_APPEARANCE"}
 COMPLETED_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
 MAINTENANCE_STATUSES = ("维修", "保养")
@@ -322,6 +328,120 @@ def normalize_patch(payload: dict[str, Any]) -> tuple[dict[str, list[dict[str, A
                 continue
             deletes[key] = {normalize_text(value) for value in as_list(values) if normalize_text(value)}
     return upserts, deletes
+
+
+def schedule_deleted_rows(snapshot: dict[str, Any], payload: dict[str, Any]) -> list[dict[str, Any]]:
+    _upserts, deletes = normalize_patch(payload)
+    deleted_ids = deletes.get(SCHEDULES_KEY, set())
+    if not deleted_ids:
+        return []
+    return [
+        deepcopy(schedule)
+        for schedule in as_list(snapshot.get(SCHEDULES_KEY))
+        if isinstance(schedule, dict) and row_key(SCHEDULES_KEY, schedule) in deleted_ids
+    ]
+
+
+def tray_target_matches_schedule(tray: dict[str, Any], schedule: dict[str, Any]) -> bool:
+    target_schedule_id = normalize_text(tray.get("target_schedule_id") or tray.get("targetScheduleId"))
+    schedule_id = row_key(SCHEDULES_KEY, schedule)
+    if target_schedule_id:
+        return bool(schedule_id and target_schedule_id == schedule_id)
+
+    target_experiment_code = normalize_text(
+        tray.get("target_experiment_code") or tray.get("targetExperimentCode")
+    )
+    if not target_experiment_code or target_experiment_code != schedule_experiment_code(schedule):
+        return False
+
+    target_lab = normalize_text(tray.get("target_lab") or tray.get("targetLab"))
+    target_lab_code = normalize_text(tray.get("target_lab_code") or tray.get("targetLabCode"))
+    schedule_targets = {schedule_device(schedule), schedule_lab_code(schedule)} - {""}
+    if (target_lab or target_lab_code) and not ({target_lab, target_lab_code} - {""}) & schedule_targets:
+        return False
+
+    for target_snake_key, target_camel_key, schedule_snake_key, schedule_camel_key in (
+        ("target_sub_experiment_code", "targetSubExperimentCode", "sub_experiment_code", "subExperimentCode"),
+        ("target_axis_batch_no", "targetAxisBatchNo", "axis_batch_no", "axisBatchNo"),
+    ):
+        target_value = normalize_text(tray.get(target_snake_key) or tray.get(target_camel_key))
+        schedule_value = schedule_scope_value(schedule, schedule_snake_key, schedule_camel_key)
+        if target_value and schedule_value and target_value != schedule_value:
+            return False
+    return True
+
+
+def dispatched_trays_for_deleted_schedules(
+    snapshot: dict[str, Any], deleted_schedules: list[dict[str, Any]]
+) -> list[dict[str, str]]:
+    affected: dict[str, dict[str, str]] = {}
+    for sample in as_list(snapshot.get(SAMPLES_KEY)):
+        if not isinstance(sample, dict):
+            continue
+        sample_task_code = normalize_text(
+            sample.get("task_code") or sample.get("taskCode") or sample.get("task_no") or sample.get("taskNo")
+        )
+        for tray in as_list(sample.get("trays")):
+            if not isinstance(tray, dict) or normalize_text(tray.get("status")) != LAB_DISPATCHED_STATUS:
+                continue
+            tray_code = normalize_text(tray.get("tray_code") or tray.get("trayCode") or tray.get("tray_no"))
+            if not tray_code:
+                continue
+            for schedule in deleted_schedules:
+                if sample_task_code != schedule_task_code(schedule) or not tray_target_matches_schedule(tray, schedule):
+                    continue
+                affected[tray_code] = {
+                    "trayCode": tray_code,
+                    "taskCode": sample_task_code,
+                    "scheduleId": row_key(SCHEDULES_KEY, schedule),
+                    "targetLab": schedule_device(schedule) or normalize_text(tray.get("target_lab")),
+                }
+                break
+    return [affected[key] for key in sorted(affected)]
+
+
+def build_schedule_dispatch_withdrawal_updates(
+    snapshot: dict[str, Any], payload: dict[str, Any]
+) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, str]]]:
+    deleted_schedules = schedule_deleted_rows(snapshot, payload)
+    affected = dispatched_trays_for_deleted_schedules(snapshot, deleted_schedules)
+    if not affected:
+        return {}, []
+    if payload.get("confirm_dispatched_tray_withdrawal") is not True:
+        tray_codes = "、".join(row["trayCode"] for row in affected)
+        raise StorageSchedulePatchError(
+            f"{SCHEDULE_DELETE_WITHDRAW_CONFIRMATION_DETAIL}：{tray_codes}",
+            status_code=409,
+        )
+
+    samples = deepcopy(as_list(snapshot.get(SAMPLES_KEY)))
+    staging_events = deepcopy(as_list(snapshot.get(STAGING_EVENTS_KEY)))
+    tasks = [deepcopy(task) for task in as_list(snapshot.get(TASKS_KEY)) if isinstance(task, dict)]
+    withdrawal_snapshot = {"staging_events": staging_events}
+    for row in affected:
+        task = next(
+            (
+                item
+                for item in tasks
+                if normalize_text(item.get("code") or item.get("task_code") or item.get("taskCode") or item.get("id"))
+                == row["taskCode"]
+            ),
+            {"code": row["taskCode"]},
+        )
+        task_samples = [
+            sample
+            for sample in samples
+            if normalize_text(sample.get("task_code") or sample.get("taskCode") or sample.get("task_no"))
+            == row["taskCode"]
+        ]
+        apply_tray_withdrawal(
+            withdrawal_snapshot,
+            task,
+            task_samples,
+            row["trayCode"],
+            "删除排程自动撤回",
+        )
+    return {SAMPLES_KEY: samples, STAGING_EVENTS_KEY: staging_events}, affected
 
 
 def apply_rows_patch(key: str, current_rows: Any, upsert_rows: list[dict[str, Any]], delete_keys: set[str]) -> list[dict[str, Any]]:

@@ -27,8 +27,25 @@ const SOURCE_LABELS = {
   staging_event: "暂存事件",
 };
 const GENERIC_OPERATOR_NAMES = new Set(["扫码登记", "扫码登录", "扫码操作", "扫码"]);
+const RESUME_PREPARATION_LABELS = {
+  resume_preparation_started: "开始继续实验准备",
+  resume_preparation_compared: "继续实验重新比对",
+  resume_preparation_installed: "继续实验重新安装",
+  resume_preparation_fixture_ready: "夹具安装确认完成",
+  resume_preparation_ready: "继续实验准备就绪",
+};
+const RESUME_SAMPLE_HISTORY_LABELS = {
+  继续实验任务比对: "继续实验重新比对",
+  继续实验样品安装: "继续实验重新安装",
+  继续实验准备确认: "继续实验准备就绪",
+  继续实验: "盐雾实验继续进行",
+};
 
 const normalizeSampleEventLabel = (entry, trayCode) => {
+  const action = normalizeText(entry?.action);
+  if (RESUME_SAMPLE_HISTORY_LABELS[action]) {
+    return RESUME_SAMPLE_HISTORY_LABELS[action];
+  }
   let detail = normalizeText(entry?.detail);
   const status = normalizeText(entry?.status || entry?.action);
   if (detail.startsWith(trayCode)) {
@@ -62,6 +79,9 @@ const normalizeStagingEventLabel = (event) => {
   const room = normalizeText(event?.room || event?.storage_room || event?.storageRoom);
   const targetLab = normalizeText(event?.target_lab || event?.targetLab);
   const targetType = normalizeText(event?.target_type || event?.targetType);
+  if (RESUME_PREPARATION_LABELS[action]) {
+    return RESUME_PREPARATION_LABELS[action];
+  }
   if (action === "manufacturer_return") {
     return "厂家收回";
   }
@@ -100,6 +120,9 @@ const resolveAuditStage = (label, entry = {}) => {
   ].map(normalizeText).join(" ");
   if (/厂家收回|manufacturer_return/.test(text)) {
     return "闭环";
+  }
+  if (/恢复准备|重新比对|重新安装|夹具安装确认|继续实验|resume_preparation/.test(text)) {
+    return "实验";
   }
   if (/外观/.test(text)) {
     return "外观检测";
@@ -184,8 +207,11 @@ const mergeStagingEvents = ({ auditEvents, stagingEvents, taskCode, trayCode }) 
       const label = normalizeStagingEventLabel(event);
       const stage = resolveAuditStage(label, event);
       const sameTimeEvents = auditEvents.filter((candidate) => timeKey(candidate.time) === timeKey(time));
-      const matched = sameTimeEvents.find((candidate) => candidate.stage === stage)
-        || (sameTimeEvents.length === 1 ? sameTimeEvents[0] : null);
+      const resumePreparationEvent = Boolean(RESUME_PREPARATION_LABELS[normalizeText(event?.action)]);
+      const matched = resumePreparationEvent
+        ? sameTimeEvents.find((candidate) => candidate.label === label) || null
+        : sameTimeEvents.find((candidate) => candidate.stage === stage)
+          || (sameTimeEvents.length === 1 ? sameTimeEvents[0] : null);
       const operator = normalizeText(event?.operator || event?.owner || event?.owner_name || event?.ownerName);
       const eventId = normalizeText(event?.id || event?.event_id || event?.eventId);
       if (matched) {

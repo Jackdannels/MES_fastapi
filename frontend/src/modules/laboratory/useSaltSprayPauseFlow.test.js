@@ -184,6 +184,33 @@ describe("useSaltSprayPauseFlow", () => {
     mounted.wrapper.unmount();
   });
 
+  test("disables and defensively rejects early stop after resume comparison completes", async () => {
+    const mounted = mountFlow({ paused: true });
+    expect(mounted.flow.canStopPausedExperiment.value).toBe(true);
+    mounted.flow.openStopModal();
+    expect(mounted.flow.stopModalOpen.value).toBe(true);
+
+    mounted.flow.stopReason.value = "达到外观检查终止条件";
+    mounted.stagingEvents.value = ["resume_preparation_started", "resume_preparation_compared"].map((action) => ({
+      action,
+      pause_no: "PAUSE-1",
+      room: "laboratory_resume_preparation",
+      run_no: "RUN-SALT",
+      tray_code: "TRAY-1",
+    }));
+    await nextTick();
+
+    expect(mounted.flow.canStopPausedExperiment.value).toBe(false);
+    await mounted.flow.confirmStop();
+    expect(mounted.requestStop).not.toHaveBeenCalled();
+    expect(mounted.flow.stopModalOpen.value).toBe(false);
+    expect(mounted.flow.controlConfirmationError.value).toContain("不能再提前结束");
+
+    mounted.flow.openStopModal();
+    expect(mounted.flow.stopModalOpen.value).toBe(false);
+    mounted.wrapper.unmount();
+  });
+
   test("publishes resume only after the current run and pause have persisted ready evidence", async () => {
     vi.useFakeTimers();
     const mounted = mountFlow({ paused: true });

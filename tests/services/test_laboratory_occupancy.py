@@ -69,10 +69,37 @@ def test_started_run_blocks_even_when_sample_state_update_still_says_ready():
     assert occupancy is not None
 
 
-def test_pre_start_run_allows_multiple_trays_to_enter_laboratory():
-    occupancy = find(run_status="实验准备就绪", tray_status="实验准备就绪", started_at="")
+def test_pre_install_arrival_allows_multiple_trays_to_enter_laboratory():
+    occupancy = find(run_status="已到达实验室", tray_status="已到达实验室", started_at="")
 
     assert occupancy is None
+
+
+def test_sample_installation_occupies_laboratory_before_run_exists():
+    occupancy = find_laboratory_occupancy(
+        target_lab_name="冲击一室",
+        samples=[sample("TRAY-INSTALLED", location="冲击一室", status="工装夹具安装")],
+        experiment_runs=[],
+        experiment_run_trays=[],
+    )
+
+    assert occupancy is not None
+    assert occupancy.phase == "installation"
+    assert occupancy.tray_code == "TRAY-INSTALLED"
+    assert occupancy.tray_status == "工装夹具安装"
+
+
+def test_ready_tray_keeps_laboratory_occupied_before_run_exists():
+    occupancy = find_laboratory_occupancy(
+        target_lab_name="冲击一室",
+        samples=[sample("TRAY-READY", location="冲击一室", status="实验准备就绪")],
+        experiment_runs=[],
+        experiment_run_trays=[],
+    )
+
+    assert occupancy is not None
+    assert occupancy.phase == "installation"
+    assert occupancy.tray_status == "实验准备就绪"
 
 
 def test_started_run_releases_laboratory_after_tray_moves_to_next_location():
@@ -80,6 +107,42 @@ def test_started_run_releases_laboratory_after_tray_moves_to_next_location():
         run_status="实验已完成",
         tray_status="已到达暂存间",
         location="恒温恒湿间（暂存间）",
+    )
+
+    assert occupancy is None
+
+
+def test_paused_run_keeps_laboratory_reserved_while_tray_is_in_appearance_room():
+    paused_run = {**run(status="实验暂停"), "device": "盐雾试验室"}
+
+    occupancy = find_laboratory_occupancy(
+        target_lab_name="盐雾试验室",
+        samples=[sample("TRAY-RUN", location="外观检测间", status="中途外观检测")],
+        experiment_runs=[paused_run],
+        experiment_run_trays=[relation(status="实验暂停")],
+    )
+
+    assert occupancy is not None
+    assert occupancy.run_status == "实验暂停"
+    assert occupancy.tray_code == "TRAY-RUN"
+
+
+def test_paused_run_does_not_block_one_of_its_own_trays_returning_to_laboratory():
+    paused_run = {**run(status="实验暂停"), "device": "盐雾试验室"}
+    sibling_relation = {
+        **relation(status="实验暂停"),
+        "tray_code": "TRAY-SIBLING",
+    }
+
+    occupancy = find_laboratory_occupancy(
+        target_lab_name="盐雾试验室",
+        samples=[
+            sample("TRAY-RUN", location="外观检测间", status="中途外观检测"),
+            sample("TRAY-SIBLING", location="外观检测间", status="中途外观检测"),
+        ],
+        experiment_runs=[paused_run],
+        experiment_run_trays=[relation(status="实验暂停"), sibling_relation],
+        excluded_tray_code="TRAY-RUN",
     )
 
     assert occupancy is None
@@ -107,7 +170,7 @@ def test_historical_run_does_not_lock_tray_that_reentered_same_lab_for_a_new_sch
     current_sample = sample(
         "TRAY-RUN",
         location="冲击一室",
-        status="实验准备就绪",
+        status="已到达实验室",
         target_experiment_code="EXP-2",
         target_schedule_id="SCHEDULE-2",
     )

@@ -1253,6 +1253,16 @@ def _withdraw_current_experiment(
                         }
                         if restore_scope == "appearance":
                             compensation_event["room"] = "appearance"
+                            compensation_event["status"] = restore_snapshot["status"]
+                            for metadata_key in (
+                                "appearance_phase",
+                                "recovery_cycle_id",
+                                "source_experiment_code",
+                                "source_run_no",
+                            ):
+                                metadata_value = normalize_text(latest_event.get(metadata_key))
+                                if metadata_value:
+                                    compensation_event[metadata_key] = metadata_value
                         snapshot["staging_events"].append(compensation_event)
                         compensated_tray_codes.add(tray_code)
 

@@ -46,6 +46,7 @@ from app.services.salt_spray_resume_preparation import (
     RESUME_PREPARATION_INSTALL,
     completed_resume_preparation_actions,
     find_resume_preparation_pause,
+    validate_salt_early_stop_allowed,
     validate_salt_resume_preparation_ready,
 )
 
@@ -657,14 +658,22 @@ def publish_salt_stop_request(request: SaltStopRequest) -> dict[str, Any]:
     _reject_pending_salt_command(repository, request.run_no)
     if str(run.get("run_status") or "").strip() != PAUSED:
         raise HTTPException(status_code=409, detail="只有已暂停的盐雾实验可以停止")
+    storage = get_storage_backend()
     pause = next(
-        (row for row in get_storage_backend().read("mes.experiment_run_pauses") if str(row.get("pause_no") or "").strip() == request.pause_no),
+        (row for row in storage.read("mes.experiment_run_pauses") if str(row.get("pause_no") or "").strip() == request.pause_no),
         None,
     )
     if not pause or str(pause.get("run_no") or "").strip() != request.run_no or str(pause.get("status") or "").strip() != PAUSED:
         raise HTTPException(status_code=409, detail="当前实验不存在可停止的暂停区间")
     if request.termination_type not in TERMINATION_TYPES:
         raise HTTPException(status_code=422, detail="termination_type 仅支持 completion_criteria 或 abnormal")
+    try:
+        validate_salt_early_stop_allowed(
+            {"staging_events": storage.read("mes.staging_events")},
+            pause,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     payload = request.model_dump()
     try:
         result = publish_laboratory_command("STOP_REQUEST", payload)

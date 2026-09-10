@@ -549,6 +549,62 @@ describe("SchedulePage runtime", () => {
     expect(getStorage(TASKS_KEY)[0].status).toBe(STATUS_WAITING);
   });
 
+  test("shows affected in-transit trays and confirms delete with automatic withdrawal", async () => {
+    const future = buildDateParts(2);
+    const taskCode = "SYLU-2026-09-010";
+    const experimentCode = `${taskCode}-A`;
+    const trayCode = `${taskCode}-TP-001`;
+
+    setStorage(TASKS_KEY, [{ id: taskCode, code: taskCode, name: "运输中排程", status: STATUS_SCHEDULED }]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    setStorage(EXPERIMENTS_KEY, [{ task_code: taskCode, experiment_code: experimentCode, experiment_name: "冲击试验" }]);
+    setStorage(SCHEDULES_KEY, [{
+      id: "schedule-transit",
+      task_code: taskCode,
+      experiment_code: experimentCode,
+      device: PRIMARY_LAB,
+      start_at: future.isoMorningStart,
+      end_at: future.isoMorningEnd,
+      status: STATUS_SCHEDULED,
+    }]);
+    setStorage(SAMPLES_KEY, [{
+      code: `${taskCode}-SP-001`,
+      task_code: taskCode,
+      location: PRIMARY_LAB,
+      status: "送至实验室",
+      trays: [{
+        status: "送至实验室",
+        target_experiment_code: experimentCode,
+        target_lab: PRIMARY_LAB,
+        target_schedule_id: "schedule-transit",
+        tray_code: trayCode,
+      }],
+    }]);
+
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+
+    await wrapper.get('[data-testid="open-schedule-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="schedule-delete"]').trigger("click");
+    await settle(wrapper);
+
+    const confirmation = wrapper.get('[data-testid="schedule-delete-withdrawal-confirm"]');
+    expect(confirmation.text()).toContain("删除排程后，系统将立即撤回运输中的托盘");
+    expect(confirmation.text()).toContain(trayCode);
+    expect(getStorage(SCHEDULES_KEY)).toHaveLength(1);
+
+    await confirmation.get('[data-testid="schedule-delete-withdrawal-confirm-ok"]').trigger("click");
+    await settle(wrapper);
+
+    expect(getStorage(SCHEDULES_KEY)).toHaveLength(0);
+    const patchRequest = fetchMock.mock.calls.find(([input, options]) => (
+      String(input).endsWith("/api/storage/schedules/patch")
+      && (options?.method || "GET") === "POST"
+      && JSON.parse(options.body || "{}").confirm_dispatched_tray_withdrawal === true
+    ));
+    expect(patchRequest).toBeTruthy();
+  });
+
   test("supports experiment-level scheduling selection and renders experiment labels", async () => {
     const future = buildDateParts(2);
 

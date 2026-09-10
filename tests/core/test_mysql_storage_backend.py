@@ -2191,6 +2191,52 @@ def test_build_storage_sample_item_recovers_tray_target_lab_from_dispatch_histor
     assert storage_item["trays"][0]["target_lab"] == "温度冲击一室"
 
 
+def test_build_storage_sample_item_does_not_restore_stale_mold_target_after_cancellation() -> None:
+    task_code = "SYLU-2026-09-003"
+    tray_code = f"{task_code}-TP-001"
+    storage_item = build_storage_sample_item(
+        {
+            "sample_id": 150,
+            "sample_no": f"{task_code}-SP-001",
+            "task_no": task_code,
+            "sample_type": "",
+            "batch_no": "",
+            "arrival_time": None,
+            "quantity": 1,
+            "storage_condition": "",
+            "barcode_no": "",
+            "location_desc": "霉菌试验室",
+            "sample_status": "实验已取消",
+            "flow_status": "实验已取消",
+            "remark": f'{STORAGE_MARKER}:SAMPLE:{{"owner":"","remark":""}}',
+            "created_at": "2026-09-10 19:34:23",
+            "updated_at": "2026-09-10 19:35:46",
+        },
+        tray_rows=[{
+            "id": tray_code,
+            "tray_code": tray_code,
+            "sample_code": f"{task_code}-SP-001",
+            "quantity": 1,
+            "status": "实验已取消",
+            "target_experiment_code": f"{task_code}-C",
+            "target_lab": "霉菌试验室",
+            "created_at": "2026-09-10 19:34:23",
+            "updated_at": "2026-09-10 19:35:46",
+        }],
+        event_rows=[{
+            "event_id": 7082302,
+            "event_time": "2026-09-10 19:35:09",
+            "action_type": "送至实验室",
+            "location_desc": "霉菌试验室",
+            "sample_status": "送至实验室",
+            "detail": f"{tray_code} -> 霉菌试验室",
+        }],
+    )
+
+    assert storage_item["trays"][0]["target_lab"] == ""
+    assert storage_item["trays"][0]["target_experiment_code"] == ""
+
+
 def test_build_storage_sample_item_uses_latest_lab_operation_as_tray_target() -> None:
     storage_item = build_storage_sample_item(
         {

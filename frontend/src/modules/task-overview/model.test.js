@@ -342,6 +342,90 @@ describe("taskOverviewModel", () => {
     expect(rows[0].lab).toBeUndefined();
   });
 
+  test("buildTrayOverviewRows keeps the dispatch origin as current location while trays travel to laboratories", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [
+        { code: "TASK-HANDOVER", test_type: "盐雾试验" },
+        { code: "TASK-STAGING", test_type: "振动试验" },
+      ],
+      experiments: [
+        { task_code: "TASK-HANDOVER", experiment_code: "EXP-SALT", experiment_name: "盐雾试验" },
+        { task_code: "TASK-STAGING", experiment_code: "EXP-VIBRATION", experiment_name: "振动试验" },
+      ],
+      experimentTrays: [
+        { task_code: "TASK-HANDOVER", experiment_code: "EXP-SALT", tray_code: "TP-HANDOVER" },
+        { task_code: "TASK-STAGING", experiment_code: "EXP-VIBRATION", tray_code: "TP-STAGING" },
+      ],
+      samples: [
+        {
+          task_code: "TASK-HANDOVER",
+          location: "盐雾试验室",
+          status: "送至实验室",
+          trays: [{
+            tray_code: "TP-HANDOVER",
+            status: "送至实验室",
+            target_lab: "盐雾试验室",
+            target_experiment_code: "EXP-SALT",
+          }],
+          history: [
+            { action: "送至实验室", detail: "TP-HANDOVER -> 盐雾试验室", location: "盐雾试验室", status: "送至实验室", time: "2026-09-10 10:00:00" },
+            { action: "任务已确认入库", location: "接驳区", status: "到货", time: "2026-09-10 09:00:00" },
+          ],
+        },
+        {
+          task_code: "TASK-STAGING",
+          location: "振动一室",
+          status: "送至实验室",
+          trays: [{
+            tray_code: "TP-STAGING",
+            status: "送至实验室",
+            target_lab: "振动一室",
+            target_experiment_code: "EXP-VIBRATION",
+          }],
+          history: [
+            { action: "暂存间扫码出库", detail: "TP-STAGING 送至 振动一室", location: "振动一室", status: "送至实验室", time: "2026-09-10 10:00:00" },
+            { action: "暂存间扫码入库", location: "恒温恒湿间（暂存间）", status: "已到达暂存间", time: "2026-09-10 09:00:00" },
+          ],
+        },
+      ],
+      schedules: [
+        { task_code: "TASK-HANDOVER", experiment_code: "EXP-SALT", device: "盐雾试验室", status: "已排程" },
+        { task_code: "TASK-STAGING", experiment_code: "EXP-VIBRATION", device: "振动一室", status: "已排程" },
+      ],
+      totalSlots: 2,
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows.map((row) => row.currentLocation)).toEqual([
+      "接驳区",
+      "恒温恒湿间（暂存间）",
+    ]);
+    expect(rows.map((row) => row.currentStatus)).toEqual(["送至盐雾试验室", "送至振动一室"]);
+  });
+
+  test("buildTrayOverviewRows switches to the laboratory after arrival even if dispatch history remains", () => {
+    const rows = buildTrayOverviewRows({
+      tasks: [{ code: "TASK-ARRIVED", test_type: "盐雾试验" }],
+      samples: [{
+        task_code: "TASK-ARRIVED",
+        location: "盐雾试验室",
+        status: "已到达实验室",
+        trays: [{
+          tray_code: "TP-ARRIVED",
+          status: "已到达实验室",
+        }],
+        history: [
+          { action: "送至实验室", location: "盐雾试验室", status: "送至实验室", time: "2026-09-10 10:00:00" },
+          { action: "任务已确认入库", location: "接驳区", status: "到货", time: "2026-09-10 09:00:00" },
+        ],
+      }],
+      totalSlots: 1,
+      unassignedExperimentLabel: "未分配",
+    });
+
+    expect(rows[0].currentLocation).toBe("盐雾试验室");
+  });
+
   test("buildTrayOverviewRows displays laboratory codes as Chinese names", () => {
     const rows = buildTrayOverviewRows({
       tasks: [{ code: "TASK-LAB-NAME", test_type: "冲击试验" }],

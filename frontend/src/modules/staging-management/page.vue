@@ -340,6 +340,7 @@ import {
   buildZancunRowsFromSnapshot,
   buildZancunScanDetail,
 } from "./model";
+import { resolveStorageRoomConfig } from "./stagingStorageModel";
 
 const ROOM_PAGE_COPY = {
   staging: {
@@ -681,10 +682,10 @@ const persistTrayActionResult = async (result, actionPayload) => {
     scanWarning.value = result.error;
     return false;
   }
-  snapshot.value = result.snapshot;
   const storageUpdateMeta = trackOwnStorageRequest();
   try {
     await writeStorageTrayAction(actionPayload, storageUpdateMeta);
+    snapshot.value = result.snapshot;
     window.dispatchEvent(new CustomEvent(SAMPLES_UPDATED_EVENT, { detail: { source: roomCopy.value.moduleSource } }));
     return true;
   } catch (error) {
@@ -796,7 +797,7 @@ const completeScan = async () => {
     return;
   }
 
-  if (!["到货", "已到达暂存间", "实验后暂存间存放", "实验后外观检测间存放", "实验前外观检测间存放", "中途外观检查中"].includes(detail.status)) {
+  if (!resolveStorageRoomConfig(activeRoom.value).currentStatuses.has(detail.status)) {
     scanWarning.value = activeRoom.value === "appearance" ? "该托盘尚未完成外观检测间扫码入库。" : "该托盘尚未完成暂存间扫码入库。";
     resetScanCodeAfterAttempt();
     return;
