@@ -53,7 +53,7 @@ const normalizeLifecycleStatus = (location, status = "", labels = DEFAULT_LABELS
   }
   // 实验取消是后端产生的系统状态。即使托盘仍在实验室，也必须保留该状态，
   // 避免后续按实验室位置兜底成“已到达实验室”。
-  if (currentStatus === "实验已取消") {
+  if (["实验已取消", "霉菌取消后恢复处理中"].includes(currentStatus)) {
     return currentStatus;
   }
   if (isPostRetention && isAmbiguousStagingStatus(currentStatus)) {

@@ -364,5 +364,100 @@ describe("SamplesPage runtime", () => {
     expect(runningStep.classes()).toContain("current");
     expect(trayFlowCard.get('[data-testid="samples-tray-flow-step-route-0-5"]').classes()).toContain("reached");
   });
+
+  test("tray flow receives mid-experiment appearance events and shows the current inspection node", async () => {
+    const taskCode = "SYLU-2026-10-001";
+    const experimentCode = `${taskCode}-A`;
+    const trayCode = `${taskCode}-TP-001`;
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/transfer-area/bootstrap")) {
+        return { ok: true, status: 200, json: async () => createBootstrapPayload() };
+      }
+      if (url.includes("/api/transfer-area/tasks/101/workspace")) {
+        return { ok: true, status: 200, json: async () => createWorkspacePayload() };
+      }
+      if (url.includes("/api/samples/page")) {
+        const samples = url.includes("view=staging") ? [] : [{
+          code: `${taskCode}-SP-001`,
+          location: "外观检测间",
+          status: "中途外观检查中",
+          task_code: taskCode,
+          trayCodes: [trayCode],
+          trays: [{ quantity: 1, status: "中途外观检查中", tray_code: trayCode }],
+        }];
+        return { ok: true, status: 200, json: async () => samplePageResponse(samples, [taskCode]) };
+      }
+      if (url.includes("/api/storage")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            "mes.experiment_run_pauses": [{
+              inspection_tray_codes: [trayCode],
+              lab_code: "LAB_SALT",
+              pause_no: "PAUSE-1",
+              run_no: "RUN-SALT-1",
+              status: "实验暂停",
+            }],
+            "mes.experiment_runs": [{
+              device: "盐雾试验室",
+              experiment_code: experimentCode,
+              run_no: "RUN-SALT-1",
+              status: "实验暂停",
+              task_code: taskCode,
+            }],
+            "mes.experiment_run_trays": [{
+              experiment_code: experimentCode,
+              run_no: "RUN-SALT-1",
+              run_tray_status: "实验进行中",
+              task_code: taskCode,
+              tray_code: trayCode,
+            }],
+            "mes.experiment_trays": [{ experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode }],
+            "mes.experiments": [{
+              experiment_code: experimentCode,
+              experiment_name: "盐雾试验",
+              required_device: "盐雾试验室",
+              task_code: taskCode,
+            }],
+            "mes.samples": [{
+              code: `${taskCode}-SP-001`,
+              flow_status: "中途外观检查中",
+              location: "外观检测间",
+              status: "中途外观检查中",
+              task_code: taskCode,
+              trays: [{ quantity: 1, status: "中途外观检查中", tray_code: trayCode }],
+            }],
+            "mes.schedules": [{ device: "盐雾试验室", experiment_code: experimentCode, status: "实验暂停", task_code: taskCode }],
+            "mes.staging_events": [{
+              action: "stock_in",
+              appearance_phase: "mid_experiment",
+              pause_no: "PAUSE-1",
+              room: "appearance",
+              run_no: "RUN-SALT-1",
+              time: "2026-09-04 14:30:00",
+              tray_code: trayCode,
+            }],
+          }),
+        };
+      }
+      if (url.includes("/api/tasks")) {
+        return { ok: true, status: 200, json: async () => [{ code: taskCode, name: "盐雾暂停任务", test_type: "盐雾试验" }] };
+      }
+      throw new Error(`Unhandled fetch: ${url}`);
+    }));
+
+    const wrapper = mount(SamplesPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
+    await settle(wrapper);
+
+    const trayFlowCard = wrapper.get('[data-testid="samples-tray-flow"]');
+    expect(trayFlowCard.text()).toContain("盐雾试验进行中（暂停）");
+    expect(trayFlowCard.text()).toContain("中途外观检测");
+    expect(trayFlowCard.get('[data-testid^="samples-tray-flow-step-salt-spray-mid-appearance-"]').classes())
+      .toContain("current");
+  });
 });
 

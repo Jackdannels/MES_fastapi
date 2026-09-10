@@ -15,7 +15,7 @@ import {
 } from "./sampleFlow.status";
 import { parseTimeValue } from "./sampleFlow.trayScope";
 
-const normalizeHistoryFlowLabel = (value, location = "") => {
+const normalizeHistoryFlowLabel = (value, location = "", options = {}) => {
   const text = normalizeText(value);
   if (!text) {
     return "";
@@ -51,6 +51,9 @@ const normalizeHistoryFlowLabel = (value, location = "") => {
   const matchedStep = SAMPLE_FLOW_STEPS.find((step) => text.includes(step.label));
   if (matchedStep) {
     return matchedStep.label;
+  }
+  if (options.allowLocationFallback === false) {
+    return "";
   }
   const normalized = normalizeLifecycleStatus(location, text);
   if (normalized === POST_EXPERIMENT_STAGING_SENT_STATUS || normalized === POST_EXPERIMENT_STAGING_STOCKED_STATUS) {

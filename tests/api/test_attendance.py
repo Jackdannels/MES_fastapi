@@ -570,6 +570,51 @@ def test_attendance_finishing_work_interval_clears_active_session_timer():
     assert worker["todaySeconds"] == 300
 
 
+def test_mold_cancel_logout_closes_session_and_work_interval_at_confirmation_time():
+    current_time = {"value": datetime(2026, 9, 5, 6, 0, 0, tzinfo=timezone.utc)}
+    service = AttendanceService(
+        repository=InMemoryAttendanceRepository(),
+        now=lambda: current_time["value"],
+    )
+    service.create_user(
+        username="mold-worker",
+        password="pw123",
+        employee_name="霉菌员工",
+        role_name="试验员",
+        active=True,
+    )
+    service.login_lab("霉菌试验室", username="mold-worker", password="pw123")
+    service.start_work_interval(
+        "霉菌试验室",
+        lab_code="LAB_MOLD",
+        run_no="RUN-MOLD-CANCEL",
+        task_code="TASK-MOLD-CANCEL",
+        experiment_code="EXP-MOLD-CANCEL",
+        source="mqtt",
+        started_at="2026-09-05 14:00:00",
+    )
+
+    session = service.logout_lab(
+        lab_name="霉菌试验室",
+        lab_code="LAB_MOLD",
+        reason="mold-cancel",
+        ended_at="2026-09-05 14:05:00",
+        source="mqtt",
+    )
+    current_time["value"] = datetime(2026, 9, 5, 6, 10, 0, tzinfo=timezone.utc)
+    worker = next(row for row in service.list_work_times("2026-09-05") if row["username"] == "mold-worker")
+
+    assert session["active"] is False
+    assert session["reason"] == "mold-cancel"
+    assert service.read_lab_session("霉菌试验室")["active"] is False
+    assert worker["todaySeconds"] == 300
+    assert worker["online"] is False
+    assert any(
+        row["action"] == "试验间退出" and row["source"] == "mqtt"
+        for row in service.list_operation_logs(raw_date="2026-09-05")
+    )
+
+
 def test_attendance_switching_employee_splits_running_work_time():
     current_time = {"value": datetime(2026, 7, 3, 8, 0, 0, tzinfo=timezone.utc)}
     service = AttendanceService(

@@ -22,7 +22,7 @@ from app.services.experiment_schedule_sequence import (
     assert_common_next_scheduled_step,
 )
 from app.services.fixture_installations import mark_fixture_installation_failed, normalize_tray_codes, register_pending_fixture_installation
-from app.services.laboratory_operations import read_laboratory_task_payload
+from app.services.laboratory_operations import read_laboratory_task_payload, storage_snapshot
 from app.services.laboratory_termination import MOLD_LAB_CODE, MOLD_LAB_NAME
 from app.services.mq_event_processor import (
     MySQLMqEventRepository,
@@ -41,6 +41,13 @@ from app.services.salt_spray_pause import (
     SALT_LAB_CODE,
     TERMINATION_TYPES,
 )
+from app.services.salt_spray_resume_preparation import (
+    RESUME_PREPARATION_FIXTURE_READY,
+    RESUME_PREPARATION_INSTALL,
+    completed_resume_preparation_actions,
+    find_resume_preparation_pause,
+    validate_salt_resume_preparation_ready,
+)
 
 
 router = APIRouter(prefix="/api/mq", tags=["mq"])
@@ -57,8 +64,10 @@ class FixtureInstallRequest(BaseModel):
     sample_count: int = Field(ge=0, le=MAX_SAMPLE_COUNT)
     fixture_install_id: str = Field(default="", validation_alias=AliasChoices("fixture_install_id", "fixtureInstallId"))
     tray_codes: list[str] = Field(default_factory=list, validation_alias=AliasChoices("tray_codes", "trayCodes"))
+    run_no: str = Field(default="", validation_alias=AliasChoices("run_no", "runNo"))
+    pause_no: str = Field(default="", validation_alias=AliasChoices("pause_no", "pauseNo"))
 
-    @field_validator("task_code", "lab_code", "experiment_code", "sub_experiment_code", "schedule_id", "sample_type", mode="before")
+    @field_validator("task_code", "lab_code", "experiment_code", "sub_experiment_code", "schedule_id", "sample_type", "run_no", "pause_no", mode="before")
     @classmethod
     def trim_text(cls, value: Any) -> str:
         return str(value or "").strip()
@@ -85,8 +94,10 @@ class ReadyRequest(BaseModel):
         default=False,
         validation_alias=AliasChoices("axis_adjustment_ready", "axisAdjustmentReady"),
     )
+    pause_no: str = Field(default="", validation_alias=AliasChoices("pause_no", "pauseNo"))
+    resume_preparation: bool = Field(default=False, validation_alias=AliasChoices("resume_preparation", "resumePreparation"))
 
-    @field_validator("task_code", "lab_code", "experiment_code", "sub_experiment_code", "run_no", "schedule_id", "axis_batch_no", "current_axis_code", mode="before")
+    @field_validator("task_code", "lab_code", "experiment_code", "sub_experiment_code", "run_no", "schedule_id", "axis_batch_no", "current_axis_code", "pause_no", mode="before")
     @classmethod
     def trim_text(cls, value: Any) -> str:
         return str(value or "").strip()
@@ -215,6 +226,40 @@ def _reject_pending_salt_command(repository: MySQLMqEventRepository, run_no: str
     pending = finder(run_no) if callable(finder) else {}
     if pending:
         raise HTTPException(status_code=409, detail="当前实验已有等待上位机确认的控制命令")
+
+
+def _resume_preparation_snapshot() -> dict[str, Any]:
+    return storage_snapshot(get_storage_backend().read_all())
+
+
+def _validate_resume_preparation_mq_step(
+    *,
+    task_code: str,
+    experiment_code: str,
+    lab_code: str,
+    run_no: str,
+    pause_no: str,
+    tray_codes: list[str],
+    required_action: str,
+) -> None:
+    snapshot = _resume_preparation_snapshot()
+    pause = find_resume_preparation_pause(
+        snapshot,
+        task_code=task_code,
+        experiment_code=experiment_code,
+        run_no=run_no,
+        pause_no=pause_no,
+        lab_code=lab_code,
+    )
+    required_trays = {
+        str(code or "").strip()
+        for code in (pause.get("inspection_tray_codes") or pause.get("inspectionTrayCodes") or [])
+        if str(code or "").strip()
+    }
+    requested_trays = {str(code or "").strip() for code in tray_codes if str(code or "").strip()}
+    completed = completed_resume_preparation_actions(snapshot, run_no=run_no, pause_no=pause_no)
+    if requested_trays != required_trays or not required_trays.issubset(completed.get(required_action, set())):
+        raise ValueError("继续实验准备步骤尚未完成或托盘不完整")
 
 
 def _validate_mold_cancel_request(
@@ -358,6 +403,27 @@ def publish_fixture_install(request: FixtureInstallRequest) -> dict[str, Any]:
         "fixture_install_id": request.fixture_install_id,
         "tray_codes": request.tray_codes,
     }
+    is_resume_preparation = bool(request.run_no or request.pause_no)
+    if is_resume_preparation:
+        if not request.run_no or not request.pause_no:
+            raise HTTPException(status_code=422, detail="继续实验夹具安装必须同时携带 run_no 和 pause_no")
+        try:
+            _validate_resume_preparation_mq_step(
+                task_code=request.task_code,
+                experiment_code=request.experiment_code,
+                lab_code=request.lab_code,
+                run_no=request.run_no,
+                pause_no=request.pause_no,
+                tray_codes=request.tray_codes,
+                required_action=RESUME_PREPARATION_INSTALL,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        payload.update({
+            "pause_no": request.pause_no,
+            "resume_preparation": True,
+            "run_no": request.run_no,
+        })
     missing_fields = [
         field_name
         for field_name, value in (
@@ -372,14 +438,15 @@ def publish_fixture_install(request: FixtureInstallRequest) -> dict[str, Any]:
             status_code=422,
             detail=f"夹具安装命令缺少：{', '.join(missing_fields)}。请刷新实验室页面后重新下发。",
         )
-    assert_mq_next_schedule(
-        task_code=request.task_code,
-        tray_codes=request.tray_codes,
-        schedule_id=request.schedule_id,
-        experiment_code=request.experiment_code,
-        sub_experiment_code=request.sub_experiment_code,
-        lab_code=request.lab_code,
-    )
+    if not is_resume_preparation:
+        assert_mq_next_schedule(
+            task_code=request.task_code,
+            tray_codes=request.tray_codes,
+            schedule_id=request.schedule_id,
+            experiment_code=request.experiment_code,
+            sub_experiment_code=request.sub_experiment_code,
+            lab_code=request.lab_code,
+        )
     if request.schedule_id:
         payload["schedule_id"] = request.schedule_id
     if request.sub_experiment_code:
@@ -422,6 +489,21 @@ def publish_ready(request: ReadyRequest) -> dict[str, Any]:
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+    elif request.resume_preparation:
+        if not request.run_no or not request.pause_no:
+            raise HTTPException(status_code=422, detail="继续实验准备就绪必须携带 run_no 和 pause_no")
+        try:
+            _validate_resume_preparation_mq_step(
+                task_code=request.task_code,
+                experiment_code=request.experiment_code,
+                lab_code=request.lab_code,
+                run_no=request.run_no,
+                pause_no=request.pause_no,
+                tray_codes=request.tray_codes,
+                required_action=RESUME_PREPARATION_FIXTURE_READY,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     else:
         assert_mq_next_schedule(
             task_code=request.task_code,
@@ -449,6 +531,10 @@ def publish_ready(request: ReadyRequest) -> dict[str, Any]:
         payload["axis_batch_no"] = request.axis_batch_no
     if request.current_axis_code:
         payload["current_axis_code"] = request.current_axis_code
+    if request.resume_preparation:
+        payload["pause_no"] = request.pause_no
+        payload["resume_preparation"] = True
+        payload["tray_codes"] = request.tray_codes
     try:
         result = publish_laboratory_command("READY", payload)
     except RuntimeError as exc:
@@ -547,12 +633,13 @@ def publish_salt_resume_request(request: SaltResumeRequest) -> dict[str, Any]:
     if str(run.get("run_status") or "").strip() != PAUSED:
         raise HTTPException(status_code=409, detail="只有已暂停的盐雾实验可以恢复")
     storage = get_storage_backend()
-    snapshot = storage.read_all()
-    pause = next((row for row in snapshot.get("mes.experiment_run_pauses", []) if str(row.get("pause_no") or "").strip() == request.pause_no), None)
+    raw_snapshot = storage.read_all()
+    pause = next((row for row in raw_snapshot.get("mes.experiment_run_pauses", []) if str(row.get("pause_no") or "").strip() == request.pause_no), None)
     if not pause or str(pause.get("status") or "").strip() != PAUSED:
         raise HTTPException(status_code=409, detail="当前实验不存在可恢复的暂停区间")
     try:
-        validate_mid_experiment_trays_ready_for_resume(snapshot, pause)
+        validate_mid_experiment_trays_ready_for_resume(raw_snapshot, pause)
+        validate_salt_resume_preparation_ready(storage_snapshot(raw_snapshot), pause)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     payload = request.model_dump()

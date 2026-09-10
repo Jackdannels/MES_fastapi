@@ -25,6 +25,7 @@ const APPEARANCE_STOCKED_STATUS = "实验后外观检测间存放";
 const MID_EXPERIMENT_APPEARANCE_STATUS = "中途外观检查中";
 const MID_EXPERIMENT_RETURNED_STATUS = "等待恢复实验";
 const MOLD_CANCELED_STATUS = "实验已取消";
+const MOLD_CANCEL_RECOVERY_STATUS = "霉菌取消后恢复处理中";
 const WITHDRAWAL_HISTORY_ACTIONS = new Set(["撤回出库", "实验任务撤回", "任务切换撤回"]);
 const PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS = new Set(["任务比对", "样品安装", "实验确认", "开始实验", "实验开始"]);
 const ACTIVE_EXPERIMENT_RUN_TRAY_STATUSES = new Set(["已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", "实验中"]);
@@ -35,7 +36,6 @@ const STOCK_IN_CANDIDATE_STATUSES = new Set([
   ...PRE_STAGING_STATUSES,
   "实验已完成",
   "实验完成",
-  MOLD_CANCELED_STATUS,
   POST_EXPERIMENT_STAGING_STATUS,
   POST_EXPERIMENT_STAGING_SENT_STATUS,
 ]);
@@ -95,7 +95,12 @@ const STORAGE_ROOM_CONFIGS = {
   },
   appearance: {
     currentLocation: APPEARANCE_LOCATION,
-    currentStatuses: new Set([APPEARANCE_STOCKED_STATUS, APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS, MID_EXPERIMENT_APPEARANCE_STATUS]),
+    currentStatuses: new Set([
+      APPEARANCE_STOCKED_STATUS,
+      APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
+      MID_EXPERIMENT_APPEARANCE_STATUS,
+      MOLD_CANCEL_RECOVERY_STATUS,
+    ]),
     duplicateStockInError: "该托盘已完成外观检测间扫码入库。",
     eventRoom: "appearance",
     historyStockInAction: "外观检测间扫码入库",
@@ -541,6 +546,7 @@ export {
   NORMAL_STAGING_LABEL,
   MID_EXPERIMENT_APPEARANCE_STATUS,
   MID_EXPERIMENT_RETURNED_STATUS,
+  MOLD_CANCEL_RECOVERY_STATUS,
   PARTIAL_AXIS_REENTRY_BLOCKING_ACTIONS,
   POST_EXPERIMENT_STAGING_LABEL,
   POST_EXPERIMENT_STAGING_LOCATION,

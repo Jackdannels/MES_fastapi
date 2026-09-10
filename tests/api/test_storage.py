@@ -2891,34 +2891,37 @@ def test_storage_tray_stock_in_action_allows_dispatched_pre_experiment_appearanc
     assert storage.read("mes.staging_events")[-1]["target_experiment_code"] == "EXP-MOLD"
 
 
-@pytest.mark.parametrize(
-    ("room", "expected_status", "expected_location"),
-    [
-        ("staging", "已到达暂存间", "恒温恒湿间（暂存间）"),
-        ("appearance", "实验后外观检测间存放", "外观检测间"),
-    ],
-)
 def test_storage_tray_stock_in_action_allows_strictly_matched_canceled_mold_run(
     monkeypatch,
-    room,
-    expected_status,
-    expected_location,
 ):
     tray_code = "TP-MOLD-CANCELED"
     client, storage = build_client(monkeypatch, canceled_mold_tray_payload(tray_code=tray_code))
 
     response = client.post(
-        f"/api/storage/rooms/{room}/trays/{tray_code}/stock-in",
+        f"/api/storage/rooms/appearance/trays/{tray_code}/stock-in",
         json={"status": "不可信的前端状态", "location": "不可信的前端位置"},
     )
 
     assert response.status_code == 200
     sample = storage.read("mes.samples")[0]
-    assert sample["status"] == expected_status
-    assert sample["flow_status"] == expected_status
-    assert sample["location"] == expected_location
-    assert sample["trays"][0]["status"] == expected_status
-    assert storage.read("mes.staging_events")[-1]["status"] == expected_status
+    assert sample["status"] == "霉菌取消后恢复处理中"
+    assert sample["flow_status"] == "霉菌取消后恢复处理中"
+    assert sample["location"] == "外观检测间"
+    assert sample["trays"][0]["status"] == "霉菌取消后恢复处理中"
+    assert storage.read("mes.staging_events")[-1]["status"] == "霉菌取消后恢复处理中"
+
+
+def test_storage_tray_stock_in_action_rejects_canceled_mold_in_staging(monkeypatch):
+    tray_code = "TP-MOLD-CANCELED"
+    client, _storage = build_client(monkeypatch, canceled_mold_tray_payload(tray_code=tray_code))
+
+    response = client.post(
+        f"/api/storage/rooms/staging/trays/{tray_code}/stock-in",
+        json={"status": "已到达暂存间", "location": "恒温恒湿间（暂存间）"},
+    )
+
+    assert response.status_code == 400
+    assert "不能暂存间入库" in response.json()["detail"]
 
 
 def test_storage_tray_stock_in_action_rejects_repeat_after_appearance_to_staging(monkeypatch):

@@ -14,8 +14,10 @@ function useLaboratoryFixtureConfirmation({
   getCurrentLabHostInterfaceCapabilities,
   isMqttHostInterfaceMode,
   laboratoryMqError,
+  onConfirmationSettled = () => {},
   persistFixtureReadyForTask,
   refreshAuthoritativeState,
+  resumePreparationFixtureReady,
   workflow,
 }) {
   let fixtureConfirmTimer = null;
@@ -43,6 +45,11 @@ function useLaboratoryFixtureConfirmation({
     }
   };
 
+  const fixtureReadyConfirmed = () => Boolean(
+    workflow.value.fixtureReadyDone
+    || resumePreparationFixtureReady?.value,
+  );
+
   const openFixtureConfirmSuccess = () => {
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
@@ -55,6 +62,7 @@ function useLaboratoryFixtureConfirmation({
       fixtureConfirmSuccessModalOpen.value = false;
       fixtureConfirmSuccessTimer = null;
       flushPendingRealtimeRefresh();
+      onConfirmationSettled();
     }, FIXTURE_CONFIRM_SUCCESS_MS);
   };
 
@@ -65,6 +73,10 @@ function useLaboratoryFixtureConfirmation({
     fixtureConfirmSuccessModalOpen.value = false;
     fixtureConfirmCountdown.value = FIXTURE_CONFIRM_COUNTDOWN_SECONDS;
     fixtureConfirmModalOpen.value = true;
+    if (fixtureReadyConfirmed()) {
+      openFixtureConfirmSuccess();
+      return;
+    }
     if (typeof window === "undefined") {
       return;
     }
@@ -78,7 +90,7 @@ function useLaboratoryFixtureConfirmation({
         fixtureConfirmModalOpen.value = false;
         void Promise.resolve(refreshAuthoritativeState())
           .then(() => {
-            if (workflow.value.fixtureReadyDone) {
+            if (fixtureReadyConfirmed()) {
               openFixtureConfirmSuccess();
               return;
             }
@@ -143,7 +155,7 @@ function useLaboratoryFixtureConfirmation({
   };
 
   watch(
-    () => workflow.value.fixtureReadyDone,
+    fixtureReadyConfirmed,
     (fixtureReadyDone) => {
       if (fixtureReadyDone && fixtureConfirmModalOpen.value && isMqttHostInterfaceMode()) {
         openFixtureConfirmSuccess();

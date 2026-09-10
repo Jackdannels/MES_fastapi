@@ -4533,12 +4533,16 @@ def test_process_mold_experiment_ended_applies_matching_cancel_request(monkeypat
         "cancel_reason": "霉菌未按预期繁殖",
     }
     finish_calls = []
+    logout_calls = []
     monkeypatch.setattr(
         "app.services.mq_event_processor.get_attendance_service",
         lambda: type(
             "Attendance",
             (),
-            {"finish_work_interval": lambda _self, **kwargs: finish_calls.append(kwargs)},
+            {
+                "finish_work_interval": lambda _self, **kwargs: finish_calls.append(kwargs),
+                "logout_lab": lambda _self, **kwargs: logout_calls.append(kwargs),
+            },
         )(),
     )
 
@@ -4561,11 +4565,14 @@ def test_process_mold_experiment_ended_applies_matching_cancel_request(monkeypat
     ]
     assert repository.ended == []
     assert repository.events[0]["payload"]["cancel_request_id"] == "CANCEL-001"
-    assert finish_calls == [
+    assert finish_calls == []
+    assert logout_calls == [
         {
-            "run_no": "RUN-MOLD-001",
             "lab_code": "LAB_MOLD",
+            "lab_name": "霉菌试验室",
+            "reason": "mold-cancel",
             "ended_at": "2026-09-03 11:20:00",
+            "source": "mqtt",
         }
     ]
 

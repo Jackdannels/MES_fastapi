@@ -10,6 +10,11 @@ from app.services.laboratory_operations import (
     operation_resource_keys,
     run_atomic_laboratory_operation,
 )
+from app.services.salt_spray_resume_preparation import (
+    RESUME_PREPARATION_INSTALL,
+    RESUME_PREPARATION_ROOM,
+    apply_salt_resume_preparation_operation,
+)
 
 
 PENDING = "PENDING"
@@ -193,20 +198,52 @@ def apply_pending_fixture_ready(installation: dict[str, Any], occurred_at: str) 
     sub_experiment_code = normalize_text(installation.get("sub_experiment_code"))
     lab_code = normalize_text(installation.get("lab_code"))
     tray_codes = normalize_tray_codes(installation.get("tray_codes"))
-    return run_atomic_laboratory_operation(
-        storage=get_storage_backend(),
-        operation=lambda snapshot: apply_laboratory_task_operation(
+    fixture_install_id = normalize_text(installation.get("fixture_install_id"))
+
+    def apply_operation(snapshot: dict[str, Any]) -> dict[str, Any]:
+        resume_events = [
+            event for event in snapshot.get("staging_events", [])
+            if isinstance(event, dict)
+            and normalize_text(event.get("room")) == RESUME_PREPARATION_ROOM
+            and normalize_text(event.get("action")) == RESUME_PREPARATION_INSTALL
+            and normalize_text(event.get("fixture_install_id") or event.get("fixtureInstallId")) == fixture_install_id
+        ]
+        if not resume_events:
+            return apply_laboratory_task_operation(
+                snapshot,
+                operation_type="fixtureReady",
+                task_code=task_code,
+                experiment_code=experiment_code,
+                schedule_id=schedule_id,
+                sub_experiment_code=sub_experiment_code,
+                lab_code=lab_code,
+                tray_codes=tray_codes,
+                occurred_at=occurred_at,
+            )
+        run_no = normalize_text(resume_events[-1].get("run_no") or resume_events[-1].get("runNo"))
+        pause_no = normalize_text(resume_events[-1].get("pause_no") or resume_events[-1].get("pauseNo"))
+        return apply_salt_resume_preparation_operation(
             snapshot,
             operation_type="fixtureReady",
             task_code=task_code,
             experiment_code=experiment_code,
-            schedule_id=schedule_id,
-            sub_experiment_code=sub_experiment_code,
+            run_no=run_no,
+            pause_no=pause_no,
             lab_code=lab_code,
             tray_codes=tray_codes,
             occurred_at=occurred_at,
-        ),
+            fixture_install_id=fixture_install_id,
+        )
+
+    return run_atomic_laboratory_operation(
+        storage=get_storage_backend(),
+        operation=apply_operation,
         publish_storage_update=None,
         resource_keys=operation_resource_keys(lab_code=lab_code, tray_codes=tray_codes),
         task_code=task_code,
+        updates_from_result=lambda result: {
+            "mes.samples": result["samples"],
+            **({"mes.staging_events": result["stagingEvents"]} if "stagingEvents" in result else {}),
+        },
+        update_keys=("mes.samples", "mes.staging_events"),
     )

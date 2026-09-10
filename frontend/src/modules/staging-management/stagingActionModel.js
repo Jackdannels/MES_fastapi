@@ -18,6 +18,7 @@ import {
   STAGING_LOCATION,
   MID_EXPERIMENT_APPEARANCE_STATUS,
   MID_EXPERIMENT_RETURNED_STATUS,
+  MOLD_CANCEL_RECOVERY_STATUS,
   TASKS_KEY,
   asArray,
   collectTrayStorageEvents,
@@ -281,6 +282,8 @@ function applyZancunInventoryAction(input = {}) {
     actionMode === "stockIn"
       ? matchedRow.isMidExperimentAppearanceInbound && config.key === "appearance"
         ? MID_EXPERIMENT_APPEARANCE_STATUS
+        : matchedRow.isMoldCancelRecoveryInbound && config.key === "appearance"
+        ? MOLD_CANCEL_RECOVERY_STATUS
         : matchedRow.isPreExperimentAppearanceInbound && config.key === "appearance"
         ? APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
         : matchedRow.isPostExperimentAppearanceInbound && config.key === "appearance"
@@ -299,6 +302,8 @@ function applyZancunInventoryAction(input = {}) {
     config.key === "appearance" && actionMode === "stockIn"
       ? nextStockInStatus === MID_EXPERIMENT_APPEARANCE_STATUS
         ? "mid_experiment"
+        : nextStockInStatus === MOLD_CANCEL_RECOVERY_STATUS
+        ? "mold_cancel_recovery"
         : nextStockInStatus === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
         ? "pre_experiment"
         : nextStockInStatus === APPEARANCE_STOCKED_STATUS
@@ -309,6 +314,8 @@ function applyZancunInventoryAction(input = {}) {
     config.key === "appearance" && actionMode === "stockOut"
       ? matchedRow.isMidExperimentAppearanceInbound
         ? "mid_experiment"
+        : normalizeText(matchedRow.status) === MOLD_CANCEL_RECOVERY_STATUS
+        ? "mold_cancel_recovery"
         : normalizeText(matchedRow.status) === APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS
         ? "pre_experiment"
         : normalizeText(matchedRow.status) === APPEARANCE_STOCKED_STATUS
@@ -345,7 +352,7 @@ function applyZancunInventoryAction(input = {}) {
           target_lab_code: resolvedTargetLabCode,
           target_lab_id: resolvedTargetLabId,
           target_type: stockOutEventTargetType,
-          ...(resolvedScheduleId ? { schedule_id: resolvedScheduleId } : {}),
+          ...(resolvedScheduleId ? { schedule_id: resolvedScheduleId, target_schedule_id: resolvedScheduleId } : {}),
           ...(resolvedSubExperimentCode ? { sub_experiment_code: resolvedSubExperimentCode } : {}),
           ...(appearanceStockOutPhase ? { appearance_phase: appearanceStockOutPhase } : {}),
           ...(appearanceStockOutPhase === "mid_experiment"
@@ -353,6 +360,13 @@ function applyZancunInventoryAction(input = {}) {
                 inspection_result: inspectionResult,
                 pause_no: matchedRow.midExperimentPauseNo,
                 run_no: matchedRow.midExperimentRunNo,
+              }
+            : {}),
+          ...(appearanceStockOutPhase === "mold_cancel_recovery"
+            ? {
+                recovery_cycle_id: normalizeText(latestMatchedEvent?.recovery_cycle_id || latestMatchedEvent?.recoveryCycleId),
+                source_experiment_code: normalizeText(latestMatchedEvent?.source_experiment_code || latestMatchedEvent?.sourceExperimentCode),
+                source_run_no: normalizeText(latestMatchedEvent?.source_run_no || latestMatchedEvent?.sourceRunNo),
               }
             : {}),
         }
@@ -369,6 +383,15 @@ function applyZancunInventoryAction(input = {}) {
                 target_experiment_code: normalizeText(matchedRow.targetExperimentCode),
                 target_lab: normalizeText(matchedRow.targetLab),
                 target_lab_code: normalizeText(matchedRow.targetLabCode),
+              }
+            : {}),
+          ...(appearanceStockInPhase === "mold_cancel_recovery"
+            ? {
+                experiment_code: normalizeText(matchedRow.moldCancelRecoveryExperimentCode),
+                recovery_cycle_id: normalizeText(matchedRow.moldCancelRecoveryRunNo),
+                source_experiment_code: normalizeText(matchedRow.moldCancelRecoveryExperimentCode),
+                source_run_no: normalizeText(matchedRow.moldCancelRecoveryRunNo),
+                target_experiment_code: normalizeText(matchedRow.moldCancelRecoveryExperimentCode),
               }
             : {}),
         }),
@@ -439,7 +462,7 @@ function applyZancunInventoryAction(input = {}) {
                     target_lab_code: resolvedTargetLabCode,
                     target_lab_id: resolvedTargetLabId,
                     target_type: "lab",
-                    ...(resolvedScheduleId ? { schedule_id: resolvedScheduleId } : {}),
+                    ...(resolvedScheduleId ? { schedule_id: resolvedScheduleId, target_schedule_id: resolvedScheduleId } : {}),
                     ...(resolvedSubExperimentCode ? { sub_experiment_code: resolvedSubExperimentCode } : {}),
                   }),
             }

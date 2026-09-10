@@ -14,10 +14,12 @@ function useSaltSprayPauseFlow({
   experimentRunPauses,
   experimentRuns,
   laboratoryConfig,
+  onResumeRequested,
   refreshAuthoritativeState,
   requestPause,
   requestResume,
   requestStop,
+  startResumePreparation,
   runWithAttendance,
   runningExperiment,
   samples,
@@ -30,6 +32,7 @@ function useSaltSprayPauseFlow({
   const controlSubmitting = ref(false);
   const controlAwaitingConfirmation = ref(null);
   const controlConfirmationError = ref("");
+  const resumePreparationError = ref("");
   const simulationSubmitting = ref(false);
   let confirmationTimer = null;
 
@@ -47,7 +50,7 @@ function useSaltSprayPauseFlow({
     const values = activePause.value?.inspection_tray_codes || activePause.value?.inspectionTrayCodes || [];
     return (Array.isArray(values) ? values : []).map(normalizeText).filter(Boolean);
   });
-  const canResume = computed(() => {
+  const returnedFromAppearance = computed(() => {
     if (!isPaused.value || controlAwaitingConfirmation.value || controlSubmitting.value) {
       return false;
     }
@@ -83,6 +86,36 @@ function useSaltSprayPauseFlow({
       return returnedByEvent && returnedBySample;
     });
   });
+  const resumePreparationActions = computed(() => {
+    const runNo = normalizeText(runningExperiment.value?.runNo);
+    const pauseNo = normalizeText(activePause.value?.pause_no || activePause.value?.pauseNo);
+    const byAction = new Map();
+    (Array.isArray(stagingEvents.value) ? stagingEvents.value : []).forEach((event) => {
+      if (normalizeText(event?.room) !== "laboratory_resume_preparation"
+        || normalizeText(event?.run_no || event?.runNo) !== runNo
+        || normalizeText(event?.pause_no || event?.pauseNo) !== pauseNo) {
+        return;
+      }
+      const action = normalizeText(event?.action);
+      const trayCode = normalizeText(event?.tray_code || event?.trayCode);
+      if (action && trayCode) {
+        byAction.set(action, new Set([...(byAction.get(action) || []), trayCode]));
+      }
+    });
+    return byAction;
+  });
+  const actionCompleteForAllPauseTrays = (action) => {
+    const completed = resumePreparationActions.value.get(action) || new Set();
+    return activePauseInspectionTrayCodes.value.length > 0
+      && activePauseInspectionTrayCodes.value.every((trayCode) => completed.has(trayCode));
+  };
+  const resumePreparationActive = computed(() => actionCompleteForAllPauseTrays("resume_preparation_started"));
+  const resumePreparationCompared = computed(() => actionCompleteForAllPauseTrays("resume_preparation_compared"));
+  const resumePreparationInstalled = computed(() => actionCompleteForAllPauseTrays("resume_preparation_installed"));
+  const resumePreparationFixtureReady = computed(() => actionCompleteForAllPauseTrays("resume_preparation_fixture_ready"));
+  const resumePreparationReady = computed(() => actionCompleteForAllPauseTrays("resume_preparation_ready"));
+  const canStartResumePreparation = computed(() => returnedFromAppearance.value && !resumePreparationActive.value);
+  const canResume = computed(() => canStartResumePreparation.value);
 
   const clearConfirmationTimer = () => {
     if (confirmationTimer && typeof window !== "undefined") {
@@ -145,7 +178,7 @@ function useSaltSprayPauseFlow({
   };
   const publishControl = async (action, publisher, payload) => {
     if (controlSubmitting.value || controlAwaitingConfirmation.value) {
-      return;
+      return false;
     }
     controlConfirmationError.value = "";
     controlSubmitting.value = true;
@@ -154,12 +187,14 @@ function useSaltSprayPauseFlow({
       if (commandResult) {
         startAwaitingConfirmation(action, commandResult);
         await refreshAuthoritativeState();
+        return true;
       }
     } catch (error) {
       controlConfirmationError.value = error instanceof Error ? error.message : String(error || "命令发送失败");
     } finally {
       controlSubmitting.value = false;
     }
+    return false;
   };
   const canSimulatePauseConfirmation = computed(() => import.meta.env.DEV
     && isSaltSprayLaboratory.value
@@ -212,7 +247,7 @@ function useSaltSprayPauseFlow({
     });
   };
   const requestContinue = async () => {
-    if (!canResume.value) {
+    if (!canStartResumePreparation.value) {
       return;
     }
     const pauseNo = activePauseNo();
@@ -220,10 +255,35 @@ function useSaltSprayPauseFlow({
       controlConfirmationError.value = "未找到当前暂停记录，暂不能继续实验。";
       return;
     }
-    await runWithAttendance(async () => publishControl("resume", requestResume, {
+    controlSubmitting.value = true;
+    controlConfirmationError.value = "";
+    resumePreparationError.value = "";
+    try {
+      await startResumePreparation({
+        ...commonPayload(),
+        operation_type: "start",
+        pause_no: pauseNo,
+        tray_codes: activePauseInspectionTrayCodes.value,
+      });
+      await refreshAuthoritativeState();
+    } catch (error) {
+      resumePreparationError.value = error instanceof Error ? error.message : String(error || "恢复准备开启失败");
+    } finally {
+      controlSubmitting.value = false;
+    }
+  };
+  const requestPreparedResume = async () => {
+    if (!resumePreparationReady.value) {
+      return;
+    }
+    const pauseNo = activePauseNo();
+    const requested = await publishControl("resume", requestResume, {
       ...commonPayload(),
       pause_no: pauseNo,
-    }));
+    });
+    if (requested) {
+      onResumeRequested?.();
+    }
   };
   const confirmStop = async () => {
     if (!normalizeText(stopReason.value)) {
@@ -272,6 +332,7 @@ function useSaltSprayPauseFlow({
     activeRun,
     canSimulatePauseConfirmation,
     canResume,
+    canStartResumePreparation,
     closePauseModal,
     closeStopModal,
     confirmPause,
@@ -287,6 +348,13 @@ function useSaltSprayPauseFlow({
     pauseReason,
     pauseTrayCodes,
     requestContinue,
+    requestPreparedResume,
+    resumePreparationError,
+    resumePreparationActive,
+    resumePreparationCompared,
+    resumePreparationFixtureReady,
+    resumePreparationInstalled,
+    resumePreparationReady,
     simulatePauseConfirmation,
     simulationSubmitting,
     stopModalOpen,

@@ -544,6 +544,7 @@ describe("useSamplesFlow", () => {
         "mes.experiment_run_trays",
         "mes.experiment_trays",
         "mes.schedules",
+        "mes.staging_events",
       ],
       ["mes.experiments"],
     ]));

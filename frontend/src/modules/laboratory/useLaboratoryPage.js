@@ -18,6 +18,7 @@ import {
 } from "@/lib/laboratoryMqApi";
 import { readMasterLabs } from "@/lib/masterDataApi";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
+import { applySaltResumePreparation } from "@/lib/laboratoryApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { resolveDeviceUnavailableReason } from "@/modules/schedule/model";
 import {
@@ -151,6 +152,7 @@ function useLaboratoryPage(options = {}) {
   let clearFixtureConfirmTimer = () => {};
   let clearFixtureConfirmSuccessTimer = () => {};
   let clearHostlessFixtureReadyTimer = () => {};
+  let saltSprayPauseFlow = null;
 
   const clearCompletionConfirmationTimer = () => {
     if (completionConfirmationTimer && typeof window !== "undefined") {
@@ -241,6 +243,7 @@ function useLaboratoryPage(options = {}) {
       labCode: laboratoryConfig.value.labCode,
       labName: laboratoryConfig.value.labName,
       schedules: schedules.value,
+      stagingEvents: stagingEvents.value,
       tasks: tasks.value,
     }),
   );
@@ -380,6 +383,15 @@ function useLaboratoryPage(options = {}) {
     }),
   );
   const actionState = computed(() => {
+    if (saltSprayPauseFlow?.resumePreparationActive?.value) {
+      return {
+        canCompare: !saltSprayPauseFlow.resumePreparationCompared.value,
+        canInstallSample: saltSprayPauseFlow.resumePreparationCompared.value
+          && !saltSprayPauseFlow.resumePreparationInstalled.value,
+        canMarkReady: saltSprayPauseFlow.resumePreparationFixtureReady.value
+          && !saltSprayPauseFlow.resumePreparationReady.value,
+      };
+    }
     const state = getLaboratoryActionState(workflow.value);
     if (!currentTask.value || laboratoryUnderMaintenance.value) {
       return {
@@ -455,6 +467,13 @@ function useLaboratoryPage(options = {}) {
     completedRunningExperiment,
     confirmedModalOpen,
     experimentRuns,
+    isRestoreBlocked: () => Boolean(
+      compareModalOpen.value
+      || installModalOpen.value
+      || fixtureConfirmModalOpen.value
+      || fixtureConfirmSuccessModalOpen.value
+      || readyModalOpen.value
+    ),
     openAttendanceLogoutPrompt,
     readyModalOpen,
     runningExperiment,
@@ -494,7 +513,14 @@ function useLaboratoryPage(options = {}) {
       axisUnfinishedLabel: continuation.unfinishedAxisCodes.length ? `未完成：${continuation.unfinishedAxisCodes.join("、")}` : "未完成：暂无",
     };
   });
-  const canCompleteCompare = computed(() => verifiedTrayCodes.value.length > 0);
+  const canCompleteCompare = computed(() => {
+    if (saltSprayPauseFlow?.resumePreparationActive?.value) {
+      const verified = new Set(verifiedTrayCodes.value.map(normalizeText));
+      return saltSprayPauseFlow.activePauseInspectionTrayCodes.value.length > 0
+        && saltSprayPauseFlow.activePauseInspectionTrayCodes.value.every((trayCode) => verified.has(trayCode));
+    }
+    return verifiedTrayCodes.value.length > 0;
+  });
   const canTeleportScheduleAction = ref(false);
   const canResetCurrentTask = computed(() => {
     const trayRows = Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [];
@@ -526,15 +552,25 @@ function useLaboratoryPage(options = {}) {
     clearHostlessFixtureReadyTimer();
   };
   const usesMqttCompletion = () => isMqttHostInterfaceMode() && usesMqttExperimentEnd();
-  const saltSprayPauseFlow = useSaltSprayPauseFlow({
+  saltSprayPauseFlow = useSaltSprayPauseFlow({
     currentTask,
     experimentRunPauses,
     experimentRuns,
     laboratoryConfig,
+    onResumeRequested: showRunningModal,
     refreshAuthoritativeState: () => load({ silent: true }),
     requestPause: (payload) => publishLaboratoryMqSafely(publishLaboratoryPauseRequest, payload, "暂停实验"),
     requestResume: (payload) => publishLaboratoryMqSafely(publishLaboratoryResumeRequest, payload, "继续实验"),
     requestStop: (payload) => publishLaboratoryMqSafely(publishLaboratoryStopRequest, payload, "提前结束实验"),
+    startResumePreparation: (payload) => applySaltResumePreparation({
+      experimentCode: payload.experiment_code,
+      labCode: payload.lab_code,
+      operationType: payload.operation_type,
+      pauseNo: payload.pause_no,
+      runNo: payload.run_no,
+      taskCode: payload.task_code,
+      trayCodes: payload.tray_codes,
+    }),
     runWithAttendance,
     runningExperiment,
     samples,
@@ -819,17 +855,29 @@ function useLaboratoryPage(options = {}) {
     flushPendingRealtimeRefresh();
   };
   const openCompare = async () => {
-    if (runningInteractionLocked.value || !actionState.value.canCompare) {
+    if ((runningInteractionLocked.value && !saltSprayPauseFlow.resumePreparationActive.value) || !actionState.value.canCompare) {
       return;
     }
-    await runWithAttendance(async () => {
+    const open = async () => {
       resetCompareState();
+      if (saltSprayPauseFlow.resumePreparationActive.value) {
+        runningModalVisible.value = false;
+        clearRunningModalRestoreTimer();
+      }
       compareModalOpen.value = true;
       await focusScanInput();
-    });
+    };
+    if (saltSprayPauseFlow.resumePreparationActive.value) {
+      await open();
+    } else {
+      await runWithAttendance(open);
+    }
   };
   const closeCompare = () => {
     compareModalOpen.value = false;
+    if (saltSprayPauseFlow.resumePreparationActive.value) {
+      showRunningModal();
+    }
     flushPendingRealtimeRefresh();
   };
   const getCurrentTaskTrayCodesByStatus = (status) =>
@@ -987,8 +1035,14 @@ function useLaboratoryPage(options = {}) {
     getCurrentLabHostInterfaceCapabilities,
     isMqttHostInterfaceMode,
     laboratoryMqError,
+    onConfirmationSettled: () => {
+      if (saltSprayPauseFlow.resumePreparationActive.value) {
+        showRunningModal();
+      }
+    },
     persistFixtureReadyForTask,
     refreshAuthoritativeState: () => load({ silent: true }),
+    resumePreparationFixtureReady: saltSprayPauseFlow.resumePreparationFixtureReady,
     workflow,
   });
   clearFixtureConfirmTimer = fixtureConfirmation.clearFixtureConfirmTimer;
@@ -1050,7 +1104,21 @@ function useLaboratoryPage(options = {}) {
     }
     const revertTask = pendingRevertTask.value;
     compareModalOpen.value = false;
-    await persistCurrentTaskStep(LAB_COMPARE_STATUS, "任务比对", { revertTask });
+    if (saltSprayPauseFlow.resumePreparationActive.value) {
+      await applySaltResumePreparation({
+        experimentCode: currentTask.value.experimentCode,
+        labCode: laboratoryConfig.value.labCode,
+        operationType: "compare",
+        pauseNo: normalizeText(saltSprayPauseFlow.activePause.value?.pause_no || saltSprayPauseFlow.activePause.value?.pauseNo),
+        runNo: normalizeText(runningExperiment.value?.runNo),
+        taskCode: currentTask.value.taskCode,
+        trayCodes: verifiedTrayCodes.value,
+      });
+      await load({ silent: true });
+      showRunningModal();
+    } else {
+      await persistCurrentTaskStep(LAB_COMPARE_STATUS, "任务比对", { revertTask });
+    }
     if (revertTask && taskSelectionKey(pendingRevertTask.value) === taskSelectionKey(revertTask)) {
       pendingRevertTask.value = null;
     }
@@ -1068,6 +1136,19 @@ function useLaboratoryPage(options = {}) {
       compareScanCode.value = "";
       return;
     }
+    const scannedCode = normalizeText(compareScanCode.value);
+    if (saltSprayPauseFlow.resumePreparationActive.value) {
+      const expected = saltSprayPauseFlow.activePauseInspectionTrayCodes.value;
+      const ok = expected.includes(scannedCode);
+      compareFeedback.value = ok
+        ? { guidance: "继续扫描其余暂停托盘，全部比对后确认完成。", message: `托盘 ${scannedCode} 比对通过`, ok: true, tone: "success", trayCode: scannedCode }
+        : { guidance: "请扫描当前暂停运行关联的托盘码。", message: "托盘不属于本次继续实验", ok: false, tone: "error" };
+      if (ok && !verifiedTrayCodes.value.includes(scannedCode)) {
+        verifiedTrayCodes.value = [...verifiedTrayCodes.value, scannedCode];
+      }
+      compareScanCode.value = "";
+      return;
+    }
     const result = validateLaboratoryTrayScan({
       allScheduleRows: view.value.allScheduleRows,
       currentTask: currentTask.value,
@@ -1081,15 +1162,27 @@ function useLaboratoryPage(options = {}) {
     compareScanCode.value = "";
   };
   const openInstall = () => {
-    if (runningInteractionLocked.value || !canRequestFixtureInstall.value) {
+    if ((runningInteractionLocked.value && !saltSprayPauseFlow.resumePreparationActive.value) || !canRequestFixtureInstall.value) {
       return;
     }
-    void runWithAttendance(async () => {
+    const open = async () => {
+      if (saltSprayPauseFlow.resumePreparationActive.value) {
+        runningModalVisible.value = false;
+        clearRunningModalRestoreTimer();
+      }
       installModalOpen.value = true;
-    });
+    };
+    if (saltSprayPauseFlow.resumePreparationActive.value) {
+      void open();
+    } else {
+      void runWithAttendance(open);
+    }
   };
   const closeInstall = () => {
     installModalOpen.value = false;
+    if (saltSprayPauseFlow.resumePreparationActive.value) {
+      showRunningModal();
+    }
     flushPendingRealtimeRefresh();
   };
   const confirmInstall = async () => {
@@ -1099,9 +1192,27 @@ function useLaboratoryPage(options = {}) {
     }
     const targetTaskCode = currentTask.value?.taskCode || "";
     const isResend = !actionState.value.canInstallSample && canResendFixtureInstall.value;
-    const targetTrayCodes = getCurrentTaskTrayCodesByStatus(isResend ? LAB_INSTALL_STATUS : LAB_COMPARE_STATUS);
+    const isResumePreparation = saltSprayPauseFlow.resumePreparationActive.value;
+    const targetTrayCodes = isResumePreparation
+      ? saltSprayPauseFlow.activePauseInspectionTrayCodes.value
+      : getCurrentTaskTrayCodesByStatus(isResend ? LAB_INSTALL_STATUS : LAB_COMPARE_STATUS);
     const payload = buildFixtureInstallPayload({ trayCodes: targetTrayCodes });
-    const persistOperation = isResend ? Promise.resolve() : persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
+    if (isResumePreparation) {
+      payload.run_no = normalizeText(runningExperiment.value?.runNo);
+      payload.pause_no = normalizeText(saltSprayPauseFlow.activePause.value?.pause_no || saltSprayPauseFlow.activePause.value?.pauseNo);
+    }
+    const persistOperation = isResumePreparation
+      ? applySaltResumePreparation({
+          experimentCode: currentTask.value.experimentCode,
+          fixtureInstallId: payload.fixture_install_id,
+          labCode: laboratoryConfig.value.labCode,
+          operationType: "install",
+          pauseNo: payload.pause_no,
+          runNo: payload.run_no,
+          taskCode: currentTask.value.taskCode,
+          trayCodes: targetTrayCodes,
+        }).then(() => load({ silent: true }))
+      : isResend ? Promise.resolve() : persistCurrentTaskStep(LAB_INSTALL_STATUS, "样品安装");
     installModalOpen.value = false;
     if (isHostlessFixtureLab()) {
       clearFixtureConfirmTimer();
@@ -1122,7 +1233,11 @@ function useLaboratoryPage(options = {}) {
     void persistOperation
       .then(() => publishLaboratoryMqSafely(publishLaboratoryFixtureInstall, payload, "夹具安装"))
       .then((published) => {
-        if (published && !workflow.value.fixtureReadyDone) {
+        if (
+          published
+          && !workflow.value.fixtureReadyDone
+          && !saltSprayPauseFlow.resumePreparationFixtureReady.value
+        ) {
           startFixtureConfirmCountdown({ taskCode: targetTaskCode, trayCodes: targetTrayCodes });
         }
       })
@@ -1136,15 +1251,27 @@ function useLaboratoryPage(options = {}) {
       });
   };
   const openReady = () => {
-    if (runningInteractionLocked.value || !canRequestReady.value) {
+    if ((runningInteractionLocked.value && !saltSprayPauseFlow.resumePreparationActive.value) || !canRequestReady.value) {
       return;
     }
-    void runWithAttendance(async () => {
+    const open = async () => {
+      if (saltSprayPauseFlow.resumePreparationActive.value) {
+        runningModalVisible.value = false;
+        clearRunningModalRestoreTimer();
+      }
       readyModalOpen.value = true;
-    });
+    };
+    if (saltSprayPauseFlow.resumePreparationActive.value) {
+      void open();
+    } else {
+      void runWithAttendance(open);
+    }
   };
   const closeReady = () => {
     readyModalOpen.value = false;
+    if (saltSprayPauseFlow.resumePreparationActive.value) {
+      showRunningModal();
+    }
     flushPendingRealtimeRefresh();
   };
   const confirmReady = async () => {
@@ -1152,11 +1279,42 @@ function useLaboratoryPage(options = {}) {
       readyModalOpen.value = false;
       return;
     }
-    const payload = buildReadyPayload();
-    if (actionState.value.canMarkReady) {
+    const isResumePreparation = saltSprayPauseFlow.resumePreparationActive.value;
+    const payload = buildReadyPayload(isResumePreparation ? {
+      runNo: runningExperiment.value?.runNo,
+    } : {});
+    if (isResumePreparation) {
+      payload.pause_no = normalizeText(saltSprayPauseFlow.activePause.value?.pause_no || saltSprayPauseFlow.activePause.value?.pauseNo);
+      payload.resume_preparation = true;
+      payload.tray_codes = saltSprayPauseFlow.activePauseInspectionTrayCodes.value;
+    }
+    if (!isResumePreparation && actionState.value.canMarkReady) {
       await persistCurrentTaskStep(LAB_READY_STATUS, "实验确认");
     }
     readyModalOpen.value = false;
+    if (isResumePreparation) {
+      try {
+        const published = await publishLaboratoryMqSafely(publishLaboratoryReady, payload, "继续实验准备就绪");
+        if (!published) {
+          return;
+        }
+        await applySaltResumePreparation({
+          experimentCode: currentTask.value.experimentCode,
+          labCode: laboratoryConfig.value.labCode,
+          operationType: "ready",
+          pauseNo: payload.pause_no,
+          runNo: payload.run_no,
+          taskCode: currentTask.value.taskCode,
+          trayCodes: payload.tray_codes,
+        });
+        await load({ silent: true });
+        await saltSprayPauseFlow.requestPreparedResume();
+      } catch (error) {
+        laboratoryMqError.value = { detail: formatErrorMessage(error), title: "继续实验准备失败" };
+        showRunningModal();
+      }
+      return;
+    }
     confirmedModalOpen.value = true;
     void publishLaboratoryMqSafely(publishLaboratoryReady, payload, "准备就绪");
   };

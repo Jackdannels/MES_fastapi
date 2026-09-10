@@ -1,9 +1,9 @@
 param(
     [string]$ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path,
-    [string]$OutputDirectory = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v2.2"),
+    [string]$OutputDirectory = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v2.3"),
     [string]$OutputPath = "",
-    [string]$DesktopCopyPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v2.2.exe"),
-    [string]$LegacyDesktopCopyPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v2.1.exe")
+    [string]$DesktopCopyPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v2.3.exe"),
+    [string]$LegacyDesktopCopyPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES工作台设置_v2.2.exe")
 )
 
 $ErrorActionPreference = "Stop"
@@ -115,9 +115,11 @@ public static class MESWorkstationShellRefresh
 
 $projectRootPath = (Resolve-Path -LiteralPath $ProjectRoot).Path
 $sourcePath = Join-Path $projectRootPath "scripts\client\MESWorkstationConfigurator.cs"
-$iconPath = Join-Path $OutputDirectory "mes-workbench-v2.2.ico"
-if (-not $OutputPath) { $OutputPath = Join-Path $OutputDirectory "MES工作台设置_v2.2.exe" }
+$discoverySourcePath = Join-Path $projectRootPath "scripts\client\MESServerDiscovery.cs"
+$iconPath = Join-Path $OutputDirectory "mes-workbench-v2.3.ico"
+if (-not $OutputPath) { $OutputPath = Join-Path $OutputDirectory "MES工作台设置_v2.3.exe" }
 if (-not (Test-Path -LiteralPath $sourcePath)) { throw "Cannot find configurator source: $sourcePath" }
+if (-not (Test-Path -LiteralPath $discoverySourcePath)) { throw "Cannot find MES discovery source: $discoverySourcePath" }
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 New-WorkstationIcon -Path $iconPath
@@ -129,27 +131,27 @@ try {
     & $csc /nologo /target:winexe /platform:anycpu /optimize+ `
         /reference:System.Windows.Forms.dll /reference:System.Drawing.dll /reference:System.Management.dll `
         /reference:System.Web.Extensions.dll /reference:System.Xml.dll /win32icon:"$iconPath" `
-        /out:"$OutputPath" "$temporarySource"
+        /out:"$OutputPath" "$temporarySource" "$discoverySourcePath"
     if ($LASTEXITCODE -ne 0) { throw "MES workstation configurator compilation failed with exit code $LASTEXITCODE." }
 } finally {
     if (Test-Path -LiteralPath $temporarySource) { Remove-Item -LiteralPath $temporarySource -Force }
 }
 
 $releaseInfo = @"
-MES 工作台设置 v2.2
+MES 工作台设置 v2.3
 
-默认局域网地址：http://mes-server:5173/
+自动发现失败时的兜底地址：http://192.168.110.15:5173/
 所有试验间、接驳区、暂存间、外观检测间缩放：100%
 启动时自动清理专用 Edge 历史页面缩放记录
 终端在线/IP/当前页面监听、远程刷新、远程关机与重启权限开关
-新增：使用稳定 MES 主机名，主机 IP 变化后终端无需重新设置
-新增：历史默认 IP 自动迁移，保留终端 ID、密钥和操作台绑定
+新增：每次启动先验证已保存地址，失效时自动发现同网段唯一 MES 主机实际 IP
+兼容：自动从 v2.2 的 mes-server 配置回迁并继续发现，保留终端 ID、密钥和操作台绑定
 实验室网址统一使用 LAB_* 英文编码
-图标：方案 B「智造六核」— mes-workbench-v2.2.ico
+图标：方案 B「智造六核」— mes-workbench-v2.3.ico
 "@
 Set-Content -LiteralPath (Join-Path $OutputDirectory "版本说明.txt") -Value $releaseInfo -Encoding UTF8
 $svgPath = Join-Path $projectRootPath "assets\mes-workbench-v1.5.svg"
-if (Test-Path -LiteralPath $svgPath) { Copy-Item -LiteralPath $svgPath -Destination (Join-Path $OutputDirectory "mes-workbench-v2.2.svg") -Force }
+if (Test-Path -LiteralPath $svgPath) { Copy-Item -LiteralPath $svgPath -Destination (Join-Path $OutputDirectory "mes-workbench-v2.3.svg") -Force }
 $iconOptionsPath = Join-Path $projectRootPath "assets\mes-workbench-v1.4-icon-options.svg"
 if (Test-Path -LiteralPath $iconOptionsPath) { Copy-Item -LiteralPath $iconOptionsPath -Destination (Join-Path $OutputDirectory "mes-workbench-v1.4-icon-options.svg") -Force }
 $distPath = Join-Path $projectRootPath "frontend\dist"

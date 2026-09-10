@@ -331,6 +331,7 @@ const buildTrayRowsByLab = ({
           preferCurrentExperimentCode: Boolean(entry.currentExperimentCode),
           samples,
           schedules,
+          stagingEvents,
           status: entry.lifecycleStatus,
           taskCode: aggregate.taskCode,
           trayCode: aggregate.trayCode,

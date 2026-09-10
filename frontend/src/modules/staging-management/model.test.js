@@ -5548,7 +5548,7 @@ describe("staging-management model", () => {
     expect(result.snapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_out" && event.tray_code === "SYLU-2026-03-001-TP-002")).toHaveLength(0);
   });
 
-  test("allows a canceled mold tray into staging or appearance without treating all experiments as completed", () => {
+  test("routes a canceled mold tray only to appearance recovery without treating experiments as completed", () => {
     const taskCode = "TASK-MOLD-CANCELED";
     const experimentCode = `${taskCode}-MOLD`;
     const trayCode = `${taskCode}-TP-001`;
@@ -5582,27 +5582,32 @@ describe("staging-management model", () => {
       .find((row) => row.trayCode === trayCode);
     const appearanceRow = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" })
       .find((row) => row.trayCode === trayCode);
-    expect(stagingRow).toEqual(expect.objectContaining({
-      inboundKind: "allowed",
-      isPostExperimentInbound: false,
-      status: "待入库",
-    }));
+    expect(stagingRow).toBeUndefined();
     expect(appearanceRow).toEqual(expect.objectContaining({
       inboundKind: "appearance",
+      isMoldCancelRecoveryInbound: true,
       isPostExperimentInbound: false,
+      moldCancelRecoveryRunNo: "RUN-MOLD-CANCELED",
       status: "待入库",
     }));
 
-    const stockIn = applyZancunInventoryAction({
+    const recoveryStockIn = applyZancunInventoryAction({
       now: TODAY,
       payload: { code: trayCode, mode: "stockIn" },
-      room: "staging",
+      room: "appearance",
       snapshot,
     });
-    expect(stockIn.error).toBe("");
-    expect(stockIn.snapshot[STORAGE_KEYS.samples].find((sample) => sample.task_code === taskCode)).toMatchObject({
-      location: "恒温恒湿间（暂存间）",
-      status: "已到达暂存间",
+    expect(recoveryStockIn.error).toBe("");
+    expect(recoveryStockIn.snapshot[STORAGE_KEYS.samples].find((sample) => sample.task_code === taskCode)).toMatchObject({
+      location: "外观检测间",
+      status: "霉菌取消后恢复处理中",
+    });
+    expect(recoveryStockIn.snapshot[STORAGE_KEYS.staging_events].at(-1)).toMatchObject({
+      action: "stock_in",
+      appearance_phase: "mold_cancel_recovery",
+      recovery_cycle_id: "RUN-MOLD-CANCELED",
+      source_experiment_code: experimentCode,
+      source_run_no: "RUN-MOLD-CANCELED",
     });
   });
 });

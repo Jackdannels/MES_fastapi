@@ -9,6 +9,7 @@ const buildSamplesFlow = (overrides = {}) => ({
   rawExperimentRuns: [],
   rawSamples: [],
   rawSchedules: [],
+  rawStagingEvents: [],
   rawTasks: [],
   trayRows: [],
   trayStatusOptions: [],
@@ -37,6 +38,15 @@ describe("TrayManagementPanel", () => {
         task_code: taskCode,
         trays: [{ quantity: 1, status: "中途外观检查中", tray_code: trayCode }],
       }],
+      rawStagingEvents: [{
+        action: "stock_in",
+        appearance_phase: "mid_experiment",
+        pause_no: "PAUSE-1",
+        room: "appearance",
+        run_no: "RUN-1",
+        time: "2026-09-04 14:30:00",
+        tray_code: trayCode,
+      }],
       trayRows: [{ sampleCodes: ["SP-SALT-PAUSED"], sampleCount: 1, status: "中途外观检查中", taskCode, trayCode }],
     });
     const wrapper = mount(TrayManagementPanel, { props: { samplesFlow: pausedFlow } });
@@ -44,6 +54,7 @@ describe("TrayManagementPanel", () => {
     expect(wrapper.get('[data-testid="samples-tray-flow-remark"]').text())
       .toBe("备注：实验进行中（暂停）");
     expect(wrapper.text()).toContain("盐雾试验进行中（暂停）");
+    expect(wrapper.text()).toContain("中途外观检测");
 
     await wrapper.setProps({
       samplesFlow: {

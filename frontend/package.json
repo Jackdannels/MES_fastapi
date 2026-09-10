@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:production": "node scripts/build-production.mjs",
     "preview": "vite preview",
     "serve:public": "node scripts/serve-public.mjs",
     "lint": "eslint src --ext .js,.vue",

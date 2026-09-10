@@ -3604,3 +3604,80 @@ def test_laboratory_withdraw_current_rejects_running_or_finished_states(monkeypa
 
         assert response.status_code == 400
         assert storage.read("mes.samples")[0]["status"] == blocked_status
+def test_salt_resume_preparation_starts_with_production_run_shape_without_lab_code(monkeypatch):
+    task_code = "TASK-SALT-RESUME"
+    experiment_code = "EXP-SALT-RESUME"
+    run_no = "RUN-SALT-RESUME"
+    pause_no = "PAUSE-SALT-RESUME"
+    tray_code = "TP-SALT-RESUME"
+    payloads = {
+        "mes.tasks": [{"code": task_code, "name": "盐雾恢复任务"}],
+        "mes.experiments": [{
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "experiment_name": "盐雾试验",
+        }],
+        "mes.experiment_runs": [{
+            "run_no": run_no,
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "device": "盐雾试验室",
+            "status": "实验暂停",
+        }],
+        "mes.experiment_run_pauses": [{
+            "pause_no": pause_no,
+            "run_no": run_no,
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "lab_code": "LAB_SALT",
+            "status": "实验暂停",
+            "inspection_tray_codes": [tray_code],
+        }],
+        "mes.experiment_run_trays": [{
+            "run_no": run_no,
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "tray_code": tray_code,
+            "run_tray_status": "实验进行中",
+        }],
+        "mes.experiment_trays": [{
+            "task_code": task_code,
+            "experiment_code": experiment_code,
+            "tray_code": tray_code,
+        }],
+        "mes.samples": [{
+            "code": "SP-SALT-RESUME",
+            "task_code": task_code,
+            "location": "盐雾试验室",
+            "status": "等待恢复实验",
+            "flow_status": "等待恢复实验",
+            "history": [],
+            "trays": [{"tray_code": tray_code, "status": "等待恢复实验", "quantity": 1}],
+        }],
+        "mes.staging_events": [{
+            "action": "stock_out",
+            "appearance_phase": "mid_experiment",
+            "pause_no": pause_no,
+            "room": "appearance",
+            "run_no": run_no,
+            "target_lab": "盐雾试验室",
+            "target_lab_code": "LAB_SALT",
+            "tray_code": tray_code,
+            "time": "2026-09-04 16:20:00",
+        }],
+    }
+    client, storage = build_client(monkeypatch, payloads)
+
+    response = client.post("/api/laboratory/salt-resume-preparation", json={
+        "operationType": "start",
+        "taskCode": task_code,
+        "experimentCode": experiment_code,
+        "runNo": run_no,
+        "pauseNo": pause_no,
+        "labCode": "LAB_SALT",
+        "trayCodes": [tray_code],
+    })
+
+    assert response.status_code == 200
+    assert response.json()["resumePreparationAction"] == "resume_preparation_started"
+    assert storage.read("mes.staging_events")[-1]["action"] == "resume_preparation_started"

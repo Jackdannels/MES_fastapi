@@ -140,7 +140,7 @@ $launcherSessionId = [Guid]::NewGuid().ToString("N")
 
 if ($condaBat) {
     $backendReloadArgument = if ($Production) { "" } else { " --reload" }
-    $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"RABBITMQ_ENABLED=true`" && set `"RABBITMQ_REQUIRED=true`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py$backendReloadArgument --host $BackendHost --port $BackendPort"
+    $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"TEST_DATA_PUBLIC_BASE_URL=http://${frontendNetworkHost}:$BackendPort`" && set `"RABBITMQ_ENABLED=true`" && set `"RABBITMQ_REQUIRED=true`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py$backendReloadArgument --host $BackendHost --port $BackendPort"
     $limsSimulatorCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$LimsSimulatorRoot`" && python -m uvicorn app:app --host $LimsSimulatorHost --port $LimsSimulatorPort"
 } else {
     $backendCommand = "echo Unable to find conda.bat. Please install Anaconda/Miniconda or add conda to PATH. && echo Expected environment: $CondaEnv"
@@ -167,7 +167,7 @@ exit 1
 
 $encodedFrontendWait = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($frontendWaitScript))
 $frontendRunCommand = if ($Production) {
-    "npm run build && npm run serve:public -- --host $FrontendHost --port $FrontendPort"
+    "npm run build:production && npm run serve:public -- --host $FrontendHost --port $FrontendPort"
 } else {
     "npm run dev -- --host $FrontendHost --port $FrontendPort"
 }

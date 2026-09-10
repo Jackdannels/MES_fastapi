@@ -44,7 +44,9 @@ const buildTrayExperimentFlow = (input = {}) => {
   });
   const runtimeCutoffTimeByExperimentCode = resolveExperimentRuntimeCutoffMap({
     orderedExperiments,
+    experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
     samples: input.samples,
+    stagingEvents: input.stagingEvents || input.staging_events,
     taskCode,
     trayCode,
   });
@@ -164,7 +166,10 @@ const buildTrayExperimentFlow = (input = {}) => {
   );
   const experimentStatusMap = new Map(
     orderedExperiments.map((experiment) => {
-      const event = resolveExperimentEvent(experimentEventMap, experiment);
+      const rawEvent = resolveExperimentEvent(experimentEventMap, experiment);
+      const event = Number(rawEvent?.time || 0) >= runtimeCutoffTimeForExperiment(experiment)
+        ? rawEvent
+        : null;
       const runtimeStatus = experimentRuntimeEventMap.get(experiment.code)?.status || "";
       const rawEventStatus = normalizeText(event?.status);
       const rawEventIsUnscopedRunning =
@@ -221,7 +226,10 @@ const buildTrayExperimentFlow = (input = {}) => {
   );
   const completedExperiments = orderedExperiments
     .map((experiment) => {
-      const event = resolveExperimentEvent(experimentEventMap, experiment);
+      const rawEvent = resolveExperimentEvent(experimentEventMap, experiment);
+      const event = Number(rawEvent?.time || 0) >= runtimeCutoffTimeForExperiment(experiment)
+        ? rawEvent
+        : null;
       const eventStatus = normalizeLifecycleStatus("", normalizeText(event?.status));
       const runtimeStatus = experimentRuntimeEventMap.get(experiment.code)?.status || "";
       if (isAxisPartialProgressStatus(runtimeStatus)) {

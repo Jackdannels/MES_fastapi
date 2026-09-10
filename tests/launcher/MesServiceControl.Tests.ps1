@@ -69,7 +69,18 @@ Describe "MES service controller" {
 
         $startScript | Should Match '(?s)if \(\$Production\) \{.*?\$backendConsoleCommand = ".*?title MES Backend.*?\$frontendConsoleCommand = "title MES Frontend.*?Start-Process -FilePath \$env:ComSpec -ArgumentList "/d", "/k", \$backendConsoleCommand.*?Start-Process -FilePath \$env:ComSpec -ArgumentList "/d", "/k", \$frontendConsoleCommand.*?Start-Process -FilePath \$condaPython.*?"-m", "uvicorn", "app:app"'
         $startScript | Should Match '(?s)\$limsSimulatorProcess = Start-Process -FilePath \$condaPython.*?-WindowStyle Hidden.*?lims\.stderr\.log'
+        $startScript | Should Match 'npm run build:production && npm run serve:public'
         $startScript | Should Not Match 'Unable to identify MES backend/frontend/LIMS terminal command processes'
+    }
+
+    It "builds production frontend atomically with timeout retry and last-good fallback" {
+        $buildSource = Get-Content -LiteralPath (Join-Path $projectRoot "frontend\scripts\build-production.mjs") -Raw
+
+        $buildSource | Should Match 'MES_FRONTEND_BUILD_TIMEOUT_MS \|\| 30_000'
+        $buildSource | Should Match 'const maxAttempts = 2'
+        $buildSource | Should Match '\.dist-build-\$\{process\.pid\}'
+        $buildSource | Should Match 'await rename\(buildRoot, distRoot\)'
+        $buildSource | Should Match '继续使用上一次成功构建'
     }
 
     It "keeps only hidden LIMS output in service logs and resolves the conda interpreter directly" {
@@ -112,11 +123,13 @@ Describe "MES service controller" {
         $publicServerSource | Should Match 'Binding: http://\$\{host\}:\$\{port\}'
     }
 
-    It "advertises the stable MES hostname when the control center starts production" {
+    It "lets production startup resolve the current LAN IP instead of pinning a hostname" {
         $controllerSource = Get-Content -LiteralPath $controller -Raw
 
-        $controllerSource | Should Match '\$frontendNetworkHost = "mes-server"'
-        $controllerSource | Should Match '-FrontendNetworkHost `"\$frontendNetworkHost`"'
+        $controllerSource | Should Not Match '\$frontendNetworkHost = "mes-server"'
+        $controllerSource | Should Not Match '-FrontendNetworkHost'
+        $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
+        $startScript | Should Match 'TEST_DATA_PUBLIC_BASE_URL=http://\$\{frontendNetworkHost\}:\$BackendPort'
     }
 
     It "tags both terminal commands with a launcher session for precise process cleanup" {

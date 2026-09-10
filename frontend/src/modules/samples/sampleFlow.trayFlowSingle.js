@@ -30,12 +30,14 @@ function buildSingleExperimentTrayFlow(input, { effectiveInput, stepTimeMap, tra
   const singleExperimentRuntimeCutoffTime = singleExperiment
     ? resolveExperimentRuntimeCutoffMap({
         orderedExperiments: [singleExperiment],
+        experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
         samples: effectiveInput.samples,
+        stagingEvents: effectiveInput.stagingEvents || effectiveInput.staging_events,
         taskCode: effectiveInput.taskCode,
         trayCode: effectiveInput.trayCode,
       }).get(normalizeText(singleExperiment.code)) || 0
     : 0;
-  const singleExperimentEvent = singleExperiment
+  const rawSingleExperimentEvent = singleExperiment
     ? resolveExperimentEvent(
         resolveLatestExperimentEventMap({
           taskCode: effectiveInput.taskCode,
@@ -44,6 +46,9 @@ function buildSingleExperimentTrayFlow(input, { effectiveInput, stepTimeMap, tra
         }),
         singleExperiment,
       )
+    : null;
+  const singleExperimentEvent = Number(rawSingleExperimentEvent?.time || 0) >= singleExperimentRuntimeCutoffTime
+    ? rawSingleExperimentEvent
     : null;
   const singleExperimentRuntimeStatus = singleExperiment
     ? resolveExperimentRunStatus({

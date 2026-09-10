@@ -70,6 +70,7 @@ const SAMPLES_SNAPSHOT_KEYS = [
   STORAGE_KEYS.experiment_run_trays,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.schedules,
+  STORAGE_KEYS.staging_events,
 ];
 const SAMPLES_REFRESH_KEYS = [STORAGE_KEYS.tasks, STORAGE_KEYS.samples, ...SAMPLES_SNAPSHOT_KEYS];
 
@@ -105,6 +106,7 @@ function useSamplesFlow() {
   const rawExperimentRunTrays = ref([]);
   const rawExperimentTrays = ref([]);
   const rawSchedules = ref([]);
+  const rawStagingEvents = ref([]);
   const loading = ref(false);
   const warning = ref("");
 
@@ -220,6 +222,7 @@ function useSamplesFlow() {
       location: status === "已到达暂存间" ? DEFAULT_LABELS.preRetentionLocation : "",
       samples: rawSamples.value,
       schedules: rawSchedules.value,
+      stagingEvents: rawStagingEvents.value,
       taskCode: String(trayRow?.taskCode || detailSampleTaskCode.value || "").trim(),
       trayCode,
       status,
@@ -390,6 +393,13 @@ function useSamplesFlow() {
       }
       if (refreshKeySet.has(STORAGE_KEYS.schedules)) {
         rawSchedules.value = selectArraySnapshot(snapshot?.[STORAGE_KEYS.schedules], rawSchedules.value, preserveExisting);
+      }
+      if (refreshKeySet.has(STORAGE_KEYS.staging_events)) {
+        rawStagingEvents.value = selectArraySnapshot(
+          snapshot?.[STORAGE_KEYS.staging_events],
+          rawStagingEvents.value,
+          preserveExisting,
+        );
       }
       warning.value = "";
     } catch (error) {
@@ -759,6 +769,7 @@ function useSamplesFlow() {
     rawExperimentRunTrays,
     rawExperimentTrays,
     rawSchedules,
+    rawStagingEvents,
     rawTasks,
     sampleRows,
     saveDetail,

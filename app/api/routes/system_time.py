@@ -14,3 +14,12 @@ def read_system_time() -> dict[str, int | str]:
         "iso": current.isoformat(timespec="milliseconds"),
         "timeZone": "Asia/Shanghai",
     }
+
+
+@router.get("/discovery")
+def read_mes_discovery() -> dict[str, int | str]:
+    return {
+        "service": "MES_FASTAPI",
+        "apiVersion": 1,
+        "frontendPort": 5173,
+    }

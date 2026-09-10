@@ -9,13 +9,14 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Web.Script.Serialization;
+using MESNetwork;
 
 [assembly: AssemblyTitle("MES 终端管理")]
 [assembly: AssemblyDescription("MES 固定工作台终端状态与远程控制面板")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Terminal Manager")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace MESTerminalManager
 {
@@ -263,7 +264,7 @@ namespace MESTerminalManager
 
         internal ManagerForm()
         {
-            Text = "MES 终端管理 v1.2";
+            Text = "MES 终端管理 v1.3";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(1180, 680);
             ClientSize = new Size(1420, 780);
@@ -306,7 +307,7 @@ namespace MESTerminalManager
             AddHeaderField(header, "MES 地址", serverText, 22, 78, 310);
             AddHeaderField(header, "管理员", usernameText, 360, 78, 150);
             AddHeaderField(header, "密码", passwordText, 538, 78, 150);
-            serverText.Text = "http://mes-server:5173";
+            serverText.Text = MESServerDiscovery.Discover("http://192.168.110.15:5173");
             usernameText.Text = "admin";
             passwordText.Text = "123";
             passwordText.UseSystemPasswordChar = true;
@@ -607,7 +608,8 @@ namespace MESTerminalManager
             {
                 try
                 {
-                    TerminalManagerClient.NormalizeServerUrl("http://mes-server:5173");
+                    TerminalManagerClient.NormalizeServerUrl("http://192.168.110.15:5173");
+                    if (!MESServerDiscovery.RunSelfTest()) return 4;
                     using (ManagerForm form = new ManagerForm())
                     {
                         return form.ValidateDockLayout() ? 0 : 3;

@@ -38,6 +38,8 @@ POST_EXPERIMENT_STAGING_LOCATION = "恒温恒湿间（实验后暂存间）"
 APPEARANCE_LOCATION = "外观检测间"
 RETURNED_STATUS = "厂家收回"
 MOLD_CANCELED_STATUS = "实验已取消"
+MOLD_CANCEL_RECOVERY_STATUS = "霉菌取消后恢复处理中"
+MOLD_CANCEL_RECOVERY_PHASE = "mold_cancel_recovery"
 
 ROOM_CONFIGS = {
     STAGING_ROOM: {
@@ -54,7 +56,12 @@ ROOM_CONFIGS = {
     },
     APPEARANCE_ROOM: {
         "event_room": APPEARANCE_ROOM,
-        "current_statuses": {"实验后外观检测间存放", "实验前外观检测间存放", MID_EXPERIMENT_APPEARANCE_STATUS},
+        "current_statuses": {
+            "实验后外观检测间存放",
+            "实验前外观检测间存放",
+            MID_EXPERIMENT_APPEARANCE_STATUS,
+            MOLD_CANCEL_RECOVERY_STATUS,
+        },
         "duplicate_stock_in_error": "该托盘已完成外观检测间扫码入库。",
         "history_stock_in_action": "外观检测间扫码入库",
         "history_stock_out_action": "外观检测间扫码出库",
@@ -136,13 +143,13 @@ def allows_completed_post_experiment_appearance_stock_in(config: dict[str, Any],
     )
 
 
-def canceled_mold_experiment_code(
+def canceled_mold_recovery_context(
     snapshot: dict[str, Any],
     *,
     task_code: str,
     tray_code: str,
-) -> str:
-    """Return the mold experiment behind the tray's latest canceled run.
+) -> dict[str, str] | None:
+    """Return the latest unused canceled mold run behind one tray.
 
     Cancellation is a routing exception, not a globally completed experiment
     status.  Keep the authorization tied to the authoritative run-tray relation
@@ -152,7 +159,7 @@ def canceled_mold_experiment_code(
     normalized_task_code = normalize_text(task_code)
     normalized_tray_code = normalize_text(tray_code)
     if not normalized_task_code or not normalized_tray_code:
-        return ""
+        return None
 
     matching_run_trays = [
         relation
@@ -162,7 +169,7 @@ def canceled_mold_experiment_code(
         and tray_code_value(relation) == normalized_tray_code
     ]
     if not matching_run_trays:
-        return ""
+        return None
 
     mold_experiment_codes = {
         normalize_text(
@@ -209,8 +216,59 @@ def canceled_mold_experiment_code(
             or latest_relation.get("status")
         )
         if latest_status == MOLD_CANCELED_STATUS:
-            return experiment_code
-    return ""
+            run_no = normalize_text(latest_relation.get("run_no") or latest_relation.get("runNo"))
+            if not run_no:
+                continue
+            recovery_already_started = any(
+                isinstance(event, dict)
+                and normalize_text(event.get("task_code") or event.get("taskCode")) == normalized_task_code
+                and normalize_text(event.get("tray_code") or event.get("trayCode")) == normalized_tray_code
+                and normalize_text(event.get("appearance_phase") or event.get("appearancePhase")) == MOLD_CANCEL_RECOVERY_PHASE
+                and normalize_text(
+                    event.get("source_run_no")
+                    or event.get("sourceRunNo")
+                    or event.get("run_no")
+                    or event.get("runNo")
+                ) == run_no
+                for event in as_list(snapshot.get(STAGING_EVENTS_KEY))
+            )
+            if recovery_already_started:
+                continue
+            return {
+                "experiment_code": experiment_code,
+                "run_no": run_no,
+            }
+    return None
+
+
+def canceled_mold_experiment_code(
+    snapshot: dict[str, Any],
+    *,
+    task_code: str,
+    tray_code: str,
+) -> str:
+    context = canceled_mold_recovery_context(snapshot, task_code=task_code, tray_code=tray_code)
+    return normalize_text((context or {}).get("experiment_code"))
+
+
+def latest_mold_cancel_recovery_stock_in(
+    events: list[Any],
+    *,
+    task_code: str,
+    tray_code: str,
+) -> dict[str, Any] | None:
+    matches = [
+        event
+        for event in events
+        if isinstance(event, dict)
+        and normalize_text(event.get("task_code") or event.get("taskCode")) == normalize_text(task_code)
+        and normalize_text(event.get("tray_code") or event.get("trayCode")) == normalize_text(tray_code)
+        and normalize_text(event.get("room")) == APPEARANCE_ROOM
+        and normalize_text(event.get("appearance_phase") or event.get("appearancePhase")) == MOLD_CANCEL_RECOVERY_PHASE
+    ]
+    if not matches or normalize_text(matches[-1].get("action")) != "stock_in":
+        return None
+    return matches[-1]
 
 
 def appearance_phase(status: str) -> str:
@@ -221,6 +279,8 @@ def appearance_phase(status: str) -> str:
         return "post_experiment"
     if normalized_status == MID_EXPERIMENT_APPEARANCE_STATUS:
         return MID_EXPERIMENT_APPEARANCE_PHASE
+    if normalized_status == MOLD_CANCEL_RECOVERY_STATUS:
+        return MOLD_CANCEL_RECOVERY_PHASE
     return ""
 
 
@@ -404,6 +464,8 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
     if not matches:
         raise StorageTrayActionError("未找到对应的出库托盘。", status_code=404)
     current_status = primary_status(matches)
+    normalized_tray_code = normalize_text(tray_code)
+    task_code = primary_task_code(matches)
     if (
         config["event_room"] == APPEARANCE_ROOM
         and current_status in {"实验已完成", "实验完成", "实验已经完成"}
@@ -414,6 +476,18 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
         current_status = "实验后外观检测间存放"
     if current_status not in config["current_statuses"]:
         raise StorageTrayActionError(config["requires_stock_in_error"], status_code=409)
+
+    mold_recovery_context = (
+        latest_mold_cancel_recovery_stock_in(
+            events,
+            task_code=task_code,
+            tray_code=normalized_tray_code,
+        )
+        if config["event_room"] == APPEARANCE_ROOM and current_status == MOLD_CANCEL_RECOVERY_STATUS
+        else None
+    )
+    if current_status == MOLD_CANCEL_RECOVERY_STATUS and mold_recovery_context is None:
+        raise StorageTrayActionError("当前霉菌取消恢复记录已失效，请刷新后重试。", status_code=409)
 
     mid_context = (
         resolve_mid_experiment_appearance_context(snapshot, tray_code)
@@ -452,8 +526,6 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
     if not target_lab and not target_lab_code:
         raise StorageTrayActionError("请选择目标实验室后再出库。", status_code=400)
 
-    normalized_tray_code = normalize_text(tray_code)
-    task_code = primary_task_code(matches)
     if target_type == "lab" and mid_context is None:
         if not target_schedule_id:
             raise StorageTrayActionError("出库请求缺少当前排程标识，请刷新后重试。", status_code=409)
@@ -479,6 +551,14 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
         target_lab = next_step["lab_name"]
         target_lab_code = next_step["lab_code"]
         target_lab_id = next_step["lab_id"]
+        if mold_recovery_context is not None:
+            source_experiment_code = normalize_text(
+                mold_recovery_context.get("source_experiment_code")
+                or mold_recovery_context.get("experiment_code")
+                or mold_recovery_context.get("target_experiment_code")
+            )
+            if target_experiment_code != source_experiment_code or "霉菌" not in target_lab:
+                raise StorageTrayActionError("霉菌取消恢复处理只能送至该霉菌实验的新排程。", status_code=409)
         occupancy = find_laboratory_occupancy_in_snapshot(
             snapshot,
             target_lab_name=target_lab,
@@ -503,15 +583,38 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
                     "run_no": mid_context["run_no"],
                 }
             )
+        if mold_recovery_context is not None:
+            source_run_no = normalize_text(
+                mold_recovery_context.get("source_run_no")
+                or mold_recovery_context.get("run_no")
+            )
+            source_experiment_code = normalize_text(
+                mold_recovery_context.get("source_experiment_code")
+                or mold_recovery_context.get("experiment_code")
+                or mold_recovery_context.get("target_experiment_code")
+            )
+            appearance_metadata.update(
+                {
+                    "appearance_phase": MOLD_CANCEL_RECOVERY_PHASE,
+                    "recovery_cycle_id": source_run_no,
+                    "source_experiment_code": source_experiment_code,
+                    "source_run_no": source_run_no,
+                }
+            )
     is_staging_target = target_type == STAGING_ROOM or target_lab == STAGING_LOCATION
     location = STAGING_LOCATION if is_staging_target else target_lab
     status = MID_EXPERIMENT_RETURNED_STATUS if mid_context is not None else ("送至暂存间" if is_staging_target else "送至实验室")
     owner = normalize_text(payload.get("operator")) or "扫码登记"
+    history_detail = (
+        f"{normalized_tray_code} 恢复处理完成，送至 {location}"
+        if mold_recovery_context is not None
+        else f"{normalized_tray_code} 送至 {location}"
+    )
     updated_samples = update_tray_samples(
         samples,
         normalized_tray_code,
         history_action=config["history_stock_out_action"],
-        history_detail=f"{normalized_tray_code} 送至 {location}",
+        history_detail=history_detail,
         location=location,
         owner=owner,
         status=status,
@@ -562,16 +665,17 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
         raise StorageTrayActionError(config["duplicate_stock_in_error"], status_code=409)
     normalized_tray_code = normalize_text(tray_code)
     task_code = primary_task_code(matches)
-    canceled_mold_code = (
-        canceled_mold_experiment_code(
+    canceled_mold_context = (
+        canceled_mold_recovery_context(
             snapshot,
             task_code=task_code,
             tray_code=normalized_tray_code,
         )
         if current_status == MOLD_CANCELED_STATUS
-        else ""
+        else None
     )
-    allows_canceled_mold_stock_in = bool(canceled_mold_code)
+    canceled_mold_code = normalize_text((canceled_mold_context or {}).get("experiment_code"))
+    allows_canceled_mold_stock_in = bool(canceled_mold_context) and config["event_room"] == APPEARANCE_ROOM
     allows_partial_axis_stock_in = (
         config["event_room"] == STAGING_ROOM
         and is_partial_axis_completion_status(current_status)
@@ -624,7 +728,11 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
     if mid_context is not None:
         requested_status = MID_EXPERIMENT_APPEARANCE_STATUS
     if allows_canceled_mold_stock_in:
-        status = config["stock_in_status"]
+        status = (
+            MOLD_CANCEL_RECOVERY_STATUS
+            if config["event_room"] == APPEARANCE_ROOM
+            else config["stock_in_status"]
+        )
         location = config["stock_in_location"]
     else:
         status = MID_EXPERIMENT_APPEARANCE_STATUS if mid_context is not None else (requested_status or config["stock_in_status"])
@@ -640,6 +748,16 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
         if target_experiment_code:
             appearance_metadata["target_experiment_code"] = target_experiment_code
             appearance_metadata["experiment_code"] = target_experiment_code
+        if allows_canceled_mold_stock_in and config["event_room"] == APPEARANCE_ROOM:
+            canceled_run_no = normalize_text((canceled_mold_context or {}).get("run_no"))
+            appearance_metadata.update(
+                {
+                    "appearance_phase": MOLD_CANCEL_RECOVERY_PHASE,
+                    "recovery_cycle_id": canceled_run_no,
+                    "source_experiment_code": canceled_mold_code,
+                    "source_run_no": canceled_run_no,
+                }
+            )
         if mid_context is not None:
             appearance_metadata.update(
                 {

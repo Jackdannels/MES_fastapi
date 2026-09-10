@@ -41,6 +41,7 @@ from app.services.laboratory_operations import (
 )
 from app.services.laboratory_start import start_storage_laboratory_experiment
 from app.services.schedule_cascade_runtime import apply_run_schedule_cascade, run_forecast_end_at
+from app.services.salt_spray_resume_preparation import apply_salt_resume_preparation_operation
 from app.services.test_data_reports import archive_completion_reports
 from app.services.laboratory_withdrawal import (
     COMPLETED_EXPERIMENT_STATUSES,
@@ -146,6 +147,20 @@ class LaboratoryOperationRequest(BaseModel):
     tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
     occurred_at: str = Field(default="", alias="occurredAt")
     operation_id: str = Field(default="", alias="operationId")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SaltResumePreparationRequest(BaseModel):
+    operation_type: str = Field(default="", alias="operationType")
+    task_code: str = Field(default="", alias="taskCode")
+    experiment_code: str = Field(default="", alias="experimentCode")
+    run_no: str = Field(default="", alias="runNo")
+    pause_no: str = Field(default="", alias="pauseNo")
+    lab_code: str = Field(default="", alias="labCode")
+    tray_codes: list[str] = Field(default_factory=list, alias="trayCodes")
+    occurred_at: str = Field(default="", alias="occurredAt")
+    fixture_install_id: str = Field(default="", alias="fixtureInstallId")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -363,6 +378,66 @@ def apply_laboratory_operation(
         "operationType": request.operation_type,
         **result,
     }
+
+
+@router.post("/salt-resume-preparation")
+def apply_salt_resume_preparation(
+    request: SaltResumePreparationRequest = Body(default_factory=SaltResumePreparationRequest),
+) -> dict[str, Any]:
+    storage = get_storage_backend()
+    resource_keys = operation_resource_keys(lab_code=request.lab_code, tray_codes=request.tray_codes)
+
+    def run_operation(snapshot: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+        find_task(snapshot, request.task_code)
+        try:
+            return apply_salt_resume_preparation_operation(
+                snapshot,
+                operation_type=request.operation_type,
+                task_code=request.task_code,
+                experiment_code=request.experiment_code,
+                run_no=request.run_no,
+                pause_no=request.pause_no,
+                lab_code=request.lab_code,
+                tray_codes=request.tray_codes,
+                occurred_at=request.occurred_at,
+                fixture_install_id=request.fixture_install_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    result = run_atomic_laboratory_operation(
+        operation=run_operation,
+        publish_storage_update=publish_storage_update,
+        resource_keys=resource_keys,
+        storage=storage,
+        task_code=request.task_code,
+        updates_from_result=lambda operation_result: {
+            "mes.samples": operation_result["samples"],
+            "mes.staging_events": operation_result["stagingEvents"],
+        },
+        update_keys=("mes.samples", "mes.staging_events"),
+    )
+    if normalize_text(request.operation_type) in {"compare", "install", "ready"}:
+        try:
+            get_attendance_service().record_laboratory_workflow_operation(
+                operation_type=request.operation_type,
+                lab_name=resolve_lab_name(read_snapshot(request.task_code), request.task_code, request.experiment_code),
+                lab_code=request.lab_code,
+                task_code=request.task_code,
+                experiment_code=request.experiment_code,
+                tray_codes=result.get("affectedTrayCodes") or request.tray_codes,
+                source="resume-preparation",
+                operated_at=request.occurred_at or now_business_text(),
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record salt resume preparation attendance task=%s run=%s pause=%s operation=%s",
+                request.task_code,
+                request.run_no,
+                request.pause_no,
+                request.operation_type,
+            )
+    return {"ok": True, **result}
 
 
 def experiment_name(snapshot: dict[str, list[dict[str, Any]]], task_code: str, experiment_code: str) -> str:

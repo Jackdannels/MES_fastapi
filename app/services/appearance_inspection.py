@@ -334,13 +334,25 @@ def validate_mid_experiment_trays_ready_for_resume(snapshot: Any, pause_record: 
             and record_text(last_event, "action") == APPEARANCE_STOCK_OUT_ACTION
             and record_text(last_event, "target_lab_code", "targetLabCode") == "LAB_SALT"
         )
+        resume_preparation_started = any(
+            isinstance(event, dict)
+            and record_text(event, "room") == "laboratory_resume_preparation"
+            and record_text(event, "action") == "resume_preparation_started"
+            and record_text(event, "run_no", "runNo") == run_no
+            and record_text(event, "pause_no", "pauseNo") == pause_no
+            and record_text(event, "tray_code", "trayCode") == tray_code
+            for event in as_list(snapshot.get("mes.staging_events"))
+        )
+        acceptable_return_statuses = {MID_EXPERIMENT_RETURNED_STATUS}
+        if resume_preparation_started:
+            acceptable_return_statuses.update({"已到达实验室", "工装夹具安装", "实验准备就绪"})
         sample_returned = any(
             isinstance(sample, dict)
             and normalize_text(sample.get("location")) == record_text(last_event, "target_lab", "targetLab")
             and any(
                 isinstance(tray, dict)
                 and tray_code_text(tray) == tray_code
-                and status_text(tray) == MID_EXPERIMENT_RETURNED_STATUS
+                and status_text(tray) in acceptable_return_statuses
                 for tray in as_list(sample.get("trays"))
             )
             for sample in samples

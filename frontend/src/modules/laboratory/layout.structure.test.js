@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 describe("laboratory workbench layout", () => {
   const pageSource = readFileSync(resolve(process.cwd(), "src/modules/laboratory/page.vue"), "utf8");
   const stylesSource = readFileSync(resolve(process.cwd(), "src/modules/laboratory/styles.css"), "utf8");
+  const usePageSource = readFileSync(resolve(process.cwd(), "src/modules/laboratory/useLaboratoryPage.js"), "utf8");
 
   test("keeps reset red and gives it a dedicated safety column beside login", () => {
     expect(pageSource).toContain('data-testid="laboratory-reset-task"');
@@ -55,7 +56,7 @@ describe("laboratory workbench layout", () => {
   });
 
   test("enlarges compare, install, ready, and salt-spray control dialogs", () => {
-    expect(pageSource).toContain('class="laboratory-operation-modal laboratory-operation-modal--compare"');
+    expect(pageSource).toMatch(/class="laboratory-operation-modal laboratory-operation-modal--compare(?:\s[^"]*)?"/);
     expect(pageSource.match(/class="laboratory-operation-modal(?:\s[^"]*)?"/g)).toHaveLength(7);
     expect(pageSource).toContain('data-testid="laboratory-salt-pause-modal"');
     expect(pageSource).toContain('data-testid="laboratory-salt-stop-modal"');
@@ -79,11 +80,25 @@ describe("laboratory workbench layout", () => {
     expect(pageSource).toContain('data-testid="laboratory-mold-cancel-awaiting-confirmation"');
   });
 
+  test("teleports mold cancellation confirmations to the highest laboratory modal layer", () => {
+    expect(pageSource).toMatch(/<Teleport to="body">\s*<AppModal[\s\S]*?class="laboratory-operation-modal laboratory-mold-cancel-modal--priority"[\s\S]*?data-testid="laboratory-mold-cancel-reason-modal"/);
+    expect(pageSource).toMatch(/<Teleport to="body">\s*<AppModal[\s\S]*?class="laboratory-operation-modal laboratory-mold-cancel-modal--priority"[\s\S]*?data-testid="laboratory-mold-cancel-danger-modal"/);
+    expect(stylesSource).toMatch(/\.modal\.laboratory-mold-cancel-modal--priority\s*\{[^}]*z-index:\s*140/i);
+    expect(stylesSource).toMatch(/\.modal\.laboratory-attendance-login-modal--priority\s*\{[^}]*z-index:\s*120/i);
+  });
+
   test("teleports salt-spray control confirmations above the running experiment overlay", () => {
     expect(pageSource).toMatch(/<Teleport to="body">\s*<AppModal[\s\S]*?class="laboratory-operation-modal laboratory-salt-control-modal--priority"[\s\S]*?data-testid="laboratory-salt-pause-modal"/);
     expect(pageSource).toMatch(/<Teleport to="body">\s*<AppModal[\s\S]*?class="laboratory-operation-modal laboratory-salt-control-modal--priority"[\s\S]*?data-testid="laboratory-salt-stop-modal"/);
     expect(stylesSource).toMatch(/\.laboratory-running-overlay\s*\{[^}]*z-index:\s*60/i);
     expect(stylesSource).toMatch(/\.modal\.laboratory-salt-control-modal--priority\s*\{[^}]*z-index:\s*80/i);
+  });
+
+  test("keeps resume-preparation operation dialogs above the running experiment overlay", () => {
+    expect(pageSource.match(/laboratory-resume-preparation-modal--priority/g)?.length).toBeGreaterThanOrEqual(5);
+    expect(stylesSource).toMatch(/\.modal\.laboratory-resume-preparation-modal--priority\s*\{[^}]*z-index:\s*80/i);
+    expect(usePageSource).toContain("runningModalVisible.value = false");
+    expect(usePageSource).toContain("isRestoreBlocked: () => Boolean(");
   });
 
   test("keeps salt-spray reason textareas on the laboratory dark surface", () => {

@@ -24,6 +24,8 @@ const mountFlow = ({ labCode = "LAB_SALT", paused = false, trayCodes = ["TRAY-1"
   const requestPause = vi.fn(async () => true);
   const requestResume = vi.fn(async () => true);
   const requestStop = vi.fn(async () => true);
+  const startResumePreparation = vi.fn(async () => true);
+  const onResumeRequested = vi.fn();
   let flow;
   const wrapper = mount(defineComponent({
     setup() {
@@ -32,10 +34,12 @@ const mountFlow = ({ labCode = "LAB_SALT", paused = false, trayCodes = ["TRAY-1"
         experimentRunPauses,
         experimentRuns,
         laboratoryConfig: ref({ labCode }),
+        onResumeRequested,
         refreshAuthoritativeState: vi.fn(async () => {}),
         requestPause,
         requestResume,
         requestStop,
+        startResumePreparation,
         runWithAttendance: async (callback) => callback(),
         runningExperiment: ref({ active: true, experimentCode: "EXP-SALT", runNo: "RUN-SALT", taskCode: "TASK-SALT", trayCodes }),
         samples,
@@ -44,7 +48,7 @@ const mountFlow = ({ labCode = "LAB_SALT", paused = false, trayCodes = ["TRAY-1"
       return () => null;
     },
   }));
-  return { experimentRunPauses, experimentRuns, flow, requestPause, requestResume, requestStop, samples, stagingEvents, wrapper };
+  return { experimentRunPauses, experimentRuns, flow, onResumeRequested, requestPause, requestResume, requestStop, samples, stagingEvents, startResumePreparation, wrapper };
 };
 
 describe("useSaltSprayPauseFlow", () => {
@@ -110,7 +114,7 @@ describe("useSaltSprayPauseFlow", () => {
     mounted.wrapper.unmount();
   });
 
-  test("enables resume after the selected tray returned to LAB_SALT even when the optional conclusion is blank", async () => {
+  test("starts same-pause preparation without immediately publishing resume after all trays return", async () => {
     vi.useFakeTimers();
     const mounted = mountFlow({ paused: true });
     expect(mounted.flow.canResume.value).toBe(false);
@@ -134,11 +138,33 @@ describe("useSaltSprayPauseFlow", () => {
 
     expect(mounted.flow.canResume.value).toBe(true);
     await mounted.flow.requestContinue();
-    expect(mounted.requestResume).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mounted.startResumePreparation).toHaveBeenCalledWith(expect.objectContaining({
+      operation_type: "start",
       pause_no: "PAUSE-1",
       run_no: "RUN-SALT",
     }));
+    expect(mounted.requestResume).not.toHaveBeenCalled();
     expect(mounted.flow.isPaused.value).toBe(true);
+    mounted.wrapper.unmount();
+  });
+
+  test("reports a resume preparation validation failure separately from MQTT confirmation errors", async () => {
+    const mounted = mountFlow({ paused: true });
+    mounted.stagingEvents.value = [{
+      action: "stock_out", appearance_phase: "mid_experiment", pause_no: "PAUSE-1",
+      room: "appearance", run_no: "RUN-SALT", target_lab_code: "LAB_SALT", tray_code: "TRAY-1",
+    }];
+    mounted.samples.value = [{
+      location: "盐雾试验室",
+      trays: [{ status: "等待恢复实验", tray_code: "TRAY-1" }],
+    }];
+    mounted.startResumePreparation.mockRejectedValueOnce(new Error("恢复准备上下文不匹配"));
+    await nextTick();
+
+    await mounted.flow.requestContinue();
+
+    expect(mounted.flow.resumePreparationError.value).toBe("恢复准备上下文不匹配");
+    expect(mounted.flow.controlConfirmationError.value).toBe("");
     mounted.wrapper.unmount();
   });
 
@@ -155,6 +181,34 @@ describe("useSaltSprayPauseFlow", () => {
       termination_type: "completion_criteria",
     }));
     expect(mounted.flow.isPaused.value).toBe(true);
+    mounted.wrapper.unmount();
+  });
+
+  test("publishes resume only after the current run and pause have persisted ready evidence", async () => {
+    vi.useFakeTimers();
+    const mounted = mountFlow({ paused: true });
+    mounted.stagingEvents.value = [
+      "resume_preparation_started",
+      "resume_preparation_compared",
+      "resume_preparation_installed",
+      "resume_preparation_fixture_ready",
+      "resume_preparation_ready",
+    ].map((action) => ({
+      action,
+      pause_no: "PAUSE-1",
+      room: "laboratory_resume_preparation",
+      run_no: "RUN-SALT",
+      tray_code: "TRAY-1",
+    }));
+    await nextTick();
+
+    expect(mounted.flow.resumePreparationReady.value).toBe(true);
+    await mounted.flow.requestPreparedResume();
+    expect(mounted.requestResume).toHaveBeenCalledWith(expect.objectContaining({
+      pause_no: "PAUSE-1",
+      run_no: "RUN-SALT",
+    }));
+    expect(mounted.onResumeRequested).toHaveBeenCalledTimes(1);
     mounted.wrapper.unmount();
   });
 });

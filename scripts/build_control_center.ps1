@@ -1,6 +1,6 @@
 param(
     [string]$ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path,
-    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.2.exe"),
+    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.3.exe"),
     [string]$IconPath = (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path "assets\mes-control-center.ico"),
     [switch]$NoAdminManifest
 )
@@ -99,8 +99,9 @@ function New-ControlCenterIcon {
 $projectRootPath = (Resolve-Path -LiteralPath $ProjectRoot).Path
 $controlCenterSource = Join-Path $projectRootPath "tools\control-center\MESControlCenter.cs"
 $terminalSource = Join-Path $projectRootPath "scripts\client\MESTerminalManager.cs"
+$discoverySource = Join-Path $projectRootPath "scripts\client\MESServerDiscovery.cs"
 $controlScript = Join-Path $projectRootPath "scripts\mes-service-control.ps1"
-foreach ($requiredPath in @($controlCenterSource, $terminalSource, $controlScript)) {
+foreach ($requiredPath in @($controlCenterSource, $terminalSource, $discoverySource, $controlScript)) {
     if (-not (Test-Path -LiteralPath $requiredPath)) { throw "Cannot find required control-center input: $requiredPath" }
 }
 
@@ -144,7 +145,7 @@ try {
         "/out:$OutputPath"
     )
     if (-not $NoAdminManifest) { $arguments += "/win32manifest:$temporaryManifest" }
-    $arguments += @($temporaryControlSource, $temporaryTerminalSource)
+    $arguments += @($temporaryControlSource, $temporaryTerminalSource, $discoverySource)
     & $csc $arguments
     if ($LASTEXITCODE -ne 0) { throw "MES control center compilation failed with exit code $LASTEXITCODE." }
 }

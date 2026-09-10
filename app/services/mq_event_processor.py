@@ -52,6 +52,10 @@ from app.services.salt_spray_pause import (
     COMMAND_CONFIRMATION_TIMEOUT_SECONDS, TERMINATION_ABNORMAL, TERMINATION_TYPES,
     decode_command_payload, inspection_tray_codes, pause_no_from_payload, shifted_planned_end,
 )
+from app.services.salt_spray_resume_preparation import (
+    apply_salt_resume_confirmation,
+    validate_salt_resume_preparation_ready,
+)
 from app.services.storage_update_bus import publish_storage_update
 from app.services.test_data_reports import archive_completion_reports
 from app.services.mq_event_protocol import (
@@ -612,6 +616,20 @@ class MySQLMqEventRepository:
         if not pause_record:
             raise ValueError("当前实验不存在可恢复的暂停区间")
         validate_mid_experiment_trays_ready_for_resume(snapshot, pause_record)
+        normalized_snapshot = normalize_storage_payload(snapshot)
+        resume_snapshot = {
+            key.removeprefix("mes."): value
+            for key, value in normalized_snapshot.items()
+        }
+        validate_salt_resume_preparation_ready(resume_snapshot, pause_record)
+        resume_result = apply_salt_resume_confirmation(
+            resume_snapshot,
+            pause=pause_record,
+            occurred_at=occurred_at,
+        )
+        transitioned = False
+        already_resumed = False
+        next_end = ""
         with get_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -621,17 +639,29 @@ class MySQLMqEventRepository:
                 )
                 row = cursor_row_as_dict(cursor) or {}
                 if normalize_text(row.get("pause_status")) == PAUSE_RESUMED:
-                    return
-                if normalize_text(row.get("pause_status")) != PAUSED or normalize_text(row.get("run_status")) != PAUSED:
+                    already_resumed = True
+                elif normalize_text(row.get("pause_status")) != PAUSED or normalize_text(row.get("run_status")) != PAUSED:
                     raise ValueError("当前实验不存在可恢复的暂停区间")
-                paused_at, resumed_at = parse_beijing_datetime(row.get("paused_at")), parse_beijing_datetime(occurred_at)
-                if paused_at is None or resumed_at is None or resumed_at < paused_at:
-                    raise ValueError("恢复时间不得早于暂停时间")
-                seconds = int((resumed_at - paused_at).total_seconds())
-                next_end = shifted_planned_end(row.get("planned_end_at"), seconds)
-                cursor.execute("UPDATE biz_experiment_run_pause SET pause_status=%s,resumed_at=%s,pause_seconds=%s,updated_at=%s WHERE pause_no=%s", (PAUSE_RESUMED,mysql_datetime_text(occurred_at),seconds,mysql_datetime_text(occurred_at),pause_no))
-                cursor.execute("UPDATE biz_experiment_run SET run_status=%s,planned_end_at=%s,updated_at=%s WHERE run_no=%s", (RUNNING,next_end or row.get("planned_end_at"),mysql_datetime_text(occurred_at),run_no))
+                else:
+                    paused_at, resumed_at = parse_beijing_datetime(row.get("paused_at")), parse_beijing_datetime(occurred_at)
+                    if paused_at is None or resumed_at is None or resumed_at < paused_at:
+                        raise ValueError("恢复时间不得早于暂停时间")
+                    seconds = int((resumed_at - paused_at).total_seconds())
+                    next_end = shifted_planned_end(row.get("planned_end_at"), seconds)
+                    cursor.execute("UPDATE biz_experiment_run_pause SET pause_status=%s,resumed_at=%s,pause_seconds=%s,updated_at=%s WHERE pause_no=%s", (PAUSE_RESUMED,mysql_datetime_text(occurred_at),seconds,mysql_datetime_text(occurred_at),pause_no))
+                    cursor.execute("UPDATE biz_experiment_run SET run_status=%s,planned_end_at=%s,updated_at=%s WHERE run_no=%s", (RUNNING,next_end or row.get("planned_end_at"),mysql_datetime_text(occurred_at),run_no))
+                    transitioned = True
             connection.commit()
+        if transitioned or already_resumed:
+            task_code = normalize_text(pause_record.get("task_code") or pause_record.get("task_no"))
+            with acquire_laboratory_storage_commit_lock():
+                write_laboratory_updates(
+                    storage,
+                    {"mes.samples": resume_result["samples"]},
+                    scoped_samples=resume_result["affectedSamples"],
+                    task_codes={task_code} if task_code else None,
+                )
+            publish_storage_update(["mes.samples", "mes.experiment_runs", "mes.experiment_run_pauses"])
         if next_end:
             apply_run_schedule_cascade(storage, {"run_no": run_no, "schedule_id": row.get("schedule_no")}, new_end_at=next_end, reason="盐雾实验暂停恢复")
 
@@ -1319,8 +1349,20 @@ def process_laboratory_event(
     created_run_from_context = False
     started_existing_axis = False
     if message_type == "EXPERIMENT_STARTED":
+        existing_payload_run = repo.find_run_by_no(payload_run_no) if payload_run_no else None
+        if (
+            lab_code == SALT_LAB_CODE
+            and existing_payload_run
+            and normalize_text(existing_payload_run.get("run_status") or existing_payload_run.get("status")) == PAUSED
+        ):
+            return build_ack(
+                message_id,
+                "REJECTED",
+                "RESUME_EVENT_REQUIRED",
+                "盐雾暂停运行必须通过 experiment-resumed 恢复，不能重复 experiment-started",
+            )
         if payload_run_no and payload_axis_code:
-            run = repo.find_run_by_no(payload_run_no)
+            run = existing_payload_run or repo.find_run_by_no(payload_run_no)
             started_existing_axis = bool(run and run_axis_codes(run))
         if started_existing_axis:
             context = run
@@ -1506,8 +1548,17 @@ def process_laboratory_event(
     elif message_type == "EXPERIMENT_ENDED":
         if not mold_cancel_command:
             repo.mark_run_ended(run_no, occurred_at, payload_axis_code, payload_next_axis_code, sub_experiment_code)
-        if mold_cancel_command or should_finish_work_interval_for_completion(axis_code=payload_axis_code, next_axis_code=payload_next_axis_code):
-            get_attendance_service().finish_work_interval(
+        attendance_service = get_attendance_service()
+        if mold_cancel_command:
+            attendance_service.logout_lab(
+                lab_code=lab_code,
+                lab_name=normalize_text((run or {}).get("device_name") or (run or {}).get("device")),
+                reason="mold-cancel",
+                ended_at=occurred_at,
+                source="mqtt",
+            )
+        elif should_finish_work_interval_for_completion(axis_code=payload_axis_code, next_axis_code=payload_next_axis_code):
+            attendance_service.finish_work_interval(
                 run_no=run_no,
                 lab_code=lab_code,
                 ended_at=occurred_at,

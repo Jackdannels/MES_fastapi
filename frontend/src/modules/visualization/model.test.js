@@ -679,6 +679,42 @@ describe("visualization model", () => {
     ]);
   });
 
+  test("keeps mold recovery and arrival state aligned with the samples tray flow", () => {
+    const taskCode = "TASK-MOLD-RECOVERY-VIS";
+    const trayCode = `${taskCode}-TP-001`;
+    const experimentCode = `${taskCode}-A`;
+    const panels = buildLabProcessPanels({
+      labNames: ["霉菌试验室"],
+      tasks: [{ code: taskCode, name: "霉菌恢复任务" }],
+      experiments: [{ task_code: taskCode, experiment_code: experimentCode, experiment_name: "霉菌试验", required_device: "霉菌试验室" }],
+      experimentTrays: [{ task_code: taskCode, experiment_code: experimentCode, tray_code: trayCode }],
+      schedules: [{ task_code: taskCode, experiment_code: experimentCode, device: "霉菌试验室", status: "已排程" }],
+      experimentRunTrays: [{ task_code: taskCode, experiment_code: experimentCode, tray_code: trayCode, run_no: "RUN-CANCEL", run_tray_status: "实验已取消", ended_at: "2026-09-04 15:33:00" }],
+      samples: [{
+        code: `${taskCode}-SP-001`,
+        task_code: taskCode,
+        location: "外观检测间",
+        status: "霉菌取消后恢复处理中",
+        trays: [{ tray_code: trayCode, status: "霉菌取消后恢复处理中", quantity: 1 }],
+        history: [
+          { action: "外观检测间扫码入库", status: "霉菌取消后恢复处理中", location: "外观检测间", time: "2026-09-04 15:33:29", tray_code: trayCode },
+          { action: "任务已确认入库", status: "到货", time: "2026-09-04 15:31:30", tray_code: trayCode },
+          { action: "样品分装托盘", status: "运输中", time: "2026-09-04 15:31:22", tray_code: trayCode },
+        ],
+      }],
+      stagingEvents: [{ task_code: taskCode, tray_code: trayCode, room: "appearance", action: "stock_in", status: "霉菌取消后恢复处理中", appearance_phase: "mold_cancel_recovery", source_experiment_code: experimentCode, source_run_no: "RUN-CANCEL", recovery_cycle_id: "RUN-CANCEL", time: "2026-09-04 15:33:29" }],
+    });
+
+    const tray = panels[0]?.trays[0];
+    expect(tray).toEqual(expect.objectContaining({ status: "霉菌取消后恢复处理", trayCode }));
+    expect(tray?.steps.find((step) => step.label === "到货")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-09-04 15:31:30" }),
+    );
+    expect(tray?.steps.find((step) => step.label === "霉菌取消后恢复处理")).toEqual(
+      expect.objectContaining({ active: true, time: "2026-09-04 15:33:29" }),
+    );
+  });
+
   test("keeps the salt-spray pause remark on the laboratory flow while the tray is in appearance", () => {
     const taskCode = "TASK-SALT-PAUSED";
     const experimentCode = "EXP-SALT-PAUSED";
@@ -727,6 +763,16 @@ describe("visualization model", () => {
           tray_code: trayCode,
         }],
       }],
+      stagingEvents: [{
+        action: "stock_in",
+        appearance_phase: "mid_experiment",
+        pause_no: "PAUSE-SALT-1",
+        room: "appearance",
+        run_no: "RUN-SALT-1",
+        task_code: taskCode,
+        time: "2026-09-02 10:05:00",
+        tray_code: trayCode,
+      }],
       schedules: [{ device: "盐雾试验室", experiment_code: experimentCode, status: "实验暂停", task_code: taskCode }],
     };
 
@@ -737,9 +783,65 @@ describe("visualization model", () => {
       trayCode,
     }));
     expect(pausedTray?.steps).toContainEqual(expect.objectContaining({
-      active: true,
       label: "盐雾试验进行中（暂停）",
     }));
+    expect(pausedTray?.steps).toContainEqual(expect.objectContaining({
+      active: true,
+      label: "中途外观检测",
+      time: "2026-09-02 10:05:00",
+    }));
+    expect(pausedTray?.steps.filter((step) => [
+      "送至盐雾试验室", "已到达实验室", "工装夹具安装", "实验准备就绪",
+    ].includes(step.label))).toHaveLength(4);
+    expect(pausedTray?.steps.filter((step) => step.pauseResetRequired)).toHaveLength(4);
+
+    const returnedTray = buildLabProcessPanels({
+      ...baseInput,
+      stagingEvents: [
+        ...baseInput.stagingEvents,
+        {
+          action: "stock_out",
+          appearance_phase: "mid_experiment",
+          pause_no: "PAUSE-SALT-1",
+          room: "appearance",
+          run_no: "RUN-SALT-1",
+          target_lab: "盐雾试验室",
+          task_code: taskCode,
+          time: "2026-09-02 10:15:00",
+          tray_code: trayCode,
+        },
+      ],
+    })[0]?.trays[0];
+    expect(returnedTray?.steps.some((step) => step.label === "中途外观检测")).toBe(false);
+    expect(returnedTray?.steps.find((step) => step.label === "送至盐雾试验室")?.time)
+      .toBe("2026-09-02 10:15:00");
+
+    const comparedTray = buildLabProcessPanels({
+      ...baseInput,
+      stagingEvents: [
+        ...baseInput.stagingEvents,
+        {
+          action: "stock_out",
+          appearance_phase: "mid_experiment",
+          pause_no: "PAUSE-SALT-1",
+          room: "appearance",
+          run_no: "RUN-SALT-1",
+          target_lab: "盐雾试验室",
+          task_code: taskCode,
+          time: "2026-09-02 10:15:00",
+          tray_code: trayCode,
+        },
+        { action: "resume_preparation_started", pause_no: "PAUSE-SALT-1", room: "laboratory_resume_preparation", run_no: "RUN-SALT-1", task_code: taskCode, time: "2026-09-02 10:16:00", tray_code: trayCode },
+        { action: "resume_preparation_compared", pause_no: "PAUSE-SALT-1", room: "laboratory_resume_preparation", run_no: "RUN-SALT-1", task_code: taskCode, time: "2026-09-02 10:17:00", tray_code: trayCode },
+      ],
+    })[0]?.trays[0];
+    expect(comparedTray?.status).toBe("已到达实验室");
+    expect(comparedTray?.steps.find((step) => step.label === "已到达实验室"))
+      .toEqual(expect.objectContaining({ active: true, pauseResetState: "active" }));
+    expect(comparedTray?.steps.find((step) => step.label === "工装夹具安装"))
+      .toEqual(expect.objectContaining({ pauseResetState: "pending" }));
+    expect(comparedTray?.steps.find((step) => step.label === "实验准备就绪"))
+      .toEqual(expect.objectContaining({ pauseResetState: "pending" }));
 
     const resumedTray = buildLabProcessPanels({
       ...baseInput,
@@ -764,6 +866,8 @@ describe("visualization model", () => {
       active: true,
       label: "盐雾试验进行中",
     }));
+    expect(resumedTray?.steps.some((step) => step.pauseResetRequired)).toBe(false);
+    expect(resumedTray?.steps.some((step) => step.label === "中途外观检测")).toBe(false);
   });
 
   test("buildLabProcessPanels traverses shared projection inputs once for multiple laboratories", () => {

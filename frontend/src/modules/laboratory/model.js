@@ -118,6 +118,7 @@ function buildLaboratoryWorkbenchView({
   experimentRunTrays = [],
   experimentTrays = [],
   samples = [],
+  stagingEvents = [],
   now = serverNowDate(),
   selectedTaskCode = "",
   selectedTrayCode = "",
@@ -310,6 +311,7 @@ function buildLaboratoryWorkbenchView({
         location: normalizeText(selectedTrayRow?.lifecycleLocation) || normalizeText(selectedTrayRow?.currentLocation),
         samples,
         schedules,
+        stagingEvents,
         status: selectedTrayFlowStatus,
         preferCurrentExperimentCode: (
           selectedTrayProjectsCurrentDispatchStatus

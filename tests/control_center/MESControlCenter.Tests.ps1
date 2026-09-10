@@ -3,8 +3,12 @@ $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Pat
 Describe "MES control center integration" {
     $sourcePath = Join-Path $projectRoot "tools\control-center\MESControlCenter.cs"
     $buildPath = Join-Path $projectRoot "scripts\build_control_center.ps1"
+    $terminalSourcePath = Join-Path $projectRoot "scripts\client\MESTerminalManager.cs"
+    $terminalBuildPath = Join-Path $projectRoot "scripts\build_terminal_manager.ps1"
     $source = Get-Content -LiteralPath $sourcePath -Raw
     $build = Get-Content -LiteralPath $buildPath -Raw
+    $terminalSource = Get-Content -LiteralPath $terminalSourcePath -Raw
+    $terminalBuild = Get-Content -LiteralPath $terminalBuildPath -Raw
 
     It "combines service control and the existing terminal client in one form" {
         $source | Should Match 'internal sealed class ControlCenterForm : Form'
@@ -37,10 +41,10 @@ Describe "MES control center integration" {
         $source | Should Match 'ValidateLayout\(\)'
     }
 
-    It "exposes v2.2 and four independently visible service states" {
-        $source | Should Match 'AssemblyVersion\("2\.2\.0\.0"\)'
-        $source | Should Match 'MES 控制中心 v2\.2'
-        $build | Should Match 'MES控制中心_v2\.2\.exe'
+    It "exposes v2.3 and four independently visible service states" {
+        $source | Should Match 'AssemblyVersion\("2\.3\.0\.0"\)'
+        $source | Should Match 'MES 控制中心 v2\.3'
+        $build | Should Match 'MES控制中心_v2\.3\.exe'
         $source | Should Match 'AddServiceLine\(lines, "后端服务", ":8000"\)'
         $source | Should Match 'AddServiceLine\(lines, "前端服务", ":5173"\)'
         $source | Should Match 'AddServiceLine\(lines, "LIMS 模拟器", ":8900"\)'
@@ -49,8 +53,12 @@ Describe "MES control center integration" {
         $source | Should Match 'indicator\.Dot\.BackColor = ready \? Theme\.Accent : Theme\.Danger'
     }
 
-    It "defaults terminal management to the stable MES hostname" {
-        $source | Should Match 'http://mes-server:5173'
+    It "auto-discovers the current MES IP in both management clients" {
+        $source | Should Match 'MESServerDiscovery\.Discover\("http://192\.168\.110\.15:5173"\)'
+        $terminalSource | Should Match 'AssemblyVersion\("1\.3\.0\.0"\)'
+        $terminalSource | Should Match 'MES 终端管理 v1\.3'
+        $terminalSource | Should Match 'MESServerDiscovery\.Discover\("http://192\.168\.110\.15:5173"\)'
+        $terminalBuild | Should Match 'MES终端管理_v1\.3\.exe'
     }
 
     It "uses real health contracts and reports partial readiness" {

@@ -577,6 +577,7 @@ const selectedTrayFlow = computed(() =>
     location: selectedTray.value?.status === "已到达暂存间" ? "恒温恒湿间（暂存间）" : "",
     samples: props.samplesFlow.rawSamples,
     schedules: props.samplesFlow.rawSchedules,
+    stagingEvents: props.samplesFlow.rawStagingEvents,
     taskCode: selectedTray.value?.taskCode,
     trayCode: selectedTray.value?.trayCode,
     status: selectedTray.value?.status,

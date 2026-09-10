@@ -873,6 +873,67 @@ describe("LaboratoryPage runtime", () => {
     vi.unstubAllGlobals();
   });
 
+  test("hides the running overlay while the resume-preparation comparison dialog is open", async () => {
+    const taskCode = "SYLU-2026-04-101";
+    const experimentCode = `${taskCode}-A`;
+    const trayCode = "TP-001";
+    const runNo = "RUN-SALT-RESUME-DIALOG";
+    const pauseNo = "PAUSE-SALT-RESUME-DIALOG";
+    snapshotState = createSnapshot();
+    snapshotState[STORAGE_KEYS.samples] = [{
+      code: `${taskCode}-SP-001`,
+      flow_status: "等待恢复实验",
+      location: "盐雾试验室",
+      owner: "王工",
+      status: "等待恢复实验",
+      task_code: taskCode,
+      trays: [{ quantity: 1, status: "等待恢复实验", tray_code: trayCode }],
+    }];
+    snapshotState[STORAGE_KEYS.experiment_runs] = [{
+      device: "盐雾试验室",
+      experiment_code: experimentCode,
+      planned_end_at: "2026-04-02T11:00:00.000Z",
+      run_no: runNo,
+      schedule_id: "schedule-1",
+      started_at: "2026-04-02T09:30:00.000Z",
+      status: "实验暂停",
+      task_code: taskCode,
+      tray_codes: [trayCode],
+    }];
+    snapshotState[STORAGE_KEYS.experiment_run_trays] = [{
+      experiment_code: experimentCode,
+      run_no: runNo,
+      run_tray_status: "实验进行中",
+      task_code: taskCode,
+      tray_code: trayCode,
+    }];
+    snapshotState[STORAGE_KEYS.experiment_run_pauses] = [{
+      inspection_tray_codes: [trayCode],
+      lab_code: "LAB_SALT",
+      pause_no: pauseNo,
+      paused_at: "2026-04-02T10:00:00.000Z",
+      run_no: runNo,
+      status: "实验暂停",
+    }];
+    snapshotState[STORAGE_KEYS.staging_events] = [{
+      action: "resume_preparation_started",
+      pause_no: pauseNo,
+      room: "laboratory_resume_preparation",
+      run_no: runNo,
+      task_code: taskCode,
+      tray_code: trayCode,
+    }];
+
+    const mounted = await mountPage();
+    expect(document.body.querySelector('[data-testid="laboratory-running-overlay"]')).toBeTruthy();
+    document.body.querySelector('[data-testid="laboratory-salt-resume-compare"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPageUpdates();
+
+    expect(document.body.querySelector('[data-testid="laboratory-running-overlay"]')).toBeNull();
+    expect(mounted.get('[data-testid="laboratory-compare-modal"]').classes()).toContain("is-open");
+  });
+
   test("does not start attendance work timing when only the compare step begins", async () => {
     attendanceSessionState = {
       active: true,
@@ -6257,13 +6318,19 @@ describe("LaboratoryPage runtime", () => {
     expect(cancelButton?.textContent || "").toContain("取消本次霉菌实验");
     cancelButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushPageUpdates();
+    const reasonModal = document.body.querySelector('[data-testid="laboratory-mold-cancel-reason-modal"]');
+    expect(reasonModal?.parentElement).toBe(document.body);
+    expect(reasonModal?.classList.contains("laboratory-mold-cancel-modal--priority")).toBe(true);
     const reasonInput = document.body.querySelector('[data-testid="laboratory-mold-cancel-reason"]');
     expect(reasonInput?.value).toBe("霉菌未按预期繁殖");
     reasonInput.value = "培养物未按预期繁殖";
     reasonInput.dispatchEvent(new Event("input", { bubbles: true }));
     document.body.querySelector('[data-testid="laboratory-mold-cancel-continue"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flushPageUpdates();
-    expect(document.body.querySelector('[data-testid="laboratory-mold-cancel-danger-modal"].is-open')).toBeTruthy();
+    const dangerModal = document.body.querySelector('[data-testid="laboratory-mold-cancel-danger-modal"].is-open');
+    expect(dangerModal).toBeTruthy();
+    expect(dangerModal?.parentElement).toBe(document.body);
+    expect(dangerModal?.classList.contains("laboratory-mold-cancel-modal--priority")).toBe(true);
 
     document.body.querySelector('[data-testid="laboratory-mold-cancel-confirm"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await waitForLaboratoryMqCall("/api/mq/laboratory/cancel-request");

@@ -154,6 +154,7 @@ const buildLabCard = ({ deviceRow, labName, now, rawDevice, snapshot }) => {
     experimentRunTrays: snapshot.experimentRunTrays,
     experimentTrays: snapshot.experimentTrays,
     samples: snapshot.samples,
+    stagingEvents: snapshot.stagingEvents,
     now,
     labName,
     labCode: normalizeText(deviceRow?.code),

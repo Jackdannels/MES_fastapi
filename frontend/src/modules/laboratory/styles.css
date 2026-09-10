@@ -290,6 +290,14 @@
   z-index: 80;
 }
 
+.modal.laboratory-resume-preparation-modal--priority {
+  z-index: 80;
+}
+
+.modal.laboratory-mold-cancel-modal--priority {
+  z-index: 140;
+}
+
 .laboratory-running-overlay__backdrop {
   position: absolute;
   inset: 0;

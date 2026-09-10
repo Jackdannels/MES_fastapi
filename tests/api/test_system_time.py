@@ -16,3 +16,15 @@ def test_system_time_returns_beijing_server_timestamp() -> None:
     parsed = datetime.fromisoformat(payload["iso"])
     assert parsed.utcoffset().total_seconds() == 8 * 60 * 60
     assert abs(int(parsed.timestamp() * 1000) - payload["epochMs"]) < 1000
+
+
+def test_mes_discovery_exposes_stable_service_marker() -> None:
+    with TestClient(create_app()) as client:
+        response = client.get("/api/system/discovery")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "service": "MES_FASTAPI",
+        "apiVersion": 1,
+        "frontendPort": 5173,
+    }

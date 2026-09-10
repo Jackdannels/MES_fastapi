@@ -23,8 +23,10 @@ import { hidePendingFlowStepTimes } from "./sampleFlow.flowTimeHelpers";
 import { resolveEffectiveTrayLifecycleStatus } from "./sampleFlow.trayLifecycle";
 import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
 import {
+  resolveSaltSprayMidExperimentAppearance,
   resolveSaltSprayPauseFlowLabel,
   resolveSaltSprayPauseRemark,
+  resolveSaltSprayResumePreparation,
 } from "@/lib/saltSprayPauseDisplay";
 import { buildTrayFlowTimeMap } from "./sampleFlow.flowTimeMap";
 import {
@@ -39,6 +41,112 @@ import { buildSingleExperimentTrayFlow } from "./sampleFlow.trayFlowSingle";
 import { createTrayFlowStepTools } from "./sampleFlow.trayFlowStepHelpers";
 import { buildCompletedTrayFlowState } from "./sampleFlow.trayFlowCompleted";
 import { decorateMoldCancellationSteps } from "./sampleFlow.moldCancellation";
+
+const SALT_SPRAY_PAUSE_RESET_LABELS = new Set([
+  "送至盐雾试验室",
+  "已到达实验室",
+  "工装夹具安装",
+  "实验准备就绪",
+]);
+
+const SALT_SPRAY_RESET_STEP_BY_LABEL = {
+  "送至盐雾试验室": "dispatch",
+  "已到达实验室": "compare",
+  "工装夹具安装": "install",
+  "实验准备就绪": "ready",
+};
+
+const projectSaltSprayPauseFlow = ({ displayRemark, input, steps, trayCode }) => {
+  if (!displayRemark) {
+    return steps;
+  }
+  const midAppearance = resolveSaltSprayMidExperimentAppearance({
+    experimentRunPauses: input.experimentRunPauses || input.experiment_run_pauses,
+    experimentRuns: input.experimentRuns || input.experiment_runs,
+    experimentRunTrays: input.experimentRunTrays || input.experiment_run_trays,
+    stagingEvents: input.stagingEvents || input.staging_events,
+    trayCode,
+  });
+  const preparation = resolveSaltSprayResumePreparation({
+    experimentRunPauses: input.experimentRunPauses || input.experiment_run_pauses,
+    experimentRuns: input.experimentRuns || input.experiment_runs,
+    experimentRunTrays: input.experimentRunTrays || input.experiment_run_trays,
+    stagingEvents: input.stagingEvents || input.staging_events,
+    trayCode,
+  });
+  const completedResetSteps = new Set([
+    ...(preparation.started ? ["dispatch"] : []),
+    ...(preparation.compared ? ["compare"] : []),
+    ...(preparation.fixtureReady ? ["install"] : []),
+    ...(preparation.ready ? ["ready"] : []),
+  ]);
+  const activeResetStep = preparation.ready
+    ? "ready"
+    : preparation.installed
+      ? "install"
+      : preparation.compared
+        ? "compare"
+        : preparation.started
+          ? "dispatch"
+          : "";
+  const resetStepTime = {
+    compare: preparation.comparedAt,
+    dispatch: midAppearance.returnedAt || preparation.startedAt,
+    install: preparation.fixtureReadyAt || preparation.installedAt,
+    ready: preparation.readyAt,
+  };
+  const projected = steps.map((step) => {
+    const next = { ...step };
+    const resetStep = SALT_SPRAY_RESET_STEP_BY_LABEL[normalizeText(next.label)];
+    if (!preparation.started && SALT_SPRAY_PAUSE_RESET_LABELS.has(normalizeText(next.label))) {
+      next.pauseResetRequired = true;
+    }
+    if (preparation.started && resetStep) {
+      next.active = resetStep === activeResetStep;
+      next.reached = completedResetSteps.has(resetStep) && resetStep !== activeResetStep;
+      next.resumePreparationStep = true;
+      next.pauseResetState = resetStep === activeResetStep
+        ? "active"
+        : completedResetSteps.has(resetStep)
+          ? "completed"
+          : "pending";
+      next.pauseResetRequired = completedResetSteps.has(resetStep);
+      next.time = resetStepTime[resetStep] || "";
+    } else if (midAppearance.returnedAt && normalizeText(next.label) === "送至盐雾试验室") {
+      next.time = midAppearance.returnedAt;
+    }
+    return next;
+  });
+  if (preparation.started) {
+    projected.forEach((step) => {
+      if (!step.resumePreparationStep && step.active) {
+        step.active = false;
+        step.reached = true;
+      }
+    });
+  }
+  if (!midAppearance.visible) {
+    return projected;
+  }
+  const runningIndex = projected.findIndex((step) => /盐雾(?:试验|实验)进行中（暂停）$/.test(normalizeText(step.label)));
+  if (runningIndex < 0) {
+    return projected;
+  }
+  projected.forEach((step) => {
+    if (step.active) {
+      step.active = false;
+      step.reached = true;
+    }
+  });
+  projected.splice(runningIndex + 1, 0, {
+    active: true,
+    key: `salt-spray-mid-appearance-${midAppearance.runNo}-${midAppearance.pauseNo}`,
+    label: "中途外观检测",
+    reached: false,
+    time: midAppearance.stockedAt,
+  });
+  return projected;
+};
 
 function buildTrayFlowEngine(input = {}) {
   const effectiveStatus = resolveEffectiveTrayLifecycleStatus(input);
@@ -656,7 +764,12 @@ function buildTrayFlowEngine(input = {}) {
         step.label = resolveSaltSprayPauseFlowLabel(step.label, displayRemark);
       }
     });
-    const displayCurrentStatus = normalizeText(steps.find((step) => step.active)?.label) || currentStatus;
+    const projectedSteps = projectSaltSprayPauseFlow({ displayRemark, input, steps, trayCode });
+    const displayCurrentStatus = normalizeText(
+      projectedSteps.find((step) => step.active && step.resumePreparationStep)?.label
+      || projectedSteps.find((step) => /盐雾(?:试验|实验)进行中（暂停）$/.test(normalizeText(step.label)))?.label
+      || projectedSteps.find((step) => step.active)?.label,
+    ) || currentStatus;
 
     return decorateMoldCancellationSteps({
       canonicalStatus: currentStatus,
@@ -664,7 +777,7 @@ function buildTrayFlowEngine(input = {}) {
       trayCode,
       status: displayCurrentStatus,
       currentStatus: `${trayCode ? `当前托盘：${trayCode} | ` : ""}当前状态：${displayCurrentStatus}${displayRemark ? ` | 备注：${displayRemark}` : ""}`,
-      steps,
+      steps: projectedSteps,
     }, effectiveInput);
   }
 
@@ -674,13 +787,18 @@ function buildTrayFlowEngine(input = {}) {
       ? { ...step, label: resolveSaltSprayPauseFlowLabel(step.label, displayRemark) }
       : step
   ));
-  const displayCurrentStatus = normalizeText(steps.find((step) => step.active)?.label) || singleFlow.status;
+  const projectedSteps = projectSaltSprayPauseFlow({ displayRemark, input, steps, trayCode });
+  const displayCurrentStatus = normalizeText(
+    projectedSteps.find((step) => step.active && step.resumePreparationStep)?.label
+    || projectedSteps.find((step) => /盐雾(?:试验|实验)进行中（暂停）$/.test(normalizeText(step.label)))?.label
+    || projectedSteps.find((step) => step.active)?.label,
+  ) || singleFlow.status;
   return decorateMoldCancellationSteps({
     ...singleFlow,
     displayRemark,
     status: displayCurrentStatus,
     currentStatus: `${trayCode ? `当前托盘：${trayCode} | ` : ""}当前状态：${displayCurrentStatus}${displayRemark ? ` | 备注：${displayRemark}` : ""}`,
-    steps,
+    steps: projectedSteps,
   }, effectiveInput);
 }
 

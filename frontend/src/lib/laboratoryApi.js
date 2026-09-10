@@ -90,6 +90,39 @@ const applyLaboratoryOperation = async ({
   return response.json();
 };
 
+const applySaltResumePreparation = async ({
+  experimentCode,
+  fixtureInstallId = "",
+  labCode = "LAB_SALT",
+  occurredAt = "",
+  operationType,
+  pauseNo,
+  runNo,
+  taskCode,
+  trayCodes = [],
+}) => {
+  const response = await fetch(buildApiUrl("/api/laboratory/salt-resume-preparation", API_BASE_URL), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      experimentCode: String(experimentCode || "").trim(),
+      fixtureInstallId: String(fixtureInstallId || "").trim(),
+      labCode: String(labCode || "").trim(),
+      occurredAt: String(occurredAt || "").trim(),
+      operationType: String(operationType || "").trim(),
+      pauseNo: String(pauseNo || "").trim(),
+      runNo: String(runNo || "").trim(),
+      taskCode: String(taskCode || "").trim(),
+      trayCodes: Array.isArray(trayCodes) ? trayCodes : [],
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+  return response.json();
+};
+
 const startLaboratoryExperiment = async ({
   axisBatchNo = "",
   axisCodes = [],
@@ -237,6 +270,7 @@ const completeLaboratoryExperiment = async ({
 
 export {
   applyLaboratoryOperation,
+  applySaltResumePreparation,
   completeLaboratoryExperiment,
   markLaboratoryAxisAdjustmentReady,
   startLaboratoryExperiment,

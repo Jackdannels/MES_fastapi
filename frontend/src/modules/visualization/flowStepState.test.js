@@ -64,4 +64,32 @@ describe("visualization flow step state", () => {
       "is-waiting": true,
     });
   });
+
+  test("gives pause reset steps an independent orange semantic state", () => {
+    expect(visualFlowStepClass({
+      label: "实验准备就绪",
+      pauseResetRequired: true,
+      reached: true,
+      time: "2026-09-03 10:00:00",
+    })).toMatchObject({
+      "is-active": false,
+      "is-done": false,
+      "is-inferred": false,
+      "is-pause-reset": true,
+      "is-waiting": false,
+    });
+  });
+
+  test("keeps future resume-preparation steps waiting and highlights only the current reset step", () => {
+    expect(visualFlowStepClass({ pauseResetState: "pending", reached: true })).toMatchObject({
+      "is-pause-reset": false,
+      "is-pause-reset-active": false,
+      "is-waiting": true,
+    });
+    expect(visualFlowStepClass({ active: true, pauseResetState: "active" })).toMatchObject({
+      "is-pause-reset": false,
+      "is-pause-reset-active": true,
+      "is-waiting": false,
+    });
+  });
 });

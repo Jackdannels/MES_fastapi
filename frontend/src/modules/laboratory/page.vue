@@ -64,7 +64,7 @@
           class="laboratory-action-item laboratory-action-item--compare"
           data-testid="laboratory-compare"
           type="button"
-          :disabled="runningInteractionLocked || !actionState.canCompare"
+          :disabled="(runningInteractionLocked && !resumePreparationActive) || !actionState.canCompare"
           @click="openCompare"
         >
           比对任务
@@ -74,7 +74,7 @@
           class="laboratory-action-item laboratory-action-item--install"
           data-testid="laboratory-install"
           type="button"
-          :disabled="runningInteractionLocked || !canRequestFixtureInstall"
+          :disabled="(runningInteractionLocked && !resumePreparationActive) || !canRequestFixtureInstall"
           @click="openInstall"
         >
           {{ installActionLabel }}
@@ -84,7 +84,7 @@
           class="laboratory-action-item laboratory-action-item--ready"
           data-testid="laboratory-ready"
           type="button"
-          :disabled="runningInteractionLocked || !canRequestReady"
+          :disabled="(runningInteractionLocked && !resumePreparationActive) || !canRequestReady"
           @click="openReady"
         >
           {{ readyActionLabel }}
@@ -434,7 +434,7 @@
 
     <AppModal
       :open="compareModalOpen"
-      class="laboratory-operation-modal laboratory-operation-modal--compare"
+      class="laboratory-operation-modal laboratory-operation-modal--compare laboratory-resume-preparation-modal--priority"
       data-testid="laboratory-compare-modal"
       title="任务比对"
       @close="closeCompare"
@@ -484,7 +484,7 @@
 
     <AppModal
       :open="installModalOpen"
-      class="laboratory-operation-modal laboratory-confirmation-modal"
+      class="laboratory-operation-modal laboratory-confirmation-modal laboratory-resume-preparation-modal--priority"
       data-testid="laboratory-install-modal"
       title="样品安装"
       @close="closeInstall"
@@ -532,7 +532,13 @@
       </div>
     </AppModal>
 
-    <AppModal :open="fixtureConfirmModalOpen" data-testid="laboratory-fixture-confirm-modal" title="夹具安装确认中" @close="() => {}">
+    <AppModal
+      :open="fixtureConfirmModalOpen"
+      :class="{ 'laboratory-resume-preparation-modal--priority': resumePreparationActive }"
+      data-testid="laboratory-fixture-confirm-modal"
+      title="夹具安装确认中"
+      @close="() => {}"
+    >
       <div class="laboratory-modal-body laboratory-prompt-card laboratory-fixture-status-card">
         <div class="laboratory-fixture-status-card__head">
           <span class="laboratory-fixture-status-card__eyebrow">{{ fixtureConfirmCopy.eyebrow }}</span>
@@ -547,7 +553,13 @@
       </div>
     </AppModal>
 
-    <AppModal :open="fixtureConfirmSuccessModalOpen" data-testid="laboratory-fixture-success-modal" title="夹具安装完成" @close="() => {}">
+    <AppModal
+      :open="fixtureConfirmSuccessModalOpen"
+      :class="{ 'laboratory-resume-preparation-modal--priority': resumePreparationActive }"
+      data-testid="laboratory-fixture-success-modal"
+      title="夹具安装完成"
+      @close="() => {}"
+    >
       <div class="laboratory-modal-body laboratory-prompt-card laboratory-fixture-success-card">
         <div class="laboratory-fixture-success-card__mark">OK</div>
         <strong>{{ fixtureConfirmCopy.successTitle }}</strong>
@@ -557,6 +569,7 @@
 
     <AppModal
       :open="readyModalOpen"
+      :class="{ 'laboratory-resume-preparation-modal--priority': resumePreparationActive }"
       class="laboratory-operation-modal laboratory-confirmation-modal"
       data-testid="laboratory-ready-modal"
       title="确认实验准备就绪"
@@ -615,66 +628,70 @@
       </template>
     </AppModal>
 
-    <AppModal
-      :open="cancellationReasonModalOpen"
-      class="laboratory-operation-modal"
-      data-testid="laboratory-mold-cancel-reason-modal"
-      title="取消本次霉菌实验"
-      @close="closeCancellationReasonModal"
-    >
-      <div class="laboratory-modal-body">
-        <div class="laboratory-danger-panel" role="alert">
-          <strong>本次运行将被终止，但霉菌试验不会标记为完成</strong>
-          <p>取消确认后，原排程将由系统回收，霉菌试验仍可重新排程。</p>
+    <Teleport to="body">
+      <AppModal
+        :open="cancellationReasonModalOpen"
+        class="laboratory-operation-modal laboratory-mold-cancel-modal--priority"
+        data-testid="laboratory-mold-cancel-reason-modal"
+        title="取消本次霉菌实验"
+        @close="closeCancellationReasonModal"
+      >
+        <div class="laboratory-modal-body">
+          <div class="laboratory-danger-panel" role="alert">
+            <strong>本次运行将被终止，但霉菌试验不会标记为完成</strong>
+            <p>取消确认后，原排程将由系统回收，霉菌试验仍可重新排程。</p>
+          </div>
+          <label class="form-field">
+            <span>取消原因</span>
+            <textarea
+              v-model="cancellationReason"
+              data-testid="laboratory-mold-cancel-reason"
+              rows="3"
+              :disabled="cancellationSubmitting"
+              @input="cancellationReasonError = ''"
+            ></textarea>
+          </label>
+          <AppFeedback
+            v-if="cancellationReasonError"
+            :message="cancellationReasonError"
+            tone="error"
+            data-testid="laboratory-mold-cancel-reason-error"
+            @close="cancellationReasonError = ''"
+          />
         </div>
-        <label class="form-field">
-          <span>取消原因</span>
-          <textarea
-            v-model="cancellationReason"
-            data-testid="laboratory-mold-cancel-reason"
-            rows="3"
-            :disabled="cancellationSubmitting"
-            @input="cancellationReasonError = ''"
-          ></textarea>
-        </label>
-        <AppFeedback
-          v-if="cancellationReasonError"
-          :message="cancellationReasonError"
-          tone="error"
-          data-testid="laboratory-mold-cancel-reason-error"
-          @close="cancellationReasonError = ''"
-        />
-      </div>
-      <template #footer>
-        <button class="action-btn secondary" type="button" :disabled="cancellationSubmitting" @click="closeCancellationReasonModal">返回</button>
-        <button class="action-btn danger" data-testid="laboratory-mold-cancel-continue" type="button" :disabled="cancellationSubmitting" @click="continueCancellationConfirmation">
-          继续确认
-        </button>
-      </template>
-    </AppModal>
+        <template #footer>
+          <button class="action-btn secondary" type="button" :disabled="cancellationSubmitting" @click="closeCancellationReasonModal">返回</button>
+          <button class="action-btn danger" data-testid="laboratory-mold-cancel-continue" type="button" :disabled="cancellationSubmitting" @click="continueCancellationConfirmation">
+            继续确认
+          </button>
+        </template>
+      </AppModal>
+    </Teleport>
 
-    <AppModal
-      :open="cancellationDangerModalOpen"
-      :close-on-backdrop="!cancellationSubmitting"
-      :close-on-esc="!cancellationSubmitting"
-      class="laboratory-operation-modal"
-      data-testid="laboratory-mold-cancel-danger-modal"
-      title="危险操作确认"
-      @close="closeCancellationDangerModal"
-    >
-      <div class="laboratory-modal-body">
-        <div class="laboratory-danger-panel" role="alert">
-          <strong>确定取消当前运行批次的全部霉菌实验托盘？</strong>
-          <p>取消原因：{{ cancellationReason }}</p>
+    <Teleport to="body">
+      <AppModal
+        :open="cancellationDangerModalOpen"
+        :close-on-backdrop="!cancellationSubmitting"
+        :close-on-esc="!cancellationSubmitting"
+        class="laboratory-operation-modal laboratory-mold-cancel-modal--priority"
+        data-testid="laboratory-mold-cancel-danger-modal"
+        title="危险操作确认"
+        @close="closeCancellationDangerModal"
+      >
+        <div class="laboratory-modal-body">
+          <div class="laboratory-danger-panel" role="alert">
+            <strong>确定取消当前运行批次的全部霉菌实验托盘？</strong>
+            <p>取消原因：{{ cancellationReason }}</p>
+          </div>
         </div>
-      </div>
-      <template #footer>
-        <button class="action-btn secondary" type="button" :disabled="cancellationSubmitting" @click="closeCancellationDangerModal">返回修改</button>
-        <button class="action-btn danger" data-testid="laboratory-mold-cancel-confirm" type="button" :disabled="cancellationSubmitting" @click="confirmMoldCancellation">
-          {{ cancellationSubmitting ? "取消命令发送中…" : "确认取消本次实验" }}
-        </button>
-      </template>
-    </AppModal>
+        <template #footer>
+          <button class="action-btn secondary" type="button" :disabled="cancellationSubmitting" @click="closeCancellationDangerModal">返回修改</button>
+          <button class="action-btn danger" data-testid="laboratory-mold-cancel-confirm" type="button" :disabled="cancellationSubmitting" @click="confirmMoldCancellation">
+            {{ cancellationSubmitting ? "取消命令发送中…" : "确认取消本次实验" }}
+          </button>
+        </template>
+      </AppModal>
+    </Teleport>
 
     <Teleport v-if="runningModalExperiment.active && runningModalVisible" to="body">
       <div class="laboratory-running-overlay" data-testid="laboratory-running-overlay">
@@ -808,6 +825,15 @@
               <strong>设备控制未确认</strong>
               <span>{{ controlConfirmationError }}</span>
             </div>
+            <div
+              v-if="!runningModalExperiment.completed && resumePreparationError"
+              class="laboratory-running-completion-error"
+              data-testid="laboratory-salt-resume-preparation-error"
+              role="alert"
+            >
+              <strong>无法开始恢复准备</strong>
+              <span>{{ resumePreparationError }}</span>
+            </div>
             <button
               v-if="isSaltSprayLaboratory && !runningModalExperiment.completed && !runningModalExperiment.isPaused && !controlSubmitting && !controlAwaitingConfirmation"
               class="action-btn secondary"
@@ -825,7 +851,41 @@
               :disabled="!canResume"
               @click="requestContinue"
             >
-              继续实验
+              {{ resumePreparationActive ? "恢复准备中" : "继续实验" }}
+            </button>
+            <button
+              v-if="resumePreparationActive && !resumePreparationCompared"
+              class="action-btn success"
+              data-testid="laboratory-salt-resume-compare"
+              type="button"
+              @click="openCompare"
+            >
+              重新比对托盘
+            </button>
+            <button
+              v-if="resumePreparationCompared && !resumePreparationInstalled"
+              class="action-btn success"
+              data-testid="laboratory-salt-resume-install"
+              type="button"
+              @click="openInstall"
+            >
+              重新安装样品
+            </button>
+            <div
+              v-if="resumePreparationInstalled && !resumePreparationFixtureReady"
+              class="laboratory-running-completion-pending"
+              data-testid="laboratory-salt-resume-fixture-waiting"
+            >
+              <span>等待上位机确认夹具安装完成</span>
+            </div>
+            <button
+              v-if="resumePreparationFixtureReady && !resumePreparationReady"
+              class="action-btn success"
+              data-testid="laboratory-salt-resume-ready"
+              type="button"
+              @click="openReady"
+            >
+              重新确认准备就绪
             </button>
             <button
               v-if="isSaltSprayLaboratory && !runningModalExperiment.completed && runningModalExperiment.isPaused && !controlSubmitting && !controlAwaitingConfirmation"
@@ -1087,6 +1147,12 @@ const {
   openAttendanceLogin,
   readyModalOpen,
   readyActionLabel,
+  resumePreparationActive,
+  resumePreparationCompared,
+  resumePreparationError,
+  resumePreparationFixtureReady,
+  resumePreparationInstalled,
+  resumePreparationReady,
   recentTasks,
   resetConfirmModalOpen,
   resetDangerModalOpen,

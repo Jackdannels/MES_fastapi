@@ -3,7 +3,7 @@ import pytest
 from app.api.routes.storage import _run_trays_have_allowed_appearance_source
 from app.services.experiment_schedule_sequence import resolve_next_scheduled_step
 from app.services.laboratory_termination import cancel_storage_mold_experiment
-from app.services.storage_tray_actions import StorageTrayActionError, build_stock_in_updates
+from app.services.storage_tray_actions import StorageTrayActionError, build_stock_in_updates, build_stock_out_updates
 
 
 def mold_snapshot():
@@ -214,24 +214,18 @@ def test_canceled_mold_run_is_an_appearance_route_source_without_becoming_comple
     assert experiments[0]["status"] == "待排程"
 
 
-def test_canceled_mold_tray_can_stock_into_staging_with_normal_staging_semantics():
-    updates = build_stock_in_updates(
-        canceled_mold_storage_snapshot(),
-        room="staging",
-        tray_code="TP-1",
-        payload={"status": "实验后暂存间存放", "location": "错误位置"},
-        now="2026-09-03 11:30:00",
-    )
-
-    sample = updates["mes.samples"][0]
-    assert sample["status"] == "已到达暂存间"
-    assert sample["flow_status"] == "已到达暂存间"
-    assert sample["location"] == "恒温恒湿间（暂存间）"
-    assert sample["trays"][0]["status"] == "已到达暂存间"
-    assert updates["mes.staging_events"][0]["status"] == "已到达暂存间"
+def test_canceled_mold_tray_cannot_stock_into_staging_before_recovery():
+    with pytest.raises(StorageTrayActionError, match="不能暂存间入库"):
+        build_stock_in_updates(
+            canceled_mold_storage_snapshot(),
+            room="staging",
+            tray_code="TP-1",
+            payload={"status": "已到达暂存间", "location": "恒温恒湿间（暂存间）"},
+            now="2026-09-03 11:30:00",
+        )
 
 
-def test_canceled_mold_tray_can_stock_into_appearance_with_post_experiment_semantics():
+def test_canceled_mold_tray_can_stock_into_appearance_with_recovery_semantics():
     updates = build_stock_in_updates(
         canceled_mold_storage_snapshot(),
         room="appearance",
@@ -241,14 +235,77 @@ def test_canceled_mold_tray_can_stock_into_appearance_with_post_experiment_seman
     )
 
     sample = updates["mes.samples"][0]
-    assert sample["status"] == "实验后外观检测间存放"
-    assert sample["flow_status"] == "实验后外观检测间存放"
+    assert sample["status"] == "霉菌取消后恢复处理中"
+    assert sample["flow_status"] == "霉菌取消后恢复处理中"
     assert sample["location"] == "外观检测间"
-    assert sample["trays"][0]["status"] == "实验后外观检测间存放"
+    assert sample["trays"][0]["status"] == "霉菌取消后恢复处理中"
     event = updates["mes.staging_events"][0]
-    assert event["status"] == "实验后外观检测间存放"
-    assert event["appearance_phase"] == "post_experiment"
+    assert event["status"] == "霉菌取消后恢复处理中"
+    assert event["appearance_phase"] == "mold_cancel_recovery"
     assert event["experiment_code"] == "EXP-MOLD"
+    assert event["source_experiment_code"] == "EXP-MOLD"
+    assert event["source_run_no"] == "RUN-MOLD"
+    assert event["recovery_cycle_id"] == "RUN-MOLD"
+
+
+def test_mold_cancel_recovery_outbound_binds_new_schedule_and_cannot_be_reused():
+    snapshot = canceled_mold_storage_snapshot()
+    stock_in = build_stock_in_updates(
+        snapshot,
+        room="appearance",
+        tray_code="TP-1",
+        payload={},
+        now="2026-09-03 11:30:00",
+    )
+    recovery_snapshot = {
+        **snapshot,
+        **stock_in,
+        "mes.schedules": [
+            {
+                "id": "SCH-MOLD-NEW",
+                "task_code": "TASK-MOLD",
+                "experiment_code": "EXP-MOLD",
+                "device": "霉菌试验室",
+                "lab_code": "LAB_MOLD",
+                "status": "已排程",
+            }
+        ],
+        "mes.experiment_trays": [
+            {"task_code": "TASK-MOLD", "experiment_code": "EXP-MOLD", "tray_code": "TP-1"}
+        ],
+    }
+
+    stock_out = build_stock_out_updates(
+        recovery_snapshot,
+        room="appearance",
+        tray_code="TP-1",
+        payload={
+            "targetLab": "霉菌试验室",
+            "targetLabCode": "LAB_MOLD",
+            "targetExperimentCode": "EXP-MOLD",
+            "scheduleId": "SCH-MOLD-NEW",
+        },
+        now="2026-09-03 11:40:00",
+    )
+
+    outbound_event = stock_out["mes.staging_events"][-1]
+    assert outbound_event["appearance_phase"] == "mold_cancel_recovery"
+    assert outbound_event["source_run_no"] == "RUN-MOLD"
+    assert outbound_event["source_experiment_code"] == "EXP-MOLD"
+    assert outbound_event["target_schedule_id"] == "SCH-MOLD-NEW"
+    assert stock_out["mes.samples"][0]["status"] == "送至实验室"
+    assert "恢复处理完成" in stock_out["mes.samples"][0]["history"][0]["detail"]
+
+    repeated_snapshot = canceled_mold_storage_snapshot()
+    repeated_snapshot["mes.staging_events"] = stock_out["mes.staging_events"]
+    with pytest.raises(StorageTrayActionError, match="不能外观检测间入库"):
+        build_stock_in_updates(
+            repeated_snapshot,
+            room="appearance",
+            tray_code="TP-1",
+            payload={},
+            now="2026-09-03 11:50:00",
+        )
 
 
 @pytest.mark.parametrize(

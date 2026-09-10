@@ -156,6 +156,10 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
   const devices = asArray(snapshot[DEVICES_KEY]);
   const schedules = asArray(snapshot[SCHEDULES_KEY]);
   const experiments = asArray(snapshot[EXPERIMENTS_KEY]);
+  const experimentByCode = new Map(experiments.map((experiment) => [
+    normalizeText(experiment?.experiment_code || experiment?.experimentCode),
+    experiment,
+  ]));
   const experimentTrays = asArray(snapshot[EXPERIMENT_TRAYS_KEY]);
   const experimentRunTrays = asArray(snapshot[EXPERIMENT_RUN_TRAYS_KEY]);
   const experimentRunSteps = asArray(snapshot[EXPERIMENT_RUN_STEPS_KEY]);
@@ -388,6 +392,36 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         config.key === "appearance"
         && !storedInPostExperimentStaging
         && postExperimentRequiresAppearanceInbound;
+      const latestCanceledMoldRelation = experimentRunTrays
+        .filter((relation) => {
+          const experimentCode = normalizeText(relation?.experiment_code || relation?.experimentCode);
+          const experiment = experimentByCode.get(experimentCode) || {};
+          return normalizeText(relation?.task_code || relation?.taskCode) === normalizeText(row.taskCode)
+            && normalizeText(relation?.tray_code || relation?.trayCode) === normalizeText(row.trayCode)
+            && normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status) === "实验已取消"
+            && normalizeText(experiment?.experiment_name || experiment?.experimentName).includes("霉菌");
+        })
+        .at(-1) || null;
+      const latestCanceledMoldRunNo = normalizeText(
+        latestCanceledMoldRelation?.run_no || latestCanceledMoldRelation?.runNo,
+      );
+      const recoveryAlreadyStarted = trayStorageEvents.some((event) => (
+        normalizeText(event?.appearance_phase || event?.appearancePhase) === "mold_cancel_recovery"
+        && normalizeText(event?.source_run_no || event?.sourceRunNo || event?.run_no || event?.runNo) === latestCanceledMoldRunNo
+      ));
+      const isMoldCancelRecoveryInbound =
+        config.key === "appearance"
+        && Boolean(latestCanceledMoldRunNo)
+        && !recoveryAlreadyStarted
+        && row.statuses.some((statusItem) => normalizeText(statusItem) === "实验已取消")
+        && trayHasAllowedAppearanceSource({
+          experiments,
+          experimentRunSteps,
+          experimentRunTrays,
+          samples,
+          taskCode: normalizeText(row.taskCode),
+          trayCode: normalizeText(row.trayCode),
+        });
       const isExplicitStagingInbound =
         config.key === "staging"
         && (
@@ -414,6 +448,9 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         status = "待入库";
       }
       if (isPostExperimentAppearanceInbound && !isCurrentStagingStatus(status, config)) {
+        status = "待入库";
+      }
+      if (isMoldCancelRecoveryInbound && !isCurrentStagingStatus(status, config)) {
         status = "待入库";
       }
       if (midPauseAwaitingStockIn && !isCurrentStagingStatus(status, config)) {
@@ -543,6 +580,13 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         isPostExperimentInbound,
         isPostExperimentAppearanceInbound,
         isPreExperimentAppearanceInbound: isPreExperimentAppearanceLabDispatch,
+        isMoldCancelRecoveryInbound,
+        moldCancelRecoveryExperimentCode: isMoldCancelRecoveryInbound
+          ? normalizeText(latestCanceledMoldRelation?.experiment_code || latestCanceledMoldRelation?.experimentCode)
+          : "",
+        moldCancelRecoveryRunNo: isMoldCancelRecoveryInbound
+          ? latestCanceledMoldRunNo
+          : "",
         isMidExperimentAppearanceInbound: Boolean(midPause) && !midPauseCompleted,
         midExperimentPauseNo: midPauseNo,
         midExperimentRunNo: midRunNo,

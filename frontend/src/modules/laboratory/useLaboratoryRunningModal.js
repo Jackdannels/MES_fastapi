@@ -8,6 +8,7 @@ function useLaboratoryRunningModal({
   completedRunningExperiment,
   confirmedModalOpen,
   experimentRuns,
+  isRestoreBlocked = () => false,
   openAttendanceLogoutPrompt,
   readyModalOpen,
   runningExperiment,
@@ -32,7 +33,12 @@ function useLaboratoryRunningModal({
 
   const scheduleRunningModalRestore = () => {
     clearRunningModalRestoreTimer();
-    if (!runningExperiment.value.active || runningModalVisible.value || typeof window === "undefined") {
+    if (
+      !runningExperiment.value.active
+      || runningModalVisible.value
+      || isRestoreBlocked()
+      || typeof window === "undefined"
+    ) {
       return;
     }
     runningModalRestoreTimer = window.setTimeout(() => {

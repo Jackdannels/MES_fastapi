@@ -97,6 +97,31 @@ def test_paused_event_uses_command_tray_list_and_duplicate_is_idempotent(monkeyp
     assert repository.paused == [("RUN-1", "PAUSE-1", {"inspection_tray_codes": ["TP-AUTH"], "pause_reason": "检查"})]
 
 
+def test_paused_salt_run_rejects_started_event_and_requires_resumed_event(monkeypatch):
+    repository = EventRepository({})
+    repository.find_run_by_no = lambda run_no: {
+        "run_no": run_no,
+        "task_no": "TASK-1",
+        "experiment_no": "EXP-1",
+        "lab_code": "LAB_SALT",
+        "run_status": "实验暂停",
+    }
+    monkeypatch.setattr("app.services.mq_event_processor.publish_realtime_update", lambda: None)
+
+    result = process_laboratory_event(
+        "mes/v1/labs/LAB_SALT/events/experiment-started",
+        {"message_id": "MSG-STARTED-DURING-PAUSE", "lab_code": "LAB_SALT", "run_no": "RUN-1"},
+        repository=repository,
+        received_at="2026-09-03 10:05:00",
+    )
+
+    assert result["correlation_id"] == "MSG-STARTED-DURING-PAUSE"
+    assert result["status"] == "REJECTED"
+    assert result["error_code"] == "RESUME_EVENT_REQUIRED"
+    assert result["error_message"] == "盐雾暂停运行必须通过 experiment-resumed 恢复，不能重复 experiment-started"
+    assert repository.messages == []
+
+
 def test_pause_and_resume_confirmation_stop_and_restart_employee_work_time(monkeypatch):
     calls = []
     attendance = type("Attendance", (), {

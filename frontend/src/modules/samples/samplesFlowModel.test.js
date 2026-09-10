@@ -5147,6 +5147,7 @@ describe("samplesFlowModel", () => {
   test("preserves the system-only canceled status while a tray remains in the mold laboratory", () => {
     expect(samplesFlowModelPublicApi.normalizeLifecycleStatus("霉菌试验室", "实验已取消")).toBe("实验已取消");
     expect(samplesFlowModelPublicApi.normalizeLifecycleStatus("", "实验已取消")).toBe("实验已取消");
+    expect(samplesFlowModelPublicApi.normalizeLifecycleStatus("", "霉菌取消后恢复处理中")).toBe("霉菌取消后恢复处理中");
   });
 
   test("normalizeSamplesSnapshot preserves partial axis statuses during reload", () => {
@@ -10308,6 +10309,81 @@ describe("samplesFlowModel", () => {
     expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：厂家收回`);
   });
 
+  test("buildTrayFlowView starts a new mold cycle after cancel recovery outbound without reusing old preparation", () => {
+    const taskCode = "SYLU-2026-09-021";
+    const trayCode = `${taskCode}-TP-001`;
+    const moldCode = `${taskCode}-A`;
+    const canceledRunNo = "run-mold-canceled";
+    const view = buildTrayFlowView({
+      currentExperimentCode: moldCode,
+      dispatchTargetLab: "霉菌试验室",
+      experimentRuns: [{
+        ended_at: "2026-09-03 21:27:01",
+        experiment_code: moldCode,
+        run_no: canceledRunNo,
+        schedule_id: "schedule-old",
+        started_at: "2026-09-03 21:26:36",
+        status: "实验已取消",
+        task_code: taskCode,
+      }],
+      experimentRunTrays: [{
+        ended_at: "2026-09-03 21:27:01",
+        experiment_code: moldCode,
+        run_no: canceledRunNo,
+        run_tray_status: "实验已取消",
+        started_at: "2026-09-03 21:26:36",
+        task_code: taskCode,
+        tray_code: trayCode,
+      }],
+      experiments: [
+        { experiment_code: moldCode, experiment_name: "霉菌试验", required_device: "霉菌试验室", task_code: taskCode },
+        { experiment_code: `${taskCode}-B`, experiment_name: "四综合试验", required_device: "四综合实验室", task_code: taskCode },
+      ],
+      experimentTrays: [
+        { experiment_code: moldCode, task_code: taskCode, tray_code: trayCode },
+        { experiment_code: `${taskCode}-B`, task_code: taskCode, tray_code: trayCode },
+      ],
+      location: "霉菌试验室",
+      preferCurrentExperimentCode: true,
+      samples: [{
+        code: `${taskCode}-SP-001`,
+        history: [
+          { action: "外观检测间扫码出库", detail: `${trayCode} 恢复处理完成，送至 霉菌试验室`, location: "霉菌试验室", status: "送至实验室", time: "2026-09-03 21:28:11", tray_code: trayCode },
+          { action: "外观检测间扫码入库", detail: `${trayCode} 霉菌取消后恢复处理中`, location: "外观检测间", status: "霉菌取消后恢复处理中", time: "2026-09-03 21:27:41", tray_code: trayCode },
+          { action: "取消本次霉菌实验", detail: `${taskCode} / 霉菌试验 / 实验已取消 / 原因：霉菌未按预期繁殖`, location: "霉菌试验室", status: "实验已取消", time: "2026-09-03 21:27:01", tray_code: trayCode },
+          { action: "实验确认", detail: `${taskCode} / 霉菌试验 / 实验准备就绪 / 托盘：${trayCode}`, location: "霉菌试验室", status: "实验准备就绪", time: "2026-09-03 21:26:36", tray_code: trayCode },
+          { action: "样品安装", detail: `${taskCode} / 霉菌试验 / 工装夹具安装 / 托盘：${trayCode}`, location: "霉菌试验室", status: "工装夹具安装", time: "2026-09-03 21:26:31", tray_code: trayCode },
+          { action: "任务比对", detail: `${taskCode} / 霉菌试验 / 已到达实验室 / 托盘：${trayCode}`, location: "霉菌试验室", status: "已到达实验室", time: "2026-09-03 21:26:30", tray_code: trayCode },
+        ],
+        location: "霉菌试验室",
+        status: "送至实验室",
+        task_code: taskCode,
+        trays: [{ status: "送至实验室", target_experiment_code: moldCode, target_lab: "霉菌试验室", tray_code: trayCode }],
+      }],
+      schedules: [{ id: "schedule-new", task_code: taskCode, experiment_code: moldCode, device: "霉菌试验室", status: "已排程" }],
+      stagingEvents: [
+        { action: "stock_in", appearance_phase: "post_experiment", experiment_code: moldCode, room: "appearance", status: "实验后外观检测间存放", target_experiment_code: moldCode, task_code: taskCode, time: "2026-09-03 21:27:41", tray_code: trayCode },
+        { action: "stock_out", appearance_phase: "post_experiment", room: "appearance", target_experiment_code: moldCode, target_lab: "霉菌试验室", target_schedule_id: "schedule-new", target_type: "lab", task_code: taskCode, time: "2026-09-03 21:28:11", tray_code: trayCode },
+      ],
+      status: "送至实验室",
+      taskCode,
+      trayCode,
+    });
+
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：送至霉菌试验室`);
+    expect(view.steps.find((step) => step.label === "霉菌取消后恢复处理")).toEqual(
+      expect.objectContaining({ active: false, reached: true, time: "2026-09-03 21:28:11" }),
+    );
+    expect(view.steps.find((step) => step.label === "送至霉菌试验室")).toEqual(
+      expect.objectContaining({ active: true, time: "2026-09-03 21:28:11" }),
+    );
+    ["已到达实验室", "工装夹具安装", "实验准备就绪"].forEach((label) => {
+      expect(view.steps.find((step) => step.label === label)).toEqual(
+        expect.objectContaining({ active: false, reached: false, time: "" }),
+      );
+    });
+  });
+
   test("buildTrayFlowView keeps canceled mold history beside the still-unfinished requirement and later completion", () => {
     const taskCode = "TASK-MOLD-CANCEL";
     const trayCode = `${taskCode}-TP-001`;
@@ -10352,17 +10428,24 @@ describe("samplesFlowModel", () => {
       trayCode,
     });
     const canceledIndex = canceledView.steps.findIndex((step) => step.label === "霉菌试验已取消");
+    const recoveryIndex = canceledView.steps.findIndex((step) => step.label === "霉菌取消后恢复处理");
     const stagingDispatchIndex = canceledView.steps.findIndex((step) => step.label === "送至暂存间");
     const moldDispatchIndex = canceledView.steps.findIndex((step) => step.label === "送至霉菌试验室");
     const unfinishedIndex = canceledView.steps.findIndex((step) => step.label === "霉菌试验未完成");
     expect(canceledIndex).toBeGreaterThan(-1);
-    expect(stagingDispatchIndex).toBe(canceledIndex + 1);
+    expect(recoveryIndex).toBe(canceledIndex + 1);
+    expect(stagingDispatchIndex).toBe(recoveryIndex + 1);
     expect(stagingDispatchIndex).toBeLessThan(moldDispatchIndex);
     expect(moldDispatchIndex).toBeLessThan(unfinishedIndex);
     expect(canceledView.steps[canceledIndex]).toEqual(expect.objectContaining({
       active: true,
       reached: true,
       time: "2026-09-03 10:10:00",
+    }));
+    expect(canceledView.steps[recoveryIndex]).toEqual(expect.objectContaining({
+      active: false,
+      reached: false,
+      time: "",
     }));
     expect(canceledView.steps.find((step) => step.label === "样品运输中")).toEqual(
       expect.objectContaining({ reached: true, time: "2026-09-03 08:00:00" }),
@@ -10412,5 +10495,198 @@ describe("samplesFlowModel", () => {
     expect(completedView.steps.find((step) => step.label === "霉菌试验已完成")).toEqual(
       expect.objectContaining({ active: true, reached: false }),
     );
+  });
+
+  test("buildTrayFlowView keeps single-experiment arrival reached after mold cancellation", () => {
+    const taskCode = "TASK-SINGLE-MOLD-CANCEL";
+    const trayCode = `${taskCode}-TP-001`;
+    const experimentCode = `${taskCode}-A`;
+    const view = buildTrayFlowView({
+      currentExperimentCode: experimentCode,
+      experiments: [{
+        experiment_code: experimentCode,
+        experiment_name: "霉菌试验",
+        required_device: "霉菌试验室",
+        task_code: taskCode,
+      }],
+      experimentRunTrays: [{
+        ended_at: "2026-09-04 14:18:18",
+        experiment_code: experimentCode,
+        run_no: "RUN-SINGLE-MOLD-CANCELED",
+        run_tray_status: "实验已取消",
+        task_code: taskCode,
+        tray_code: trayCode,
+      }],
+      experimentTrays: [{ experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode }],
+      location: "霉菌试验室",
+      samples: [{
+        code: `${taskCode}-SP-001`,
+        history: [
+          { action: "任务已确认入库", status: "到货", time: "2026-09-04 14:17:40", tray_code: trayCode },
+          { action: "样品分装托盘", status: "运输中", time: "2026-09-04 14:17:28", tray_code: trayCode },
+        ],
+        location: "霉菌试验室",
+        status: "实验已取消",
+        task_code: taskCode,
+        trays: [{ status: "实验已取消", tray_code: trayCode }],
+      }],
+      status: "实验已取消",
+      taskCode,
+      trayCode,
+    });
+
+    expect(view.steps.find((step) => step.key === "in_transit")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-09-04 14:17:28" }),
+    );
+    expect(view.steps.find((step) => step.key === "arrived")).toEqual(
+      expect.objectContaining({ reached: true, time: "2026-09-04 14:17:40" }),
+    );
+    expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：霉菌试验已取消`);
+  });
+
+  test("buildTrayFlowView clears the previous recovery time after a second mold cancellation", () => {
+    const taskCode = "TASK-MOLD-CANCEL-TWICE";
+    const trayCode = `${taskCode}-TP-001`;
+    const experimentCode = `${taskCode}-A`;
+    const view = buildTrayFlowView({
+      currentExperimentCode: experimentCode,
+      experiments: [{ experiment_code: experimentCode, experiment_name: "霉菌试验", required_device: "霉菌试验室", task_code: taskCode }],
+      experimentRunTrays: [
+        { ended_at: "2026-09-04 10:00:00", experiment_code: experimentCode, run_no: "RUN-CANCEL-1", run_tray_status: "实验已取消", task_code: taskCode, tray_code: trayCode },
+        { ended_at: "2026-09-04 12:00:00", experiment_code: experimentCode, run_no: "RUN-CANCEL-2", run_tray_status: "实验已取消", task_code: taskCode, tray_code: trayCode },
+      ],
+      experimentTrays: [{ experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode }],
+      location: "霉菌试验室",
+      samples: [{
+        code: `${taskCode}-SP-001`,
+        history: [{ action: "任务已确认入库", status: "到货", time: "2026-09-04 09:00:00", tray_code: trayCode }],
+        location: "霉菌试验室",
+        status: "实验已取消",
+        task_code: taskCode,
+        trays: [{ status: "实验已取消", tray_code: trayCode }],
+      }],
+      stagingEvents: [
+        { action: "stock_in", appearance_phase: "mold_cancel_recovery", experiment_code: experimentCode, recovery_cycle_id: "RUN-CANCEL-1", room: "appearance", source_experiment_code: experimentCode, source_run_no: "RUN-CANCEL-1", status: "霉菌取消后恢复处理中", task_code: taskCode, time: "2026-09-04 10:30:00", tray_code: trayCode },
+        { action: "stock_out", appearance_phase: "mold_cancel_recovery", recovery_cycle_id: "RUN-CANCEL-1", room: "appearance", source_experiment_code: experimentCode, source_run_no: "RUN-CANCEL-1", target_experiment_code: experimentCode, task_code: taskCode, time: "2026-09-04 10:40:00", tray_code: trayCode },
+      ],
+      status: "实验已取消",
+      taskCode,
+      trayCode,
+    });
+
+    expect(view.steps.find((step) => step.label === "霉菌取消后恢复处理")).toEqual(
+      expect.objectContaining({ active: false, reached: false, time: "" }),
+    );
+    expect(view.steps.find((step) => step.label === "霉菌试验已取消")).toEqual(
+      expect.objectContaining({ active: true, time: "2026-09-04 12:00:00" }),
+    );
+  });
+
+  test("projects current salt pause appearance and return time per tray", () => {
+    const taskCode = "TASK-SALT-MID-FLOW";
+    const experimentCode = "EXP-SALT-MID-FLOW";
+    const trayCode = "TP-SALT-MID-FLOW";
+    const baseInput = {
+      currentExperimentCode: experimentCode,
+      experimentRunPauses: [{
+        inspection_tray_codes: [trayCode, "TP-OTHER"], lab_code: "LAB_SALT", pause_no: "PAUSE-CURRENT",
+        paused_at: "2026-09-03 10:00:00", run_no: "RUN-SALT-MID", status: "实验暂停",
+      }],
+      experimentRuns: [{
+        device: "盐雾试验室", experiment_code: experimentCode, run_no: "RUN-SALT-MID",
+        status: "实验暂停", task_code: taskCode,
+      }],
+      experimentRunTrays: [
+        { experiment_code: experimentCode, run_no: "RUN-SALT-MID", run_tray_status: "实验进行中", task_code: taskCode, tray_code: trayCode },
+        { experiment_code: experimentCode, run_no: "RUN-SALT-MID", run_tray_status: "实验进行中", task_code: taskCode, tray_code: "TP-OTHER" },
+      ],
+      experimentTrays: [{ experiment_code: experimentCode, task_code: taskCode, tray_code: trayCode }],
+      experiments: [{
+        experiment_code: experimentCode, experiment_name: "盐雾试验", required_device: "盐雾试验室", task_code: taskCode,
+      }],
+      location: "外观检测间",
+      samples: [{
+        code: "SP-SALT-MID-FLOW", location: "外观检测间", status: "中途外观检查中", task_code: taskCode,
+        trays: [{ quantity: 1, status: "中途外观检查中", target_lab: "盐雾试验室", tray_code: trayCode }],
+      }],
+      schedules: [{ device: "盐雾试验室", experiment_code: experimentCode, status: "实验暂停", task_code: taskCode }],
+      status: "中途外观检查中",
+      taskCode,
+      trayCode,
+    };
+    const stockInEvent = {
+      action: "stock_in", appearance_phase: "mid_experiment", pause_no: "PAUSE-CURRENT", room: "appearance",
+      run_no: "RUN-SALT-MID", time: "2026-09-03 10:10:00", tray_code: trayCode,
+    };
+    const stockedFlow = buildTrayFlowViewRaw({
+      ...baseInput,
+      stagingEvents: [
+        { ...stockInEvent, pause_no: "PAUSE-OLD", time: "2026-09-03 09:10:00" },
+        { ...stockInEvent, tray_code: "TP-OTHER", time: "2026-09-03 10:05:00" },
+        stockInEvent,
+      ],
+    });
+    const pausedIndex = stockedFlow.steps.findIndex((step) => step.label === "盐雾试验进行中（暂停）");
+    const appearanceIndex = stockedFlow.steps.findIndex((step) => step.label === "中途外观检测");
+    expect(appearanceIndex).toBe(pausedIndex + 1);
+    expect(stockedFlow.steps[appearanceIndex]).toEqual(expect.objectContaining({
+      active: true, time: "2026-09-03 10:10:00",
+    }));
+
+    const returnedAt = "2026-09-03 10:20:00";
+    const returnedFlow = buildTrayFlowViewRaw({
+      ...baseInput,
+      stagingEvents: [
+        stockInEvent,
+        { ...stockInEvent, action: "stock_out", target_lab: "盐雾试验室", time: returnedAt },
+      ],
+    });
+    expect(returnedFlow.steps.some((step) => step.label === "中途外观检测")).toBe(false);
+    expect(returnedFlow.steps.find((step) => step.label === "送至盐雾试验室")).toEqual(
+      expect.objectContaining({ pauseResetRequired: true, time: returnedAt }),
+    );
+    expect(returnedFlow.steps.filter((step) => step.pauseResetRequired).map((step) => step.label)).toEqual([
+      "送至盐雾试验室", "已到达实验室", "工装夹具安装", "实验准备就绪",
+    ]);
+
+    const comparedAt = "2026-09-03 10:25:00";
+    const comparedFlow = buildTrayFlowViewRaw({
+      ...baseInput,
+      stagingEvents: [
+        stockInEvent,
+        { ...stockInEvent, action: "stock_out", target_lab: "盐雾试验室", time: returnedAt },
+        { action: "resume_preparation_started", pause_no: "PAUSE-CURRENT", room: "laboratory_resume_preparation", run_no: "RUN-SALT-MID", time: "2026-09-03 10:21:00", tray_code: trayCode },
+        { action: "resume_preparation_compared", pause_no: "PAUSE-CURRENT", room: "laboratory_resume_preparation", run_no: "RUN-SALT-MID", time: comparedAt, tray_code: trayCode },
+      ],
+    });
+    expect(comparedFlow.status).toBe("已到达实验室");
+    expect(comparedFlow.steps.find((step) => step.label === "盐雾试验进行中（暂停）"))
+      .toEqual(expect.objectContaining({ active: false, reached: true }));
+    expect(comparedFlow.steps.find((step) => step.label === "已到达实验室"))
+      .toEqual(expect.objectContaining({ active: true, pauseResetState: "active", time: comparedAt }));
+    expect(comparedFlow.steps.find((step) => step.label === "工装夹具安装"))
+      .toEqual(expect.objectContaining({ active: false, pauseResetState: "pending", reached: false }));
+    expect(comparedFlow.steps.find((step) => step.label === "实验准备就绪"))
+      .toEqual(expect.objectContaining({ active: false, pauseResetState: "pending", reached: false }));
+
+    const resumedFlow = buildTrayFlowViewRaw({
+      ...baseInput,
+      experimentRunPauses: [{
+        ...baseInput.experimentRunPauses[0],
+        resumed_at: "2026-09-03 10:30:00",
+        status: "实验已恢复",
+      }],
+      experimentRuns: [{
+        ...baseInput.experimentRuns[0],
+        status: "实验进行中",
+      }],
+      stagingEvents: [
+        stockInEvent,
+        { ...stockInEvent, action: "stock_out", target_lab: "盐雾试验室", time: returnedAt },
+      ],
+    });
+    expect(resumedFlow.steps.find((step) => step.label === "送至盐雾试验室"))
+      .toEqual(expect.objectContaining({ time: returnedAt }));
+    expect(resumedFlow.steps.some((step) => step.pauseResetRequired)).toBe(false);
   });
 });

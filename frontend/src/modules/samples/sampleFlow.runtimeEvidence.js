@@ -10,6 +10,7 @@ import {
   entryTimeValue,
   getSampleTrayList,
   parseTimeValue,
+  resolveEntryExperimentCode,
   resolveEntryTaskCode,
   resolveEntryTrayCode,
   uniqueNormalizedTexts,
@@ -150,9 +151,100 @@ const historyEntryAppliesToTray = (entry, sample, trayCode) => {
   return sampleTrayCodes.length === 1 && sampleTrayCodes[0] === normalizedTrayCode;
 };
 
+const resolveExperimentCycleBoundaryMap = ({
+  orderedExperiments = [],
+  experimentRunTrays = [],
+  samples = [],
+  stagingEvents = [],
+  taskCode,
+  trayCode,
+} = {}) => {
+  const normalizedTaskCode = normalizeText(taskCode);
+  const normalizedTrayCode = normalizeText(trayCode);
+  if (!normalizedTaskCode || !normalizedTrayCode) {
+    return new Map();
+  }
+  const latestCancellationByCode = new Map();
+  asArray(experimentRunTrays).forEach((relation) => {
+    if (
+      resolveEntryTaskCode(relation) !== normalizedTaskCode
+      || resolveEntryTrayCode(relation) !== normalizedTrayCode
+      || normalizeText(relation?.run_tray_status || relation?.runTrayStatus || relation?.status) !== "实验已取消"
+    ) {
+      return;
+    }
+    const experimentCode = resolveEntryExperimentCode(relation);
+    const canceledAt = entryTimeValue({
+      time: relation?.ended_at
+        || relation?.endedAt
+        || relation?.updated_at
+        || relation?.updatedAt,
+    });
+    if (experimentCode && canceledAt > (latestCancellationByCode.get(experimentCode) || 0)) {
+      latestCancellationByCode.set(experimentCode, canceledAt);
+    }
+  });
+  asArray(samples).forEach((sample) => {
+    if (
+      resolveEntryTaskCode(sample) !== normalizedTaskCode
+      || !getSampleTrayList(sample).some((tray) => resolveEntryTrayCode(tray) === normalizedTrayCode)
+    ) {
+      return;
+    }
+    asArray(sample?.history).forEach((entry) => {
+      if (
+        normalizeText(entry?.action) !== "取消本次霉菌实验"
+        || !historyEntryAppliesToTray(entry, sample, normalizedTrayCode)
+      ) {
+        return;
+      }
+      const parsed = parseExperimentHistoryDetail(entry?.detail, normalizedTaskCode);
+      const matchedExperiment = asArray(orderedExperiments).find((experiment) => (
+        experimentIdentityNames(experiment).includes(normalizeText(parsed?.experimentName))
+      ));
+      const experimentCode = normalizeText(matchedExperiment?.code);
+      const canceledAt = entryTimeValue(entry);
+      if (experimentCode && canceledAt > (latestCancellationByCode.get(experimentCode) || 0)) {
+        latestCancellationByCode.set(experimentCode, canceledAt);
+      }
+    });
+  });
+
+  const boundaries = new Map();
+  latestCancellationByCode.forEach((canceledAt, experimentCode) => {
+    const dispatch = asArray(stagingEvents)
+      .filter((event) => (
+        resolveEntryTaskCode(event) === normalizedTaskCode
+        && resolveEntryTrayCode(event) === normalizedTrayCode
+        && normalizeText(event?.action) === "stock_out"
+        && normalizeText(event?.target_type || event?.targetType || "lab") === "lab"
+        && normalizeText(event?.target_experiment_code || event?.targetExperimentCode) === experimentCode
+        && parseTimeValue(event?.time) > canceledAt
+      ))
+      .sort((left, right) => parseTimeValue(left?.time) - parseTimeValue(right?.time))
+      .at(-1);
+    if (!dispatch) {
+      return;
+    }
+    boundaries.set(experimentCode, {
+      canceledAt,
+      cycleStartAt: parseTimeValue(dispatch?.time),
+      scheduleId: normalizeText(
+        dispatch?.target_schedule_id
+        || dispatch?.targetScheduleId
+        || dispatch?.schedule_id
+        || dispatch?.scheduleId,
+      ),
+    });
+  });
+  return boundaries;
+};
+
 const resolveExperimentRuntimeCutoffMap = ({
   orderedExperiments = [],
+  experimentRunTrays = [],
   samples = [],
+  stagingEvents = [],
   taskCode,
   trayCode,
 } = {}) => {
@@ -218,6 +310,19 @@ const resolveExperimentRuntimeCutoffMap = ({
       }
       cutoffMap.set(experimentCode, Math.max(cutoffMap.get(experimentCode) || 0, withdrawalTime));
     });
+  });
+  resolveExperimentCycleBoundaryMap({
+    orderedExperiments,
+    experimentRunTrays,
+    samples,
+    stagingEvents,
+    taskCode: normalizedTaskCode,
+    trayCode: normalizedTrayCode,
+  }).forEach((boundary, experimentCode) => {
+    cutoffMap.set(
+      experimentCode,
+      Math.max(cutoffMap.get(experimentCode) || 0, Number(boundary?.cycleStartAt) || 0),
+    );
   });
   return cutoffMap;
 };
@@ -394,6 +499,7 @@ export {
   partialAxisStatusMatchesExperiment,
   resolveCurrentTrayStatusTime,
   resolveExperimentRuntimeCutoffMap,
+  resolveExperimentCycleBoundaryMap,
   resolveExperimentRuntimeFlowEvent,
   resolveLatestWithdrawalRestoreTarget,
   resolveSingleTrayExperiment,

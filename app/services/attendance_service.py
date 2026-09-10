@@ -865,13 +865,37 @@ class AttendanceService:
             raise AttendanceError(401, "Invalid employee QR code")
         return self._login_user_to_lab(user, lab_name, lab_code=lab_code)
 
-    def logout_lab(self, lab_name: str, *, reason: str = "manual") -> dict[str, Any]:
-        now = self._now()
-        closed = self.repository.close_active_lab_session(lab_name, "", reason=reason, now=now)
+    def logout_lab(
+        self,
+        lab_name: str = "",
+        *,
+        lab_code: str = "",
+        reason: str = "manual",
+        ended_at: datetime | str | None = None,
+        source: str = "manual",
+    ) -> dict[str, Any]:
+        normalized_lab_code = normalize_text(lab_code)
+        normalized_lab_name = normalize_text(lab_name) or self.repository.resolve_lab_name(normalized_lab_code)
+        now = parse_business_datetime(ended_at) or self._now()
+        closed = self.repository.close_active_lab_session(
+            normalized_lab_name,
+            "" if normalized_lab_name else normalized_lab_code,
+            reason=reason,
+            now=now,
+        )
         if closed:
-            self.finish_work_interval(lab_name=lab_name, ended_at=now)
-            self.record_operation(closed, action="试验间退出", source="manual", operated_at=now)
-        return self.serialize_session(closed, lab_name=lab_name)
+            self.finish_work_interval(
+                lab_name=normalized_lab_name,
+                lab_code=normalized_lab_code,
+                ended_at=now,
+            )
+            self.record_operation(
+                closed,
+                action="试验间退出",
+                source=normalize_text(source) or "manual",
+                operated_at=now,
+            )
+        return self.serialize_session(closed, lab_name=normalized_lab_name)
 
     def start_lab_work(self, lab_name: str) -> dict[str, Any]:
         now = self._now()

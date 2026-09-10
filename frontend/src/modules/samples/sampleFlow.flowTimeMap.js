@@ -13,6 +13,7 @@ import {
   asArray,
   entryTimeValue,
   firstNonEmptyArray,
+  parseTimeValue,
   resolveFlowStatusRank,
   uniqueNormalizedTexts,
 } from "./sampleFlow.trayScope";
@@ -43,17 +44,80 @@ import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisP
 import {
   APPEARANCE_SENT_STATUS_LABEL,
   historyEntryAppliesToTray,
+  resolveExperimentCycleBoundaryMap,
   resolveExperimentRuntimeCutoffMap,
 } from "./sampleFlow.runtimeEvidence";
 
 const buildTrayFlowTimeMap = (input = {}) => {
   const taskCode = normalizeText(input.taskCode);
   const trayCode = normalizeText(input.trayCode);
+  const orderedExperiments = buildOrderedTrayExperiments({
+    taskCode,
+    trayCode,
+    experiments: input.experiments,
+    experimentTrays: input.experimentTrays,
+    schedules: input.schedules,
+  });
+  const cycleBoundaryMap = resolveExperimentCycleBoundaryMap({
+    orderedExperiments,
+    experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
+    samples: input.samples,
+    stagingEvents: input.stagingEvents || input.staging_events,
+    taskCode,
+    trayCode,
+  });
+  const inputCurrentExperimentCode = normalizeText(input.currentExperimentCode);
+  const currentCycleBoundary = cycleBoundaryMap.get(inputCurrentExperimentCode)
+    || Array.from(cycleBoundaryMap.values()).sort(
+      (left, right) => Number(right?.cycleStartAt || 0) - Number(left?.cycleStartAt || 0),
+    )[0]
+    || null;
+  const canceledAt = Number(currentCycleBoundary?.canceledAt) || 0;
+  const cycleStartAt = Number(currentCycleBoundary?.cycleStartAt) || 0;
+  const resetAfterCancellationLabels = new Set([
+    "送至暂存间",
+    "已到达暂存间",
+    APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS,
+    APPEARANCE_STOCKED_STATUS,
+    "送至实验室",
+    "已到达实验室",
+    "工装夹具安装",
+    "实验准备就绪",
+    "实验进行中",
+    "实验中",
+  ]);
+  const laboratoryCycleLabels = new Set([
+    "送至实验室",
+    "已到达实验室",
+    "工装夹具安装",
+    "实验准备就绪",
+    "实验进行中",
+    "实验中",
+  ]);
   const timeMap = new Map();
   const timeSourceMap = new Map();
   const timeHistoryMap = new Map();
-  const recordLatestFlowTime = (label, time, source = "history") =>
-    setLatestFlowTime(timeMap, label, time, timeSourceMap, source, timeHistoryMap);
+  const recordLatestFlowTime = (label, time, source = "history") => {
+    const normalizedLabel = normalizeText(label);
+    const timeValue = parseTimeValue(time);
+    if (
+      canceledAt
+      && resetAfterCancellationLabels.has(normalizedLabel)
+      && timeValue > 0
+      && timeValue < canceledAt
+    ) {
+      return;
+    }
+    if (
+      cycleStartAt
+      && laboratoryCycleLabels.has(normalizedLabel)
+      && timeValue > 0
+      && timeValue < cycleStartAt
+    ) {
+      return;
+    }
+    setLatestFlowTime(timeMap, normalizedLabel, time, timeSourceMap, source, timeHistoryMap);
+  };
   if (!trayCode) {
     timeMap.timeHistoryMap = timeHistoryMap;
     return timeMap;
@@ -186,8 +250,8 @@ const buildTrayFlowTimeMap = (input = {}) => {
       const time = entry?.time || entry?.updated_at || entry?.created_at || entry?.timestamp;
       const withdrawalEntry = WITHDRAWAL_ACTIONS.has(normalizeText(entry?.action));
       const statusLabel = normalizeHistoryFlowLabel(entry?.status, entry?.location);
-      const actionLabel = normalizeHistoryFlowLabel(entry?.action, entry?.location);
-      const detailLabel = normalizeHistoryFlowLabel(entry?.detail, entry?.location);
+      const actionLabel = normalizeHistoryFlowLabel(entry?.action, entry?.location, { allowLocationFallback: false });
+      const detailLabel = normalizeHistoryFlowLabel(entry?.detail, entry?.location, { allowLocationFallback: false });
       const experimentEvent = parseExperimentHistoryDetail(entry?.detail, taskCode);
       const postExperimentStagingDispatch =
         normalizeText(entry?.action) === "外观检测间扫码出库"
@@ -276,16 +340,34 @@ const buildTrayFlowTimeMap = (input = {}) => {
     });
   });
 
-  const orderedExperiments = buildOrderedTrayExperiments({
-    taskCode,
-    trayCode,
-    experiments: input.experiments,
-    experimentTrays: input.experimentTrays,
-    schedules: input.schedules,
+  // A mid-experiment appearance return is the newest physical dispatch to the
+  // salt-spray laboratory. Keep that display time after the pause is resumed;
+  // the original dispatch history remains intact for auditing.
+  asArray(input.stagingEvents || input.staging_events).forEach((event) => {
+    const eventTaskCode = normalizeText(event?.task_code || event?.taskCode || event?.task_no || event?.taskNo);
+    const eventTrayCode = normalizeText(event?.tray_code || event?.trayCode || event?.tray_no || event?.trayNo);
+    const targetLabCode = normalizeText(event?.target_lab_code || event?.targetLabCode);
+    const targetLab = normalizeText(event?.target_lab || event?.targetLab);
+    if (
+      normalizeText(event?.room) !== "appearance"
+      || normalizeText(event?.appearance_phase || event?.appearancePhase) !== "mid_experiment"
+      || normalizeText(event?.action) !== "stock_out"
+      || eventTrayCode !== trayCode
+      || (taskCode && eventTaskCode && eventTaskCode !== taskCode)
+      || (targetLabCode !== "LAB_SALT" && !targetLab.includes("盐雾"))
+    ) {
+      return;
+    }
+    const returnTime = event?.time || event?.updated_at || event?.updatedAt;
+    recordLatestFlowTime("送至盐雾试验室", returnTime, "storage-event");
+    recordLatestFlowTime("送至实验室", returnTime, "storage-event");
   });
+
   const runtimeCutoffTimeByExperimentCode = resolveExperimentRuntimeCutoffMap({
     orderedExperiments,
+    experimentRunTrays: firstNonEmptyArray(input.experimentRunTrays, input.experiment_run_trays),
     samples: input.samples,
+    stagingEvents: input.stagingEvents || input.staging_events,
     taskCode,
     trayCode,
   });

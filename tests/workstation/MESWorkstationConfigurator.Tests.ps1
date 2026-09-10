@@ -1,24 +1,31 @@
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
 $sourcePath = Join-Path $projectRoot "scripts\client\MESWorkstationConfigurator.cs"
+$discoverySourcePath = Join-Path $projectRoot "scripts\client\MESServerDiscovery.cs"
 $buildScript = Join-Path $projectRoot "scripts\build_workstation_configurator.ps1"
 
-Describe "MES workstation configurator v2.2" {
-    It "uses a stable MES hostname and safely migrates only historical defaults" {
+Describe "MES workstation configurator v2.3" {
+    It "discovers the current MES IP and safely migrates the temporary DNS default" {
         $source = Get-Content -Raw -LiteralPath $sourcePath
+        $discoverySource = Get-Content -Raw -LiteralPath $discoverySourcePath
 
-        $source | Should Match 'Version = "v2\.2"'
-        $source | Should Match 'DefaultServerUrl = "http://mes-server:5173"'
+        $source | Should Match 'Version = "v2\.3"'
+        $source | Should Match 'DefaultServerUrl = "http://192\.168\.110\.15:5173"'
         $source | Should Match 'LegacyDefaultServerUrls'
         $source | Should Match 'MigrateLegacyServerUrl'
         $source | Should Match 'config\.RegisteredServerUrl = DefaultServerUrl'
         $source | Should Match 'terminal-preserved'
         $source | Should Match '192\.168\.110\.77:5173'
+        $source | Should Match 'MESServerDiscovery\.Discover'
+        $source | Should Match 'if \(!File\.Exists\(ConfigPath\)\)\s*\{\s*config = new LauncherConfig\(\);'
+        $discoverySource | Should Match '/api/system/discovery'
+        $discoverySource | Should Match 'unique\.Count == 1'
+        $discoverySource | Should Match 'MaxDegreeOfParallelism = MaxParallelProbes'
     }
 
     It "uses dedicated Edge and browser-page health for automatic recovery" {
         $source = Get-Content -Raw -LiteralPath $sourcePath
 
-        $source | Should Match 'Version = "v2\.2"'
+        $source | Should Match 'Version = "v2\.3"'
         $source | Should Match 'IsDedicatedEdgeRunning'
         $source | Should Match 'pageActive'
         $source | Should Match 'WorkstationWatchdog'
@@ -48,9 +55,9 @@ Describe "MES workstation configurator v2.2" {
         $source | Should Match '"/laboratory\?lab=" \+ labCode'
     }
 
-    It "builds v2.2 and passes the deterministic runtime self-tests" {
-        $outputDirectory = Join-Path $TestDrive "workstation-v2.2"
-        $outputPath = Join-Path $outputDirectory "MES工作台设置_v2.2.exe"
+    It "builds v2.3 and passes the deterministic runtime self-tests" {
+        $outputDirectory = Join-Path $TestDrive "workstation-v2.3"
+        $outputPath = Join-Path $outputDirectory "MES工作台设置_v2.3.exe"
 
         & $buildScript -ProjectRoot $projectRoot -OutputDirectory $outputDirectory -OutputPath $outputPath -DesktopCopyPath "" -LegacyDesktopCopyPath ""
         $LASTEXITCODE | Should Be 0
@@ -62,6 +69,6 @@ Describe "MES workstation configurator v2.2" {
         $LASTEXITCODE | Should Be 0
         & $outputPath --server-address-migration-self-test
         $LASTEXITCODE | Should Be 0
-        [Diagnostics.FileVersionInfo]::GetVersionInfo($outputPath).FileVersion | Should Be "2.2.0.0"
+        [Diagnostics.FileVersionInfo]::GetVersionInfo($outputPath).FileVersion | Should Be "2.3.0.0"
     }
 }

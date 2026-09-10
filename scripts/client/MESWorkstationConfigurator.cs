@@ -15,13 +15,14 @@ using System.Windows.Forms;
 using System.Web.Script.Serialization;
 using System.Xml.Serialization;
 using Microsoft.Win32;
+using MESNetwork;
 
 [assembly: AssemblyTitle("MES 工作台设置")]
 [assembly: AssemblyDescription("MES 固定工作台配置、启动与自我检查客户端")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Workstation Configurator")]
-[assembly: AssemblyVersion("2.2.0.0")]
-[assembly: AssemblyFileVersion("2.2.0.0")]
+[assembly: AssemblyVersion("2.3.0.0")]
+[assembly: AssemblyFileVersion("2.3.0.0")]
 
 namespace MESWorkstationConfigurator
 {
@@ -126,7 +127,7 @@ namespace MESWorkstationConfigurator
 
     internal static class LauncherRuntime
     {
-        internal const string Version = "v2.2";
+        internal const string Version = "v2.3";
         internal const int HeartbeatIntervalMilliseconds = 5000;
         internal const int WatchdogCheckIntervalMilliseconds = 15000;
         internal const int StartupDesktopSettleMilliseconds = 8000;
@@ -137,10 +138,10 @@ namespace MESWorkstationConfigurator
         internal const int AutomaticRestartPauseMilliseconds = 5 * 60 * 1000;
         internal static readonly int[] FocusRetryDelaysMilliseconds = new int[] { 500, 1500, 3000 };
         internal const int WorkstationZoomPercent = 100;
-        internal const string DefaultServerUrl = "http://mes-server:5173";
+        internal const string DefaultServerUrl = "http://192.168.110.15:5173";
         internal static readonly string[] LegacyDefaultServerUrls = new string[]
         {
-            "http://192.168.110.15:5173",
+            "http://mes-server:5173",
             "http://192.168.110.90:5173"
         };
         internal const string RunValueName = "MESWorkstationLauncher";
@@ -154,6 +155,7 @@ namespace MESWorkstationConfigurator
         internal static readonly string LogPath = Path.Combine(InstallDirectory, "launcher.log");
         internal static readonly string EdgeProfilePath = Path.Combine(InstallDirectory, "EdgeProfile");
         private static string lastKnownLocalIpAddress = String.Empty;
+        private static bool serverDiscoveryAttempted;
         private static readonly IntPtr WindowTopMost = new IntPtr(-1);
         private static readonly IntPtr WindowNotTopMost = new IntPtr(-2);
         private const uint ShowWindow = 5;
@@ -226,27 +228,36 @@ namespace MESWorkstationConfigurator
         {
             try
             {
+                LauncherConfig config;
                 if (!File.Exists(ConfigPath))
                 {
-                    return new LauncherConfig();
+                    config = new LauncherConfig();
                 }
-                LauncherConfig config;
-                using (FileStream stream = File.OpenRead(ConfigPath))
+                else
                 {
-                    config = (LauncherConfig)new XmlSerializer(typeof(LauncherConfig)).Deserialize(stream);
+                    using (FileStream stream = File.OpenRead(ConfigPath))
+                    {
+                        config = (LauncherConfig)new XmlSerializer(typeof(LauncherConfig)).Deserialize(stream);
+                    }
                 }
                 bool migrated = MigrateLegacyServerUrl(config);
+                bool discovered = false;
+                if (!serverDiscoveryAttempted)
+                {
+                    serverDiscoveryAttempted = true;
+                    discovered = RefreshServerUrlFromDiscovery(config);
+                }
                 config.ZoomPercent = WorkstationZoomPercent;
-                if (migrated)
+                if (migrated || discovered)
                 {
                     try
                     {
                         SaveConfig(config);
-                        Log("已将历史 MES IP 地址迁移为稳定主机名：" + DefaultServerUrl);
+                        Log("MES 地址已按当前可用主机自动更新为：" + config.ServerUrl);
                     }
                     catch (Exception exception)
                     {
-                        Log("MES 地址迁移已在当前进程生效，但保存迁移结果失败：" + exception.Message);
+                        Log("MES 地址回迁已在当前进程生效，但保存回迁结果失败：" + exception.Message);
                     }
                 }
                 return config;
@@ -282,10 +293,30 @@ namespace MESWorkstationConfigurator
             string registeredUrl = (config.RegisteredServerUrl ?? String.Empty).Trim().TrimEnd('/');
             if (IsLegacyDefaultServerUrl(registeredUrl))
             {
-                // The hostname points to the same MES deployment. Preserve the terminal ID and
-                // DPAPI-protected secret instead of rotating credentials during address migration.
+                // Only known project defaults are migrated. Preserve the terminal ID and
+                // DPAPI-protected secret instead of rotating credentials during address rollback.
                 config.RegisteredServerUrl = DefaultServerUrl;
             }
+            return true;
+        }
+
+        internal static bool RefreshServerUrlFromDiscovery(LauncherConfig config)
+        {
+            if (config == null) return false;
+            string currentUrl;
+            try { currentUrl = NormalizeServerUrl(config.ServerUrl); }
+            catch { currentUrl = DefaultServerUrl; }
+            string discoveredUrl = MESServerDiscovery.Discover(currentUrl);
+            if (String.Equals(currentUrl, discoveredUrl, StringComparison.OrdinalIgnoreCase)) return false;
+
+            string registeredUrl = String.Empty;
+            try { registeredUrl = NormalizeServerUrl(config.RegisteredServerUrl); } catch { }
+            config.ServerUrl = discoveredUrl;
+            if (registeredUrl.Length > 0 && String.Equals(registeredUrl, currentUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                config.RegisteredServerUrl = discoveredUrl;
+            }
+            Log("发现 MES 主机实际地址：" + discoveredUrl);
             return true;
         }
 
@@ -302,8 +333,8 @@ namespace MESWorkstationConfigurator
         internal static bool RunServerAddressMigrationSelfTest()
         {
             LauncherConfig legacy = new LauncherConfig();
-            legacy.ServerUrl = "http://192.168.110.15:5173/";
-            legacy.RegisteredServerUrl = "http://192.168.110.15:5173";
+            legacy.ServerUrl = "http://mes-server:5173/";
+            legacy.RegisteredServerUrl = "http://mes-server:5173";
             legacy.TerminalId = "terminal-preserved";
             legacy.ProtectedTerminalSecret = "secret-preserved";
             if (!MigrateLegacyServerUrl(legacy)) return false;
@@ -315,7 +346,7 @@ namespace MESWorkstationConfigurator
             custom.ServerUrl = "http://192.168.110.77:5173";
             custom.RegisteredServerUrl = custom.ServerUrl;
             if (MigrateLegacyServerUrl(custom)) return false;
-            return custom.ServerUrl == "http://192.168.110.77:5173";
+            return custom.ServerUrl == "http://192.168.110.77:5173" && MESServerDiscovery.RunSelfTest();
         }
 
         internal static StationOption FindStation(string key)
@@ -346,7 +377,7 @@ namespace MESWorkstationConfigurator
             if (!Uri.TryCreate(normalized, UriKind.Absolute, out uri)
                 || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             {
-                throw new InvalidOperationException("MES 地址格式不正确，例如：http://mes-server:5173");
+                throw new InvalidOperationException("MES 地址格式不正确，例如：http://192.168.110.15:5173");
             }
             bool hasExplicitPort = uri.Authority.LastIndexOf(':') > uri.Authority.LastIndexOf(']');
             if (!hasExplicitPort && uri.Scheme == Uri.UriSchemeHttp)
@@ -600,19 +631,25 @@ namespace MESWorkstationConfigurator
         internal static void LaunchConfiguredWorkstation(bool waitForMes)
         {
             LauncherConfig config = LoadConfig();
-            string businessTargetUrl = BuildTargetUrl(config);
             try
             {
                 if (waitForMes)
                 {
                     DateTime deadline = DateTime.Now.AddMinutes(5);
+                    DateTime nextDiscovery = DateTime.Now.AddSeconds(30);
                     while (DateTime.Now < deadline && !TestMes(config, 4000))
                     {
+                        if (DateTime.Now >= nextDiscovery)
+                        {
+                            nextDiscovery = DateTime.Now.AddSeconds(30);
+                            if (RefreshServerUrlFromDiscovery(config)) SaveConfig(config);
+                        }
                         Thread.Sleep(3000);
                     }
                     Log("等待 Windows 桌面稳定后启动工作台。");
                     Thread.Sleep(StartupDesktopSettleMilliseconds);
                 }
+                string businessTargetUrl = BuildTargetUrl(config);
                 string edgePath = ResolveEdgePath();
                 string targetUrl = BuildTerminalBootstrapUrl(config);
                 Directory.CreateDirectory(EdgeProfilePath);
@@ -1133,7 +1170,7 @@ namespace MESWorkstationConfigurator
             Controls.Add(title);
 
             Label hint = new Label();
-            hint.Text = "注册为固定终端后，电脑开机会自动认证并进入指定操作台。";
+            hint.Text = "启动时自动发现 MES 当前 IP；注册后开机会自动认证并进入指定操作台。";
             hint.ForeColor = Color.FromArgb(90, 100, 115);
             hint.Location = new Point(30, 59);
             hint.Size = new Size(540, 24);
