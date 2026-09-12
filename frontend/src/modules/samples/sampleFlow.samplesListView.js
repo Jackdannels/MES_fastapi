@@ -1,10 +1,10 @@
 import { resolveLaboratoryDisplayName } from "@/lib/labs";
 import { normalizeText } from "./sampleFlow.shared";
 import { normalizeSampleRecord } from "./sampleFlow.status";
-import { getSampleTrayList } from "./sampleFlow.trayScope";
 import {
   compareValue,
   filterSamplesForActiveTasks,
+  resolveSampleTableTrayCodes,
   resolveStatusClass,
 } from "./sampleFlow.sampleTableHelpers";
 
@@ -34,9 +34,7 @@ function buildSamplesFlowView(input = {}) {
       if (!query) {
         return true;
       }
-      const trayText = getSampleTrayList(sample)
-        .map((tray) => normalizeText(tray.tray_code))
-        .join(" ");
+      const trayText = resolveSampleTableTrayCodes(sample).join(" ");
       const searchText = [
         sample.task_code,
         sample.code,
@@ -51,7 +49,7 @@ function buildSamplesFlowView(input = {}) {
       return searchText.includes(query);
     })
     .map((sample) => {
-      const trayCodes = getSampleTrayList(sample).map((tray) => normalizeText(tray?.tray_code)).filter(Boolean);
+      const trayCodes = resolveSampleTableTrayCodes(sample);
       return {
         ...sample,
         trayCodes,

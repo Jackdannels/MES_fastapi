@@ -1,5 +1,14 @@
 import { filterActiveTasks } from "@/lib/taskArchive";
 import { normalizeText } from "./sampleFlow.shared";
+import { getSampleTrayList } from "./sampleFlow.trayScope";
+
+// 分页摘要只有编号，不包含数量；仅在表格展示时使用，不能视作完整托盘绑定。
+const resolveSampleTableTrayCodes = (sample) => {
+  const codes = Array.isArray(sample?.trayCodes)
+    ? sample.trayCodes
+    : getSampleTrayList(sample).map((tray) => tray?.tray_code);
+  return Array.from(new Set(codes.map(normalizeText).filter(Boolean)));
+};
 
 const resolveStatusClass = (status) => {
   const normalized = normalizeText(status);
@@ -61,5 +70,6 @@ const filterSamplesForActiveTasks = (samples, tasks) => {
 export {
   compareValue,
   filterSamplesForActiveTasks,
+  resolveSampleTableTrayCodes,
   resolveStatusClass,
 };

@@ -223,9 +223,6 @@ const resolveExperimentCycleBoundaryMap = ({
       ))
       .sort((left, right) => parseTimeValue(left?.time) - parseTimeValue(right?.time))
       .at(-1);
-    if (!dispatch) {
-      return;
-    }
     boundaries.set(experimentCode, {
       canceledAt,
       cycleStartAt: parseTimeValue(dispatch?.time),
@@ -321,7 +318,7 @@ const resolveExperimentRuntimeCutoffMap = ({
   }).forEach((boundary, experimentCode) => {
     cutoffMap.set(
       experimentCode,
-      Math.max(cutoffMap.get(experimentCode) || 0, Number(boundary?.cycleStartAt) || 0),
+      Math.max(cutoffMap.get(experimentCode) || 0, Number(boundary?.cycleStartAt) || 0, Number(boundary?.canceledAt) + 1 || 0),
     );
   });
   return cutoffMap;

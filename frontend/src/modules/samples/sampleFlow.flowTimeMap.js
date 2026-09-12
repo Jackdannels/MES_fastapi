@@ -72,7 +72,7 @@ const buildTrayFlowTimeMap = (input = {}) => {
       (left, right) => Number(right?.cycleStartAt || 0) - Number(left?.cycleStartAt || 0),
     )[0]
     || null;
-  const canceledAt = Number(currentCycleBoundary?.canceledAt) || 0;
+  const canceledAt = currentCycleBoundary?.cycleStartAt ? Number(currentCycleBoundary.canceledAt) || 0 : 0;
   const cycleStartAt = Number(currentCycleBoundary?.cycleStartAt) || 0;
   const resetAfterCancellationLabels = new Set([
     "送至暂存间",

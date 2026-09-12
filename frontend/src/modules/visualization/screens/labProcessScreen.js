@@ -91,10 +91,7 @@ export const LabProcessScreen = {
 
               return h("div", { class: "visual-lab-panel", key: lab.name }, [
                 h("div", { class: "visual-lab-panel-head" }, [
-                  h("div", [
-                    h("div", { class: "visual-lab-name" }, lab.name),
-                    h("div", { class: "visual-task-code" }, selectedTask?.taskCode || lab.task),
-                  ]),
+                  h("div", { class: "visual-lab-name", title: lab.name }, lab.name),
                   h("div", { class: "visual-lab-head-actions" }, [
                     props.interactive
                       ? h(

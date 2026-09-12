@@ -19,6 +19,51 @@ const readVisualizationSource = () => [visualizationPagePath, ...visualizationSc
   .join("\n");
 
 describe("visualization styles", () => {
+  test("screen seven enlarges every text role in full-screen and compact previews", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+    const rules = new Map(Array.from(source.matchAll(/([^{}]+)\{([^{}]*)\}/g), ([, selector, body]) => [selector.trim(), body]));
+    const fullSizeRoles = [
+      [".visual-lab-status-board .visual-board-kicker", 15],
+      [".visual-lab-status-board .visual-board-title", 30],
+      [".visual-lab-status-board .visual-board-clock", 17],
+      [".visual-lab-status-board .visual-board-clock strong", 20],
+      [".visual-lab-status-summary-item span", 15],
+      [".visual-lab-status-summary-item strong", 24],
+      [".visual-lab-status-card-head strong", 20],
+      [".visual-lab-status-card-head span", 15],
+      [".visual-lab-status-metric span", 14],
+      [".visual-lab-status-metric strong", 20],
+      [".visual-lab-status-metric.is-unavailable strong", 17],
+    ];
+    const compactRoles = [
+      [".visual-board.visual-lab-status-board.is-compact .visual-board-kicker", 10],
+      [".visual-board.visual-lab-status-board.is-compact .visual-board-title", 18],
+      [".visual-lab-status-board.is-compact .visual-board-clock", 11],
+      [".visual-lab-status-board.is-compact .visual-board-clock strong", 12],
+      [".visual-lab-status-board.is-compact .visual-lab-status-summary-item span", 10],
+      [".visual-lab-status-board.is-compact .visual-lab-status-summary-item strong", 14],
+      [".visual-lab-status-board.is-compact .visual-lab-status-card-head strong", 11],
+      [".visual-lab-status-board.is-compact .visual-lab-status-card-head span", 10],
+      [".visual-lab-status-board.is-compact .visual-lab-status-metric span", 9],
+      [".visual-lab-status-board.is-compact .visual-lab-status-metric strong", 11],
+    ];
+
+    for (const [selector, size] of [...fullSizeRoles, ...compactRoles]) {
+      expect(rules.get(selector), selector).toMatch(new RegExp(`font(?:-size:\\s*|:\\s*\\d+\\s+)${size}px`));
+    }
+  });
+
+  test("screen seven preserves readable cards when enlarged copy exceeds a small viewport", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+
+    expect(source).toMatch(/\.visual-board\.visual-lab-status-board\s*{[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\);/s);
+    expect(source).toMatch(/\.visual-lab-status-grid\s*{[^}]*grid-auto-rows:\s*minmax\(min-content,\s*1fr\);[^}]*overflow:\s*auto;/s);
+    expect(source).toMatch(/\.visual-lab-status-board \.visual-board-header\s*{[^}]*flex-wrap:\s*wrap;/s);
+    expect(source).toMatch(/\.visual-lab-status-card-head strong\s*{[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(source).toMatch(/\.visual-lab-status-metric span\s*{[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(source).toMatch(/\.visual-lab-status-metric\.is-unavailable strong\s*{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/s);
+  });
+
   test("lab-process single preview fits viewport height and avoids a duplicate outer frame", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
@@ -199,10 +244,14 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-switch-option small\s*{[^}]*font-size:\s*13px;/s);
   });
 
-  test("layout A enlarges the lab switch action button", () => {
+  test("lab process headers enlarge room names and switch buttons without duplicate task copy", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
-    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-cycle\s*{[^}]*min-height:\s*34px;[^}]*padding:\s*0 12px;[^}]*font-size:\s*14px;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-panel-head\s*{[^}]*align-items:\s*center;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-name\s*{[^}]*font-size:\s*32px;[^}]*line-height:\s*1\.25;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-cycle\s*{[^}]*min-height:\s*44px;[^}]*padding:\s*0 20px;[^}]*font-size:\s*20px;[^}]*white-space:\s*nowrap;/s);
+    expect(source).toMatch(/\.visual-board\.is-compact \.visual-lab-name\s*{[^}]*font-size:\s*14px;/s);
+    expect(source).not.toContain(".visual-task-code");
   });
 
   test("staging sample screen defines full and compact industrial board layouts", () => {

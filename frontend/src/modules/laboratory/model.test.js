@@ -6558,8 +6558,13 @@ describe("laboratory model", () => {
 
     expect(view.selectedTrayFlow.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：送至霉菌试验室`);
     expect(view.selectedTrayFlow.steps.find((step) => step.label === "霉菌取消后恢复处理")).toEqual(
-      expect.objectContaining({ reached: true, time: "2026-09-03 21:28:11" }),
+      expect.objectContaining({ reached: true, time: "2026-09-03 21:27:41" }),
     );
+    ["送至暂存间", "已到达暂存间"].forEach((label) => {
+      expect(view.selectedTrayFlow.steps.find((step) => step.label === label)).toEqual(
+        expect.objectContaining({ active: false, reached: true, time: "" }),
+      );
+    });
     ["已到达实验室", "工装夹具安装", "实验准备就绪"].forEach((label) => {
       expect(view.selectedTrayFlow.steps.find((step) => step.label === label)).toEqual(
         expect.objectContaining({ active: false, reached: false, time: "" }),

@@ -132,6 +132,15 @@ describe("useSamplesFlow paged reads", () => {
     expect(wrapper.vm.rawSamples[0].history).toEqual([{ action: "stock_in" }]);
   });
 
+  test("preserves tray codes from arrival and staging summaries without full tray quantities", async () => {
+    const wrapper = mount(Harness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.sampleRows[0].trayCodesText).toBe("TRAY-001");
+    expect(wrapper.vm.stagingRows[0].trayCodesText).toBe("TRAY-STAGING");
+    expect(mocks.fullSnapshotReads).toBe(0);
+  });
+
   test("coalesces concurrent full-snapshot demand before a write action", async () => {
     const wrapper = mount(Harness);
     await settle(wrapper);

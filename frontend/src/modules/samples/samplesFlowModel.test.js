@@ -10372,8 +10372,20 @@ describe("samplesFlowModel", () => {
 
     expect(view.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：送至霉菌试验室`);
     expect(view.steps.find((step) => step.label === "霉菌取消后恢复处理")).toEqual(
-      expect.objectContaining({ active: false, reached: true, time: "2026-09-03 21:28:11" }),
+      expect.objectContaining({ active: false, reached: true, time: "2026-09-03 21:27:41" }),
     );
+    const recoveryIndex = view.steps.findIndex((step) => step.label === "霉菌取消后恢复处理");
+    const stagingDispatchIndex = view.steps.findIndex((step) => step.label === "送至暂存间");
+    const stagingArrivalIndex = view.steps.findIndex((step) => step.label === "已到达暂存间");
+    const moldDispatchIndex = view.steps.findIndex((step) => step.label === "送至霉菌试验室");
+    expect(recoveryIndex).toBeLessThan(stagingDispatchIndex);
+    expect(stagingDispatchIndex).toBeLessThan(stagingArrivalIndex);
+    expect(stagingArrivalIndex).toBeLessThan(moldDispatchIndex);
+    ["送至暂存间", "已到达暂存间"].forEach((label) => {
+      expect(view.steps.find((step) => step.label === label)).toEqual(
+        expect.objectContaining({ active: false, reached: true, time: "" }),
+      );
+    });
     expect(view.steps.find((step) => step.label === "送至霉菌试验室")).toEqual(
       expect.objectContaining({ active: true, time: "2026-09-03 21:28:11" }),
     );
@@ -10478,7 +10490,7 @@ describe("samplesFlowModel", () => {
     expect(dispatchedView.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：送至四综合实验室`);
     ["送至暂存间", "已到达暂存间"].forEach((label) => {
       expect(dispatchedView.steps.find((step) => step.label === label)).toEqual(
-        expect.objectContaining({ active: false, reached: false, time: "" }),
+        expect.objectContaining({ active: false, reached: true, time: "" }),
       );
     });
 
@@ -10676,8 +10688,8 @@ describe("samplesFlowModel", () => {
     const unfinishedIndex = canceledView.steps.findIndex((step) => step.label === "霉菌试验未完成");
     expect(canceledIndex).toBeGreaterThan(-1);
     expect(recoveryIndex).toBe(canceledIndex + 1);
-    expect(stagingDispatchIndex).toBeLessThan(stagingArrivalIndex);
-    expect(stagingArrivalIndex).toBeLessThan(canceledIndex);
+    expect(stagingDispatchIndex).toBe(-1);
+    expect(stagingArrivalIndex).toBe(-1);
     expect(unfinishedIndex).toBe(recoveryIndex + 1);
     expect(canceledView.steps[canceledIndex]).toEqual(expect.objectContaining({
       active: true,
@@ -10698,7 +10710,7 @@ describe("samplesFlowModel", () => {
     expect(canceledView.steps.slice(unfinishedIndex).every((step) => (
       step.active === false && step.reached === false
     ))).toBe(true);
-    ["送至霉菌试验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "霉菌试验进行中"].forEach((label) => {
+    ["送至暂存间", "已到达暂存间", "送至霉菌试验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "霉菌试验进行中"].forEach((label) => {
       expect(canceledView.steps.map((step) => step.label)).not.toContain(label);
     });
     expect(canceledView.steps.map((step) => step.label)).toContain("霉菌试验未完成");
@@ -10847,7 +10859,7 @@ describe("samplesFlowModel", () => {
     expect(stagingArrivalIndex).toBeLessThan(unfinishedIndex);
     expect(view.steps[recoveryIndex]).toEqual(expect.objectContaining({
       reached: true,
-      time: "2026-09-10 19:00:26",
+      time: "2026-09-10 18:47:24",
     }));
     expect(view.steps[stagingDispatchIndex]).toEqual(expect.objectContaining({
       active: true,

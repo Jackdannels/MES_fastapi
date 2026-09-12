@@ -467,6 +467,7 @@
         </div>
         <AppFeedback
           v-if="compareFeedback"
+          class="laboratory-compare-feedback"
           :message="compareFeedback.message"
           :tone="compareFeedback.tone === 'success' ? 'success' : 'error'"
           :data-tone="compareFeedback.tone"

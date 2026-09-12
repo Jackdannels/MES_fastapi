@@ -1593,6 +1593,20 @@ def test_derive_experiment_status_map_keeps_axis_experiment_running_until_all_su
     }
 
 
+def test_new_mold_schedule_ignores_old_attempts_and_other_tray_progress() -> None:
+    schedules = [{"schedule_id": 101, "schedule_no": "new-mold", "task_no": "TASK", "experiment_no": "MOLD", "schedule_status": "实验进行中"}]
+    relations = [
+        {"task_no": "TASK", "experiment_no": "MOLD", "tray_no": "TP-1", "run_schedule_no": "old-mold", "run_tray_status": "实验已完成"},
+        {"task_no": "TASK", "experiment_no": "MOLD", "tray_no": "TP-2", "run_schedule_no": "old-mold", "run_tray_status": "实验已取消"},
+    ]
+    kwargs = {"experiment_run_trays": relations, "experiment_trays": [
+        {"experiment_no": "MOLD", "tray_no": "TP-1"}, {"experiment_no": "MOLD", "tray_no": "TP-2"},
+    ]}
+    assert mysql_storage_status_module.derive_schedule_status_map(schedules, {"MOLD": "实验进行中"}, **kwargs) == {101: "已排程"}
+    relations.append({"task_no": "TASK", "experiment_no": "MOLD", "tray_no": "TP-2", "run_schedule_no": "new-mold", "run_tray_status": "实验进行中"})
+    assert mysql_storage_status_module.derive_schedule_status_map(schedules, {"MOLD": "实验进行中"}, **kwargs) == {101: "实验进行中"}
+
+
 def test_derive_schedule_status_map_keeps_unstarted_axis_sub_experiment_scheduled() -> None:
     schedules = [
         {

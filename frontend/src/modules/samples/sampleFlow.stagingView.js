@@ -4,9 +4,9 @@ import {
   normalizeLabels,
   normalizeSamplesSnapshot,
 } from "./sampleFlow.status";
-import { getSampleTrayList } from "./sampleFlow.trayScope";
 import {
   compareValue,
+  resolveSampleTableTrayCodes,
   resolveStatusClass,
 } from "./sampleFlow.sampleTableHelpers";
 
@@ -48,13 +48,14 @@ function buildSamplesStagingView(input = {}) {
         sample?.status,
         sample?.owner,
         sample?.flow_status,
+        resolveSampleTableTrayCodes(sample).join(" "),
       ]
         .map((item) => normalizeText(item).toLowerCase())
         .join(" ");
       return searchText.includes(query);
     })
     .map((sample) => {
-      const trayCodes = getSampleTrayList(sample).map((tray) => normalizeText(tray?.tray_code)).filter(Boolean);
+      const trayCodes = resolveSampleTableTrayCodes(sample);
       return {
         ...sample,
         selected: selectedSet.has(normalizeText(sample?.code)),

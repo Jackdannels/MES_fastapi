@@ -130,9 +130,9 @@ describe("tray flow consistency", () => {
     expect(vibrationView.selectedTrayRow?.trayCode).toBe(snapshot.tray001);
     expect(vibrationView.currentExperimentTrayRows.find((row) => row.trayCode === snapshot.tray001)?.trayStatus).not.toBe("实验进行中");
     expect(activeLabel(vibrationView.selectedTrayFlow)).not.toBe("振动试验进行中");
-    expect(trayCodesForPanel(panels, "盐雾试验室")).toEqual([snapshot.tray003]);
-    expect(trayCodesForPanel(panels, "振动一室")).toEqual([snapshot.tray001, snapshot.tray002]);
-    expect(trayCodesForPanel(panels, "四综合实验室")).toEqual([snapshot.tray003]);
+    expect(trayCodesForPanel(panels, "盐雾试验室")).toEqual([]);
+    expect(trayCodesForPanel(panels, "振动一室")).toEqual([snapshot.tray003]);
+    expect(trayCodesForPanel(panels, "四综合实验室")).toEqual([snapshot.tray001, snapshot.tray002]);
     expect(panels.find((panel) => panel.name === "振动一室")?.trays[0]?.status).not.toBe("振动试验进行中");
   });
 

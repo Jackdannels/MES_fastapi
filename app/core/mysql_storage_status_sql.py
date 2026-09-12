@@ -296,7 +296,7 @@ def sync_progress_statuses(backend: Any, cursor) -> None:
 
     cursor.execute(
         """
-        SELECT schedule_id, task_id, task_no, experiment_no, sub_experiment_code, axis_codes_json, schedule_status
+        SELECT schedule_id, schedule_no, task_id, task_no, experiment_no, sub_experiment_code, axis_codes_json, schedule_status
         FROM biz_schedule
         WHERE schedule_type = %s
         ORDER BY task_no ASC, experiment_no ASC
@@ -316,9 +316,12 @@ def sync_progress_statuses(backend: Any, cursor) -> None:
 
     cursor.execute(
         """
-        SELECT relation_id, run_no, task_no, experiment_no, sub_experiment_code, tray_no, run_tray_status
-        FROM biz_experiment_run_tray
-        ORDER BY task_no ASC, experiment_no ASC, tray_no ASC
+        SELECT rt.relation_id, rt.run_no, rt.task_no, rt.experiment_no, rt.sub_experiment_code,
+               rt.tray_no, rt.run_tray_status, run.schedule_no AS run_schedule_no
+        FROM biz_experiment_run_tray rt
+        LEFT JOIN biz_experiment_run run ON run.run_no = rt.run_no
+          AND run.task_no = rt.task_no AND run.experiment_no = rt.experiment_no
+        ORDER BY rt.task_no ASC, rt.experiment_no ASC, rt.tray_no ASC
         """
     )
     experiment_run_trays = cursor.fetchall()

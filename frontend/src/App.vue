@@ -45,11 +45,9 @@
       </div>
     </aside>
     <main class="main">
-      <header class="page-header">
-        <div>
-          <div class="eyebrow">中控中心</div>
+      <header class="page-header page-header--central">
+        <div class="page-header__copy">
           <h1>{{ pageTitle }}</h1>
-          <p class="subtitle">{{ pageSubtitle }}</p>
         </div>
         <div class="header-actions">
           <button

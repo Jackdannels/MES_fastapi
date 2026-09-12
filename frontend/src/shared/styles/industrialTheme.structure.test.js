@@ -27,6 +27,15 @@ describe("industrial blackbox theme", () => {
     expect(source).toMatch(/\.page-header\s*\{[^}]*var\(--bg-card\)/s);
   });
 
+  test("enlarges only central page titles and allows narrow headers to wrap", () => {
+    const source = readFileSync(shellStylesPath, "utf8");
+
+    expect(source).toMatch(/\.page-header--central h1\s*\{[^}]*margin:\s*0;[^}]*font-size:\s*clamp\(36px,\s*2\.5vw,\s*44px\);[^}]*line-height:\s*1\.2;[^}]*overflow-wrap:\s*anywhere/s);
+    expect(source).toMatch(/\.page-header--central\s*\{[^}]*align-items:\s*center;[^}]*flex-wrap:\s*wrap/s);
+    expect(source).toMatch(/\.page-header--central \.header-actions\s*\{[^}]*flex-wrap:\s*wrap/s);
+    expect(source).toMatch(/\.page-header h1\s*\{[^}]*font-size:\s*32px/s);
+  });
+
   test("keeps shared cards tables and form controls on the same industrial surface system", () => {
     const source = readFileSync(componentStylesPath, "utf8");
 

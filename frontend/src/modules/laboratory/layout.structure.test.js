@@ -62,14 +62,18 @@ describe("laboratory workbench layout", () => {
     expect(pageSource).toContain('data-testid="laboratory-salt-stop-modal"');
     expect(pageSource).toContain("laboratory-operation-modal-button");
     expect(stylesSource).toMatch(/\.laboratory-operation-modal \.modal-content\s*\{[^}]*width:\s*min\(860px,\s*92vw\)[^}]*min-height:\s*360px/i);
-    expect(stylesSource).toMatch(/\.laboratory-operation-modal--compare \.modal-content\s*\{[^}]*width:\s*min\(1320px,\s*96vw\)[^}]*max-width:\s*calc\(100vw\s*-\s*24px\)/i);
+    expect(stylesSource).toMatch(/\.laboratory-operation-modal--compare \.modal-content\s*\{[^}]*width:\s*min\(1440px,\s*96vw\)[^}]*max-width:\s*calc\(100vw\s*-\s*24px\)/i);
     expect(stylesSource).toMatch(/\.laboratory-operation-modal-button\s*\{[^}]*min-width:\s*176px[^}]*min-height:\s*64px/i);
     expect(stylesSource).toMatch(/\.laboratory-compare-scan\s*\{[^}]*width:\s*100%[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+var\(--laboratory-compare-side-action-width\)/i);
     expect(stylesSource).toMatch(/\[data-testid="laboratory-compare-modal"\] \.laboratory-compare-scan input\s*\{[^}]*height:\s*72px[^}]*min-height:\s*72px[^}]*font-size:\s*18px/i);
     expect(stylesSource).toMatch(/\.laboratory-compare-scan-button\s*\{[^}]*min-width:\s*220px[^}]*min-height:\s*72px/i);
     expect(pageSource).toContain("laboratory-compare-complete-button");
     expect(stylesSource).toMatch(/\[data-testid="laboratory-compare-modal"\] \.form-actions\s*\{[^}]*width:\s*100%[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/i);
-    expect(stylesSource).toMatch(/\.laboratory-compare-complete-button\s*\{[^}]*width:\s*100%[^}]*height:\s*72px[^}]*min-height:\s*72px[^}]*font-size:\s*20px/i);
+    expect(stylesSource).toMatch(/\.laboratory-compare-complete-button\s*\{[^}]*width:\s*100%[^}]*height:\s*88px[^}]*min-height:\s*88px[^}]*font-size:\s*24px/i);
+    expect(pageSource).toMatch(/<AppFeedback[\s\S]*?class="laboratory-compare-feedback"[\s\S]*?data-testid="laboratory-compare-feedback"/i);
+    expect(stylesSource).toMatch(/\.laboratory-compare-feedback\.app-feedback\s*\{[^}]*padding:\s*16px 18px[^}]*font-size:\s*17px[^}]*line-height:\s*1\.55/i);
+    expect(stylesSource).toMatch(/\.laboratory-compare-feedback strong\s*\{[^}]*font-size:\s*21px[^}]*line-height:\s*1\.35/i);
+    expect(stylesSource).toMatch(/\.laboratory-compare-feedback \.app-feedback__body > div\s*\{[^}]*font-size:\s*17px[^}]*line-height:\s*1\.55/i);
   });
 
   test("keeps mold cancellation separate from reset and normal completion", () => {

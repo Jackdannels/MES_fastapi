@@ -246,7 +246,34 @@ def derive_schedule_status_map(
             else:
                 status_map[schedule_id] = "已排程"
             continue
-        status_map[schedule_id] = experiment_status_map.get(experiment_no, normalize_experiment_status(schedule.get("schedule_status") or schedule.get("status")))
+        schedule_no = normalize_text(schedule.get("schedule_no"))
+        if schedule_no:
+            # Overall experiment progress can include older completed/canceled
+            # attempts. A new schedule must only inherit its own run evidence.
+            schedule_relations = [
+                row for row in experiment_run_trays or []
+                if normalize_text(row.get("run_schedule_no")) == schedule_no
+                and normalize_text(row.get("experiment_no") or row.get("experiment_code")) == experiment_no
+                and normalize_text(row.get("task_no")) == normalize_text(schedule.get("task_no"))
+            ]
+            completed_trays = {
+                normalize_text(row.get("tray_no") or row.get("tray_code"))
+                for row in schedule_relations
+                if normalize_text(row.get("run_tray_status") or row.get("status")) in RUN_TRAY_COMPLETED_STATUSES
+                or normalize_experiment_status_text(row.get("run_tray_status") or row.get("status")) in EXPERIMENT_COMPLETED_STATUSES
+            }
+            required_trays = tray_codes_by_experiment.get(experiment_no, set())
+            if completed_trays and (not required_trays or required_trays.issubset(completed_trays)):
+                status_map[schedule_id] = "实验已完成"
+            elif completed_trays or any(
+                normalize_experiment_status_text(row.get("run_tray_status") or row.get("status")) in EXPERIMENT_RUNNING_STATUSES
+                for row in schedule_relations
+            ):
+                status_map[schedule_id] = EXPERIMENT_RUNNING_STATUS
+            else:
+                status_map[schedule_id] = "已排程"
+        else:
+            status_map[schedule_id] = experiment_status_map.get(experiment_no, normalize_experiment_status(schedule.get("schedule_status") or schedule.get("status")))
     return status_map
 
 

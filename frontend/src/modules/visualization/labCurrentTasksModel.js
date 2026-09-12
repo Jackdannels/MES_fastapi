@@ -160,7 +160,10 @@ const buildLabCard = ({ deviceRow, labName, now, rawDevice, snapshot }) => {
     labCode: normalizeText(deviceRow?.code),
   });
   const currentTask = statusIsCompleted(workbench.currentTask?.status) ? null : workbench.currentTask;
-  const displayTask = currentTask;
+  // 展示排程不等于允许执行：保留工作台的当前任务优先级，缺省时展示本室未完成计划。
+  // 不回写 currentTask，避免放开共用托盘的前序实验约束。
+  const displayTask = currentTask || asArray(workbench.scheduleRows).find((row) => !statusIsCompleted(row?.status)) || null;
+  const waitingForPredecessor = !currentTask && displayTask?.sequenceEligible === false;
   const countdown = buildCountdown(workbench.runningExperiment);
   const displayTrayRows = countdown.active
     ? asArray(workbench.runningExperiment?.trayRows)
@@ -213,7 +216,7 @@ const buildLabCard = ({ deviceRow, labName, now, rawDevice, snapshot }) => {
     sampleCount: displaySampleCount,
     shouldBlink: isUrgentRunning,
     startAt,
-    stageLabel: statusLabel,
+    stageLabel: waitingForPredecessor && !repair && !countdown.active ? "等待前序实验" : statusLabel,
     statusLabel,
     statusTone,
     taskCode: taskCode || "-",

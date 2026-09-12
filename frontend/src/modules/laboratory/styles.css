@@ -1396,7 +1396,7 @@
 }
 
 .laboratory-operation-modal--compare .modal-content {
-  width: min(1320px, 96vw);
+  width: min(1440px, 96vw);
   max-width: calc(100vw - 24px);
   max-height: calc(100dvh - 24px);
   overflow-y: auto;
@@ -1767,10 +1767,12 @@
 
 .laboratory-compare-complete-button {
   width: 100%;
-  height: 72px;
-  min-height: 72px;
-  padding-inline: 32px;
-  font-size: 20px;
+  height: 88px;
+  min-height: 88px;
+  padding-inline: 48px;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
 }
 
 [data-testid="laboratory-compare-modal"] .laboratory-compare-scan input::placeholder {
@@ -1796,16 +1798,42 @@
   color: #78928d;
 }
 
-[data-testid="laboratory-compare-modal"] .app-feedback {
+[data-testid="laboratory-compare-modal"] .form-actions .laboratory-compare-complete-button:not(:disabled) {
+  border-color: rgba(var(--industrial-accent-rgb), 0.88);
+  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.64), rgba(var(--industrial-accent-rgb), 0.36));
+  box-shadow: 0 12px 30px rgba(var(--industrial-accent-rgb), 0.18), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+[data-testid="laboratory-compare-modal"] .laboratory-compare-feedback.app-feedback {
+  gap: 12px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 16px 18px;
+  font-size: 17px;
+  line-height: 1.55;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.025);
 }
 
-[data-testid="laboratory-compare-modal"] .app-feedback strong {
-  color: inherit;
+[data-testid="laboratory-compare-modal"] .laboratory-compare-feedback .app-feedback__icon,
+[data-testid="laboratory-compare-modal"] .laboratory-compare-feedback .app-feedback__close {
+  width: 32px;
+  height: 32px;
+  font-size: 18px;
 }
 
-[data-testid="laboratory-compare-modal"] .app-feedback__body > div {
+[data-testid="laboratory-compare-modal"] .laboratory-compare-feedback strong {
+  display: block;
+  color: inherit;
+  font-size: 21px;
+  line-height: 1.35;
+}
+
+[data-testid="laboratory-compare-modal"] .laboratory-compare-feedback .app-feedback__body > div {
+  margin-top: 4px;
   color: rgba(247, 255, 253, 0.8);
+  font-size: 17px;
+  line-height: 1.55;
 }
 
 .laboratory-compare-feedback {
@@ -1871,6 +1899,13 @@
 
   .laboratory-compare-scan-button {
     width: 100%;
+  }
+
+  .laboratory-compare-complete-button {
+    height: 76px;
+    min-height: 76px;
+    padding-inline: 24px;
+    font-size: 21px;
   }
 
   .laboratory-attendance-header {

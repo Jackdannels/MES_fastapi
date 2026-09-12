@@ -266,10 +266,15 @@ const buildTrayRowsByLab = ({
         : normalizeLifecycleStatus(sample?.location, normalizeText(sample?.status));
       const lifecycleLocation = trayStatus ? "" : sample?.location;
       const statusHasOwnFlowContext = isCompletedOrPartialAxisStatus(lifecycleStatus);
+      const completedAtPhysicalLab = ["实验已完成", "实验完成", "实验已经完成"].includes(lifecycleStatus)
+        && incompleteRelations.length > 0
+        && asArray(labs).some((lab) => textMatchesLab(sample?.location, lab));
       asArray(labs).forEach((lab, labIndex) => {
         const labIdentity = lab || lab?.name || lab?.code;
         const incompleteLabRelations = incompleteRelations.filter((relation) => relationMatchesLab(relation, labIdentity));
-        if (incompleteLabRelations.length === 0) {
+        if (completedAtPhysicalLab
+          ? !textMatchesLab(sample?.location, labIdentity)
+          : incompleteLabRelations.length === 0) {
           return;
         }
         const sampleLocationMatchesLab = textMatchesLab(sample?.location, labIdentity);

@@ -1581,11 +1581,11 @@ describe("visualization model", () => {
     const impactTray = panels.find((panel) => panel.name === "冲击一室")?.trays.find((tray) => tray.trayCode === trayCode);
     const temperatureTray = panels.find((panel) => panel.name === "温度冲击一室")?.trays.find((tray) => tray.trayCode === trayCode);
 
-    expect(impactTray).toEqual(expect.objectContaining({
+    expect(temperatureTray).toEqual(expect.objectContaining({
       trayCode,
     }));
-    expect(impactTray?.steps.map((step) => step.label)).toContain("冲击试验未完成");
-    expect(temperatureTray).toBeUndefined();
+    expect(temperatureTray?.steps.map((step) => step.label)).toContain("冲击试验未完成");
+    expect(impactTray).toBeUndefined();
   });
 
   test("does not treat partial completed status text as completed experiment history", () => {
@@ -1627,7 +1627,7 @@ describe("visualization model", () => {
     }));
   });
 
-  test("uses the next unfinished experiment lab after a tray completes the previous experiment", () => {
+  test("keeps a completed tray at its last physical lab until it actually moves to the next experiment", () => {
     const panels = buildLabProcessPanels({
       labNames: ["振动一室", "盐雾试验室", "霉菌试验室"],
       experiments: [
@@ -1671,11 +1671,11 @@ describe("visualization model", () => {
       ],
     });
 
-    expect(panels.find((panel) => panel.name === "振动一室")?.trays).toEqual([]);
-    expect(panels.find((panel) => panel.name === "盐雾试验室")?.trays.map((tray) => tray.trayCode)).toEqual([
+    expect(panels.find((panel) => panel.name === "盐雾试验室")?.trays).toEqual([]);
+    expect(panels.find((panel) => panel.name === "振动一室")?.trays.map((tray) => tray.trayCode)).toEqual([
       "SYLU-2026-06-002-TP-001",
     ]);
-    expect(panels.find((panel) => panel.name === "盐雾试验室")?.trays[0].steps.map((step) => step.label)).toEqual(
+    expect(panels.find((panel) => panel.name === "振动一室")?.trays[0].steps.map((step) => step.label)).toEqual(
       expect.arrayContaining(["振动试验已完成", "送至盐雾试验室", "盐雾试验未完成"]),
     );
   });

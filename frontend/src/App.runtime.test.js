@@ -470,7 +470,7 @@ describe("App runtime boundary", () => {
     const text = wrapper.text();
     expect(text).toContain("七二四新火工区信息化中控管理系统");
     expect(text).toContain("实验室中控管理");
-    expect(text).toContain("中控中心");
+    expect(text).not.toContain("中控中心");
     expect(text).toContain("中控总览");
     expect(wrapper.find(".sidebar").exists()).toBe(true);
     expect(wrapper.find(".nav-link").exists()).toBe(true);
@@ -481,6 +481,27 @@ describe("App runtime boundary", () => {
     expect(text).toContain("自动采集");
     expect(text).toContain("固定报告");
   });
+
+  test.each(getNavigationModules("central").map(({ route }) => [route.name, route]))(
+    "renders a title-only central header for %s",
+    async (_name, route) => {
+      reactiveRoute.meta = { ...route.meta, subtitle: "待移除的功能简介" };
+      reactiveRoute.name = route.name;
+      reactiveRoute.path = route.path;
+
+      mountApp();
+      await nextTick();
+
+      const header = wrapper.get(".page-header--central");
+      expect(header.get("h1").text()).toBe(route.meta.title);
+      expect(header.find(".eyebrow").exists()).toBe(false);
+      expect(header.find(".subtitle").exists()).toBe(false);
+      expect(header.text()).not.toContain("待移除的功能简介");
+      expect(header.text()).not.toContain("中控中心");
+      expect(header.text()).toContain("刷新");
+      expect(header.get('[data-testid="app-logout"]').text()).toBe("退出登录");
+    },
+  );
 
   test("renders central sidebar with task intake before task overview", async () => {
     const navLabels = getNavigationModules("central").map((item) => item.route.meta?.title);
