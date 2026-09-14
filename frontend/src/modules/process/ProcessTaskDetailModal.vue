@@ -94,7 +94,11 @@
               v-for="(step, index) in detail?.selectedTrayFlow?.steps || []"
               :key="step.key"
               :data-flow-step="index"
-              :class="{ current: step.active, reached: step.reached }"
+              :class="{
+                current: step.active,
+                reached: step.reached && step.pauseResetState !== 'historical' && !step.pauseResetRequired,
+                'pause-reset': step.pauseResetState === 'historical' || step.pauseResetRequired,
+              }"
             >
               <span class="process-task-flow-label">{{ step.label }}</span>
               <span class="process-task-flow-time">{{ formatFlowTime(step.time) }}</span>
@@ -189,8 +193,10 @@ const formatFlowTime = (value) => {
 .process-task-flow-list li { position: relative; padding: 12px 14px 12px 38px; border-radius: 8px; border: 1px solid rgba(148, 163, 184, 0.24); background: var(--surface-inset); color: var(--muted); font-size: 14px; }
 .process-task-flow-list li::before { content: ""; position: absolute; left: 12px; top: 50%; width: 10px; height: 10px; margin-top: -5px; border-radius: 50%; background: rgba(148, 163, 184, 0.58); }
 .process-task-flow-list li.reached { border-color: var(--status-success-border); background: var(--status-success-bg); color: var(--status-success-text); }
+.process-task-flow-list li.pause-reset { border-color: rgba(251, 146, 60, 0.72); background: rgba(249, 115, 22, 0.12); color: #fdba74; }
 .process-task-flow-list li.current { border-color: var(--status-info-border); background: var(--status-info-bg); color: var(--status-info-text); border-width: 2px; font-weight: 700; box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.16), 0 0 0 1px rgba(34, 211, 238, 0.1); }
 .process-task-flow-list li.reached::before { background: rgba(34, 197, 94, 0.9); }
+.process-task-flow-list li.pause-reset::before { background: rgba(249, 115, 22, 0.92); }
 .process-task-flow-list li.current::before { background: rgba(34, 211, 238, 0.96); }
 .process-task-flow-list--timed li { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: center; gap: 12px; }
 .process-task-flow-label { line-height: 1.35; }

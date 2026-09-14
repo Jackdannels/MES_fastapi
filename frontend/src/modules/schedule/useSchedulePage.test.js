@@ -632,7 +632,7 @@ describe("useSchedulePage", () => {
     snapshot["mes.devices"] = [{ code: "振动一室" }, { code: "振动二室" }];
     snapshot["mes.experiments"][1] = {
       ...snapshot["mes.experiments"][1],
-      axis_codes: ["y+", "x-"],
+      axis_codes: ["y+", "x"],
       required_device: "振动试验",
     };
     snapshot["mes.schedules"] = [
@@ -789,6 +789,21 @@ describe("useSchedulePage", () => {
     expect(wrapper.vm.scheduleWarning).toContain("排程数据加载失败");
     expect(wrapper.vm.scheduleRows).toEqual([]);
     expect(wrapper.vm.taskOptions).toEqual([]);
+  });
+
+  test("keeps loaded schedule data visible when automatic cleanup is rejected", async () => {
+    mocks.loadSnapshot.mockImplementationOnce(async (options) => {
+      options.onReconciliationError(new Error("完成任务比对后排程不可删除或重新排程。"));
+      return buildSnapshot();
+    });
+
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+
+    expect(wrapper.vm.scheduleRows.map((row) => row.id)).toContain("schedule-1");
+    expect(wrapper.vm.taskOptions.length).toBeGreaterThan(0);
+    expect(wrapper.vm.scheduleWarning).toContain("排程数据已加载，但过期排程自动清理未完成");
+    expect(wrapper.vm.scheduleWarning).not.toContain("排程数据加载失败");
   });
 
   test("paginates the schedule list at ten rows and resets to page one after filtering", async () => {

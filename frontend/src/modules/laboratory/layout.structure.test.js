@@ -4,6 +4,12 @@ import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 
 describe("laboratory workbench layout", () => {
+  test("labels salt-spray effective runtime consistently", () => {
+    expect(pageSource).toContain("有效时长");
+    expect(pageSource).toContain("暂停期间不计入有效时长");
+    expect(pageSource).not.toContain("有效暴露");
+  });
+
   const pageSource = readFileSync(resolve(process.cwd(), "src/modules/laboratory/page.vue"), "utf8");
   const stylesSource = readFileSync(resolve(process.cwd(), "src/modules/laboratory/styles.css"), "utf8");
   const usePageSource = readFileSync(resolve(process.cwd(), "src/modules/laboratory/useLaboratoryPage.js"), "utf8");

@@ -70,7 +70,7 @@ def report_snapshot():
                 "run_no": "RUN-1",
                 "task_code": "TASK:001",
                 "experiment_code": "EXP-VIB",
-                "axis_code": "x+",
+                "axis_code": "x",
                 "started_at": "2026-07-27 09:45:00",
                 "status": "实验进行中",
             }
@@ -128,7 +128,7 @@ def test_archive_axis_completion_uses_step_time_safe_paths_and_is_idempotent(tmp
         task_code="TASK:001",
         experiment_code="EXP-VIB",
         run_no="RUN-1",
-        axis_code="X+",
+        axis_code="X",
         completed_at="2026-07-27 09:55:00",
     )
 
@@ -140,7 +140,7 @@ def test_archive_axis_completion_uses_step_time_safe_paths_and_is_idempotent(tmp
     assert report_path.relative_to(tmp_path).parts == (
         "TASK_001",
         "振动试验",
-        "X+轴向",
+        "X轴向",
         "2026-07-27 09.45-09.55",
         "SP_001.pdf",
     )
@@ -153,7 +153,7 @@ def test_archive_axis_completion_uses_step_time_safe_paths_and_is_idempotent(tmp
         task_code="TASK:001",
         experiment_code="EXP-VIB",
         run_no="RUN-1",
-        axis_code="x+",
+        axis_code="x",
         completed_at="2026-07-27 09:55:00",
     )
     assert second["attempted"] == 0

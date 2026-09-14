@@ -315,13 +315,13 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-task-plan-row \.visual-task-plan-tray-chip\s*{[^}]*min-height:\s*32px;[^}]*font-size:\s*16px;/s);
   });
 
-  test("uses a dedicated orange tone for pause reset steps", () => {
+  test("uses orange only for historical pause steps while current work keeps the standard blue tone", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
     expect(source).toMatch(/\.visual-flow-step\.is-pause-reset\s*{[^}]*color:\s*#fdba74;/s);
     expect(source).toMatch(/\.visual-flow-step\.is-pause-reset \.visual-flow-dot\s*{[^}]*background:\s*#f97316;/s);
-    expect(source).toMatch(/\.visual-flow-step\.is-pause-reset-active\s*{[^}]*color:\s*#fdba74;/s);
-    expect(source).toMatch(/\.visual-flow-step\.is-pause-reset-active \.visual-flow-dot\s*{[^}]*background:\s*#f97316;/s);
+    expect(source).not.toContain(".visual-flow-step.is-pause-reset-active");
+    expect(source).toMatch(/\.visual-flow-step\.is-active \.visual-flow-dot\s*{[^}]*background:\s*var\(--screen-cyan\);/s);
   });
 
   test("current lab task screen defines state tones and running-only countdown styles", () => {

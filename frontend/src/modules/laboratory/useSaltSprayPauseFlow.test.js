@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { useSaltSprayPauseFlow } from "./useSaltSprayPauseFlow";
 
-const mountFlow = ({ labCode = "LAB_SALT", paused = false, trayCodes = ["TRAY-1"] } = {}) => {
+const mountFlow = ({ exposureComplete = false, labCode = "LAB_SALT", paused = false, trayCodes = ["TRAY-1"] } = {}) => {
   const run = {
     experiment_code: "EXP-SALT",
     run_no: "RUN-SALT",
@@ -33,6 +33,7 @@ const mountFlow = ({ labCode = "LAB_SALT", paused = false, trayCodes = ["TRAY-1"
         currentTask: ref({ activeRun: run, experimentCode: "EXP-SALT", taskCode: "TASK-SALT" }),
         experimentRunPauses,
         experimentRuns,
+        exposureComplete: ref(exposureComplete),
         laboratoryConfig: ref({ labCode }),
         onResumeRequested,
         refreshAuthoritativeState: vi.fn(async () => {}),
@@ -77,6 +78,18 @@ describe("useSaltSprayPauseFlow", () => {
     expect(salt.flow.controlAwaitingConfirmation.value?.action).toBe("pause");
     salt.wrapper.unmount();
     other.wrapper.unmount();
+  });
+
+  test("does not allow a pause after the effective countdown reaches zero", async () => {
+    const mounted = mountFlow({ exposureComplete: true });
+
+    mounted.flow.openPauseModal();
+    mounted.flow.pauseReason.value = "倒计时结束后错误暂停";
+    await mounted.flow.confirmPause();
+
+    expect(mounted.flow.pauseModalOpen.value).toBe(false);
+    expect(mounted.requestPause).not.toHaveBeenCalled();
+    mounted.wrapper.unmount();
   });
 
   test("simulates pause confirmation only with the pause_no returned by the preceding command", async () => {
@@ -236,6 +249,48 @@ describe("useSaltSprayPauseFlow", () => {
       run_no: "RUN-SALT",
     }));
     expect(mounted.onResumeRequested).toHaveBeenCalledTimes(1);
+    mounted.wrapper.unmount();
+  });
+
+  test("retries resume from the continue button when ready evidence is already persisted", async () => {
+    vi.useFakeTimers();
+    const mounted = mountFlow({ paused: true });
+    mounted.stagingEvents.value = [
+      "resume_preparation_started",
+      "resume_preparation_compared",
+      "resume_preparation_installed",
+      "resume_preparation_fixture_ready",
+      "resume_preparation_ready",
+    ].map((action) => ({
+      action,
+      pause_no: "PAUSE-1",
+      room: "laboratory_resume_preparation",
+      run_no: "RUN-SALT",
+      tray_code: "TRAY-1",
+    }));
+    await nextTick();
+
+    expect(mounted.flow.canResume.value).toBe(true);
+    await mounted.flow.requestContinue();
+
+    expect(mounted.requestResume).toHaveBeenCalledTimes(1);
+    expect(mounted.requestResume).toHaveBeenCalledWith(expect.objectContaining({
+      pause_no: "PAUSE-1",
+      run_no: "RUN-SALT",
+    }));
+    expect(mounted.startResumePreparation).not.toHaveBeenCalled();
+    mounted.wrapper.unmount();
+  });
+
+  test("publishes resume from a just-persisted ready operation before local refresh catches up", async () => {
+    vi.useFakeTimers();
+    const mounted = mountFlow({ paused: true });
+
+    expect(mounted.flow.resumePreparationReady.value).toBe(false);
+    const requested = await mounted.flow.requestPreparedResume({ readyPersisted: true });
+
+    expect(requested).toBe(true);
+    expect(mounted.requestResume).toHaveBeenCalledTimes(1);
     mounted.wrapper.unmount();
   });
 });

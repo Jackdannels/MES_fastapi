@@ -1,0 +1,222 @@
+{
+  "started": "2026-09-14T01:54:18.461Z",
+  "node": "v25.2.1",
+  "scratch": "C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.startup-probe-1aT8hC",
+  "cases": [
+    {
+      "name": "real-build-1",
+      "buildMs": 2431,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "real-build-2",
+      "buildMs": 2474,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "real-build-3",
+      "buildMs": 2692,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "real-build-4",
+      "buildMs": 2542,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": false,
+        "code": "EPERM",
+        "errno": -4048,
+        "syscall": "rename",
+        "ms": 1
+      }
+    },
+    {
+      "name": "real-build-5",
+      "buildMs": 2589,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "real-build-6",
+      "buildMs": 2575,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "real-build-7",
+      "buildMs": 2896,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "real-build-8",
+      "buildMs": 2717,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "real-build-9",
+      "buildMs": 2683,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "real-build-10",
+      "buildMs": 2665,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "real-build-11",
+      "buildMs": 3188,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "real-build-12",
+      "buildMs": 3099,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      }
+    },
+    {
+      "name": "node-file-open",
+      "ok": false,
+      "code": "EPERM",
+      "errno": -4048,
+      "syscall": "rename",
+      "ms": 2
+    },
+    {
+      "name": "deny-delete-file-new-build",
+      "held": {
+        "ok": false,
+        "code": "EPERM",
+        "errno": -4048,
+        "syscall": "rename",
+        "ms": 1
+      },
+      "afterRelease": {
+        "ok": true,
+        "ms": 2
+      }
+    },
+    {
+      "name": "deny-delete-file-old-dist",
+      "held": {
+        "ok": false,
+        "code": "EPERM",
+        "errno": -4048,
+        "syscall": "rename",
+        "ms": 1
+      },
+      "afterRelease": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "process-cwd-holder",
+      "held": {
+        "ok": false,
+        "code": "EBUSY",
+        "errno": -4082,
+        "syscall": "rename",
+        "ms": 0
+      },
+      "afterRelease": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "another-publisher-created-dist",
+      "ok": false,
+      "code": "EPERM",
+      "errno": -4048,
+      "syscall": "rename",
+      "ms": 1
+    }
+  ],
+  "serviceBefore": {
+    "status": 200
+  },
+  "serviceAfter": {
+    "status": 200,
+    "sameResponse": true
+  },
+  "productionIndexUnchanged": true,
+  "scratchRemoved": true,
+  "finished": "2026-09-14T01:54:55.803Z"
+}

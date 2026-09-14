@@ -129,7 +129,7 @@ Describe "MES service controller" {
         $controllerSource | Should Not Match '\$frontendNetworkHost = "mes-server"'
         $controllerSource | Should Not Match '-FrontendNetworkHost'
         $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
-        $startScript | Should Match 'TEST_DATA_PUBLIC_BASE_URL=http://\$\{frontendNetworkHost\}:\$BackendPort'
+        $startScript | Should Not Match 'TEST_DATA_PUBLIC_BASE_URL='
     }
 
     It "tags both terminal commands with a launcher session for precise process cleanup" {

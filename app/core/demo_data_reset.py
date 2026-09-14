@@ -4,8 +4,8 @@ import random
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.core.axis_codes import sort_axis_codes
-from app.core.storage_backend import AXIS_EXPERIMENT_TYPES, DEFAULT_AXIS_CODES, EXPERIMENT_TYPE_OPTIONS, normalize_storage_payload
+from app.core.axis_codes import axis_codes_for_experiment_type, sort_axis_codes
+from app.core.storage_backend import AXIS_EXPERIMENT_TYPES, EXPERIMENT_TYPE_OPTIONS, normalize_storage_payload
 
 TASK_COUNT = 20
 EXTERNAL_INTAKE_COUNT = 8
@@ -20,8 +20,8 @@ def _task_source(index: int) -> str:
     return "外部委托" if index <= 10 else "内部新增"
 
 
-def _random_axis_requirements(rng: random.SystemRandom) -> list[str]:
-    shuffled_axis_codes = list(DEFAULT_AXIS_CODES)
+def _random_axis_requirements(rng: random.SystemRandom, experiment_type: str) -> list[str]:
+    shuffled_axis_codes = list(axis_codes_for_experiment_type(experiment_type))
     rng.shuffle(shuffled_axis_codes)
     count = rng.randint(1, len(shuffled_axis_codes))
     return sort_axis_codes(shuffled_axis_codes[:count])
@@ -91,7 +91,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
                 "updated_at": created_at,
             }
             if experiment_type in AXIS_EXPERIMENT_TYPES:
-                experiment["axis_codes"] = _random_axis_requirements(rng)
+                experiment["axis_codes"] = _random_axis_requirements(rng, experiment_type)
             experiments.append(
                 experiment
             )

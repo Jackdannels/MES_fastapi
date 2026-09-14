@@ -80,16 +80,25 @@ describe("visualization flow step state", () => {
     });
   });
 
-  test("keeps future resume-preparation steps waiting and highlights only the current reset step", () => {
+  test("keeps historical resume steps orange, current work blue, and current-cycle completion green", () => {
+    expect(visualFlowStepClass({ pauseResetState: "historical", reached: true })).toMatchObject({
+      "is-pause-reset": true,
+      "is-active": false,
+      "is-done": false,
+    });
     expect(visualFlowStepClass({ pauseResetState: "pending", reached: true })).toMatchObject({
       "is-pause-reset": false,
-      "is-pause-reset-active": false,
       "is-waiting": true,
     });
     expect(visualFlowStepClass({ active: true, pauseResetState: "active" })).toMatchObject({
       "is-pause-reset": false,
-      "is-pause-reset-active": true,
+      "is-active": true,
       "is-waiting": false,
+    });
+    expect(visualFlowStepClass({ pauseResetState: "completed", reached: true })).toMatchObject({
+      "is-pause-reset": false,
+      "is-done": true,
+      "is-active": false,
     });
   });
 });

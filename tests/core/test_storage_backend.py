@@ -152,7 +152,7 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
         if experiment["experiment_name"] in {"冲击试验", "振动试验"}
     ]
     assert axis_experiments
-    allowed_axis_codes = {"x+", "x-", "y+", "y-", "z+", "z-"}
+    allowed_axis_codes = {"x", "x+", "x-", "y+", "z+", "y-", "z-"}
     assert all(experiment["axis_codes"] for experiment in axis_experiments)
     assert all(set(experiment["axis_codes"]) <= allowed_axis_codes for experiment in axis_experiments)
     assert any(experiment["axis_codes"] != ["x+", "x-", "y+", "y-", "z+", "z-"] for experiment in axis_experiments)
@@ -186,14 +186,14 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
 def test_demo_reset_axis_requirements_use_random_count_and_standard_order() -> None:
     class _FakeRng:
         def shuffle(self, values):
-            values[:] = ["z-", "x+", "y-", "x-", "z+", "y+"]
+            values.reverse()
 
         def randint(self, start, end):
             assert start == 1
-            assert end == 6
             return 3
 
-    assert _random_axis_requirements(_FakeRng()) == ["x+", "y-", "z-"]
+    assert _random_axis_requirements(_FakeRng(), "冲击试验") == ["z+", "y-", "z-"]
+    assert _random_axis_requirements(_FakeRng(), "振动试验") == ["z+", "y-", "z-"]
 
 
 def test_normalize_storage_payload_does_not_expand_custom_task_experiments_to_three() -> None:
@@ -220,7 +220,7 @@ def test_normalize_storage_payload_does_not_expand_custom_task_experiments_to_th
         "SYLU-2026-04-501-B",
     ]
     assert [experiment["experiment_name"] for experiment in normalized["mes.experiments"]] == ["盐雾试验", "振动试验"]
-    assert normalized["mes.experiments"][1]["axis_codes"] == ["x+", "x-", "y+", "y-", "z+", "z-"]
+    assert normalized["mes.experiments"][1]["axis_codes"] == ["x", "y+", "z+", "y-", "z-"]
 
 
 def test_normalize_storage_payload_applies_task_axis_selection_to_generated_experiments() -> None:
@@ -285,7 +285,7 @@ def test_normalize_storage_payload_adds_axis_codes_to_existing_impact_and_vibrat
     normalized = normalize_storage_payload(payload)
 
     experiments = normalized["mes.experiments"]
-    assert experiments[0]["axis_codes"] == ["x+", "x-", "y+", "y-", "z+", "z-"]
+    assert experiments[0]["axis_codes"] == ["x+", "x-", "y+", "z+", "y-", "z-"]
     assert experiments[1]["axis_codes"] == ["y+", "z-"]
 
 

@@ -13,6 +13,7 @@ function useSaltSprayPauseFlow({
   currentTask,
   experimentRunPauses,
   experimentRuns,
+  exposureComplete,
   laboratoryConfig,
   onResumeRequested,
   refreshAuthoritativeState,
@@ -115,7 +116,7 @@ function useSaltSprayPauseFlow({
   const resumePreparationFixtureReady = computed(() => actionCompleteForAllPauseTrays("resume_preparation_fixture_ready"));
   const resumePreparationReady = computed(() => actionCompleteForAllPauseTrays("resume_preparation_ready"));
   const canStartResumePreparation = computed(() => returnedFromAppearance.value && !resumePreparationActive.value);
-  const canResume = computed(() => canStartResumePreparation.value);
+  const canResume = computed(() => canStartResumePreparation.value || resumePreparationReady.value);
   const canStopPausedExperiment = computed(() => isPaused.value && !resumePreparationCompared.value);
   const stopBlockedAfterCompareMessage = "已完成继续实验重新比对，请完成安装和准备就绪后恢复实验，不能再提前结束。";
 
@@ -137,7 +138,7 @@ function useSaltSprayPauseFlow({
     }
   };
   const openPauseModal = () => {
-    if (!isSaltSprayLaboratory.value || isPaused.value || controlAwaitingConfirmation.value) {
+    if (!isSaltSprayLaboratory.value || isPaused.value || exposureComplete?.value || controlAwaitingConfirmation.value) {
       return;
     }
     pauseReason.value = "中途外观检查";
@@ -241,7 +242,7 @@ function useSaltSprayPauseFlow({
   };
 
   const confirmPause = async () => {
-    if (!pauseTrayCodes.value.length || !normalizeText(pauseReason.value)) {
+    if (exposureComplete?.value || !pauseTrayCodes.value.length || !normalizeText(pauseReason.value)) {
       return;
     }
     await runWithAttendance(async () => {
@@ -252,7 +253,29 @@ function useSaltSprayPauseFlow({
       });
     });
   };
+  const requestPreparedResume = async ({ readyPersisted = false } = {}) => {
+    if (!readyPersisted && !resumePreparationReady.value) {
+      return false;
+    }
+    const pauseNo = activePauseNo();
+    if (!pauseNo) {
+      controlConfirmationError.value = "未找到当前暂停记录，暂不能恢复实验。";
+      return false;
+    }
+    const requested = await publishControl("resume", requestResume, {
+      ...commonPayload(),
+      pause_no: pauseNo,
+    });
+    if (requested) {
+      onResumeRequested?.();
+    }
+    return requested;
+  };
   const requestContinue = async () => {
+    if (resumePreparationReady.value) {
+      await requestPreparedResume();
+      return;
+    }
     if (!canStartResumePreparation.value) {
       return;
     }
@@ -276,19 +299,6 @@ function useSaltSprayPauseFlow({
       resumePreparationError.value = error instanceof Error ? error.message : String(error || "恢复准备开启失败");
     } finally {
       controlSubmitting.value = false;
-    }
-  };
-  const requestPreparedResume = async () => {
-    if (!resumePreparationReady.value) {
-      return;
-    }
-    const pauseNo = activePauseNo();
-    const requested = await publishControl("resume", requestResume, {
-      ...commonPayload(),
-      pause_no: pauseNo,
-    });
-    if (requested) {
-      onResumeRequested?.();
     }
   };
   const confirmStop = async () => {

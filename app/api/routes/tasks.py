@@ -3,7 +3,11 @@ import re
 
 from fastapi import APIRouter, Body, HTTPException, Query, status
 
-from app.core.axis_codes import sort_axis_codes
+from app.core.axis_codes import (
+    axis_codes_for_experiment_type as default_axis_codes_for_experiment_type,
+    normalize_axis_codes_for_experiment_type,
+    sort_axis_codes,
+)
 from app.core.demo_data_reset import run_demo_reset
 from app.core.storage_backend import get_storage_backend
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
@@ -666,12 +670,40 @@ def normalize_axis_codes(value: Any) -> list[str]:
 
 
 def axis_codes_for_experiment_type(task: dict[str, Any], experiment_type: str) -> list[str]:
-    if normalize_text(experiment_type) not in AXIS_EXPERIMENT_TYPES:
+    normalized_type = normalize_text(experiment_type)
+    if normalized_type not in AXIS_EXPERIMENT_TYPES:
         return []
     raw_map = task.get("axis_codes_by_test_type") or task.get("axisCodesByTestType")
     if not isinstance(raw_map, dict):
-        return []
-    return normalize_axis_codes(raw_map.get(experiment_type))
+        return list(default_axis_codes_for_experiment_type(normalized_type))
+    return (
+        normalize_axis_codes_for_experiment_type(
+            normalize_axis_codes(raw_map.get(normalized_type)),
+            normalized_type,
+        )
+        or list(default_axis_codes_for_experiment_type(normalized_type))
+    )
+
+
+def normalize_task_axis_codes_by_test_type(task: dict[str, Any]) -> None:
+    raw_map = task.get("axis_codes_by_test_type") or task.get("axisCodesByTestType")
+    source = raw_map if isinstance(raw_map, dict) else {}
+    normalized_map: dict[str, list[str]] = {}
+    for experiment_type in extract_task_test_types(task):
+        if experiment_type not in AXIS_EXPERIMENT_TYPES:
+            continue
+        normalized_map[experiment_type] = (
+            normalize_axis_codes_for_experiment_type(
+                normalize_axis_codes(source.get(experiment_type)),
+                experiment_type,
+            )
+            or list(default_axis_codes_for_experiment_type(experiment_type))
+        )
+    if normalized_map:
+        task["axis_codes_by_test_type"] = normalized_map
+    else:
+        task.pop("axis_codes_by_test_type", None)
+    task.pop("axisCodesByTestType", None)
 
 
 def extract_task_test_types(task: dict[str, Any], existing_experiments: list[dict[str, Any]] | None = None) -> list[str]:
@@ -861,6 +893,7 @@ def add_task_to_snapshot(
     if "test_types" not in next_task:
         raise HTTPException(status_code=400, detail="test_types is required")
     next_task["test_types"] = parse_test_types(next_task.get("test_types"))
+    normalize_task_axis_codes_by_test_type(next_task)
     next_task["source"] = source
     normalized_task_code = normalize_text(next_task.get("code"))
     if not normalized_task_code:
@@ -1219,6 +1252,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
         if experiment_types_changed:
             if task_storage_confirmed(previous_task, samples):
                 raise HTTPException(status_code=400, detail=EXPERIMENT_TYPE_LOCKED_MESSAGE)
+    normalize_task_axis_codes_by_test_type(updated_task)
     if not normalize_text(updated_task.get("name")):
         updated_task["name"] = (
             build_storage_default_task_name(storage, task_code(updated_task))

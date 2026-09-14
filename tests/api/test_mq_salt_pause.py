@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 import pytest
 
@@ -59,6 +59,39 @@ def test_pause_request_rejects_non_salt_lab_without_publishing(monkeypatch):
         "inspection_tray_codes": ["TP-1"], "pause_reason": "外观检查",
     })
     assert response.status_code == 422
+    assert published == []
+
+
+def test_pause_request_rejects_salt_run_after_its_countdown_has_elapsed(monkeypatch):
+    published = []
+
+    class ElapsedRepository(FakeRepository):
+        def find_run_by_no(self, run_no):
+            return {
+                **super().find_run_by_no(run_no),
+                "planned_end_at": "2026-09-14 10:00:00",
+            }
+
+        def find_pending_salt_command(self, _run_no):
+            return None
+
+    monkeypatch.setattr(mq_route, "MySQLMqEventRepository", ElapsedRepository)
+    monkeypatch.setattr(mq_route, "get_storage_backend", lambda: FakeStorage())
+    monkeypatch.setattr(mq_route, "now_business_datetime", lambda: mq_route.parse_business_datetime("2026-09-14 10:00:01"))
+    monkeypatch.setattr(mq_route, "publish_laboratory_command", lambda *args: published.append(args))
+
+    request = mq_route.SaltPauseRequest(
+        task_code="TASK-1",
+        lab_code="LAB_SALT",
+        experiment_code="EXP-1",
+        run_no="RUN-1",
+        pause_reason="倒计时结束后暂停",
+    )
+
+    with pytest.raises(HTTPException, match="计时已结束") as error:
+        mq_route.publish_salt_pause_request(request)
+
+    assert error.value.status_code == 409
     assert published == []
 
 

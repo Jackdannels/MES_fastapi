@@ -35,7 +35,10 @@ EXPERIMENT_TYPES = (
     "霉菌试验",
 )
 AXIS_AWARE_EXPERIMENT_TYPES = frozenset(("冲击试验", "振动试验"))
-DEFAULT_AXIS_CODES = ("x+", "x-", "y+", "y-", "z+", "z-")
+AXIS_CODES_BY_EXPERIMENT_TYPE = {
+    "冲击试验": ("x+", "x-", "y+", "z+", "y-", "z-"),
+    "振动试验": ("x", "y+", "z+", "y-", "z-"),
+}
 
 
 def now_beijing() -> datetime:
@@ -100,7 +103,7 @@ class LimsSimulator:
         type_count = rng.randint(1, 3)
         test_types = rng.sample(list(EXPERIMENT_TYPES), type_count)
         axis_codes_by_test_type = {
-            test_type: list(DEFAULT_AXIS_CODES)
+            test_type: list(AXIS_CODES_BY_EXPERIMENT_TYPE[test_type])
             for test_type in test_types
             if test_type in AXIS_AWARE_EXPERIMENT_TYPES
         }

@@ -1,7 +1,11 @@
 const $ = (id) => document.getElementById(id);
 const EXPERIMENT_TYPES = ["冲击试验", "振动试验", "四综合试验", "温度冲击试验", "高低温湿热试验", "盐雾试验", "霉菌试验"];
 const AXIS_AWARE_EXPERIMENT_TYPES = new Set(["冲击试验", "振动试验"]);
-const DEFAULT_AXIS_CODES = ["x+", "x-", "y+", "y-", "z+", "z-"];
+const AXIS_CODES_BY_EXPERIMENT_TYPE = {
+  "冲击试验": ["x+", "x-", "y+", "z+", "y-", "z-"],
+  "振动试验": ["x", "y+", "z+", "y-", "z-"],
+};
+const DEFAULT_AXIS_CODES = AXIS_CODES_BY_EXPERIMENT_TYPE["冲击试验"];
 let selectedTestTypes = [];
 let selectedAxisCodesByTestType = {};
 let draftTestTypes = [];
@@ -136,12 +140,22 @@ function normalizeAxisCodes(values) {
   return [...DEFAULT_AXIS_CODES.filter((code) => uniqueCodes.includes(code)), ...uniqueCodes.filter((code) => !DEFAULT_AXIS_CODES.includes(code))];
 }
 
+function axisCodesForExperimentType(testType) {
+  return AXIS_CODES_BY_EXPERIMENT_TYPE[testType] || [];
+}
+
+function normalizeAxisCodesForExperimentType(values, testType) {
+  const allowed = axisCodesForExperimentType(testType);
+  const selected = new Set(normalizeAxisCodes(values));
+  return allowed.filter((axisCode) => selected.has(axisCode));
+}
+
 function normalizeAxisMap(axisMap, testTypes) {
   const source = axisMap && typeof axisMap === "object" ? axisMap : {};
   return uniqueTextValues(testTypes).reduce((result, testType) => {
     if (!AXIS_AWARE_EXPERIMENT_TYPES.has(testType)) return result;
-    const axisCodes = normalizeAxisCodes(source[testType]);
-    if (axisCodes.length) result[testType] = axisCodes;
+    const axisCodes = normalizeAxisCodesForExperimentType(source[testType], testType);
+    result[testType] = axisCodes.length ? axisCodes : [...axisCodesForExperimentType(testType)];
     return result;
   }, {});
 }
@@ -152,7 +166,7 @@ function cloneAxisMap(axisMap) {
 
 function buildTestTypesSummary(testTypes, axisMap = {}) {
   return uniqueTextValues(testTypes).map((testType) => {
-    const axisCodes = normalizeAxisCodes(axisMap[testType]);
+    const axisCodes = normalizeAxisCodesForExperimentType(axisMap[testType], testType);
     return AXIS_AWARE_EXPERIMENT_TYPES.has(testType) && axisCodes.length
       ? `${testType}（${axisCodes.map((code) => code.toUpperCase()).join("、")}）`
       : testType;
@@ -208,7 +222,7 @@ function closeTestTypesPicker({ restoreFocus = true } = {}) {
 
 function renderAxisPicker() {
   $("axisExperimentType").textContent = axisPickerType || "-";
-  $("axisGrid").innerHTML = DEFAULT_AXIS_CODES.map((axisCode) => {
+  $("axisGrid").innerHTML = axisCodesForExperimentType(axisPickerType).map((axisCode) => {
     const selected = axisPickerCodes.includes(axisCode);
     return `<button class="axis-option${selected ? " is-selected" : ""}" type="button" data-axis-code="${axisCode}" aria-pressed="${selected}">${axisCode.toUpperCase()}</button>`;
   }).join("");
@@ -216,8 +230,8 @@ function renderAxisPicker() {
 
 function openAxisPicker(testType) {
   axisPickerType = testType;
-  const currentCodes = normalizeAxisCodes(draftAxisCodesByTestType[testType]);
-  axisPickerCodes = currentCodes.length ? currentCodes : [...DEFAULT_AXIS_CODES];
+  const currentCodes = normalizeAxisCodesForExperimentType(draftAxisCodesByTestType[testType], testType);
+  axisPickerCodes = currentCodes.length ? currentCodes : [...axisCodesForExperimentType(testType)];
   setSelectionValidation("axisValidation");
   renderAxisPicker();
   $("testTypesModal").setAttribute("inert", "");
@@ -254,7 +268,7 @@ function toggleDraftTestType(testType) {
 
 function confirmAxisPicker() {
   const confirmedType = axisPickerType;
-  const axisCodes = normalizeAxisCodes(axisPickerCodes);
+  const axisCodes = normalizeAxisCodesForExperimentType(axisPickerCodes, confirmedType);
   if (!axisCodes.length) {
     setSelectionValidation("axisValidation", "请选择至少一个试验轴向");
     return;
@@ -356,7 +370,7 @@ async function sendCurrent() {
     openTestTypesPicker();
     return;
   }
-  const missingAxisType = selectedTestTypes.find((testType) => AXIS_AWARE_EXPERIMENT_TYPES.has(testType) && !normalizeAxisCodes(selectedAxisCodesByTestType[testType]).length);
+  const missingAxisType = selectedTestTypes.find((testType) => AXIS_AWARE_EXPERIMENT_TYPES.has(testType) && !normalizeAxisCodesForExperimentType(selectedAxisCodesByTestType[testType], testType).length);
   if (missingAxisType) {
     feedback(`请为${missingAxisType}选择至少一个试验轴向。`, true);
     openTestTypesPicker();

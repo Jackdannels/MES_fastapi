@@ -2159,7 +2159,7 @@ describe("schedulePageModel", () => {
           task_code: "TASK-032",
           experiment_code: "TASK-032-A",
           experiment_name: "冲击试验",
-          axis_codes: ["x+", "x-", "y+"],
+          axis_codes: ["x", "y+"],
         },
         { task_code: "TASK-032", experiment_code: "TASK-032-B", experiment_name: "振动试验" },
       ],
@@ -2911,7 +2911,7 @@ describe("schedulePageModel", () => {
           experiment_code: "SYLU-2026-06-218-A",
           experiment_name: "振动试验",
           required_device: "振动试验",
-          axis_codes: ["x+", "x-", "y+"],
+          axis_codes: ["x", "y+"],
         },
       ],
       experimentRunSteps: [
@@ -2919,7 +2919,7 @@ describe("schedulePageModel", () => {
           task_code: "SYLU-2026-06-218",
           experiment_code: "SYLU-2026-06-218-A",
           run_no: "run-axis-218",
-          axis_code: "x+",
+          axis_code: "x",
           status: "实验已完成",
         },
         {
@@ -2936,9 +2936,9 @@ describe("schedulePageModel", () => {
     expect(options).toEqual([
       expect.objectContaining({
         code: "SYLU-2026-06-218-A",
-        axisCodes: ["x+", "x-", "y+"],
-        completedAxisCodes: ["x+"],
-        remainingAxisCodes: ["x-", "y+"],
+        axisCodes: ["x", "y+"],
+        completedAxisCodes: ["x"],
+        remainingAxisCodes: ["y+"],
       }),
     ]);
   });
@@ -2955,26 +2955,26 @@ describe("schedulePageModel", () => {
           experiment_name: "振动试验",
           required_device: "振动试验",
           status: STATUS_COMPLETED,
-          axis_codes: ["x+", "x-"],
+          axis_codes: ["x", "y+"],
         },
       ],
       experimentRunSteps: [
         {
           task_code: taskCode,
           experiment_code: experimentCode,
-          run_no: "run-vibration-x-plus",
-          axis_code: "x+",
+          run_no: "run-vibration-x",
+          axis_code: "x",
           status: STATUS_COMPLETED,
         },
       ],
       schedules: [
         {
-          id: "schedule-vibration-x-plus",
+          id: "schedule-vibration-x",
           task_code: taskCode,
           experiment_code: experimentCode,
           device: "振动一室",
           status: STATUS_COMPLETED,
-          axis_codes: ["x+"],
+          axis_codes: ["x"],
         },
       ],
     });
@@ -2982,8 +2982,8 @@ describe("schedulePageModel", () => {
     expect(options).toEqual([
       expect.objectContaining({
         code: experimentCode,
-        completedAxisCodes: ["x+"],
-        remainingAxisCodes: ["x-"],
+        completedAxisCodes: ["x"],
+        remainingAxisCodes: ["y+"],
       }),
     ]);
   });
@@ -3110,13 +3110,13 @@ describe("schedulePageModel", () => {
           experiment_code: "SYLU-2026-06-201-A",
           experiment_name: "振动试验",
           required_device: "振动试验",
-          axis_codes: ["y+", "x-", "z+"],
+          axis_codes: ["y+", "x", "z+"],
           unscheduled_since: "2099-03-10T07:00:00.000Z",
         },
       ],
       form: {
         axis_batch_no: "batch-1",
-        axis_codes: ["y+", "x-", "z+"],
+        axis_codes: ["y+", "x", "z+"],
         custom_start: "08:00",
         device: "振动一室",
         experiment_code: "SYLU-2026-06-201-A",
@@ -3133,7 +3133,7 @@ describe("schedulePageModel", () => {
 
     expect(result.error).toBeUndefined();
     expect(result.schedules).toHaveLength(1);
-    expect(result.schedules[0].axis_codes).toEqual(["x-", "y+", "z+"]);
+    expect(result.schedules[0].axis_codes).toEqual(["x", "y+", "z+"]);
     expect(result.schedules[0].axis_batch_no).toBe("batch-1");
     expect(formatDateTime(result.schedules[0].start_at)).toBe("2099-03-20 08:00");
     expect(formatDateTime(result.schedules[0].end_at)).toBe("2099-03-20 09:00");
@@ -3271,11 +3271,11 @@ describe("schedulePageModel", () => {
           experiment_code: "SYLU-2026-06-206-A",
           experiment_name: "振动试验",
           required_device: "振动试验",
-          axis_codes: ["y+", "x-"],
+          axis_codes: ["y+", "x"],
         },
       ],
       form: {
-        axis_codes: ["x-"],
+        axis_codes: ["x"],
         custom_start: "10:00",
         device: "振动二室",
         experiment_code: "SYLU-2026-06-206-A",
@@ -3682,42 +3682,42 @@ describe("schedulePageModel", () => {
           experiment_code: experimentCode,
           experiment_name: "振动试验",
           status: STATUS_COMPLETED,
-          axis_codes: ["x+", "x-"],
+          axis_codes: ["x", "y+"],
         },
       ],
       experimentRunSteps: [
         {
           task_code: taskCode,
           experiment_code: experimentCode,
-          run_no: "run-vibration-x-plus",
-          axis_code: "x+",
+          run_no: "run-vibration-x",
+          axis_code: "x",
           status: STATUS_COMPLETED,
         },
       ],
-      scheduleId: "schedule-vibration-x-minus",
+      scheduleId: "schedule-vibration-y-plus",
       schedules: [
         {
-          id: "schedule-vibration-x-plus",
+          id: "schedule-vibration-x",
           task_code: taskCode,
           experiment_code: experimentCode,
           device: "振动一室",
           status: STATUS_COMPLETED,
-          axis_codes: ["x+"],
+          axis_codes: ["x"],
         },
         {
-          id: "schedule-vibration-x-minus",
+          id: "schedule-vibration-y-plus",
           task_code: taskCode,
           experiment_code: experimentCode,
           device: "振动一室",
           status: STATUS_SCHEDULED,
-          axis_codes: ["x-"],
+          axis_codes: ["y+"],
         },
       ],
       streams: [],
       tasks: [{ code: taskCode, status: "任务进行中", test_type: "振动试验" }],
     });
 
-    expect(result.schedules.map((schedule) => schedule.id)).toEqual(["schedule-vibration-x-plus"]);
+    expect(result.schedules.map((schedule) => schedule.id)).toEqual(["schedule-vibration-x"]);
     expect(result.experiments[0].status).toBe("实验进行中");
   });
 

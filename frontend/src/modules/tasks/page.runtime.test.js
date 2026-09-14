@@ -22,7 +22,12 @@ const buildTaskEndpoint = (taskId) => buildApiUrl(`/api/tasks/${taskId}`, getFro
 const buildCurrentMonthFirstTaskCode = () =>
   `SYLU-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-001`;
 const ALL_EXPERIMENT_TYPES = Object.keys(TEST_PREFIX_MAP);
-const DEFAULT_AXIS_CODES = ["x+", "x-", "y+", "y-", "z+", "z-"];
+const IMPACT_AXIS_CODES = ["x+", "x-", "y+", "z+", "y-", "z-"];
+const VIBRATION_AXIS_CODES = ["x", "y+", "z+", "y-", "z-"];
+const DEFAULT_AXIS_CODES = IMPACT_AXIS_CODES;
+const axisCodesForExperimentType = (experimentType) => (
+  experimentType === "振动试验" ? VIBRATION_AXIS_CODES : IMPACT_AXIS_CODES
+);
 
 const routeState = reactive({ hash: "" });
 
@@ -480,12 +485,12 @@ const settle = async (wrapper) => {
   await wrapper.vm.$nextTick();
 };
 
-const selectIntakeAxisExperiment = async (wrapper, experimentType, axisCodes = DEFAULT_AXIS_CODES) => {
+const selectIntakeAxisExperiment = async (wrapper, experimentType, axisCodes = axisCodesForExperimentType(experimentType)) => {
   await wrapper.get(`[data-testid="task-intake-test-type-option-${experimentType}"]`).trigger("click");
   await settle(wrapper);
   expect(wrapper.get('[data-testid="task-intake-axis-modal"]').exists()).toBe(true);
   const selectedCodes = new Set(axisCodes);
-  for (const axisCode of DEFAULT_AXIS_CODES) {
+  for (const axisCode of axisCodesForExperimentType(experimentType)) {
     if (!selectedCodes.has(axisCode)) {
       await wrapper.get(`[data-testid="task-intake-axis-option-${axisCode}"]`).trigger("click");
     }
@@ -494,12 +499,12 @@ const selectIntakeAxisExperiment = async (wrapper, experimentType, axisCodes = D
   await settle(wrapper);
 };
 
-const selectEditAxisExperiment = async (wrapper, experimentType, axisCodes = DEFAULT_AXIS_CODES) => {
+const selectEditAxisExperiment = async (wrapper, experimentType, axisCodes = axisCodesForExperimentType(experimentType)) => {
   await wrapper.get(`[data-testid="task-edit-test-type-option-${experimentType}"]`).trigger("click");
   await settle(wrapper);
   expect(wrapper.get('[data-testid="task-edit-axis-modal"]').exists()).toBe(true);
   const selectedCodes = new Set(axisCodes);
-  for (const axisCode of DEFAULT_AXIS_CODES) {
+  for (const axisCode of axisCodesForExperimentType(experimentType)) {
     const option = wrapper.get(`[data-testid="task-edit-axis-option-${axisCode}"]`);
     const isSelected = option.classes().includes("is-selected");
     if (selectedCodes.has(axisCode) !== isSelected) {
@@ -1533,8 +1538,8 @@ describe("TasksPage runtime", () => {
     expect(payload.test_types).toHaveLength(ALL_EXPERIMENT_TYPES.length);
     expect(payload.test_types).toEqual(expect.arrayContaining(ALL_EXPERIMENT_TYPES));
     expect(payload.axis_codes_by_test_type).toEqual({
-      冲击试验: DEFAULT_AXIS_CODES,
-      振动试验: DEFAULT_AXIS_CODES,
+      冲击试验: IMPACT_AXIS_CODES,
+      振动试验: VIBRATION_AXIS_CODES,
     });
     expect(payload.test_type).toContain("冲击试验");
     expect(payload.test_type).toContain("霉菌试验");

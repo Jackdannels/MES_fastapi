@@ -102,8 +102,55 @@ def test_attendance_work_start_is_idempotently_blocked_while_experiment_is_pause
     assert worker["activeWorkIntervalCount"] == 0
 
 
+def test_attendance_closes_running_interval_at_elapsed_experiment_deadline_for_any_lab(client, monkeypatch):
+    current_time = {"value": datetime(2026, 9, 14, 2, 0, 0, tzinfo=timezone.utc)}
+    service = AttendanceService(
+        repository=InMemoryAttendanceRepository(),
+        now=lambda: current_time["value"],
+    )
+    set_attendance_service_for_tests(service)
+    monkeypatch.setattr(attendance_route, "now_business_datetime", lambda: datetime(2026, 9, 14, 10, 10, 0))
+
+    class ElapsedRunStorage:
+        @staticmethod
+        def read(key):
+            assert key == "mes.experiment_runs"
+            return [{
+                "device": "冲击一室",
+                "experiment_code": "EXP-ELAPSED",
+                "planned_end_at": "2026-09-14 10:05:00",
+                "run_no": "RUN-ELAPSED",
+                "status": "实验进行中",
+                "task_code": "TASK-ELAPSED",
+            }]
+
+    monkeypatch.setattr(attendance_route, "get_storage_backend", lambda: ElapsedRunStorage())
+    service.create_user(username="elapsed-worker", password="pw", employee_name="计时员工", role_name="试验员")
+    service.login_lab("冲击一室", username="elapsed-worker", password="pw")
+    service.start_work_interval(
+        "冲击一室",
+        run_no="RUN-ELAPSED",
+        task_code="TASK-ELAPSED",
+        experiment_code="EXP-ELAPSED",
+        started_at="2026-09-14 10:00:00",
+    )
+
+    response = client.post(
+        "/api/attendance/labs/%E5%86%B2%E5%87%BB%E4%B8%80%E5%AE%A4/work/finish-elapsed",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["finishedCount"] == 1
+    assert service.read_lab_session("冲击一室")["workStartedAt"] is None
+    worker = next(row for row in service.list_work_times("2026-09-14") if row["username"] == "elapsed-worker")
+    assert worker["todaySeconds"] == 300
+    assert worker["activeWorkIntervalCount"] == 0
+    assert "实验计时结束" in [row["action"] for row in service.list_operation_logs(raw_date="2026-09-14")]
+
+
 def test_attendance_operation_logs_are_recorded_from_the_active_lab_session_and_admin_only(client, monkeypatch):
     monkeypatch.setattr(attendance_route, "_laboratory_has_paused_run", lambda _lab_name: False)
+    monkeypatch.setattr(attendance_route, "_laboratory_has_elapsed_run", lambda _lab_name: False)
     login_response = client.post(
         "/api/attendance/labs/%E7%9B%90%E9%9B%BE%E8%AF%95%E9%AA%8C%E5%AE%A4/login",
         json={"username": "zhangsan", "password": "123"},
@@ -402,6 +449,7 @@ def test_attendance_work_time_date_filter_is_accepted(client):
 
 def test_attendance_work_time_starts_when_laboratory_step_begins(client, monkeypatch):
     monkeypatch.setattr(attendance_route, "_laboratory_has_paused_run", lambda _lab_name: False)
+    monkeypatch.setattr(attendance_route, "_laboratory_has_elapsed_run", lambda _lab_name: False)
     current_time = {"value": datetime(2026, 7, 2, 8, 0, 0, tzinfo=timezone.utc)}
     set_attendance_service_for_tests(
         AttendanceService(

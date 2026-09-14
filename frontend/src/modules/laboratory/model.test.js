@@ -3434,7 +3434,7 @@ describe("laboratory model", () => {
     const firstSubExperimentCode = `${experimentCode}-AXIS-001`;
     const secondSubExperimentCode = `${experimentCode}-AXIS-002`;
     const completedAxisCodes = ["x+", "x-", "y+"];
-    const remainingAxisCodes = ["y-", "z+", "z-"];
+    const remainingAxisCodes = ["z+", "y-", "z-"];
     const view = buildLaboratoryWorkbenchView({
       experimentRuns: [
         {

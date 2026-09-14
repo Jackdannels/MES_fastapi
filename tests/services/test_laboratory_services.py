@@ -1103,15 +1103,15 @@ def test_axis_step_completion_keeps_experiment_running_until_all_planned_axes_fi
 
 def test_axis_step_completion_uses_standard_next_axis_sequence():
     snapshot = _axis_snapshot()
-    snapshot["experiments"][0]["axis_codes"] = ["z-", "x+", "x-"]
+    snapshot["experiments"][0]["axis_codes"] = ["y-", "z+", "y+"]
     snapshot["schedules"] = [snapshot["schedules"][0]]
-    snapshot["schedules"][0]["axis_codes"] = ["z-", "x+", "x-"]
-    snapshot["experiment_runs"][0]["axis_codes"] = ["z-", "x+", "x-"]
+    snapshot["schedules"][0]["axis_codes"] = ["y-", "z+", "y+"]
+    snapshot["experiment_runs"][0]["axis_codes"] = ["y-", "z+", "y+"]
     sub_experiment_code = snapshot["schedules"][0]["sub_experiment_code"]
     snapshot["experiment_run_steps"] = [
-        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "x+", "step_no": 1, "status": "实验进行中"},
-        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "x-", "step_no": 2, "status": "待执行"},
-        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "z-", "step_no": 3, "status": "待执行"},
+        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "y+", "step_no": 1, "status": "实验进行中"},
+        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "z+", "step_no": 2, "status": "待执行"},
+        {"run_no": "RUN-AXIS", "task_code": "TASK-AXIS", "experiment_code": "EXP-IMPACT", "sub_experiment_code": sub_experiment_code, "axis_code": "y-", "step_no": 3, "status": "待执行"},
     ]
 
     result = complete_storage_laboratory_axis_step(
@@ -1119,15 +1119,15 @@ def test_axis_step_completion_uses_standard_next_axis_sequence():
         task_code="TASK-AXIS",
         experiment_code="EXP-IMPACT",
         run_no="RUN-AXIS",
-        axis_code="x+",
-        next_axis_code="z-",
+        axis_code="y+",
+        next_axis_code="y-",
         completed_at="2026-06-24 10:00:00",
     )
 
     steps = {step["axis_code"]: step["status"] for step in result["experimentRunSteps"]}
-    assert steps["x+"] == "实验已完成"
-    assert steps["x-"] == "轴向调整中"
-    assert steps["z-"] == "待执行"
+    assert steps["y+"] == "实验已完成"
+    assert steps["z+"] == "轴向调整中"
+    assert steps["y-"] == "待执行"
 
 
 def test_axis_adjustment_ready_and_started_only_transition_target_axis():
@@ -1410,7 +1410,7 @@ def test_axis_step_completion_does_not_count_axes_from_another_tray():
         experiment_code="EXP-IMPACT",
         run_no="RUN-AXIS-TP2",
         axis_code="y-",
-        next_axis_code="z+",
+        next_axis_code="z-",
         completed_at="2026-06-24 10:00:00",
     )
 
@@ -1422,7 +1422,7 @@ def test_axis_step_completion_does_not_count_axes_from_another_tray():
     current_run = next(run for run in result["experimentRuns"] if run["run_no"] == "RUN-AXIS-TP2")
     current_relation = next(relation for relation in result["experimentRunTrays"] if relation["run_no"] == "RUN-AXIS-TP2")
 
-    assert current_steps == {"y-": "实验已完成", "z+": "轴向调整中", "z-": "待执行"}
+    assert current_steps == {"y-": "实验已完成", "z+": "待执行", "z-": "轴向调整中"}
     assert current_run["status"] == "实验进行中"
     assert current_relation["run_tray_status"] == "实验进行中"
     assert result["experiments"][0]["status"] == "实验进行中"

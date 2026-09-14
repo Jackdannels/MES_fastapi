@@ -4739,14 +4739,14 @@ def test_process_experiment_ended_passes_axis_fields_to_run_completion():
             "lab_code": "LAB_SALT",
             "ended_at": "2026-05-16 11:00:00",
             "axis_code": "y+",
-            "next_axis_code": "x-",
+            "next_axis_code": "z+",
         },
         received_at="2026-05-16 11:00:00",
         repository=repository,
     )
 
     assert ack["status"] == "PROCESSED"
-    assert repository.ended == [("RUN-SALT-001", "2026-05-16 11:00:00", "y+", "x-", "")]
+    assert repository.ended == [("RUN-SALT-001", "2026-05-16 11:00:00", "y+", "z+", "")]
 
 
 def test_process_experiment_ended_uses_payload_run_no_instead_of_another_active_lab_run():
@@ -4817,14 +4817,14 @@ def test_process_axis_continuation_does_not_finish_attendance_work_interval(monk
             "lab_code": "LAB_SALT",
             "ended_at": "2026-05-16 11:00:00",
             "axis_code": "y+",
-            "next_axis_code": "x-",
+            "next_axis_code": "z+",
         },
         received_at="2026-05-16 11:00:00",
         repository=repository,
     )
 
     assert ack["status"] == "PROCESSED"
-    assert repository.ended == [("RUN-SALT-001", "2026-05-16 11:00:00", "y+", "x-", "")]
+    assert repository.ended == [("RUN-SALT-001", "2026-05-16 11:00:00", "y+", "z+", "")]
     assert finish_calls == []
 
 

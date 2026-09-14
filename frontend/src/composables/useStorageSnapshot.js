@@ -12,6 +12,8 @@ const RECONCILIATION_KEYS = [
   STORAGE_KEYS.conflicts,
   STORAGE_KEYS.experiments,
   STORAGE_KEYS.experiment_runs,
+  STORAGE_KEYS.experiment_run_steps,
+  STORAGE_KEYS.experiment_run_trays,
   STORAGE_KEYS.experiment_trays,
   STORAGE_KEYS.samples,
   STORAGE_KEYS.schedules,
@@ -114,11 +116,20 @@ function useStorageSnapshot(keys, readOptions = {}) {
             requestedKeys.map((key) => [key, Array.isArray(snapshot?.[key]) ? snapshot[key] : []]),
           );
         }
-        const scheduleExceptionPatch = buildScheduleExceptionPatch(snapshot, reconciled);
-        if (scheduleExceptionPatch) {
-          await writeStorageSchedulePatch(scheduleExceptionPatch);
-        } else {
-          await writeStorageUpdates(reconciled.updates);
+        try {
+          const scheduleExceptionPatch = buildScheduleExceptionPatch(snapshot, reconciled);
+          if (scheduleExceptionPatch) {
+            await writeStorageSchedulePatch(scheduleExceptionPatch);
+          } else {
+            await writeStorageUpdates(reconciled.updates);
+          }
+        } catch (error) {
+          if (typeof options?.onReconciliationError === "function") {
+            options.onReconciliationError(error);
+          }
+          return Object.fromEntries(
+            requestedKeys.map((key) => [key, Array.isArray(snapshot?.[key]) ? snapshot[key] : []]),
+          );
         }
       }
       return Object.fromEntries(

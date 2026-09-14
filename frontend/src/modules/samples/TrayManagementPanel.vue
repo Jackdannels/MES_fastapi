@@ -146,7 +146,11 @@
               :key="step.key"
               :data-flow-step="index"
               :data-testid="`samples-task-flow-step-${step.key}`"
-              :class="{ current: step.active, reached: step.reached }"
+              :class="{
+                current: step.active,
+                reached: step.reached && step.pauseResetState !== 'historical' && !step.pauseResetRequired,
+                'pause-reset': step.pauseResetState === 'historical' || step.pauseResetRequired,
+              }"
             >
               {{ step.label }}
             </li>
@@ -168,7 +172,11 @@
               :key="step.key"
               :data-flow-step="index"
               :data-testid="`samples-tray-flow-step-${step.key}`"
-              :class="{ current: step.active, reached: step.reached }"
+              :class="{
+                current: step.active,
+                reached: step.reached && step.pauseResetState !== 'historical' && !step.pauseResetRequired,
+                'pause-reset': step.pauseResetState === 'historical' || step.pauseResetRequired,
+              }"
             >
               <span class="sample-flow-label">{{ step.label }}</span>
               <span class="sample-flow-time">{{ formatFlowTime(step.time) }}</span>

@@ -4,6 +4,103 @@ import { STORAGE_KEYS } from "./storageKeys";
 import { reconcileScheduleExceptions, SCHEDULE_EXCEPTION_REASON, SCHEDULE_EXCEPTION_TYPE } from "./scheduleExceptions";
 
 describe("scheduleExceptions", () => {
+  test("keeps an expired completed axis schedule after completion clears tray targets", () => {
+    const taskCode = "TASK-AXIS-COMPLETED";
+    const experimentCode = `${taskCode}-A`;
+    const scheduleId = "schedule-axis-completed";
+    const result = reconcileScheduleExceptions(
+      {
+        [STORAGE_KEYS.conflicts]: [],
+        [STORAGE_KEYS.experiments]: [
+          { task_code: taskCode, experiment_code: experimentCode, experiment_name: "振动试验", status: "实验已完成" },
+        ],
+        [STORAGE_KEYS.experiment_runs]: [],
+        [STORAGE_KEYS.experiment_run_steps]: [],
+        [STORAGE_KEYS.experiment_run_trays]: [],
+        [STORAGE_KEYS.experiment_trays]: [
+          { task_code: taskCode, experiment_code: experimentCode, tray_code: `${taskCode}-TP-001` },
+        ],
+        [STORAGE_KEYS.samples]: [
+          {
+            code: `${taskCode}-SP-001`,
+            task_code: taskCode,
+            status: "实验已完成",
+            trays: [{ tray_code: `${taskCode}-TP-001`, status: "实验已完成" }],
+          },
+        ],
+        [STORAGE_KEYS.schedules]: [
+          {
+            id: scheduleId,
+            task_code: taskCode,
+            experiment_code: experimentCode,
+            sub_experiment_code: `${experimentCode}-AXIS-001`,
+            axis_codes: ["x", "y+", "z+", "y-", "z-"],
+            device: "振动一室",
+            start_at: "2099-03-20T08:00:00.000Z",
+            end_at: "2099-03-20T10:00:00.000Z",
+            status: "实验已完成",
+          },
+        ],
+        [STORAGE_KEYS.tasks]: [{ code: taskCode, status: "任务已完成", test_type: "振动试验" }],
+      },
+      { now: new Date("2099-03-20T12:00:00.000Z") },
+    );
+
+    expect(result.changed).toBe(false);
+    expect(result.snapshot[STORAGE_KEYS.schedules]).toEqual([
+      expect.objectContaining({ id: scheduleId, status: "实验已完成" }),
+    ]);
+  });
+
+  test("keeps an expired axis schedule when a completed run is authoritative", () => {
+    const taskCode = "TASK-AXIS-RUN";
+    const experimentCode = `${taskCode}-A`;
+    const scheduleId = "schedule-axis-run";
+    const subExperimentCode = `${experimentCode}-AXIS-001`;
+    const result = reconcileScheduleExceptions(
+      {
+        [STORAGE_KEYS.conflicts]: [],
+        [STORAGE_KEYS.experiments]: [
+          { task_code: taskCode, experiment_code: experimentCode, experiment_name: "振动试验", status: "实验已完成" },
+        ],
+        [STORAGE_KEYS.experiment_runs]: [
+          {
+            run_no: "run-axis-completed",
+            schedule_id: scheduleId,
+            task_code: taskCode,
+            experiment_code: experimentCode,
+            sub_experiment_code: subExperimentCode,
+            status: "实验已完成",
+          },
+        ],
+        [STORAGE_KEYS.experiment_run_steps]: [],
+        [STORAGE_KEYS.experiment_run_trays]: [],
+        [STORAGE_KEYS.experiment_trays]: [],
+        [STORAGE_KEYS.samples]: [],
+        [STORAGE_KEYS.schedules]: [
+          {
+            id: scheduleId,
+            task_code: taskCode,
+            experiment_code: experimentCode,
+            sub_experiment_code: subExperimentCode,
+            axis_codes: ["x", "y+", "z+", "y-", "z-"],
+            device: "振动一室",
+            start_at: "2099-03-20T08:00:00.000Z",
+            end_at: "2099-03-20T10:00:00.000Z",
+            status: "已排程",
+          },
+        ],
+        [STORAGE_KEYS.tasks]: [{ code: taskCode, status: "任务进行中", test_type: "振动试验" }],
+      },
+      { now: new Date("2099-03-20T12:00:00.000Z") },
+    );
+
+    expect(result.changed).toBe(false);
+    expect(result.snapshot[STORAGE_KEYS.schedules]).toEqual([
+      expect.objectContaining({ id: scheduleId }),
+    ]);
+  });
+
   test("removes an expired unstarted formal schedule and appends a pending exception", () => {
     const now = new Date("2099-03-20T12:00:00.000Z");
     const result = reconcileScheduleExceptions(

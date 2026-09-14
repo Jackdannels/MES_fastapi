@@ -1,0 +1,387 @@
+{
+  "started": "2026-09-14T01:55:43.838Z",
+  "node": "v25.2.1",
+  "scratch": "C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.startup-probe-YM1Ncd",
+  "cases": [
+    {
+      "name": "real-build-1",
+      "buildMs": 2554,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-2",
+      "buildMs": 2670,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-3",
+      "buildMs": 2693,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-4",
+      "buildMs": 2675,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-5",
+      "buildMs": 2818,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-6",
+      "buildMs": 2641,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-7",
+      "buildMs": 2697,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-8",
+      "buildMs": 2813,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-9",
+      "buildMs": 2698,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-10",
+      "buildMs": 2737,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-11",
+      "buildMs": 2808,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-12",
+      "buildMs": 2828,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-13",
+      "buildMs": 2738,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-14",
+      "buildMs": 2739,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-15",
+      "buildMs": 2641,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-16",
+      "buildMs": 2662,
+      "oldMove": {
+        "ok": true,
+        "ms": 3
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-17",
+      "buildMs": 2692,
+      "oldMove": {
+        "ok": true,
+        "ms": 2
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-18",
+      "buildMs": 3140,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-19",
+      "buildMs": 2910,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-20",
+      "buildMs": 2643,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-21",
+      "buildMs": 2744,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-22",
+      "buildMs": 2655,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-23",
+      "buildMs": 3060,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "real-build-24",
+      "buildMs": 2943,
+      "oldMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "newMove": {
+        "ok": true,
+        "ms": 1
+      },
+      "recovery": []
+    },
+    {
+      "name": "node-file-open",
+      "ok": false,
+      "code": "EPERM",
+      "errno": -4048,
+      "syscall": "rename",
+      "ms": 1
+    },
+    {
+      "name": "deny-delete-file-new-build",
+      "held": {
+        "ok": false,
+        "code": "EPERM",
+        "errno": -4048,
+        "syscall": "rename",
+        "ms": 1
+      },
+      "afterRelease": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "deny-delete-file-old-dist",
+      "held": {
+        "ok": false,
+        "code": "EPERM",
+        "errno": -4048,
+        "syscall": "rename",
+        "ms": 1
+      },
+      "afterRelease": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "process-cwd-holder",
+      "held": {
+        "ok": false,
+        "code": "EBUSY",
+        "errno": -4082,
+        "syscall": "rename",
+        "ms": 0
+      },
+      "afterRelease": {
+        "ok": true,
+        "ms": 1
+      }
+    },
+    {
+      "name": "another-publisher-created-dist",
+      "ok": false,
+      "code": "EPERM",
+      "errno": -4048,
+      "syscall": "rename",
+      "ms": 1
+    }
+  ],
+  "serviceBefore": {
+    "status": 200
+  },
+  "serviceAfter": {
+    "status": 200,
+    "sameResponse": true
+  },
+  "productionIndexUnchanged": true,
+  "scratchRemoved": true,
+  "finished": "2026-09-14T01:56:54.986Z"
+}

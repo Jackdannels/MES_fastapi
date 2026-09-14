@@ -56,6 +56,8 @@ const cloneSnapshotArrays = (snapshot = {}) => ({
   [STORAGE_KEYS.conflicts]: asArray(snapshot[STORAGE_KEYS.conflicts]).map((entry) => ({ ...entry })),
   [STORAGE_KEYS.experiments]: asArray(snapshot[STORAGE_KEYS.experiments]).map((entry) => ({ ...entry })),
   [STORAGE_KEYS.experiment_runs]: asArray(snapshot[STORAGE_KEYS.experiment_runs]).map((entry) => ({ ...entry })),
+  [STORAGE_KEYS.experiment_run_steps]: asArray(snapshot[STORAGE_KEYS.experiment_run_steps]).map((entry) => ({ ...entry })),
+  [STORAGE_KEYS.experiment_run_trays]: asArray(snapshot[STORAGE_KEYS.experiment_run_trays]).map((entry) => ({ ...entry })),
   [STORAGE_KEYS.experiment_trays]: asArray(snapshot[STORAGE_KEYS.experiment_trays]).map((entry) => ({ ...entry })),
   [STORAGE_KEYS.samples]: asArray(snapshot[STORAGE_KEYS.samples]).map((sample) => ({
     ...sample,
@@ -161,6 +163,52 @@ const rowMatchesScheduleScope = (row, schedule, { allowLegacyFallback = false } 
   return allowLegacyFallback;
 };
 
+const recordHasStartedStatus = (record) => {
+  const statuses = [
+    record?.status,
+    record?.schedule_status,
+    record?.run_status,
+    record?.run_tray_status,
+    record?.experiment_status,
+  ];
+  return statuses.some((status) => {
+    const normalizedStatus = normalizeExperimentStatusLabel(status);
+    return STARTED_STATUSES.has(normalizedStatus)
+      || isExperimentRunningStatus(status)
+      || isExperimentCompletedStatus(status);
+  });
+};
+
+const recordMatchesScheduleIdentity = (record, schedule) => (
+  normalizeText(record?.task_code ?? record?.taskCode ?? record?.task_no ?? record?.taskNo)
+    === normalizeText(schedule?.task_code ?? schedule?.taskCode ?? schedule?.task_no ?? schedule?.taskNo)
+  && normalizeText(record?.experiment_code ?? record?.experimentCode ?? record?.experiment_no ?? record?.experimentNo)
+    === normalizeText(schedule?.experiment_code ?? schedule?.experimentCode ?? schedule?.experiment_no ?? schedule?.experimentNo)
+);
+
+const scheduleHasStructuredStartedEvidence = ({
+  experimentRuns,
+  experimentRunSteps,
+  experimentRunTrays,
+  schedule,
+}) => (
+  asArray(experimentRuns).some(
+    (run) => recordHasStartedStatus(run)
+      && recordMatchesScheduleIdentity(run, schedule)
+      && rowMatchesScheduleScope(run, schedule, { allowLegacyFallback: true }),
+  )
+  || asArray(experimentRunTrays).some(
+    (relation) => recordHasStartedStatus(relation)
+      && recordMatchesScheduleIdentity(relation, schedule)
+      && rowMatchesScheduleScope(relation, schedule),
+  )
+  || asArray(experimentRunSteps).some(
+    (step) => recordHasStartedStatus(step)
+      && recordMatchesScheduleIdentity(step, schedule)
+      && rowMatchesScheduleScope(step, schedule),
+  )
+);
+
 const parseExperimentHistoryDetail = (detail, taskCode) => {
   const segments = String(detail ?? "")
     .split(" / ")
@@ -205,9 +253,27 @@ const resolveScheduleLifecycle = ({
   experimentTrayMap,
   trayExperimentCodeMap,
   experimentNameByCode,
+  experimentRuns,
+  experimentRunSteps,
+  experimentRunTrays,
   samples,
   schedule,
 }) => {
+  if (
+    recordHasStartedStatus(schedule)
+    || scheduleHasStructuredStartedEvidence({
+      experimentRuns,
+      experimentRunSteps,
+      experimentRunTrays,
+      schedule,
+    })
+  ) {
+    return {
+      completed: isExperimentCompletedStatus(schedule?.status ?? schedule?.schedule_status),
+      started: true,
+      trayStatuses: [],
+    };
+  }
   const matchedSamples = collectScheduleSamples({ experimentTrayMap, samples, schedule });
   const taskCode = normalizeText(schedule?.task_code);
   const experimentCode = normalizeText(schedule?.experiment_code);
@@ -433,6 +499,8 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
   const tasks = working[STORAGE_KEYS.tasks];
   const experiments = working[STORAGE_KEYS.experiments];
   const experimentRuns = working[STORAGE_KEYS.experiment_runs];
+  const experimentRunSteps = working[STORAGE_KEYS.experiment_run_steps];
+  const experimentRunTrays = working[STORAGE_KEYS.experiment_run_trays];
   const samples = working[STORAGE_KEYS.samples];
   const experimentTrays = working[STORAGE_KEYS.experiment_trays];
   const conflicts = working[STORAGE_KEYS.conflicts];
@@ -453,7 +521,16 @@ function reconcileScheduleExceptions(snapshot = {}, options = {}) {
     if (isRetentionDevice(schedule)) {
       return false;
     }
-    const lifecycle = resolveScheduleLifecycle({ experimentTrayMap, trayExperimentCodeMap, experimentNameByCode, samples, schedule });
+    const lifecycle = resolveScheduleLifecycle({
+      experimentTrayMap,
+      trayExperimentCodeMap,
+      experimentNameByCode,
+      experimentRuns,
+      experimentRunSteps,
+      experimentRunTrays,
+      samples,
+      schedule,
+    });
     return !lifecycle.started;
   });
 

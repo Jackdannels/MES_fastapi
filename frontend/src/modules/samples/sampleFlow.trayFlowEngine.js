@@ -42,13 +42,6 @@ import { createTrayFlowStepTools } from "./sampleFlow.trayFlowStepHelpers";
 import { buildCompletedTrayFlowState } from "./sampleFlow.trayFlowCompleted";
 import { decorateMoldCancellationSteps } from "./sampleFlow.moldCancellation";
 
-const SALT_SPRAY_PAUSE_RESET_LABELS = new Set([
-  "送至盐雾试验室",
-  "已到达实验室",
-  "工装夹具安装",
-  "实验准备就绪",
-]);
-
 const SALT_SPRAY_RESET_STEP_BY_LABEL = {
   "送至盐雾试验室": "dispatch",
   "已到达实验室": "compare",
@@ -74,19 +67,19 @@ const projectSaltSprayPauseFlow = ({ displayRemark, input, steps, trayCode }) =>
     stagingEvents: input.stagingEvents || input.staging_events,
     trayCode,
   });
+  const recoveryStarted = Boolean(midAppearance.returnedAt || preparation.started);
   const completedResetSteps = new Set([
-    ...(preparation.started ? ["dispatch"] : []),
-    ...(preparation.compared ? ["compare"] : []),
+    ...(preparation.compared ? ["dispatch"] : []),
+    ...(preparation.installed ? ["compare"] : []),
     ...(preparation.fixtureReady ? ["install"] : []),
-    ...(preparation.ready ? ["ready"] : []),
   ]);
-  const activeResetStep = preparation.ready
+  const activeResetStep = preparation.fixtureReady
     ? "ready"
     : preparation.installed
       ? "install"
       : preparation.compared
         ? "compare"
-        : preparation.started
+        : recoveryStarted
           ? "dispatch"
           : "";
   const resetStepTime = {
@@ -98,32 +91,39 @@ const projectSaltSprayPauseFlow = ({ displayRemark, input, steps, trayCode }) =>
   const projected = steps.map((step) => {
     const next = { ...step };
     const resetStep = SALT_SPRAY_RESET_STEP_BY_LABEL[normalizeText(next.label)];
-    if (!preparation.started && SALT_SPRAY_PAUSE_RESET_LABELS.has(normalizeText(next.label))) {
-      next.pauseResetRequired = true;
-    }
-    if (preparation.started && resetStep) {
-      next.active = resetStep === activeResetStep;
-      next.reached = completedResetSteps.has(resetStep) && resetStep !== activeResetStep;
-      next.resumePreparationStep = true;
-      next.pauseResetState = resetStep === activeResetStep
+    if (resetStep) {
+      const active = recoveryStarted && resetStep === activeResetStep;
+      const completed = completedResetSteps.has(resetStep);
+      next.active = active;
+      next.reached = completed;
+      next.resumePreparationStep = recoveryStarted;
+      next.pauseResetState = active
         ? "active"
-        : completedResetSteps.has(resetStep)
+        : completed
           ? "completed"
-          : "pending";
-      next.pauseResetRequired = completedResetSteps.has(resetStep);
-      next.time = resetStepTime[resetStep] || "";
-    } else if (midAppearance.returnedAt && normalizeText(next.label) === "送至盐雾试验室") {
-      next.time = midAppearance.returnedAt;
+          : "historical";
+      next.pauseResetRequired = !active && !completed;
+      if (recoveryStarted) {
+        next.time = resetStepTime[resetStep] || "";
+      }
     }
     return next;
   });
-  if (preparation.started) {
+  if (recoveryStarted) {
     projected.forEach((step) => {
       if (!step.resumePreparationStep && step.active) {
         step.active = false;
         step.reached = true;
       }
     });
+  }
+  const pausedRunningStep = projected.find((step) => (
+    /盐雾(?:试验|实验)进行中（暂停）$/.test(normalizeText(step.label))
+  ));
+  if ((midAppearance.visible || recoveryStarted) && pausedRunningStep) {
+    pausedRunningStep.active = false;
+    pausedRunningStep.reached = true;
+    pausedRunningStep.pauseResetState = "historical";
   }
   if (!midAppearance.visible) {
     return projected;

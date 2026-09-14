@@ -79,6 +79,13 @@ async function markLaboratoryAttendanceWorkStarted(labName) {
   });
 }
 
+async function finishElapsedLaboratoryAttendanceWork(labName) {
+  return writeJson(`/api/attendance/labs/${encodeLabName(labName)}/work/finish-elapsed`, {
+    body: {},
+    message: "停止员工工作计时失败",
+  });
+}
+
 async function listAttendanceWorkTimes(date = "") {
   const query = String(date || "").trim() ? `?date=${encodeURIComponent(String(date).trim())}` : "";
   return readJson(`/api/attendance/work-times${query}`, "读取员工工作时间失败");
@@ -171,6 +178,7 @@ async function deleteAttendanceUser(userId, payload = {}) {
 export {
   createAttendanceUser,
   deleteAttendanceUser,
+  finishElapsedLaboratoryAttendanceWork,
   listLaboratoryAttendanceSessions,
   listAttendanceUsers,
   listAttendanceOperationLogs,

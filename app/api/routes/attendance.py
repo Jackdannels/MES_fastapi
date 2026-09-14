@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.core.storage_backend import get_storage_backend
+from app.core.time_utils import now_business_datetime, parse_business_datetime
 from app.services.attendance_service import AttendanceError, get_attendance_service, normalize_text
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
@@ -75,6 +76,42 @@ def _laboratory_has_paused_run(lab_name: str) -> bool:
         and normalize_text(run.get("device") or run.get("device_name")) == normalized_lab_name
         for run in runs
     )
+
+
+def _elapsed_running_runs(lab_name: str = "") -> list[tuple[dict[str, Any], Any]]:
+    normalized_lab_name = normalize_text(lab_name)
+    now = now_business_datetime()
+    elapsed = []
+    for run in get_storage_backend().read("mes.experiment_runs"):
+        run_lab_name = normalize_text(run.get("device") or run.get("device_name"))
+        if normalized_lab_name and run_lab_name != normalized_lab_name:
+            continue
+        if normalize_text(run.get("status") or run.get("run_status")) not in {"实验进行中", "实验中"}:
+            continue
+        if normalize_text(run.get("ended_at") or run.get("endedAt")):
+            continue
+        deadline = parse_business_datetime(run.get("planned_end_at") or run.get("plannedEndAt"))
+        if deadline is not None and now >= deadline:
+            elapsed.append((run, deadline))
+    return elapsed
+
+
+def _finish_elapsed_work_intervals(lab_name: str = "") -> int:
+    service = get_attendance_service()
+    finished_count = 0
+    for run, deadline in _elapsed_running_runs(lab_name):
+        finished = service.finish_work_interval(
+            run_no=normalize_text(run.get("run_no") or run.get("runNo") or run.get("id")),
+            ended_at=deadline,
+            completion_action="实验计时结束",
+        )
+        if finished is not None:
+            finished_count += 1
+    return finished_count
+
+
+def _laboratory_has_elapsed_run(lab_name: str) -> bool:
+    return bool(_elapsed_running_runs(lab_name))
 
 
 def _verify_admin_credentials(payload: AttendanceAdminRequest) -> None:
@@ -155,6 +192,7 @@ def delete_user(user_id: int, payload: AttendanceAdminRequest) -> dict[str, Any]
 @router.get("/labs/{lab_name}/session")
 def read_lab_session(lab_name: str) -> dict[str, Any]:
     normalized_lab_name = _normalize_lab_name(lab_name)
+    _finish_elapsed_work_intervals(normalized_lab_name)
     return get_attendance_service().read_lab_session(normalized_lab_name)
 
 
@@ -198,16 +236,27 @@ def logout_lab(lab_name: str, payload: AttendanceLogoutRequest) -> dict[str, Any
 def start_lab_work(lab_name: str) -> dict[str, Any]:
     normalized_lab_name = _normalize_lab_name(lab_name)
     try:
-        if _laboratory_has_paused_run(normalized_lab_name):
+        if _laboratory_has_paused_run(normalized_lab_name) or _laboratory_has_elapsed_run(normalized_lab_name):
             return get_attendance_service().read_lab_session(normalized_lab_name)
         return get_attendance_service().start_lab_work(normalized_lab_name)
     except AttendanceError as exc:
         raise _service_error(exc) from exc
 
 
+@router.post("/labs/{lab_name}/work/finish-elapsed")
+def finish_elapsed_lab_work(lab_name: str) -> dict[str, Any]:
+    normalized_lab_name = _normalize_lab_name(lab_name)
+    return {
+        "finishedCount": _finish_elapsed_work_intervals(normalized_lab_name),
+        "labName": normalized_lab_name,
+        "ok": True,
+    }
+
+
 @router.get("/work-times")
 def list_work_times(date: str | None = None) -> list[dict[str, Any]]:
     try:
+        _finish_elapsed_work_intervals()
         return get_attendance_service().list_work_times(date)
     except AttendanceError as exc:
         raise _service_error(exc) from exc

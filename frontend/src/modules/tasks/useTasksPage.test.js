@@ -455,7 +455,7 @@ describe("useTasksPage", () => {
       expect(wrapper.vm.intakeExperimentDraft).toEqual([]);
       expect(wrapper.vm.intakeAxisModalOpen).toBe(true);
       expect(wrapper.vm.intakeAxisPickerType).toBe("冲击试验");
-      expect(wrapper.vm.intakeAxisPickerCodes).toEqual(["x+", "x-", "y+", "y-", "z+", "z-"]);
+      expect(wrapper.vm.intakeAxisPickerCodes).toEqual(["x+", "x-", "y+", "z+", "y-", "z-"]);
 
       wrapper.vm.toggleIntakeAxisCode("x-");
       wrapper.vm.toggleIntakeAxisCode("y+");

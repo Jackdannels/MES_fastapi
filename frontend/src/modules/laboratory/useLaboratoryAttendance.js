@@ -2,6 +2,7 @@ import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 
 import { useScanInputFocus } from "@/composables/useScanInputFocus";
 import {
+  finishElapsedLaboratoryAttendanceWork,
   loginLaboratoryAttendance,
   loginLaboratoryAttendanceByQr,
   logoutLaboratoryAttendance,
@@ -306,6 +307,14 @@ function useLaboratoryAttendance({ attendancePauseStartedAt, laboratoryConfig, t
       });
   };
 
+  const finishWorkAtCountdown = async () => {
+    try {
+      await finishElapsedLaboratoryAttendanceWork(laboratoryConfig.value.labName);
+    } catch (error) {
+      attendanceLoginError.value = formatErrorMessage(error);
+    }
+  };
+
   onBeforeUnmount(clearAttendanceLogoutTimer);
 
   return {
@@ -326,6 +335,7 @@ function useLaboratoryAttendance({ attendancePauseStartedAt, laboratoryConfig, t
     attendanceWorkStartedAt,
     clearAttendanceLogoutTimer,
     closeAttendanceLogin,
+    finishWorkAtCountdown,
     loadAttendanceSession,
     logoutAttendance,
     openAttendanceLogin,

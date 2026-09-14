@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import ipaddress
 import os
+import re
 import tempfile
 import zipfile
 from pathlib import Path
@@ -82,6 +83,15 @@ def _experiment_code(row: dict[str, Any]) -> str:
     return _text(row.get("experiment_code") or row.get("experiment_no") or row.get("id"))
 
 
+def _natural_task_code_key(value: str) -> tuple[tuple[int, int | str], ...]:
+    natural_parts = tuple(
+        (0, int(part)) if part.isdigit() else (1, part.casefold())
+        for part in re.split(r"(\d+)", value)
+        if part
+    )
+    return natural_parts + ((2, value),)
+
+
 def _experiment_folder(root: Path, task_code: str, experiment: dict[str, Any], exports: list[dict[str, Any]]) -> Path:
     scoped = [
         item
@@ -130,7 +140,10 @@ def list_task_data(
     known_task_codes = {_task_code(task) for task in tasks if _task_code(task)}
     known_task_codes.update(_text(row.get("task_code") or row.get("task_no")) for row in experiments)
     task_by_code = {_task_code(task): task for task in tasks if _task_code(task)}
-    for task_code in sorted((code for code in known_task_codes if code), reverse=True):
+    for task_code in sorted(
+        (code for code in known_task_codes if code),
+        key=_natural_task_code_key,
+    ):
         task = task_by_code.get(task_code, {})
         task_name = _text(task.get("name") or task.get("task_name") or task.get("project_name"))
         if normalized_query and normalized_query not in f"{task_code} {task_name}".lower():

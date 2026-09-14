@@ -348,7 +348,7 @@
       </div>
       <div class="tasks-axis-picker__grid" data-testid="task-intake-axis-grid">
         <button
-          v-for="axisCode in defaultAxisCodes"
+          v-for="axisCode in axisCodesForExperimentType(intakeAxisPickerType)"
           :key="axisCode"
           class="tasks-axis-picker__option"
           :class="{ 'is-selected': intakeAxisPickerCodes.includes(axisCode) }"
@@ -606,7 +606,7 @@
       </div>
       <div class="tasks-axis-picker__grid" data-testid="task-edit-axis-grid">
         <button
-          v-for="axisCode in defaultAxisCodes"
+          v-for="axisCode in axisCodesForExperimentType(editAxisPickerType)"
           :key="axisCode"
           class="tasks-axis-picker__option"
           :class="{ 'is-selected': editAxisPickerCodes.includes(axisCode) }"
@@ -699,7 +699,7 @@ const {
   externalTaskIntakeRows,
   filterStatus,
   filterTestType,
-  defaultAxisCodes,
+  axisCodesForExperimentType,
   formatAxisCodeLabel,
   intakeForm,
   intakeAxisModalOpen,

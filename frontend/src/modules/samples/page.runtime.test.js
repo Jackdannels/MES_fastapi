@@ -458,6 +458,10 @@ describe("SamplesPage runtime", () => {
     expect(trayFlowCard.text()).toContain("中途外观检测");
     expect(trayFlowCard.get('[data-testid^="samples-tray-flow-step-salt-spray-mid-appearance-"]').classes())
       .toContain("current");
+    const pausedStep = trayFlowCard.findAll('[data-testid^="samples-tray-flow-step-"]')
+      .find((step) => step.text().includes("盐雾试验进行中（暂停）"));
+    expect(pausedStep?.classes()).toContain("pause-reset");
+    expect(pausedStep?.classes()).not.toContain("reached");
   });
 });
 

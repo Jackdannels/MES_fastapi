@@ -776,6 +776,14 @@ describe("visualization model", () => {
       schedules: [{ device: "盐雾试验室", experiment_code: experimentCode, status: "实验暂停", task_code: taskCode }],
     };
 
+    const initialPausedTray = buildLabProcessPanels({ ...baseInput, stagingEvents: [] })[0]?.trays[0];
+    expect(initialPausedTray?.steps.filter((step) => step.active).map((step) => step.label))
+      .toEqual(["盐雾试验进行中（暂停）"]);
+    expect(initialPausedTray?.steps.filter((step) => step.pauseResetState === "historical").map((step) => step.label))
+      .toEqual(expect.arrayContaining([
+        "送至盐雾试验室", "已到达实验室", "工装夹具安装", "实验准备就绪",
+      ]));
+
     const pausedTray = buildLabProcessPanels(baseInput)[0]?.trays[0];
     expect(pausedTray).toEqual(expect.objectContaining({
       displayRemark: "实验进行中（暂停）",
@@ -790,6 +798,9 @@ describe("visualization model", () => {
       label: "中途外观检测",
       time: "2026-09-02 10:05:00",
     }));
+    expect(pausedTray?.steps.find((step) => step.label === "盐雾试验进行中（暂停）"))
+      .toEqual(expect.objectContaining({ active: false, pauseResetState: "historical" }));
+    expect(pausedTray?.steps.filter((step) => step.active)).toHaveLength(1);
     expect(pausedTray?.steps.filter((step) => [
       "送至盐雾试验室", "已到达实验室", "工装夹具安装", "实验准备就绪",
     ].includes(step.label))).toHaveLength(4);
@@ -813,8 +824,13 @@ describe("visualization model", () => {
       ],
     })[0]?.trays[0];
     expect(returnedTray?.steps.some((step) => step.label === "中途外观检测")).toBe(false);
-    expect(returnedTray?.steps.find((step) => step.label === "送至盐雾试验室")?.time)
-      .toBe("2026-09-02 10:15:00");
+    expect(returnedTray?.steps.find((step) => step.label === "送至盐雾试验室"))
+      .toEqual(expect.objectContaining({ active: true, pauseResetState: "active", time: "2026-09-02 10:15:00" }));
+    expect(returnedTray?.steps.filter((step) => step.pauseResetState === "historical").map((step) => step.label))
+      .toEqual(expect.arrayContaining([
+        "盐雾试验进行中（暂停）", "已到达实验室", "工装夹具安装", "实验准备就绪",
+      ]));
+    expect(returnedTray?.steps.filter((step) => step.active)).toHaveLength(1);
 
     const comparedTray = buildLabProcessPanels({
       ...baseInput,
@@ -838,10 +854,50 @@ describe("visualization model", () => {
     expect(comparedTray?.status).toBe("已到达实验室");
     expect(comparedTray?.steps.find((step) => step.label === "已到达实验室"))
       .toEqual(expect.objectContaining({ active: true, pauseResetState: "active" }));
+    expect(comparedTray?.steps.find((step) => step.label === "送至盐雾试验室"))
+      .toEqual(expect.objectContaining({ active: false, pauseResetState: "completed", reached: true }));
     expect(comparedTray?.steps.find((step) => step.label === "工装夹具安装"))
-      .toEqual(expect.objectContaining({ pauseResetState: "pending" }));
+      .toEqual(expect.objectContaining({ pauseResetState: "historical" }));
     expect(comparedTray?.steps.find((step) => step.label === "实验准备就绪"))
-      .toEqual(expect.objectContaining({ pauseResetState: "pending" }));
+      .toEqual(expect.objectContaining({ pauseResetState: "historical" }));
+    expect(comparedTray?.steps.filter((step) => step.active)).toHaveLength(1);
+
+    const preparationEvents = [
+      ...baseInput.stagingEvents,
+      { action: "stock_out", appearance_phase: "mid_experiment", pause_no: "PAUSE-SALT-1", room: "appearance", run_no: "RUN-SALT-1", target_lab: "盐雾试验室", task_code: taskCode, time: "2026-09-02 10:15:00", tray_code: trayCode },
+      { action: "resume_preparation_started", pause_no: "PAUSE-SALT-1", room: "laboratory_resume_preparation", run_no: "RUN-SALT-1", task_code: taskCode, time: "2026-09-02 10:16:00", tray_code: trayCode },
+      { action: "resume_preparation_compared", pause_no: "PAUSE-SALT-1", room: "laboratory_resume_preparation", run_no: "RUN-SALT-1", task_code: taskCode, time: "2026-09-02 10:17:00", tray_code: trayCode },
+    ];
+    const installedTray = buildLabProcessPanels({
+      ...baseInput,
+      stagingEvents: [
+        ...preparationEvents,
+        { action: "resume_preparation_installed", pause_no: "PAUSE-SALT-1", room: "laboratory_resume_preparation", run_no: "RUN-SALT-1", task_code: taskCode, time: "2026-09-02 10:18:00", tray_code: trayCode },
+      ],
+    })[0]?.trays[0];
+    expect(installedTray?.steps.find((step) => step.label === "已到达实验室"))
+      .toEqual(expect.objectContaining({ pauseResetState: "completed", reached: true }));
+    expect(installedTray?.steps.find((step) => step.label === "工装夹具安装"))
+      .toEqual(expect.objectContaining({ active: true, pauseResetState: "active" }));
+    expect(installedTray?.steps.filter((step) => step.active)).toHaveLength(1);
+
+    const fixtureReadyEvent = { action: "resume_preparation_fixture_ready", pause_no: "PAUSE-SALT-1", room: "laboratory_resume_preparation", run_no: "RUN-SALT-1", task_code: taskCode, time: "2026-09-02 10:19:00", tray_code: trayCode };
+    const readyTray = buildLabProcessPanels({
+      ...baseInput,
+      stagingEvents: [
+        ...preparationEvents,
+        { action: "resume_preparation_installed", pause_no: "PAUSE-SALT-1", room: "laboratory_resume_preparation", run_no: "RUN-SALT-1", task_code: taskCode, time: "2026-09-02 10:18:00", tray_code: trayCode },
+        fixtureReadyEvent,
+        { action: "resume_preparation_ready", pause_no: "PAUSE-SALT-1", room: "laboratory_resume_preparation", run_no: "RUN-SALT-1", task_code: taskCode, time: "2026-09-02 10:20:00", tray_code: trayCode },
+      ],
+    })[0]?.trays[0];
+    expect(readyTray?.steps.find((step) => step.label === "工装夹具安装"))
+      .toEqual(expect.objectContaining({ pauseResetState: "completed", reached: true }));
+    expect(readyTray?.steps.find((step) => step.label === "实验准备就绪"))
+      .toEqual(expect.objectContaining({ active: true, pauseResetState: "active" }));
+    expect(readyTray?.steps.find((step) => step.label === "盐雾试验进行中（暂停）"))
+      .toEqual(expect.objectContaining({ active: false, pauseResetState: "historical" }));
+    expect(readyTray?.steps.filter((step) => step.active)).toHaveLength(1);
 
     const resumedTray = buildLabProcessPanels({
       ...baseInput,
@@ -866,6 +922,9 @@ describe("visualization model", () => {
       active: true,
       label: "盐雾试验进行中",
     }));
+    expect(resumedTray?.steps.filter((step) => [
+      "送至盐雾试验室", "已到达实验室", "工装夹具安装", "实验准备就绪",
+    ].includes(step.label)).every((step) => step.reached && !step.active)).toBe(true);
     expect(resumedTray?.steps.some((step) => step.pauseResetRequired)).toBe(false);
     expect(resumedTray?.steps.some((step) => step.label === "中途外观检测")).toBe(false);
   });

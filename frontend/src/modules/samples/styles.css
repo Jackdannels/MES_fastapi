@@ -602,6 +602,20 @@
   background: rgba(34, 197, 94, 0.35);
 }
 
+.sample-flow-unified li.pause-reset {
+  border-color: rgba(251, 146, 60, 0.72);
+  background: rgba(249, 115, 22, 0.12);
+  color: #fdba74;
+}
+
+.sample-flow-unified li.pause-reset::before {
+  background: rgba(249, 115, 22, 0.92);
+}
+
+.sample-flow-unified li.pause-reset::after {
+  background: rgba(249, 115, 22, 0.4);
+}
+
 .sample-flow-unified li.current {
   border-color: var(--status-info-border);
   background: var(--status-info-bg);

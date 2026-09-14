@@ -7,6 +7,7 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator
 from app.core.axis_codes import sort_axis_codes
 from app.core.config import settings
 from app.core.storage_backend import get_storage_backend
+from app.core.time_utils import now_business_datetime, parse_business_datetime
 from app.core.master_data import (
     LAB_INTERFACE_MQTT,
     LAB_INTERFACE_OPERATION_EXPERIMENT_END_REQUEST,
@@ -606,6 +607,9 @@ def publish_salt_pause_request(request: SaltPauseRequest) -> dict[str, Any]:
     _reject_pending_salt_command(repository, request.run_no)
     if str(run.get("run_status") or "").strip() != RUNNING:
         raise HTTPException(status_code=409, detail="只有实验进行中的盐雾实验可以暂停")
+    planned_end = parse_business_datetime(run.get("planned_end_at") or run.get("plannedEndAt"))
+    if planned_end is not None and now_business_datetime() >= planned_end:
+        raise HTTPException(status_code=409, detail="盐雾实验计时已结束，不能再暂停，请确认现场状态后完成实验")
     stored_run_trays = get_storage_backend().read("mes.experiment_run_trays")
     run_trays = sorted({
         str(row.get("tray_code") or row.get("tray_no") or "").strip()

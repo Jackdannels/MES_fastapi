@@ -964,6 +964,7 @@ class AttendanceService:
         lab_name: str = "",
         lab_code: str = "",
         ended_at: datetime | str | None = None,
+        completion_action: str = "",
     ) -> dict[str, Any] | None:
         interval = self.repository.find_open_interval(run_no=run_no, lab_name=lab_name, lab_code=lab_code)
         if not interval:
@@ -982,7 +983,7 @@ class AttendanceService:
         if session and normalize_text(session.get("username")) == normalize_text(interval.get("username")):
             self.record_operation(
                 session,
-                action="完成试验" if normalize_text(interval.get("task_code")) or normalize_text(interval.get("experiment_code")) else "结束工作",
+                action=normalize_text(completion_action) or ("完成试验" if normalize_text(interval.get("task_code")) or normalize_text(interval.get("experiment_code")) else "结束工作"),
                 source=normalize_text(interval.get("source")) or "api",
                 task_code=normalize_text(interval.get("task_code")),
                 experiment_code=normalize_text(interval.get("experiment_code")),

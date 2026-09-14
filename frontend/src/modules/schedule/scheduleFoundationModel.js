@@ -1,4 +1,4 @@
-import { normalizeAxisCodes } from "@/lib/axisCodes";
+import { normalizeAxisCodes, normalizeAxisCodesForExperimentType } from "@/lib/axisCodes";
 import { collectExperimentTypes } from "@/lib/experimentTypes";
 import { serverNowDate } from "@/lib/serverClock";
 import { filterActiveTasks } from "@/lib/taskArchive";
@@ -59,11 +59,12 @@ const AXIS_LAB_LOCK_GROUPS = [
   },
 ];
 const AXIS_CODE_OPTIONS = [
+  { code: "x", label: "X", testId: "x" },
   { code: "x+", label: "X+", testId: "x-plus" },
   { code: "x-", label: "X-", testId: "x-minus" },
   { code: "y+", label: "Y+", testId: "y-plus" },
-  { code: "y-", label: "Y-", testId: "y-minus" },
   { code: "z+", label: "Z+", testId: "z-plus" },
+  { code: "y-", label: "Y-", testId: "y-minus" },
   { code: "z-", label: "Z-", testId: "z-minus" },
 ];
 const buildActiveTaskContext = (tasks, samples = []) => {
@@ -172,7 +173,15 @@ const resolveAxisLabLockGroup = (experiment) => {
 };
 
 const resolveExperimentAxisCodes = (experiment) => {
-  const explicitAxisCodes = normalizeAxisCodes(experiment?.axis_codes ?? experiment?.axisCodes);
+  const experimentType = [
+    normalizeText(experiment?.experiment_name),
+    normalizeText(experiment?.experiment_type),
+    normalizeText(experiment?.required_device),
+  ].find((label) => AXIS_EXPERIMENT_TYPES.has(label));
+  const explicitAxisCodes = normalizeAxisCodesForExperimentType(
+    experiment?.axis_codes ?? experiment?.axisCodes,
+    experimentType,
+  );
   if (explicitAxisCodes.length > 0) {
     return explicitAxisCodes;
   }

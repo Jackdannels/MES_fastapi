@@ -46,6 +46,26 @@ describe("tasks model", () => {
     })).toBe("冲击试验（X+、Y-、Z-）");
   });
 
+  test("uses separate axis rules for impact and vibration experiments", () => {
+    const task = createTaskRecord(
+      {
+        code: "SYLU-2026-03-004",
+        sample_count: "1",
+        test_types: ["冲击试验", "振动试验"],
+        axis_codes_by_test_type: {
+          冲击试验: ["z-", "y-", "z+", "y+", "x-", "x+"],
+          振动试验: ["x", "y+", "y-", "z+", "z-"],
+        },
+      },
+      [],
+    );
+
+    expect(task.axis_codes_by_test_type).toEqual({
+      冲击试验: ["x+", "x-", "y+", "z+", "y-", "z-"],
+      振动试验: ["x", "y+", "z+", "y-", "z-"],
+    });
+  });
+
   test("marks a task as running when any tray is sent to the lab", () => {
     const rows = buildTaskRows(
       [{ id: "task-1", code: "SYLU-2026-03-001", name: "冲击试验", status: "待排程" }],

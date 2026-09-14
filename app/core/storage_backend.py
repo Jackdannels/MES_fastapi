@@ -4,7 +4,11 @@ import re
 from datetime import datetime
 from typing import Any, Dict
 
-from app.core.axis_codes import DEFAULT_AXIS_CODES, sort_axis_codes
+from app.core.axis_codes import (
+    axis_codes_for_experiment_type,
+    normalize_axis_codes_for_experiment_type,
+    sort_axis_codes,
+)
 from app.core.config import settings
 from app.core.storage_contract import (
     CURRENT_SCHEMA_VERSION,
@@ -279,7 +283,10 @@ def _task_axis_codes_for_experiment_type(task: dict[str, Any], experiment_type: 
     raw_map = task.get("axis_codes_by_test_type") or task.get("axisCodesByTestType")
     if not isinstance(raw_map, dict):
         return []
-    return _normalize_axis_codes(raw_map.get(normalized_type))
+    return normalize_axis_codes_for_experiment_type(
+        _normalize_axis_codes(raw_map.get(normalized_type)),
+        normalized_type,
+    )
 
 
 def _build_experiment_types(task: dict[str, Any], count: int) -> list[str]:
@@ -389,11 +396,15 @@ def _ensure_task_experiment_rows(payload: Dict[str, Any]) -> tuple[Dict[str, Any
                 "updated_at": source.get("updated_at") or task.get("updated_at") or task.get("created_at"),
             }
             if _experiment_requires_axis_codes(experiment_name, required_device):
+                experiment_type = experiment_name if experiment_name in AXIS_EXPERIMENT_TYPES else required_device
                 normalized_experiment["axis_codes"] = (
                     _task_axis_codes_for_experiment_type(task, experiment_name)
                     or _task_axis_codes_for_experiment_type(task, required_device)
-                    or _normalize_axis_codes(source.get("axis_codes") or source.get("axisCodes"))
-                    or list(DEFAULT_AXIS_CODES)
+                    or normalize_axis_codes_for_experiment_type(
+                        _normalize_axis_codes(source.get("axis_codes") or source.get("axisCodes")),
+                        experiment_type,
+                    )
+                    or list(axis_codes_for_experiment_type(experiment_type))
                 )
             normalized_experiments.append(normalized_experiment)
 

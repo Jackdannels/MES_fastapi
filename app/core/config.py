@@ -24,7 +24,9 @@ class Settings(BaseSettings):
     SESSION_IDLE_TIMEOUT_MINUTES: int = 0
     SESSION_MAX_AGE_HOURS: int = 0
     FRONTEND_ORIGINS: str = "http://192.168.110.15:5173,http://127.0.0.1:5173,http://localhost:5173"
-    TEST_DATA_PUBLIC_BASE_URL: str = "http://192.168.110.15:8000"
+    # Empty/"auto" derives test-data share links from the browser's current
+    # same-host Origin (or the request URL). Production may set an explicit URL.
+    TEST_DATA_PUBLIC_BASE_URL: str = ""
     TEST_DATA_SAVE_PATH: Optional[str] = None
     STORAGE_BACKEND: str = "mysql"
 

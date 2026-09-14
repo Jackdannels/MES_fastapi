@@ -713,7 +713,7 @@
           </div>
           <div class="laboratory-running-countdown" data-testid="laboratory-running-countdown">{{ runningModalExperiment.countdownLabel }}</div>
           <div v-if="isSaltSprayLaboratory && !runningModalExperiment.completed" class="laboratory-salt-exposure-grid" data-testid="laboratory-salt-exposure-grid">
-            <div><span>有效暴露</span><strong>{{ runningModalExperiment.effectiveExposureLabel }}</strong></div>
+            <div><span>有效时长</span><strong>{{ runningModalExperiment.effectiveExposureLabel }}</strong></div>
             <div><span>剩余有效时长</span><strong>{{ runningModalExperiment.remainingExposureLabel }}</strong></div>
             <div><span>累计暂停</span><strong>{{ runningModalExperiment.totalPauseLabel }}</strong></div>
             <div><span>暂停次数</span><strong>{{ runningModalExperiment.pauseCount }} 次</strong></div>
@@ -768,8 +768,8 @@
             </button>
           </div>
           <div class="laboratory-running-modal__hint muted">
-            <span>{{ runningModalExperiment.completed ? "实验状态已自动更新为实验已完成，点击空白处关闭弹窗。" : runningModalExperiment.isPaused ? "设备已确认暂停；暂停期间不计入有效暴露时间。" : "点击空白处可临时隐藏弹窗，10 秒无操作后会自动恢复。" }}</span>
-            <span v-if="!runningModalExperiment.completed && !runningModalExperiment.isPaused && runningModalExperiment.remainingSeconds <= 0">实验已超时，请在确认现场状态后完成实验。</span>
+            <span>{{ runningModalExperiment.completed ? "实验状态已自动更新为实验已完成，点击空白处关闭弹窗。" : runningModalExperiment.isPaused ? "设备已确认暂停；暂停期间不计入有效时长。" : "点击空白处可临时隐藏弹窗，10 秒无操作后会自动恢复。" }}</span>
+            <span v-if="!runningModalExperiment.completed && !runningModalExperiment.isPaused && runningModalExperiment.remainingSeconds <= 0">实验计时已结束，有效时长和员工工时已停止累计，请在确认现场状态后完成实验。</span>
             <span v-if="isSaltSprayLaboratory && runningModalExperiment.isPaused && activePauseInspectionTrayCodes.length">本次外观检查托盘：{{ activePauseInspectionTrayCodes.join("、") }}</span>
           </div>
           <div class="laboratory-running-actions">
@@ -836,7 +836,7 @@
               <span>{{ resumePreparationError }}</span>
             </div>
             <button
-              v-if="isSaltSprayLaboratory && !runningModalExperiment.completed && !runningModalExperiment.isPaused && !controlSubmitting && !controlAwaitingConfirmation"
+              v-if="isSaltSprayLaboratory && !runningModalExperiment.completed && !runningModalExperiment.isPaused && !runningModalExperiment.exposureComplete && !controlSubmitting && !controlAwaitingConfirmation"
               class="action-btn secondary"
               data-testid="laboratory-salt-pause"
               type="button"
@@ -852,7 +852,7 @@
               :disabled="!canResume"
               @click="requestContinue"
             >
-              {{ resumePreparationActive ? "恢复准备中" : "继续实验" }}
+              {{ resumePreparationReady ? "继续恢复实验" : resumePreparationActive ? "恢复准备中" : "继续实验" }}
             </button>
             <button
               v-if="resumePreparationActive && !resumePreparationCompared"

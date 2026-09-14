@@ -11023,10 +11023,10 @@ describe("samplesFlowModel", () => {
     });
     expect(returnedFlow.steps.some((step) => step.label === "中途外观检测")).toBe(false);
     expect(returnedFlow.steps.find((step) => step.label === "送至盐雾试验室")).toEqual(
-      expect.objectContaining({ pauseResetRequired: true, time: returnedAt }),
+      expect.objectContaining({ active: true, pauseResetState: "active", time: returnedAt }),
     );
     expect(returnedFlow.steps.filter((step) => step.pauseResetRequired).map((step) => step.label)).toEqual([
-      "送至盐雾试验室", "已到达实验室", "工装夹具安装", "实验准备就绪",
+      "已到达实验室", "工装夹具安装", "实验准备就绪",
     ]);
 
     const comparedAt = "2026-09-03 10:25:00";
@@ -11044,10 +11044,12 @@ describe("samplesFlowModel", () => {
       .toEqual(expect.objectContaining({ active: false, reached: true }));
     expect(comparedFlow.steps.find((step) => step.label === "已到达实验室"))
       .toEqual(expect.objectContaining({ active: true, pauseResetState: "active", time: comparedAt }));
+    expect(comparedFlow.steps.find((step) => step.label === "送至盐雾试验室"))
+      .toEqual(expect.objectContaining({ active: false, pauseResetState: "completed", reached: true }));
     expect(comparedFlow.steps.find((step) => step.label === "工装夹具安装"))
-      .toEqual(expect.objectContaining({ active: false, pauseResetState: "pending", reached: false }));
+      .toEqual(expect.objectContaining({ active: false, pauseResetState: "historical", reached: false }));
     expect(comparedFlow.steps.find((step) => step.label === "实验准备就绪"))
-      .toEqual(expect.objectContaining({ active: false, pauseResetState: "pending", reached: false }));
+      .toEqual(expect.objectContaining({ active: false, pauseResetState: "historical", reached: false }));
 
     const resumedFlow = buildTrayFlowViewRaw({
       ...baseInput,

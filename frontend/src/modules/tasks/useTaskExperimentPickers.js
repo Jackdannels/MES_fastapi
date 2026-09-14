@@ -1,9 +1,9 @@
 import { buildExperimentTypeSummary } from "@/lib/experimentTypes";
 import {
-  DEFAULT_AXIS_CODES,
+  axisCodesForExperimentType,
   isAxisAwareExperimentType,
-  normalizeAxisCodes,
   normalizeAxisCodesByTestType,
+  normalizeAxisCodesForExperimentType,
   normalizeText,
 } from "./model";
 
@@ -62,9 +62,14 @@ function useTaskExperimentPickers({
     if (!isAxisAwareExperimentType(normalizedType)) {
       return;
     }
-    const existingCodes = normalizeAxisCodes(intakeAxisDraftByTestType.value?.[normalizedType]);
+    const existingCodes = normalizeAxisCodesForExperimentType(
+      intakeAxisDraftByTestType.value?.[normalizedType],
+      normalizedType,
+    );
     intakeAxisPickerType.value = normalizedType;
-    intakeAxisPickerCodes.value = existingCodes.length > 0 ? existingCodes : [...DEFAULT_AXIS_CODES];
+    intakeAxisPickerCodes.value = existingCodes.length > 0
+      ? existingCodes
+      : [...axisCodesForExperimentType(normalizedType)];
     intakeAxisModal.openWith({ id: "task-intake-axis-modal", experimentType: normalizedType });
   };
 
@@ -75,11 +80,12 @@ function useTaskExperimentPickers({
   };
 
   const toggleIntakeAxisCode = (axisCode) => {
-    const normalizedCode = normalizeAxisCodes([axisCode])[0];
+    const experimentType = normalizeText(intakeAxisPickerType.value);
+    const normalizedCode = normalizeAxisCodesForExperimentType([axisCode], experimentType)[0];
     if (!normalizedCode) {
       return;
     }
-    const currentCodes = normalizeAxisCodes(intakeAxisPickerCodes.value);
+    const currentCodes = normalizeAxisCodesForExperimentType(intakeAxisPickerCodes.value, experimentType);
     intakeAxisPickerCodes.value = currentCodes.includes(normalizedCode)
       ? currentCodes.filter((code) => code !== normalizedCode)
       : [...currentCodes, normalizedCode];
@@ -87,7 +93,7 @@ function useTaskExperimentPickers({
 
   const confirmIntakeAxisPicker = () => {
     const experimentType = normalizeText(intakeAxisPickerType.value);
-    const axisCodes = normalizeAxisCodes(intakeAxisPickerCodes.value);
+    const axisCodes = normalizeAxisCodesForExperimentType(intakeAxisPickerCodes.value, experimentType);
     if (!experimentType || axisCodes.length === 0) {
       intakeWarning.value = "请选择至少一个试验轴向";
       return;
@@ -154,9 +160,14 @@ function useTaskExperimentPickers({
     if (!isAxisAwareExperimentType(normalizedType)) {
       return;
     }
-    const existingCodes = normalizeAxisCodes(editAxisDraftByTestType.value?.[normalizedType]);
+    const existingCodes = normalizeAxisCodesForExperimentType(
+      editAxisDraftByTestType.value?.[normalizedType],
+      normalizedType,
+    );
     editAxisPickerType.value = normalizedType;
-    editAxisPickerCodes.value = existingCodes.length > 0 ? existingCodes : [...DEFAULT_AXIS_CODES];
+    editAxisPickerCodes.value = existingCodes.length > 0
+      ? existingCodes
+      : [...axisCodesForExperimentType(normalizedType)];
     editAxisModal.openWith({ id: "task-edit-axis-modal", experimentType: normalizedType });
   };
 
@@ -167,11 +178,12 @@ function useTaskExperimentPickers({
   };
 
   const toggleEditAxisCode = (axisCode) => {
-    const normalizedCode = normalizeAxisCodes([axisCode])[0];
+    const experimentType = normalizeText(editAxisPickerType.value);
+    const normalizedCode = normalizeAxisCodesForExperimentType([axisCode], experimentType)[0];
     if (!normalizedCode) {
       return;
     }
-    const currentCodes = normalizeAxisCodes(editAxisPickerCodes.value);
+    const currentCodes = normalizeAxisCodesForExperimentType(editAxisPickerCodes.value, experimentType);
     editAxisPickerCodes.value = currentCodes.includes(normalizedCode)
       ? currentCodes.filter((code) => code !== normalizedCode)
       : [...currentCodes, normalizedCode];
@@ -179,7 +191,7 @@ function useTaskExperimentPickers({
 
   const confirmEditAxisPicker = () => {
     const experimentType = normalizeText(editAxisPickerType.value);
-    const axisCodes = normalizeAxisCodes(editAxisPickerCodes.value);
+    const axisCodes = normalizeAxisCodesForExperimentType(editAxisPickerCodes.value, experimentType);
     if (!experimentType || axisCodes.length === 0) {
       editWarning.value = "请选择至少一个试验轴向";
       return;

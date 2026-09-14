@@ -71,7 +71,7 @@ def test_exports_api_lists_failures_and_retries_selected_keys(client, monkeypatc
 
 
 def _task_data_storage(tmp_path):
-    report = tmp_path / "TASK-1" / "振动试验" / "X+轴向" / "2026-07-27 09.40-10.00" / "SP-1.pdf"
+    report = tmp_path / "TASK-1" / "振动试验" / "X轴向" / "2026-07-27 09.40-10.00" / "SP-1.pdf"
     report.parent.mkdir(parents=True)
     report.write_bytes(b"%PDF-1.4\n% test\n")
     return MemoryStorage(
@@ -84,7 +84,7 @@ def _task_data_storage(tmp_path):
                     "experiment_code": "EXP-VIB",
                     "experiment_name": "振动试验",
                     "status": "实验已完成",
-                    "axis_codes": ["x+", "x-"],
+                    "axis_codes": ["x", "y+"],
                 },
                 {
                     "task_code": "TASK-1",
@@ -99,11 +99,11 @@ def _task_data_storage(tmp_path):
             ],
             "mes.test_data_exports": [
                 {
-                    "exportKey": "RUN-1|x+|SP-1",
+                    "exportKey": "RUN-1|x|SP-1",
                     "taskCode": "TASK-1",
                     "experimentCode": "EXP-VIB",
                     "experimentName": "振动试验",
-                    "axisCode": "x+",
+                    "axisCode": "x",
                     "sampleCode": "SP-1",
                     "status": "success",
                     "filePath": str(report),
@@ -134,6 +134,38 @@ def test_task_data_api_counts_completed_experiments_separately_from_pdf_health(c
     assert vibration["successfulPdfCount"] == 1
     assert vibration["missingPdfCount"] == 3
     assert vibration["folderAvailable"] is True
+
+
+def test_task_data_api_naturally_sorts_full_task_codes_before_pagination(client, tmp_path, monkeypatch):
+    task_codes = [f"SYLU-2026-09-{sequence:03d}" for sequence in range(12, 0, -1)]
+    storage = MemoryStorage(
+        {
+            "mes.test_data_settings": [{"savePath": str(tmp_path)}],
+            "mes.tasks": [{"code": task_code} for task_code in task_codes],
+            "mes.experiments": [],
+            "mes.experiment_samples": [],
+        }
+    )
+    monkeypatch.setattr(test_data_route, "get_storage_backend", lambda: storage)
+
+    first_page = client.get("/api/test-data/tasks", params={"page": 1, "pageSize": 5})
+    second_page = client.get("/api/test-data/tasks", params={"page": 2, "pageSize": 5})
+
+    assert first_page.status_code == 200
+    assert [item["taskCode"] for item in first_page.json()["items"]] == [
+        "SYLU-2026-09-001",
+        "SYLU-2026-09-002",
+        "SYLU-2026-09-003",
+        "SYLU-2026-09-004",
+        "SYLU-2026-09-005",
+    ]
+    assert [item["taskCode"] for item in second_page.json()["items"]] == [
+        "SYLU-2026-09-006",
+        "SYLU-2026-09-007",
+        "SYLU-2026-09-008",
+        "SYLU-2026-09-009",
+        "SYLU-2026-09-010",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -192,6 +224,94 @@ def test_open_folder_api_only_opens_resolved_task_and_experiment_folders(client,
     ]
 
 
+def test_share_api_uses_current_same_host_browser_origin_in_auto_mode(client, tmp_path, monkeypatch):
+    storage = _task_data_storage(tmp_path)
+    monkeypatch.setattr(test_data_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(test_data_route.settings, "TEST_DATA_PUBLIC_BASE_URL", "auto")
+
+    response = client.post(
+        "/api/test-data/tasks/TASK-1/experiments/EXP-VIB/share",
+        headers={
+            "host": "192.168.110.77:8000",
+            "origin": "http://192.168.110.77:5173",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["url"].startswith("http://192.168.110.77:5173/api/test-data/share/")
+
+
+def test_share_api_uses_browser_origin_when_dev_proxy_targets_loopback(client, tmp_path, monkeypatch):
+    storage = _task_data_storage(tmp_path)
+    monkeypatch.setattr(test_data_route, "get_storage_backend", lambda: storage)
+    monkeypatch.setattr(test_data_route.settings, "TEST_DATA_PUBLIC_BASE_URL", "auto")
+
+    response = client.post(
+        "/api/test-data/tasks/TASK-1/experiments/EXP-VIB/share",
+        headers={
+            "host": "127.0.0.1:8000",
+            "origin": "http://192.168.110.77:5173",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["url"].startswith("http://192.168.110.77:5173/api/test-data/share/")
+
+
+def test_share_url_auto_mode_ignores_cross_host_origin_and_raw_proxy_headers():
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/test-data/tasks/TASK-1/share",
+            "headers": [
+                (b"host", b"mes-lab.local:15173"),
+                (b"origin", b"https://attacker.example"),
+                (b"x-forwarded-host", b"attacker.example"),
+                (b"x-forwarded-proto", b"https"),
+            ],
+            "client": ("192.168.110.20", 50000),
+            "server": ("mes-lab.local", 15173),
+            "scheme": "http",
+            "query_string": b"",
+        }
+    )
+
+    assert test_data_route.resolve_test_data_public_base_url(request, "") == "http://mes-lab.local:15173"
+
+    loopback_request = Request(
+        {
+            **request.scope,
+            "headers": [
+                (b"host", b"127.0.0.1:8000"),
+                (b"origin", b"https://attacker.example"),
+            ],
+            "server": ("127.0.0.1", 8000),
+        }
+    )
+    assert test_data_route.resolve_test_data_public_base_url(loopback_request, "") == "http://127.0.0.1:8000"
+
+
+def test_share_url_explicit_https_deployment_address_overrides_request():
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/test-data/tasks/TASK-1/share",
+            "headers": [(b"host", b"192.168.110.77:8000")],
+            "client": ("192.168.110.20", 50000),
+            "server": ("192.168.110.77", 8000),
+            "scheme": "http",
+            "query_string": b"",
+        }
+    )
+
+    assert (
+        test_data_route.resolve_test_data_public_base_url(request, "https://mes.example.com")
+        == "https://mes.example.com"
+    )
+
+
 def test_share_api_lists_downloads_and_builds_zip_without_exposing_outside_root(client, tmp_path, monkeypatch):
     storage = _task_data_storage(tmp_path)
     outside = tmp_path.parent / "outside.pdf"
@@ -200,7 +320,7 @@ def test_share_api_lists_downloads_and_builds_zip_without_exposing_outside_root(
     exports.append(
         {
             **exports[0],
-            "exportKey": "RUN-1|x+|OUTSIDE",
+            "exportKey": "RUN-1|x|OUTSIDE",
             "sampleCode": "OUTSIDE",
             "filePath": str(outside),
         }
@@ -218,7 +338,7 @@ def test_share_api_lists_downloads_and_builds_zip_without_exposing_outside_root(
     assert "SP-1.pdf" in page.text
     assert "OUTSIDE" not in page.text
 
-    export_key = quote("RUN-1|x+|SP-1", safe="")
+    export_key = quote("RUN-1|x|SP-1", safe="")
     download = client.get(f"/api/test-data/share/{share['token']}/files/{export_key}")
     assert download.status_code == 200
     assert download.content.startswith(b"%PDF")
@@ -227,7 +347,7 @@ def test_share_api_lists_downloads_and_builds_zip_without_exposing_outside_root(
     assert archive.status_code == 200
     assert archive.content.startswith(b"PK")
 
-    rejected = client.get(f"/api/test-data/share/{share['token']}/files/RUN-1%7Cx%2B%7COUTSIDE")
+    rejected = client.get(f"/api/test-data/share/{share['token']}/files/RUN-1%7Cx%7COUTSIDE")
     assert rejected.status_code == 404
 
     salt_report = tmp_path / "TASK-1" / "盐雾试验" / "2026-07-27 10.00-11.00" / "SP-2.pdf"

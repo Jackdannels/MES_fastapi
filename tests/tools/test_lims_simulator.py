@@ -33,6 +33,13 @@ def build_client(monkeypatch):
     return TestClient(lims_app.app), fake
 
 
+def test_lims_simulator_uses_type_specific_axis_sequences():
+    assert lims_app.AXIS_CODES_BY_EXPERIMENT_TYPE == {
+        "冲击试验": ("x+", "x-", "y+", "z+", "y-", "z-"),
+        "振动试验": ("x", "y+", "z+", "y-", "z-"),
+    }
+
+
 def test_lims_simulator_serves_rabbit_state_and_generates_valid_task(monkeypatch):
     client, _fake = build_client(monkeypatch)
 
@@ -50,7 +57,12 @@ def test_lims_simulator_serves_rabbit_state_and_generates_valid_task(monkeypatch
     assert generated.json()["test_types"]
     axis_map = generated.json()["axis_codes_by_test_type"]
     assert set(axis_map).issubset(set(generated.json()["test_types"]))
-    assert all(axis_codes == ["x+", "x-", "y+", "y-", "z+", "z-"] for axis_codes in axis_map.values())
+    assert axis_map.get("冲击试验", ["x+", "x-", "y+", "z+", "y-", "z-"]) == [
+        "x+", "x-", "y+", "z+", "y-", "z-",
+    ]
+    assert axis_map.get("振动试验", ["x", "y+", "z+", "y-", "z-"]) == [
+        "x", "y+", "z+", "y-", "z-",
+    ]
     assert 1 <= int(generated.json()["sample_count"]) <= 12
 
     page = client.get("/")

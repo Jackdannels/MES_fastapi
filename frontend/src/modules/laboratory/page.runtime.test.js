@@ -67,6 +67,8 @@ const laboratoryOperationCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/laboratory/operations") && (options.method || "GET") === "POST");
 const attendanceWorkStartCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/attendance/labs/") && String(input).includes("/work/start") && (options.method || "GET") === "POST");
+const attendanceWorkFinishElapsedCalls = () =>
+  fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/attendance/labs/") && String(input).includes("/work/finish-elapsed") && (options.method || "GET") === "POST");
 const attendanceLogoutCalls = () =>
   fetch.mock.calls.filter(([input, options = {}]) => String(input).includes("/api/attendance/labs/") && String(input).includes("/logout") && (options.method || "GET") === "POST");
 const attendanceQrLoginCalls = () =>
@@ -84,6 +86,10 @@ const handleAttendanceFetch = (url, options = {}) => {
       workStartedAt: attendanceSessionState.workStartedAt || "2026-04-02T10:00:00Z",
     };
     return { ok: true, status: 200, json: async () => attendanceSessionState };
+  }
+  if (String(url).includes("/work/finish-elapsed")) {
+    attendanceSessionState = { ...attendanceSessionState, active: true, labName, workStartedAt: null };
+    return { ok: true, status: 200, json: async () => ({ finishedCount: 1, labName, ok: true }) };
   }
   if (String(url).includes("/session")) {
     return { ok: true, status: 200, json: async () => ({ ...attendanceSessionState, labName }) };
@@ -1629,7 +1635,7 @@ describe("LaboratoryPage runtime", () => {
     const experimentCode = `${taskCode}-A`;
     const trayCode = `${taskCode}-TP-001`;
     const completedAxisCodes = ["x+", "x-", "y+"];
-    const remainingAxisCodes = ["y-", "z+", "z-"];
+    const remainingAxisCodes = ["z+", "y-", "z-"];
     snapshotState = {
       ...createSnapshot(),
       [STORAGE_KEYS.tasks]: [
@@ -1735,7 +1741,7 @@ describe("LaboratoryPage runtime", () => {
     expect(laboratoryOperationCalls()).toHaveLength(operationCountBefore);
     expect(JSON.parse(String(readyCall[1].body))).toEqual(expect.objectContaining({
       axis_codes: remainingAxisCodes,
-      current_axis_code: "y-",
+      current_axis_code: "z+",
       experiment_code: experimentCode,
       lab_code: "LAB_IMPACT_1",
       schedule_id: "schedule-impact-remaining",
@@ -5039,7 +5045,12 @@ describe("LaboratoryPage runtime", () => {
 
     expect(document.body.querySelector('[data-testid="laboratory-complete-confirm-modal"]')).toBeNull();
     expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')).not.toBeNull();
-    expect(document.body.querySelector('[data-testid="laboratory-running-modal"]')?.textContent || "").toContain("实验已超时");
+    const runningModal = document.body.querySelector('[data-testid="laboratory-running-modal"]');
+    expect(runningModal?.textContent || "").toContain("实验计时已结束");
+    expect(runningModal?.textContent || "").toContain("有效时长和员工工时已停止累计");
+    expect(runningModal?.textContent || "").toContain("有效时长00:00:03");
+    expect(runningModal?.querySelector('[data-testid="laboratory-salt-pause"]')).toBeNull();
+    expect(attendanceWorkFinishElapsedCalls()).toHaveLength(1);
     expect(laboratoryEndRequestCalls()).toHaveLength(0);
     document.body.querySelector('[data-testid="laboratory-running-backdrop"]')?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await nextTick();

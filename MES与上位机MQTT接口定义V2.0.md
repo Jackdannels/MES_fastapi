@@ -150,12 +150,18 @@ Payload：
   "experiment_code": "SYLU-2026-06-001-A",
   "run_no": "run-20260607193000123456",
   "sub_experiment_code": "EXP-001-AXIS-001",
-  "axis_codes": ["x+", "x-", "y+"],
+  "axis_codes": ["x+", "x-", "y+", "z+", "y-", "z-"],
   "current_axis_code": "x-"
 }
 ```
 
 首次启动时，`current_axis_code` 为该批次首轴向。工作人员完成夹具切换后，MES 会使用同一个 `run_no` 再次下发 `experiment-ready`，并把 `current_axis_code` 更新为待启动的下一轴向。上位机必须以每次 READY 的最新轴向上下文为准。
+
+轴向代码与固定执行顺序按试验类型区分：
+
+- 冲击试验：`x+` → `x-` → `y+` → `z+` → `y-` → `z-`；
+- 振动试验：`x` → `y+` → `z+` → `y-` → `z-`，X 轴不区分正负方向；
+- 两类试验完成 `y+` 后，下一轴向均为 `z+`。
 
 字段说明：
 
@@ -271,8 +277,8 @@ Payload：
   "lab_code": "LAB_IMPACT_1",
   "run_no": "run-20260607193000123456",
   "sub_experiment_code": "EXP-001-AXIS-001",
-  "axis_code": "x+",
-  "next_axis_code": "y-",
+  "axis_code": "y+",
+  "next_axis_code": "z+",
   "ended_at": "2026-06-01 11:30:00"
 }
 ```

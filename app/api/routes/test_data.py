@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ipaddress
 from typing import Any
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
@@ -38,6 +40,68 @@ class DataSettingsRequest(BaseModel):
 
 class RetryFailedExportsRequest(BaseModel):
     exportKeys: list[str] = Field(default_factory=list)
+
+
+def _validated_http_base_url(value: str, *, require_origin: bool = False) -> str:
+    normalized = str(value or "").strip().rstrip("/")
+    try:
+        parsed = urlsplit(normalized)
+        _validated_port = parsed.port
+    except ValueError as exc:
+        raise ValueError("试验数据下载地址格式无效") from exc
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or (require_origin and parsed.path not in {"", "/"})
+    ):
+        raise ValueError("试验数据下载地址必须是有效的 HTTP(S) 地址")
+    # Accessing parsed.port above validates its numeric range. Preserve the
+    # caller-provided host spelling, including bracketed IPv6 addresses.
+    return normalized
+
+
+def resolve_test_data_public_base_url(request: Request, configured_url: str = "") -> str:
+    """Resolve a share URL without trusting raw proxy headers in application code.
+
+    An explicit deployment URL wins. Otherwise, a browser Origin may supply the
+    frontend port when it uses the request hostname. A private/loopback Origin is
+    also allowed when a development proxy exposes only a loopback backend Host.
+    Raw forwarding headers are left to trusted ASGI proxy handling.
+    """
+
+    configured = str(configured_url or "").strip()
+    if configured and configured.lower() != "auto":
+        return _validated_http_base_url(configured)
+
+    request_base = _validated_http_base_url(
+        f"{request.url.scheme}://{request.url.netloc}",
+        require_origin=True,
+    )
+    origin = str(request.headers.get("origin") or "").strip()
+    if not origin:
+        return request_base
+    try:
+        origin_base = _validated_http_base_url(origin, require_origin=True)
+        origin_host = urlsplit(origin_base).hostname
+        request_host = request.url.hostname
+    except ValueError:
+        return request_base
+    origin_is_local = is_loopback_client(origin_host)
+    try:
+        origin_ip = ipaddress.ip_address(str(origin_host or "").strip("[]"))
+        origin_is_local = origin_is_local or origin_ip.is_private
+    except ValueError:
+        pass
+    if origin_host and request_host and (
+        origin_host.casefold() == request_host.casefold()
+        or (is_loopback_client(request_host) and origin_is_local)
+    ):
+        return origin_base
+    return request_base
 
 
 @router.get("/settings")
@@ -115,12 +179,15 @@ def open_task_data_folder(task_code: str, request: Request) -> dict[str, Any]:
 
 
 @router.post("/tasks/{task_code}/share")
-def share_task(task_code: str) -> dict[str, Any]:
+def share_task(task_code: str, request: Request) -> dict[str, Any]:
     try:
         return create_task_share(
             storage=get_storage_backend(),
             task_code=task_code,
-            public_base_url=settings.TEST_DATA_PUBLIC_BASE_URL,
+            public_base_url=resolve_test_data_public_base_url(
+                request,
+                settings.TEST_DATA_PUBLIC_BASE_URL,
+            ),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -145,13 +212,16 @@ def open_folder(task_code: str, experiment_code: str, request: Request) -> dict[
 
 
 @router.post("/tasks/{task_code}/experiments/{experiment_code}/share")
-def share_experiment(task_code: str, experiment_code: str) -> dict[str, Any]:
+def share_experiment(task_code: str, experiment_code: str, request: Request) -> dict[str, Any]:
     try:
         return create_experiment_share(
             storage=get_storage_backend(),
             task_code=task_code,
             experiment_code=experiment_code,
-            public_base_url=settings.TEST_DATA_PUBLIC_BASE_URL,
+            public_base_url=resolve_test_data_public_base_url(
+                request,
+                settings.TEST_DATA_PUBLIC_BASE_URL,
+            ),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

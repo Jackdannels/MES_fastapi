@@ -129,4 +129,23 @@ describe("useStorageSnapshot", () => {
     });
     expect(writeStorageUpdates).not.toHaveBeenCalled();
   });
+
+  test("returns the loaded snapshot when automatic schedule cleanup is rejected", async () => {
+    const loaded = expiredScheduleSnapshot("TASK-LOCKED-DURING-WRITE");
+    const cleanupError = new Error("完成任务比对后排程不可删除或重新排程。");
+    const onReconciliationError = vi.fn();
+    storageApiMocks.readStorageSnapshot.mockResolvedValue(loaded);
+    storageApiMocks.writeStorageSchedulePatch.mockRejectedValueOnce(cleanupError);
+    const { useStorageSnapshot } = await import("./useStorageSnapshot");
+    const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.schedules, STORAGE_KEYS.conflicts]);
+
+    const snapshot = await loadSnapshot({
+      onReconciliationError,
+      reconcileScheduleExceptions: true,
+    });
+
+    expect(snapshot[STORAGE_KEYS.schedules]).toEqual(loaded[STORAGE_KEYS.schedules]);
+    expect(snapshot[STORAGE_KEYS.conflicts]).toEqual([]);
+    expect(onReconciliationError).toHaveBeenCalledWith(cleanupError);
+  });
 });

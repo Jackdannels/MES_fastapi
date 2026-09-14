@@ -126,4 +126,28 @@ describe("saltSprayPausePresentation", () => {
         totalPauseSeconds: 300,
       }));
   });
+
+  test("caps effective duration when the required salt-spray duration is reached", () => {
+    const view = buildSaltSprayRunPresentation({
+      activeRun: {
+        planned_end_at: "2026-08-12T11:00:00+08:00",
+        run_no: "RUN-COMPLETE",
+        started_at: "2026-08-12T10:00:00+08:00",
+        status: "实验进行中",
+      },
+      now: new Date("2026-08-12T03:30:00.000Z"),
+      pauseRows: [],
+      runningExperiment: {},
+    });
+
+    expect(view).toEqual(expect.objectContaining({
+      countdownLabel: "00:00:00",
+      effectiveExposureLabel: "01:00:00",
+      effectiveExposureSeconds: 3600,
+      exposureComplete: true,
+      remainingExposureLabel: "00:00:00",
+      remainingExposureSeconds: 0,
+      requiredExposureSeconds: 3600,
+    }));
+  });
 });

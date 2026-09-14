@@ -1,6 +1,12 @@
 // 提供任务页所需的列表行、表单和持久化记录工厂与映射函数。
 import { buildExperimentTypeOptions, buildExperimentTypeSummary, collectExperimentTypes } from "@/lib/experimentTypes";
-import { DEFAULT_AXIS_CODES, formatAxisCodeLabel, normalizeAxisCodes } from "@/lib/axisCodes";
+import {
+  DEFAULT_AXIS_CODES,
+  axisCodesForExperimentType,
+  formatAxisCodeLabel,
+  normalizeAxisCodes,
+  normalizeAxisCodesForExperimentType,
+} from "@/lib/axisCodes";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { serverNowDate, serverNowMs } from "@/lib/serverClock";
 import { RUNNING_TASK_DELETE_MESSAGE, taskHasRunningExperiment } from "@/lib/runningExperimentGuards";
@@ -57,17 +63,17 @@ const normalizeAxisCodesByTestType = (axisMap, selectedTypes = []) => {
   const source = axisMap && typeof axisMap === "object" ? axisMap : {};
   const selectedAxisTypes = collectExperimentTypes(selectedTypes).filter(isAxisAwareExperimentType);
   return selectedAxisTypes.reduce((result, experimentType) => {
-    const axisCodes = normalizeAxisCodes(source[experimentType]);
-    if (axisCodes.length > 0) {
-      result[experimentType] = axisCodes;
-    }
+    const axisCodes = normalizeAxisCodesForExperimentType(source[experimentType], experimentType);
+    result[experimentType] = axisCodes.length > 0
+      ? axisCodes
+      : [...axisCodesForExperimentType(experimentType)];
     return result;
   }, {});
 };
 const buildExperimentTypeAxisSummary = (types, axisMap = {}) =>
   collectExperimentTypes(types)
     .map((experimentType) => {
-      const axisCodes = normalizeAxisCodes(axisMap?.[experimentType]);
+      const axisCodes = normalizeAxisCodesForExperimentType(axisMap?.[experimentType], experimentType);
       if (!isAxisAwareExperimentType(experimentType) || axisCodes.length === 0) {
         return experimentType;
       }
@@ -388,7 +394,10 @@ function buildTaskRows(tasks, schedules, samplesOrNow, experimentsOrNow, nowMayb
       current.push(label);
     }
     experimentsByTaskCode.set(taskCode, current);
-    const axisCodes = normalizeAxisCodes(experiment?.axis_codes || experiment?.axisCodes);
+    const axisCodes = normalizeAxisCodesForExperimentType(
+      experiment?.axis_codes || experiment?.axisCodes,
+      label,
+    );
     if (label && isAxisAwareExperimentType(label) && axisCodes.length > 0) {
       axisCodesByTaskCode.set(taskCode, {
         ...(axisCodesByTaskCode.get(taskCode) || {}),
@@ -979,10 +988,12 @@ export {
   createTaskRecord,
   deleteTaskSnapshot,
   DEFAULT_AXIS_CODES,
+  axisCodesForExperimentType,
   formatAxisCodeLabel,
   isAxisAwareExperimentType,
   normalizeText,
   normalizeAxisCodes,
+  normalizeAxisCodesForExperimentType,
   normalizeAxisCodesByTestType,
   normalizeTaskSampleCount,
   applyTaskSampleCodes,

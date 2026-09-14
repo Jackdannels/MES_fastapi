@@ -625,7 +625,7 @@ describe("SchedulePage runtime", () => {
         experiment_code: "SYLU-2026-03-006-B",
         experiment_name: "振动试验",
         required_device: SECONDARY_LAB,
-        axis_codes: ["x+", "x-", "y+", "y-", "z+", "z-"],
+        axis_codes: ["x", "y+", "z+", "y-", "z-"],
       },
     ]);
     setStorage(DEVICES_KEY, [
@@ -650,7 +650,7 @@ describe("SchedulePage runtime", () => {
     await wrapper.get('select[name="device"]').setValue(SECONDARY_LAB);
     await wrapper.get('input[name="schedule_date"]').setValue(future.isoDate);
     await wrapper.get('select[name="time_slot"]').setValue("morning");
-    for (const testId of ["x-plus", "x-minus", "y-plus", "y-minus", "z-plus", "z-minus"]) {
+    for (const testId of ["x", "y-plus", "z-plus", "y-minus", "z-minus"]) {
       await wrapper.get(`[data-testid="schedule-axis-option-${testId}"]`).trigger("click");
     }
     await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
@@ -658,7 +658,7 @@ describe("SchedulePage runtime", () => {
 
     expect(getStorage(SCHEDULES_KEY)).toHaveLength(1);
     expect(getStorage(SCHEDULES_KEY)[0].experiment_code).toBe("SYLU-2026-03-006-B");
-    expect(getStorage(SCHEDULES_KEY)[0].axis_codes).toEqual(["x+", "x-", "y+", "y-", "z+", "z-"]);
+    expect(getStorage(SCHEDULES_KEY)[0].axis_codes).toEqual(["x", "y+", "z+", "y-", "z-"]);
     expect(wrapper.text()).toContain("振动试验");
   });
 
@@ -682,7 +682,7 @@ describe("SchedulePage runtime", () => {
         experiment_code: "SYLU-2026-06-201-A",
         experiment_name: "振动试验",
         required_device: SECONDARY_LAB,
-        axis_codes: ["y+", "x-"],
+        axis_codes: ["y+", "x"],
       },
     ]);
     setStorage(DEVICES_KEY, [{ code: SECONDARY_LAB, name: SECONDARY_LAB }]);
@@ -700,17 +700,17 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.get('[data-testid="schedule-axis-selector"]').text()).toContain("剩余轴向");
     expect(wrapper.get('[data-testid="schedule-axis-selector"]').text()).not.toContain("本次排程");
     expect(wrapper.findAll('[data-testid^="schedule-axis-requirement-"]').map((tag) => tag.text())).toEqual([
-      "X-",
+      "X",
       "Y+",
     ]);
     expect(wrapper.find('[data-testid="schedule-axis-requirement-y-plus"]').element.tagName).toBe("SPAN");
-    expect(wrapper.find('[data-testid="schedule-axis-requirement-x-minus"]').element.tagName).toBe("SPAN");
+    expect(wrapper.find('[data-testid="schedule-axis-requirement-x"]').element.tagName).toBe("SPAN");
     expect(wrapper.findAll('[data-testid^="schedule-axis-option-"]').map((button) => button.text())).toEqual([
-      "X-",
+      "X",
       "Y+",
     ]);
     expect(wrapper.find('[data-testid="schedule-axis-option-y-plus"]').element.tagName).toBe("BUTTON");
-    expect(wrapper.find('[data-testid="schedule-axis-option-x-minus"]').element.tagName).toBe("BUTTON");
+    expect(wrapper.find('[data-testid="schedule-axis-option-x"]').element.tagName).toBe("BUTTON");
     expect(wrapper.find('[data-testid="schedule-axis-order"]').exists()).toBe(false);
 
     await wrapper.get('select[name="device"]').setValue(SECONDARY_LAB);
@@ -728,7 +728,7 @@ describe("SchedulePage runtime", () => {
     await wrapper.get('[data-testid="schedule-axis-option-y-plus"]').trigger("click");
     await settle(wrapper);
     expect(wrapper.get('[data-testid="schedule-axis-order"]').text()).toContain("Y+");
-    expect(wrapper.get('[data-testid="schedule-axis-order"]').text()).not.toContain("X-");
+    expect(wrapper.get('[data-testid="schedule-axis-order"]').text()).not.toContain("X");
 
     await wrapper.get('[data-testid="schedule-submit"]').trigger("click");
     await settle(wrapper);

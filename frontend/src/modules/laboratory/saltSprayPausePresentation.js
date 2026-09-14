@@ -104,7 +104,7 @@ const buildSaltSprayRunPresentation = ({ activePause, activeRun, now, pauseRows,
   const calculatedEffectiveSeconds = Number.isFinite(nowTime) && Number.isFinite(startedTime)
     ? Math.max(0, Math.floor((nowTime - startedTime) / 1000) - totalPauseSeconds)
     : 0;
-  const effectiveExposureSeconds = explicitEffectiveSeconds === null
+  const rawEffectiveExposureSeconds = explicitEffectiveSeconds === null
     ? calculatedEffectiveSeconds
     : paused
       ? explicitEffectiveSeconds
@@ -116,18 +116,26 @@ const buildSaltSprayRunPresentation = ({ activePause, activeRun, now, pauseRows,
       ? Math.max(0, Math.floor((plannedEndTime - startedTime) / 1000) - confirmedPauseSeconds)
       : 0
   );
+  const effectiveExposureSeconds = requiredExposureSeconds > 0
+    ? Math.min(rawEffectiveExposureSeconds, requiredExposureSeconds)
+    : rawEffectiveExposureSeconds;
   const remainingExposureSeconds = Math.max(0, requiredExposureSeconds - effectiveExposureSeconds);
+  const exposureComplete = !paused
+    && requiredExposureSeconds > 0
+    && rawEffectiveExposureSeconds >= requiredExposureSeconds;
 
   return {
     activePause: pauseSummary.activePause,
     countdownLabel: paused ? `已暂停 ${formatDuration(openPauseSeconds)}` : formatDuration(remainingExposureSeconds),
     effectiveExposureLabel: formatDuration(effectiveExposureSeconds),
     effectiveExposureSeconds,
+    exposureComplete,
     expectedEndLabel: paused ? "待恢复后确定" : formatBusinessDateTime(plannedEndAt) || runningExperiment?.endDateTimeLabel || "-",
     isPaused: paused,
     pauseCount: pauseSummary.pauseCount,
     remainingExposureLabel: formatDuration(remainingExposureSeconds),
     remainingExposureSeconds,
+    requiredExposureSeconds,
     runStatus,
     totalPauseLabel: formatDuration(totalPauseSeconds),
     totalPauseSeconds,

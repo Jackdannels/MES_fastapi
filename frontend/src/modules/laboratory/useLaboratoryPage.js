@@ -7,6 +7,7 @@ import {
   HOST_INTERFACE_MODE_STORAGE_KEY,
 } from "@/lib/hostInterfaceMode";
 import { serverNowDate } from "@/lib/serverClock";
+import { parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import {
   publishLaboratoryCancelRequest,
   publishLaboratoryEndRequest,
@@ -65,6 +66,16 @@ import { moldCancellationConfirmationMatches, useMoldCancellationFlow } from "./
 const HEADER_ACTION_TARGET_SELECTOR = ".header-actions-before-logout";
 const COMPLETION_CONFIRMATION_TIMEOUT_MS = 10_000;
 const CANCELLATION_CONFIRMATION_TIMEOUT_MS = 10_000;
+const RUNNING_RUN_STATUSES = new Set(["实验进行中", "实验中"]);
+const runCountdownComplete = (run, now) => {
+  const status = normalizeText(run?.status || run?.run_status || run?.runStatus);
+  if (!RUNNING_RUN_STATUSES.has(status)) {
+    return false;
+  }
+  const deadline = parseBusinessDateTimeToMs(run?.planned_end_at || run?.plannedEndAt);
+  const current = now instanceof Date ? now.getTime() : parseBusinessDateTimeToMs(now);
+  return Number.isFinite(deadline) && Number.isFinite(current) && current >= deadline;
+};
 function useLaboratoryPage(options = {}) {
   const now = options.now;
   const readNow = typeof now === "function" ? now : () => now || serverNowDate();
@@ -185,6 +196,7 @@ function useLaboratoryPage(options = {}) {
     attendanceSubmitting,
     attendanceWorkStartedAt,
     closeAttendanceLogin,
+    finishWorkAtCountdown,
     loadAttendanceSession,
     logoutAttendance,
     openAttendanceLogin,
@@ -302,6 +314,9 @@ function useLaboratoryPage(options = {}) {
     if (activeRunStatus === "实验暂停") {
       return "";
     }
+    if (runCountdownComplete(currentTask.value?.activeRun, tickNow.value)) {
+      return "";
+    }
     const hasSaltPauseHistory = normalizeText(laboratoryConfig.value.labCode) === "LAB_SALT"
       && experimentRunPauses.value.some((row) => normalizeText(row?.run_no || row?.runNo) === runNo);
     if (hasSaltPauseHistory && !attendanceWorkStartedAt.value) {
@@ -315,22 +330,28 @@ function useLaboratoryPage(options = {}) {
   });
   const activeAttendancePauseStartedAt = computed(() => {
     const activeRun = currentTask.value?.activeRun || null;
-    if (normalizeText(activeRun?.status || currentTask.value?.runStatus) !== "实验暂停") {
-      return "";
-    }
+    const runStatus = normalizeText(activeRun?.status || currentTask.value?.runStatus);
     const runNo = normalizeText(activeRun?.runNo || activeRun?.run_no || runningExperiment.value?.runNo);
-    const activePause = findActivePause(experimentRunPauses.value, runNo);
-    return normalizeText(
-      activeRun?.active_pause_started_at
-      || activeRun?.activePauseStartedAt
-      || activePause?.paused_at
-      || activePause?.pausedAt,
-    );
+    if (runStatus === "实验暂停") {
+      const activePause = findActivePause(experimentRunPauses.value, runNo);
+      return normalizeText(
+        activeRun?.active_pause_started_at
+        || activeRun?.activePauseStartedAt
+        || activePause?.paused_at
+        || activePause?.pausedAt,
+      );
+    }
+    return runCountdownComplete(activeRun, tickNow.value)
+      ? normalizeText(activeRun?.planned_end_at || activeRun?.plannedEndAt)
+      : "";
   });
   watch(
     activeAttendancePauseStartedAt,
     (nextPauseStartedAt, previousPauseStartedAt) => {
       attendancePauseStartedAt.value = nextPauseStartedAt;
+      if (nextPauseStartedAt && runCountdownComplete(currentTask.value?.activeRun, tickNow.value)) {
+        void finishWorkAtCountdown();
+      }
       if (previousPauseStartedAt && !nextPauseStartedAt) {
         void loadAttendanceSession();
       }
@@ -521,6 +542,7 @@ function useLaboratoryPage(options = {}) {
     }
     return verifiedTrayCodes.value.length > 0;
   });
+  const saltSprayExposureComplete = computed(() => Boolean(runningModalExperiment.value?.exposureComplete));
   const canTeleportScheduleAction = ref(false);
   const canResetCurrentTask = computed(() => {
     const trayRows = Array.isArray(currentTask.value?.trayRows) ? currentTask.value.trayRows : [];
@@ -556,6 +578,7 @@ function useLaboratoryPage(options = {}) {
     currentTask,
     experimentRunPauses,
     experimentRuns,
+    exposureComplete: saltSprayExposureComplete,
     laboratoryConfig,
     onResumeRequested: showRunningModal,
     refreshAuthoritativeState: () => load({ silent: true }),
@@ -1307,8 +1330,7 @@ function useLaboratoryPage(options = {}) {
           taskCode: currentTask.value.taskCode,
           trayCodes: payload.tray_codes,
         });
-        await load({ silent: true });
-        await saltSprayPauseFlow.requestPreparedResume();
+        await saltSprayPauseFlow.requestPreparedResume({ readyPersisted: true });
       } catch (error) {
         laboratoryMqError.value = { detail: formatErrorMessage(error), title: "继续实验准备失败" };
         showRunningModal();

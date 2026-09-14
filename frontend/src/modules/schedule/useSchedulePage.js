@@ -895,8 +895,15 @@ function useSchedulePage(options = {}) {
 
   const loadSchedulePage = async ({ resetForm: shouldResetForm = true } = {}) => {
     try {
+      let reconciliationError = null;
       const [snapshot, loadedMasterLabs] = await Promise.all([
-        loadSnapshot({ fallbackSnapshot: buildSnapshotFallback(), reconcileScheduleExceptions: true }),
+        loadSnapshot({
+          fallbackSnapshot: buildSnapshotFallback(),
+          onReconciliationError: (error) => {
+            reconciliationError = error;
+          },
+          reconcileScheduleExceptions: true,
+        }),
         readMasterLabs().catch(() => []),
       ]);
       masterLabs.value = Array.isArray(loadedMasterLabs) ? loadedMasterLabs : [];
@@ -913,6 +920,12 @@ function useSchedulePage(options = {}) {
       applySnapshotArray(snapshot, STORAGE_KEYS.tasks, rawTasks);
       if (shouldResetForm) {
         resetScheduleForm();
+      }
+      if (reconciliationError) {
+        scheduleWarning.value = buildFailureMessage(
+          "排程数据已加载，但过期排程自动清理未完成",
+          reconciliationError,
+        );
       }
     } catch (error) {
       masterLabs.value = [];

@@ -4,6 +4,7 @@ import uuid
 
 from fastapi import HTTPException
 
+from app.core.axis_codes import axis_codes_for_experiment_type, normalize_axis_codes_for_experiment_type
 from app.core.storage_backend import get_storage_backend
 from app.core.time_utils import now_business_text
 from app.services.lims_rabbitmq import LIMS_OUTBOX_KEY
@@ -126,6 +127,25 @@ def parse_test_types(value: Any) -> list[str]:
     return normalized
 
 
+def normalize_axis_codes_by_test_type(payload: dict[str, Any], test_types: list[str]) -> dict[str, list[str]]:
+    raw_map = payload.get("axis_codes_by_test_type") or payload.get("axisCodesByTestType")
+    source = raw_map if isinstance(raw_map, dict) else {}
+    result: dict[str, list[str]] = {}
+    for test_type in test_types:
+        default_axis_codes = axis_codes_for_experiment_type(test_type)
+        if not default_axis_codes:
+            continue
+        raw_axis_codes = source.get(test_type)
+        if isinstance(raw_axis_codes, str):
+            raw_axis_codes = re.split(r"[,，、\s]+", raw_axis_codes)
+        selected_axis_codes = normalize_axis_codes_for_experiment_type(
+            raw_axis_codes if isinstance(raw_axis_codes, list) else [],
+            test_type,
+        )
+        result[test_type] = selected_axis_codes or list(default_axis_codes)
+    return result
+
+
 def external_intake_id(intake: dict[str, Any]) -> str:
     return normalize_text(intake.get("intake_id") or intake.get("lims_request_id") or intake.get("id"))
 
@@ -218,6 +238,11 @@ def store_external_task_intake(
         raise HTTPException(status_code=400, detail="test_types is required")
     next_intake["test_types"] = parse_test_types(next_intake.get("test_types"))
     next_intake["test_type"] = " / ".join(next_intake["test_types"])
+    next_intake["axis_codes_by_test_type"] = normalize_axis_codes_by_test_type(
+        next_intake,
+        next_intake["test_types"],
+    )
+    next_intake.pop("axisCodesByTestType", None)
     next_intake["sample_count"] = validate_sample_count(next_intake.get("sample_count"))
     next_intake["source"] = EXTERNAL_SOURCE
     next_intake["client"] = normalize_text(next_intake.get("client"))

@@ -12,12 +12,15 @@ const isActualArrivalStep = (step) => normalizeText(step?.label) === "到货";
 
 const resolveVisualFlowStepTone = (step) => {
   if (step?.pauseResetState === "active") {
-    return "pause-reset-active";
+    return "active";
   }
   if (step?.pauseResetState === "pending") {
     return "waiting";
   }
   if (step?.pauseResetState === "completed") {
+    return "done";
+  }
+  if (step?.pauseResetState === "historical") {
     return "pause-reset";
   }
   if (step?.pauseResetRequired) {
@@ -42,7 +45,6 @@ const visualFlowStepClass = (step) => {
     "is-done": tone === "done",
     "is-inferred": tone === "inferred",
     "is-pause-reset": tone === "pause-reset",
-    "is-pause-reset-active": tone === "pause-reset-active",
     "is-waiting": tone === "waiting",
   };
 };
