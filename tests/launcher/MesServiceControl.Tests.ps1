@@ -73,13 +73,15 @@ Describe "MES service controller" {
         $startScript | Should Not Match 'Unable to identify MES backend/frontend/LIMS terminal command processes'
     }
 
-    It "builds production frontend atomically with timeout retry and last-good fallback" {
+    It "builds production frontend with bounded publish retries and last-good fallback" {
         $buildSource = Get-Content -LiteralPath (Join-Path $projectRoot "frontend\scripts\build-production.mjs") -Raw
 
         $buildSource | Should Match 'MES_FRONTEND_BUILD_TIMEOUT_MS \|\| 30_000'
         $buildSource | Should Match 'const maxAttempts = 2'
         $buildSource | Should Match '\.dist-build-\$\{process\.pid\}'
-        $buildSource | Should Match 'await rename\(buildRoot, distRoot\)'
+        $buildSource | Should Match 'await renameDirectory\(buildRoot, distRoot\)'
+        $buildSource | Should Match 'const retryDelaysMs = \[100, 200, 400, 800, 1000\]'
+        $buildSource | Should Match 'if \(published && backupCreated\) await cleanup\(backupRoot\)'
         $buildSource | Should Match '继续使用上一次成功构建'
     }
 

@@ -1,0 +1,39 @@
+{
+  "scratch": "C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy",
+  "before": "0246b7e7fe12d26ec7c4b64e6edf2288cb1aad4dd7a9fca5529028e86b9bb05d",
+  "started": "2026-09-14T02:07:36.904Z",
+  "retries": [
+    "MES 前端目录切换 C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\.dist-build-43128-353b8f46-f61c-40cc-9a57-46c20d3b80aa -> C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\dist失败（EPERM），100ms 后重试 1/5。",
+    "MES 前端目录切换 C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\.dist-build-43128-353b8f46-f61c-40cc-9a57-46c20d3b80aa -> C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\dist失败（EPERM），200ms 后重试 2/5。",
+    "MES 前端目录切换 C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\.dist-build-43128-353b8f46-f61c-40cc-9a57-46c20d3b80aa -> C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\dist失败（EPERM），400ms 后重试 3/5。"
+  ],
+  "renameFailures": [
+    {
+      "code": "EPERM",
+      "errno": -4048,
+      "from": "C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\.dist-build-43128-353b8f46-f61c-40cc-9a57-46c20d3b80aa",
+      "to": "C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\dist"
+    },
+    {
+      "code": "EPERM",
+      "errno": -4048,
+      "from": "C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\.dist-build-43128-353b8f46-f61c-40cc-9a57-46c20d3b80aa",
+      "to": "C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\dist"
+    },
+    {
+      "code": "EPERM",
+      "errno": -4048,
+      "from": "C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\.dist-build-43128-353b8f46-f61c-40cc-9a57-46c20d3b80aa",
+      "to": "C:\\Users\\12051\\Desktop\\MES_fastapi\\frontend\\.publish-check-WnPNxy\\dist"
+    }
+  ],
+  "result": {
+    "exitCode": 0,
+    "status": "published"
+  },
+  "newEntryCreated": true,
+  "productionEntryUnchanged": true,
+  "liveHttpStatus": 200,
+  "cleaned": true,
+  "finished": "2026-09-14T02:07:39.959Z"
+}
