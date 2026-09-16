@@ -2,7 +2,7 @@
 
 本项目是一个基于 `FastAPI + Vue 3 + Vite` 的 MES 示例系统。
 
-开发工具版本：MES 启动器 `v1.2`、固定工作台设置 `v2.3`、MES 控制中心 `v2.3`、终端管理 `v1.3`、上位机模拟器 `v2.0`、LIMS 模拟器 `v1.0`。各模拟器通过后端版本常量和状态接口向页面提供版本号。
+开发工具版本：MES 启动器 `v1.2`、固定工作台设置 `v2.3`、MES 控制中心 `v2.3`、终端管理 `v1.3`、上位机模拟器 `v2.5`、LIMS 模拟器 `v1.0`。各模拟器通过后端版本常量和状态接口向页面提供版本号。
 
 当前默认运行方式：
 
@@ -308,7 +308,10 @@ mes/v1/labs/{lab_code}/events/fixture-ready
 mes/v1/labs/{lab_code}/events/experiment-started
 mes/v1/labs/{lab_code}/events/experiment-ended
 mes/v1/labs/{lab_code}/events/experiment-result
+mes/v1/labs/{lab_code}/telemetry/snapshot
 ```
+
+7号屏状态遥测由上位机每 3 秒按试验间发送一条完整快照，使用 QoS 1。模拟器每第 10 轮随机选择一个试验间注入高温或低电压故障并保持 3 轮，7号屏以醒目文字和红色卡片告警。MES 在 15 秒无新包时显示“数据延迟”，30 秒时显示“上位机离线”。
 
 高低温湿热二室（`LAB_HOT_HUMID_2`）采用严格的混合接口边界：安装样品和夹具就绪由 hostless 本地模拟完成；`READY`、`EXPERIMENT_STARTED`、`END_REQUEST`、`EXPERIMENT_ENDED` 必须与其他实验室一样通过 MQTT。未知或后续新增的实验操作默认走 MQTT，不得自动扩大 hostless 范围。
 

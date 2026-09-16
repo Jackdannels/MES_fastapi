@@ -4,6 +4,32 @@
 
 协议：MQTT
 
+## 7号屏状态遥测扩展
+
+上位机每 3 秒为每个试验间发送一条完整状态快照，QoS 为 1：
+
+```text
+mes/v1/labs/{lab_code}/telemetry/snapshot
+```
+
+```json
+{
+  "schema_version": "1.0",
+  "message_id": "uuid",
+  "source_id": "upper-LAB_IMPACT_1",
+  "boot_id": "uuid",
+  "sequence": 1024,
+  "lab_code": "LAB_IMPACT_1",
+  "observed_at": "2026-09-16T14:30:05+08:00",
+  "collector_status": "online",
+  "environment": {"temperature_c": 23.6, "humidity_rh": 51.2, "quality": "good"},
+  "test_device": {"configured": true, "online": true, "temperature_c": 38.4, "voltage_v": 220.7, "alarm_code": null},
+  "carrier_device": {"configured": true, "online": true, "temperature_c": 31.2, "voltage_v": 223.1, "alarm_code": null}
+}
+```
+
+MES 使用服务端接收时间计算新鲜度：15 秒未收到新快照显示“数据延迟”，30 秒未收到显示“上位机离线”。同一个 `boot_id` 下只接受递增的 `sequence`，QoS 1 重复包不会倒退当前值。温度超过 60 °C 或电压低于 100 V 时，MES 根据实际数值生成严重告警；模拟器每第 10 轮随机注入一次高温或低电压故障并保持 3 轮。高低温湿热二室的 `carrier_device.configured` 固定为 `false`；这不会改变其安装样品和夹具就绪的 hostless 本地模拟边界，准备、开始和结束仍通过 MQTT。
+
 编码：UTF-8
 
 数据格式：JSON

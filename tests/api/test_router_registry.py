@@ -34,6 +34,7 @@ def test_api_router_registry_exposes_expected_prefixes():
         "/api/attendance",
         "/api/system",
         "/api/terminal-control",
+        "/api/telemetry",
         "/api/mq",
         "/api/laboratory",
     ]

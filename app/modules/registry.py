@@ -21,6 +21,7 @@ from app.api.routes.report import router as report_router
 from app.api.routes.samples import router as samples_router
 from app.api.routes.storage import router as storage_router
 from app.api.routes.system_time import router as system_time_router
+from app.api.routes.telemetry import router as telemetry_router
 from app.api.routes.task_history import router as task_history_router
 from app.api.routes.tasks import router as tasks_router
 from app.api.routes.test_data import router as test_data_router
@@ -77,7 +78,7 @@ MODULES = (
     ),
     AppModule(key="data", api_routers=(yt_barcode_router, yt_object_router, test_data_router), spa_routes=("/data",)),
     AppModule(key="system", api_routers=(attendance_router, system_time_router, terminal_control_router), spa_routes=("/system",)),
-    AppModule(key="visualization", spa_routes=("/visualization",)),
+    AppModule(key="visualization", api_routers=(telemetry_router,), spa_routes=("/visualization",)),
     AppModule(key="staging-management", spa_routes=("/staging-management",)),
     AppModule(key="appearance-inspection", spa_routes=("/appearance-inspection",)),
     AppModule(key="laboratory", api_routers=(mq_router, laboratory_router), spa_routes=("/laboratory",)),

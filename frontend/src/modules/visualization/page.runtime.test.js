@@ -197,6 +197,7 @@ describe("VisualizationPage runtime", () => {
     snapshotState.attendanceSessions = [];
     snapshotState.refreshRegistrations = [];
     snapshotState.snapshot = {};
+    snapshotState.telemetry = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url) => {
@@ -204,6 +205,12 @@ describe("VisualizationPage runtime", () => {
           return {
             ok: true,
             json: () => snapshotState.attendanceSessions,
+          };
+        }
+        if (String(url).includes("/api/telemetry/laboratories")) {
+          return {
+            ok: true,
+            json: () => ({ items: snapshotState.telemetry }),
           };
         }
         if (String(url).includes("/api/storage")) {
@@ -327,6 +334,54 @@ describe("VisualizationPage runtime", () => {
     expect(labCards).toHaveLength(11);
     expect(hostlessLab?.text()).toContain("无搬运设备");
     expect(seventhCard.findAll(".visual-lab-status-metric.is-unavailable")).toHaveLength(2);
+  });
+
+  test("renders seventh-screen values received from upper-computer MQTT telemetry", async () => {
+    snapshotState.telemetry = [{
+      lab_code: "LAB_IMPACT_1",
+      connection_status: "online",
+      environment: { temperature_c: 23.6, humidity_rh: 51.2 },
+      test_device: { temperature_c: 38.4, voltage_v: 220.7 },
+      carrier_device: { configured: true, temperature_c: 31.2, voltage_v: 223.1 },
+    }];
+    const wrapper = mountPage();
+    await Promise.resolve();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+
+    await vi.waitFor(() => {
+      const seventhCard = wrapper.findAll('[data-testid="visual-screen-card"]')[6];
+      const impactRoom = seventhCard.findAll(".visual-lab-status-card").find((card) => card.text().includes("冲击一室"));
+      expect(impactRoom.text()).toContain("23.6 °C");
+      expect(impactRoom.text()).toContain("51.2 %RH");
+      expect(impactRoom.text()).toContain("220.7 V");
+      expect(impactRoom.text()).toContain("在线");
+    });
+  });
+
+  test("shows an explicit critical warning on screen seven for unsafe MQTT telemetry", async () => {
+    snapshotState.telemetry = [{
+      lab_code: "LAB_VIBRATION_1",
+      connection_status: "online",
+      alarms: [
+        { code: "TEST_DEVICE_TEMPERATURE_HIGH", message: "试验设备温度过高：68.5 °C" },
+        { code: "TEST_DEVICE_VOLTAGE_LOW", message: "试验设备电压过低：82.0 V" },
+      ],
+      environment: { temperature_c: 23.1, humidity_rh: 49.8 },
+      test_device: { configured: true, temperature_c: 68.5, voltage_v: 82.0 },
+      carrier_device: { configured: true, temperature_c: 29.0, voltage_v: 221.0 },
+    }];
+    const wrapper = mountPage();
+    await vi.waitFor(() => {
+      const seventhCard = wrapper.findAll('[data-testid="visual-screen-card"]')[6];
+      const vibrationRoom = seventhCard.findAll(".visual-lab-status-card").find((card) => card.text().includes("振动一室"));
+      expect(vibrationRoom.classes()).toContain("tone-alarm");
+      expect(vibrationRoom.text()).toContain("严重告警");
+      expect(vibrationRoom.text()).toContain("异常警报");
+      expect(vibrationRoom.text()).toContain("试验设备温度过高：68.5 °C");
+      expect(vibrationRoom.text()).toContain("试验设备电压过低：82.0 V");
+      expect(vibrationRoom.findAll(".visual-lab-status-metric.is-alarm")).toHaveLength(2);
+    });
   });
 
   test("renders current laboratory login information on the fourth screen cards", async () => {

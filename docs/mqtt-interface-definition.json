@@ -1,6 +1,6 @@
 {
   "name": "MES与上位机MQTT接口定义",
-  "version": "2.1",
+  "version": "2.3",
   "encoding": "UTF-8",
   "payloadFormat": "JSON",
   "timeFormat": "北京时间 YYYY-MM-DD HH:mm:ss",
@@ -56,6 +56,28 @@
     }
   ],
   "receive": [
+    {
+      "name": "7号屏试验间状态遥测快照",
+      "direction": "HOST_TO_MES",
+      "topic": "mes/v1/labs/{lab_code}/telemetry/snapshot",
+      "qos": 1,
+      "intervalSeconds": 3,
+      "payload": {
+        "schema_version": "1.0",
+        "message_id": "UUID",
+        "source_id": "upper-LAB_IMPACT_1",
+        "boot_id": "UUID",
+        "sequence": 1,
+        "lab_code": "试验间编码",
+        "observed_at": "2026-09-16T14:30:05+08:00",
+        "collector_status": "online",
+        "cycle": 1,
+        "alarms": [],
+        "environment": {"temperature_c": 23.6, "humidity_rh": 51.2, "quality": "good"},
+        "test_device": {"configured": true, "online": true, "temperature_c": 38.4, "voltage_v": 220.7, "alarm_code": null},
+        "carrier_device": {"configured": true, "online": true, "temperature_c": 31.2, "voltage_v": 223.1, "alarm_code": null}
+      }
+    },
     {
       "name": "夹具安装完成",
       "direction": "HOST_TO_MES",

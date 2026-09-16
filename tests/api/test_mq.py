@@ -972,6 +972,10 @@ def test_mqtt_subscriber_routes_lab_events_to_processor(monkeypatch):
         topic = "mes/v1/labs/LAB_SALT/events/experiment-started"
         payload = b'{"lab_code":"LAB_SALT","started_at":"2026-05-16 10:00:00"}'
 
+    class FakeTelemetryMessage:
+        topic = "mes/v1/labs/LAB_SALT/telemetry/snapshot"
+        payload = b'{"lab_code":"LAB_SALT","boot_id":"BOOT-1","sequence":1}'
+
     class FakeClient:
         def __init__(self):
             self.on_connect = None
@@ -991,6 +995,7 @@ def test_mqtt_subscriber_routes_lab_events_to_processor(monkeypatch):
         def loop_start(self):
             calls.append(("loop_start",))
             self.on_message(self, None, FakeMessage())
+            self.on_message(self, None, FakeTelemetryMessage())
 
         def loop_stop(self):
             calls.append(("loop_stop",))
@@ -1010,16 +1015,25 @@ def test_mqtt_subscriber_routes_lab_events_to_processor(monkeypatch):
     monkeypatch.setitem(modules, "paho.mqtt.client", fake_mqtt_client)
 
     processed = []
+    telemetry = []
     monkeypatch.setattr(mq_subscriber, "process_laboratory_event", lambda topic, payload: processed.append((topic, payload)))
+    monkeypatch.setattr(mq_subscriber, "process_laboratory_telemetry", lambda topic, payload: telemetry.append((topic, payload)))
 
     handle = mq_subscriber.start_mqtt_subscriber(Settings(MQTT_ENABLED=True, MQTT_USERNAME="guest", MQTT_PASSWORD="guest"))
     handle.stop()
 
     assert ("subscribe", "mes/v1/labs/+/events/#", 1) in calls
+    assert ("subscribe", "mes/v1/labs/+/telemetry/snapshot", 1) in calls
     assert processed == [
         (
             "mes/v1/labs/LAB_SALT/events/experiment-started",
             {"lab_code": "LAB_SALT", "started_at": "2026-05-16 10:00:00"},
+        )
+    ]
+    assert telemetry == [
+        (
+            "mes/v1/labs/LAB_SALT/telemetry/snapshot",
+            {"lab_code": "LAB_SALT", "boot_id": "BOOT-1", "sequence": 1},
         )
     ]
     assert ("loop_stop",) in calls
@@ -1117,8 +1131,6 @@ def test_create_app_starts_mqtt_subscriber_only_when_enabled(monkeypatch):
         ("shutdown", "mqtt"),
         ("stop_publisher", True),
     ]
-
-
 def test_create_app_restarts_and_stops_auto_upper_computer_simulator(monkeypatch):
     calls = []
 

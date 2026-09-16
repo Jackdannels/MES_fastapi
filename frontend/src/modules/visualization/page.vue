@@ -50,6 +50,7 @@
             :screen="screen"
             :labs="labsForScreen(screen)"
             :lab-names="labNames"
+            :telemetry="laboratoryTelemetry"
             :current-lab-task-view="currentLabTaskView"
             :attendance-sessions="attendanceSessions"
             :devices="deviceItems"
@@ -85,6 +86,7 @@
             :screen="selectedScreen"
             :labs="labsForScreen(selectedScreen)"
             :lab-names="labNames"
+            :telemetry="laboratoryTelemetry"
             :current-lab-task-view="currentLabTaskView"
             :attendance-sessions="attendanceSessions"
             :devices="deviceItems"
@@ -176,6 +178,7 @@
                   :screen="screen"
                   :labs="labsForScreen(screen)"
                   :lab-names="labNames"
+                  :telemetry="laboratoryTelemetry"
                   :current-lab-task-view="currentLabTaskView"
                   :attendance-sessions="attendanceSessions"
                   :devices="deviceItems"
@@ -236,6 +239,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { listLaboratoryAttendanceSessions } from "@/lib/attendanceApi";
+import { listLaboratoryTelemetry } from "@/lib/laboratoryTelemetryApi";
 import { serverNowDate } from "@/lib/serverClock";
 import { readStorageSnapshot } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -364,6 +368,7 @@ const VISUALIZATION_SNAPSHOT_KEYS = [
 const { loadSnapshot: loadInitialSnapshot } = useStorageSnapshot(VISUALIZATION_SNAPSHOT_KEYS, { profile: "visualization" });
 const rawSnapshot = ref({});
 const attendanceSessions = ref([]);
+const laboratoryTelemetry = ref([]);
 const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
 
 const normalizeVisualizationRefreshKeys = (keys) => {
@@ -407,9 +412,11 @@ const manualLabSelection = ref(false);
 const labRandomSeed = ref(Math.random());
 const scheduleWindowOffsetDays = ref(0);
 let attendanceRefreshTimer = null;
+let telemetryRefreshTimer = null;
 const SCREEN_STAGE_WIDTH = 1920;
 const SCREEN_STAGE_HEIGHT = 1080;
 const ATTENDANCE_REFRESH_MS = 10_000;
+const TELEMETRY_REFRESH_MS = 3_000;
 const COMBINED_COLUMNS = 4;
 const COMBINED_ROWS = 2;
 const COMBINED_GAP = 6;
@@ -700,6 +707,13 @@ const refreshAttendanceSessions = async () => {
     // Keep the last visible login state during transient network failures.
   }
 };
+const refreshLaboratoryTelemetry = async () => {
+  try {
+    laboratoryTelemetry.value = await listLaboratoryTelemetry();
+  } catch {
+    // Keep the last valid MQTT snapshot while the API connection recovers.
+  }
+};
 useStorageSnapshotRefresh({
   keys: VISUALIZATION_SNAPSHOT_KEYS,
   refresh: refreshSnapshot,
@@ -718,8 +732,10 @@ onMounted(() => {
   refreshViewportSize();
   initializeSnapshot();
   refreshAttendanceSessions();
+  refreshLaboratoryTelemetry();
   window.addEventListener("resize", refreshViewportSize);
   attendanceRefreshTimer = window.setInterval(refreshAttendanceSessions, ATTENDANCE_REFRESH_MS);
+  telemetryRefreshTimer = window.setInterval(refreshLaboratoryTelemetry, TELEMETRY_REFRESH_MS);
 });
 
 onUnmounted(() => {
@@ -727,6 +743,10 @@ onUnmounted(() => {
   if (attendanceRefreshTimer) {
     window.clearInterval(attendanceRefreshTimer);
     attendanceRefreshTimer = null;
+  }
+  if (telemetryRefreshTimer) {
+    window.clearInterval(telemetryRefreshTimer);
+    telemetryRefreshTimer = null;
   }
 });
 

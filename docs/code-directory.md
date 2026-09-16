@@ -250,6 +250,7 @@
 - `app/api/routes/mq.py`：MQTT 管理、状态和调试接口。
 - `app/services/mq_runtime.py`：MQTT 运行时生命周期管理。
 - `app/services/mq_subscriber.py`：MQTT 消息订阅。
+- `app/services/laboratory_telemetry.py`：接收并缓存上位机试验间遥测最新值，处理乱序和在线/延迟/离线判定。
 - `app/services/mq_publisher.py`：MQTT 消息发布。
 - `app/services/mq_event_processor.py`：MQTT 事件入库、幂等处理和实验进度编排。
 - `app/services/mq_event_protocol.py`：topic、事件类型、消息字段、运行号、时间和数值解析规则。
@@ -258,6 +259,7 @@
 - `docs/mqtt-interface-definition.json`：MQTT 机器可读接口定义。
 - `MES与上位机MQTT接口定义V2.0.md`：MQTT 接口说明文档。
 - `tests/api/test_mq.py`：MQTT API 测试。
+- `app/api/routes/telemetry.py`：向7号屏提供上位机遥测最新快照。
 - `tests/services/test_lims_rabbitmq.py`：LIMS RabbitMQ 集成测试。
 
 ## 存储与状态规则模块

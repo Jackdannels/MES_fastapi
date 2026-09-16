@@ -40,6 +40,7 @@ def test_module_registry_preserves_expected_route_surfaces():
         "/api/attendance",
         "/api/system",
         "/api/terminal-control",
+        "/api/telemetry",
         "/api/mq",
         "/api/laboratory",
     ]

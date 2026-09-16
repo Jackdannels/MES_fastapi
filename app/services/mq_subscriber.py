@@ -7,6 +7,7 @@ from typing import Any
 
 from app.core.config import Settings, settings
 from app.services.mq_event_processor import process_laboratory_event
+from app.services.laboratory_telemetry import process_laboratory_telemetry
 
 
 logger = logging.getLogger(__name__)
@@ -46,10 +47,12 @@ def start_mqtt_subscriber(app_settings: Settings = settings) -> MqttSubscriberHa
 
     topic_prefix = str(app_settings.MQTT_TOPIC_PREFIX or "mes/v1").strip().strip("/")
     events_topic = f"{topic_prefix}/labs/+/events/#"
+    telemetry_topic = f"{topic_prefix}/labs/+/telemetry/snapshot"
 
     def on_connect(mqtt_client: Any, _userdata: Any, _flags: Any, rc: int) -> None:
         if rc == 0:
             mqtt_client.subscribe(events_topic, qos=int(app_settings.MQTT_QOS))
+            mqtt_client.subscribe(telemetry_topic, qos=int(app_settings.MQTT_QOS))
 
     def on_message(_mqtt_client: Any, _userdata: Any, message: Any) -> None:
         topic = str(getattr(message, "topic", ""))
@@ -57,7 +60,10 @@ def start_mqtt_subscriber(app_settings: Settings = settings) -> MqttSubscriberHa
             payload = json.loads(message.payload.decode("utf-8"))
             if not isinstance(payload, dict):
                 raise ValueError("MQTT event payload must be a JSON object")
-            process_laboratory_event(topic, payload)
+            if topic.endswith("/telemetry/snapshot"):
+                process_laboratory_telemetry(topic, payload)
+            else:
+                process_laboratory_event(topic, payload)
         except Exception:
             logger.exception("Failed to process MQTT laboratory event from topic %s", topic)
 

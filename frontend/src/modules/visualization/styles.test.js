@@ -64,6 +64,17 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-lab-status-metric\.is-unavailable strong\s*{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/s);
   });
 
+  test("screen seven uses explicit text and high-contrast styling for critical telemetry alarms", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+    const pageSource = readVisualizationSource();
+
+    expect(pageSource).toContain('h("b", "异常警报")');
+    expect(pageSource).toContain('h("em", "超出安全范围")');
+    expect(source).toMatch(/\.visual-lab-status-card\.tone-alarm\s*{[^}]*border:2px solid #ff394f;[^}]*animation:visual-critical-pulse/s);
+    expect(source).toMatch(/\.visual-lab-status-metric\.is-alarm\s*{[^}]*border:2px solid #ff5065;/s);
+    expect(source).toMatch(/@media \(prefers-reduced-motion:reduce\)\s*{\s*\.visual-lab-status-card\.tone-alarm\s*{\s*animation:none;/s);
+  });
+
   test("lab-process single preview fits viewport height and avoids a duplicate outer frame", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
