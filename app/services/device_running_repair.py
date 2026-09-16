@@ -114,6 +114,8 @@ def build_completed_running_repair_updates(
     device = next((item for item in devices if _device_key(item) == normalized_device_code), None)
     if device is None:
         raise DeviceRunningRepairError("未找到需要维修的设备")
+    if _text(device.get("status")) == "维修":
+        raise DeviceRunningRepairError("设备已进入维修，请等待设备故障取消确认，不能改为实验已完成")
 
     maintenance_type = _text(payload.get("maintenance_type") or payload.get("maintenanceType") or "维修")
     if maintenance_type != "维修":

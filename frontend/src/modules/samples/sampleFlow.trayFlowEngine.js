@@ -41,6 +41,9 @@ import { buildSingleExperimentTrayFlow } from "./sampleFlow.trayFlowSingle";
 import { createTrayFlowStepTools } from "./sampleFlow.trayFlowStepHelpers";
 import { buildCompletedTrayFlowState } from "./sampleFlow.trayFlowCompleted";
 import { decorateMoldCancellationSteps } from "./sampleFlow.moldCancellation";
+import { decorateDeviceFaultCancellation } from "./sampleFlow.deviceFaultCancellation";
+
+const decorateCancellationSteps = (flow, input) => decorateDeviceFaultCancellation(decorateMoldCancellationSteps(flow, input), input);
 
 const SALT_SPRAY_RESET_STEP_BY_LABEL = {
   "送至盐雾试验室": "dispatch",
@@ -771,7 +774,7 @@ function buildTrayFlowEngine(input = {}) {
       || projectedSteps.find((step) => step.active)?.label,
     ) || currentStatus;
 
-    return decorateMoldCancellationSteps({
+    return decorateCancellationSteps({
       canonicalStatus: currentStatus,
       displayRemark,
       trayCode,
@@ -793,7 +796,7 @@ function buildTrayFlowEngine(input = {}) {
     || projectedSteps.find((step) => /盐雾(?:试验|实验)进行中（暂停）$/.test(normalizeText(step.label)))?.label
     || projectedSteps.find((step) => step.active)?.label,
   ) || singleFlow.status;
-  return decorateMoldCancellationSteps({
+  return decorateCancellationSteps({
     ...singleFlow,
     displayRemark,
     status: displayCurrentStatus,

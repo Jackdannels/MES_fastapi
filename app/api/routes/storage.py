@@ -241,7 +241,7 @@ def _run_trays_have_allowed_appearance_source(
         relation_status = _normalize_text(entry.get("status") or entry.get("run_tray_status"))
         is_completed = relation_status in COMPLETED_EXPERIMENT_STATUSES
         is_canceled_mold = relation_status == MOLD_CANCELED_STATUS and "霉菌" in experiment_name
-        if not (is_completed or is_canceled_mold):
+        if not (is_completed or is_canceled_mold or relation_status == "设备故障试验取消"):
             continue
         if experiment_requires_appearance_inspection(experiment_name):
             return True
@@ -813,7 +813,7 @@ def _validate_storage_update(
         return
     current_samples = _read_current_storage_value(storage, current_snapshot, "mes.samples")
     current_staging_events = _read_current_storage_value(storage, current_snapshot, "mes.staging_events")
-    validate_samples_lab_arrival(current_samples, updates["mes.samples"])
+    validate_samples_lab_arrival(current_samples, updates["mes.samples"], current_snapshot)
     _validate_samples_staging_reentry_transition(
         current_samples,
         updates["mes.samples"],

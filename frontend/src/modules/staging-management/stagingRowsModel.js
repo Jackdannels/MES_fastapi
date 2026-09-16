@@ -1,5 +1,6 @@
 import { APPEARANCE_PRE_EXPERIMENT_STOCKED_STATUS } from "@/modules/samples/sampleFlow.constants";
 import { serverNowDate } from "@/lib/serverClock";
+import { DEVICE_FAULT_CANCELED, latestDeviceFaultCancellation } from "@/lib/deviceFaultCancellation";
 import { resolveSaltSprayPauseRemark } from "@/lib/saltSprayPauseDisplay";
 import { experimentScopeIsTerminal } from "@/modules/experiment-progress/model";
 import {
@@ -422,6 +423,11 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
           taskCode: normalizeText(row.taskCode),
           trayCode: normalizeText(row.trayCode),
         });
+      const faultContext = latestDeviceFaultCancellation({ experimentRuns, experimentRunTrays, taskCode: row.taskCode, trayCode: row.trayCode });
+      const faultExperiment = experimentByCode.get(faultContext?.experimentCode) || {};
+      const faultAppearanceAllowed = ["盐雾", "霉菌", "高低温湿热"].some((keyword) => normalizeText(faultExperiment.experiment_name || faultExperiment.experimentName).includes(keyword));
+      const isDeviceFaultInbound = Boolean(faultContext) && row.statuses.includes(DEVICE_FAULT_CANCELED)
+        && (config.key === "staging" || faultAppearanceAllowed);
       const isExplicitStagingInbound =
         config.key === "staging"
         && (
@@ -453,6 +459,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       if (isMoldCancelRecoveryInbound && !isCurrentStagingStatus(status, config)) {
         status = "待入库";
       }
+      if (isDeviceFaultInbound) status = "待入库";
       if (midPauseAwaitingStockIn && !isCurrentStagingStatus(status, config)) {
         status = "待入库";
       }
@@ -490,6 +497,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
         config.key === "appearance"
         && status
         && !midPause
+        && !isDeviceFaultInbound
         && !trayHasAllowedAppearanceSource({
           experiments,
           experimentRunSteps,

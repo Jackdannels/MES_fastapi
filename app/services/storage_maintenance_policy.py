@@ -133,6 +133,14 @@ def validate_device_schedule_maintenance_conflicts(
     if "mes.devices" in updates:
         current_devices = read_current("mes.devices")
         changed_devices = _changed_device_rows(current_devices, devices)
+        for device in changed_devices:
+            previous = next((row for row in _rows(current_devices) if _device_update_key(row) == _device_update_key(device)), {})
+            if device_is_unavailable(previous) and not device_is_unavailable(device):
+                aliases = {_text(previous.get(key)) for key in ("code", "name", "location", "lab_code")} - {""}
+                if any(_text(run.get("status")) in {"实验进行中", "实验中", "实验暂停"}
+                       and bool(aliases & {_text(run.get("device")), _text(run.get("lab_code"))})
+                       for run in _rows(read_current("mes.experiment_runs"))):
+                    raise HTTPException(status_code=409, detail="设备仍有未结束运行，请等待上位机确认后再设为可用")
     try:
         if changed_devices is not None:
             validate_maintenance_time_order(changed_devices, _rows(current_devices))

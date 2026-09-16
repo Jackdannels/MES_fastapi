@@ -32,6 +32,7 @@ import {
 } from "./scheduleCompletion";
 import { rowHasReturnedStatus } from "./laboratoryTrayEligibility";
 import { collectTrayRows } from "./laboratoryTrayRows";
+import { latestDeviceFaultCancellation } from "@/lib/deviceFaultCancellation";
 
 const normalizeText = (value) => String(value ?? "").trim();
 const asArray = (value) => (Array.isArray(value) ? value : []);
@@ -57,6 +58,9 @@ const markCanceledMoldRerunEligibility = ({
   taskCode,
   trayRows,
 }) => {
+  asArray(trayRows).forEach((row) => {
+    row.deviceFaultCanceledEligible = Boolean(latestDeviceFaultCancellation({ experimentRuns, experimentRunTrays, taskCode, trayCode: row.trayCode }));
+  });
   if (device !== MOLD_LAB || !experimentName.includes("霉菌")) {
     return;
   }

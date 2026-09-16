@@ -12,6 +12,7 @@ from app.services.laboratory_occupancy import (
     find_laboratory_occupancy_in_snapshot,
     laboratory_occupancy_conflict_detail,
 )
+from app.services.device_fault_cancellation import FAULT_CANCELED, FAULT_APPEARANCE_PHASE, canceled_fault_tray_context
 from app.services.appearance_inspection import (
     APPEARANCE_STOCK_IN_ACTION,
     APPEARANCE_STOCK_OUT_ACTION,
@@ -667,6 +668,13 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
         else None
     )
     canceled_mold_code = normalize_text((canceled_mold_context or {}).get("experiment_code"))
+    fault_context = canceled_fault_tray_context(snapshot, task_code=task_code, tray_code=normalized_tray_code) if current_status == FAULT_CANCELED else None
+    fault_experiment = next((row for row in as_list(snapshot.get(EXPERIMENTS_KEY))
+                             if normalize_text(row.get("task_code")) == task_code
+                             and normalize_text(row.get("experiment_code")) == normalize_text((fault_context or {}).get("experiment_code"))), {})
+    fault_appearance_allowed = any(keyword in normalize_text(fault_experiment.get("experiment_name") or fault_experiment.get("experiment_type"))
+                                   for keyword in ("盐雾", "霉菌", "高低温湿热"))
+    allows_fault_stock_in = bool(fault_context) and (config["event_room"] == STAGING_ROOM or fault_appearance_allowed)
     allows_canceled_mold_stock_in = bool(canceled_mold_context) and config["event_room"] == APPEARANCE_ROOM
     allows_partial_axis_stock_in = (
         config["event_room"] == STAGING_ROOM
@@ -709,6 +717,7 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
         and not allows_post_experiment_appearance_stock_in
         and not allows_mid_experiment_appearance_stock_in
         and not allows_canceled_mold_stock_in
+        and not allows_fault_stock_in
     ):
         raise StorageTrayActionError(config["stock_in_blocked_error"], status_code=400)
 
@@ -719,7 +728,10 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
     # an otherwise authorized tray because of that stale presentation value.
     if mid_context is not None:
         requested_status = MID_EXPERIMENT_APPEARANCE_STATUS
-    if allows_canceled_mold_stock_in:
+    if allows_fault_stock_in:
+        status = config["stock_in_status"]
+        location = config["stock_in_location"]
+    elif allows_canceled_mold_stock_in:
         status = (
             MOLD_CANCEL_RECOVERY_STATUS
             if config["event_room"] == APPEARANCE_ROOM
@@ -762,6 +774,9 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
                     "target_lab_code": mid_context["lab_code"],
                 }
             )
+    if allows_fault_stock_in:
+        appearance_metadata.update({"appearance_phase": FAULT_APPEARANCE_PHASE if config["event_room"] == APPEARANCE_ROOM else "",
+                                    "source_run_no": fault_context["run_no"], "source_experiment_code": fault_context["experiment_code"]})
     updated_samples = update_tray_samples(
         samples,
         normalized_tray_code,

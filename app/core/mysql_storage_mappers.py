@@ -890,7 +890,7 @@ def build_storage_sample_item(
             continue
         tray_status = normalize_experiment_status_text(tray.get("status") or tray.get("test_state") or tray.get("tray_status"))
         tray_completed = tray_status in EXPERIMENT_COMPLETED_STATUSES
-        tray_mold_canceled = tray_status == "实验已取消"
+        tray_mold_canceled = tray_status in {"实验已取消", "设备故障试验取消"}
         raw_target_lab = normalize_text(tray.get("target_lab") or tray.get("targetLab"))
         if tray_status == PRE_EXPERIMENT_APPEARANCE_STATUS and raw_target_lab == APPEARANCE_INSPECTION_LOCATION:
             raw_target_lab = ""

@@ -1,4 +1,5 @@
 import { resolveLabRef, scheduleMatchesLab } from "@/lib/labIdentity";
+import { DEVICE_FAULT_CANCELED } from "@/lib/deviceFaultCancellation";
 import { isAxisPartialProgressStatus } from "@/modules/experiment-progress/axisProgress";
 import { COMPLETED_EXPERIMENT_STATUSES } from "./scheduleCompletion";
 import {
@@ -106,10 +107,10 @@ const trayCanEnterNextExperimentAfterMoldCancellation = (row, currentTask) => {
   const sequenceEligibleTrayCodes = asArray(currentTask?.sequenceEligibleTrayCodes)
     .map(normalizeText);
   return Boolean(
-    statuses.includes(MOLD_CANCELED_STATUS)
+    (statuses.includes(MOLD_CANCELED_STATUS) || (statuses.includes(DEVICE_FAULT_CANCELED) && row.deviceFaultCanceledEligible === true))
     && !normalizeText(currentTask?.runNo)
     && currentExperimentCode
-    && !currentExperimentName.includes("霉菌")
+    && (!currentExperimentName.includes("霉菌") || statuses.includes(DEVICE_FAULT_CANCELED))
     && currentExperimentIsAssigned
     && row?.completedForCurrentExperiment !== true
     && currentTask?.sequenceEligible !== false

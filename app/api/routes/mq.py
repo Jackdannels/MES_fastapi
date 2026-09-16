@@ -167,6 +167,10 @@ class MoldCancelRequest(BaseModel):
         return str(value or "").strip()
 
 
+class DeviceFaultCancelRequest(MoldCancelRequest):
+    """Same identity fields, independent device-fault lifecycle and endpoint."""
+
+
 class SaltPauseRequest(BaseModel):
     task_code: str = Field(min_length=1)
     lab_code: str = Field(min_length=1)
@@ -598,6 +602,56 @@ def publish_mold_cancel_request(request: MoldCancelRequest) -> dict[str, Any]:
         "payload": payload,
         **result,
     }
+
+
+@router.post("/laboratory/device-fault-cancel-request")
+def publish_device_fault_cancel_request(request: DeviceFaultCancelRequest, http_request: Request) -> dict[str, Any]:
+    from app.api.auth_session import require_auth_session
+    from app.services.device_fault_cancellation import FAULT_END_MODE, ACTIVE_STATUSES, build_fault_cancellation_updates
+    from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
+    from app.core.time_utils import now_business_text
+    operator = str(require_auth_session(http_request).get("username") or "").strip()
+    require_mqtt_laboratory(request.lab_code, operation=LAB_INTERFACE_OPERATION_EXPERIMENT_END_REQUEST)
+    repository = MySQLMqEventRepository()
+    with acquire_laboratory_storage_commit_lock():
+        run = repository.find_run_by_no(request.run_no) or {}
+        if (str(run.get("lab_code") or "") != request.lab_code
+                or str(run.get("task_no") or run.get("task_code") or "") != request.task_code
+                or str(run.get("experiment_no") or run.get("experiment_code") or "") != request.experiment_code
+                or str(run.get("run_status") or run.get("status") or "") not in ACTIVE_STATUSES):
+            raise HTTPException(status_code=409, detail="当前运行、设备或试验状态已变化，请刷新后重试")
+        pending = repository.find_pending_device_fault_cancel(request.run_no)
+        if pending:
+            return {"ok": True, "published": True, "awaitingConfirmation": True,
+                    "cancelRequestId": pending.get("cancel_request_id"), "payload": pending}
+        storage = get_storage_backend()
+        snapshot = storage.read_all()
+        try:
+            preview = build_fault_cancellation_updates(snapshot, run_no=request.run_no, task_code=request.task_code,
+                experiment_code=request.experiment_code, canceled_at=now_business_text(), reason=request.cancel_reason)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        # Reject competing commands instead of reinterpreting salt/mold lifecycle events.
+        if request.lab_code == SALT_LAB_CODE:
+            _reject_pending_salt_command(repository, request.run_no)
+        if request.lab_code == MOLD_LAB_CODE and repository.find_pending_mold_cancel(request.run_no):
+            raise HTTPException(status_code=409, detail="当前运行已有霉菌取消请求，请等待确认")
+        payload = {"task_code": request.task_code, "lab_code": request.lab_code,
+                   "experiment_code": request.experiment_code, "run_no": request.run_no,
+                   "end_mode": FAULT_END_MODE, "cancel_reason": request.cancel_reason,
+                   "operator": operator,
+                   "schedule_snapshot": next((row for row in snapshot.get("mes.schedules", []) if str(row.get("id")) == str(run.get("schedule_no") or run.get("schedule_id"))), {}),
+                   "cancel_request_id": f"device-fault-{uuid4().hex}"}
+        # Mark the physical device unavailable even when publication fails. Do NOT release trays here.
+        storage.write_many({"mes.devices": preview["mes.devices"], "mes.conflicts": preview["mes.conflicts"]})
+        from app.services.storage_update_bus import publish_storage_update
+        publish_storage_update(["mes.devices", "mes.conflicts"])
+        try:
+            result = publish_laboratory_command("END_REQUEST", payload)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return {"ok": True, "awaitingConfirmation": True, "cancelRequestId": payload["cancel_request_id"],
+                "payload": payload, **result}
 
 
 @router.post("/laboratory/pause-request")

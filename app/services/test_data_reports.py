@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import re
 import tempfile
 from pathlib import Path
@@ -155,7 +156,18 @@ def update_test_data_settings(save_path: Any, *, storage: Any | None = None) -> 
 
 def list_export_records(*, storage: Any | None = None, status: str = "") -> list[dict[str, Any]]:
     backend = storage or get_storage_backend()
-    return get_test_data_repository(backend).list_exports(status=status)
+    records = get_test_data_repository(backend).list_exports(status=status)
+    if not status or status == "failed":
+        for task in backend.read("mes.conflicts"):
+            if task.get("type") != "device_fault_archive_pending" or task.get("status") != "pending":
+                continue
+            run_no = _text(task.get("run_no"))
+            if not any(_text(record.get("runNo")) == run_no for record in records):
+                records.append({"exportKey": f"{run_no}|fault-archive", "runNo": run_no,
+                    "taskCode": task.get("task_code"), "experimentCode": task.get("experiment_code"),
+                    "experimentName": "设备故障取消结果", "status": "failed", "generatedAt": task.get("created_at"),
+                    "error": "故障取消已保存，结果归档尚未完成，请重试"})
+    return records
 
 
 def _find_by_run(rows: Iterable[dict[str, Any]], task_code: str, experiment_code: str, run_no: str) -> dict[str, Any]:
@@ -429,8 +441,26 @@ def _write_report_pdf(path: Path, record: dict[str, Any]) -> None:
     document.setFillColor(HexColor("#6B7F8D"))
     document.setFont(font_name, 8)
     document.drawString(42, 38, f"MES 自动生成 | {record.get('exportKey', '')}")
-    document.drawRightString(width - 42, 38, "第 1 页 / 共 1 页")
+    document.drawRightString(width - 42, 38, "第 1 页" if record.get("terminalStatus") else "第 1 页 / 共 1 页")
     document.showPage()
+    if record.get("terminalStatus"):
+        lines = [record["terminalStatus"], f"取消原因：{record.get('cancelReason', '')}",
+                 f"操作人：{record.get('operator', '')}", f"本次经过时间（秒）：{record.get('elapsedSeconds', '')}",
+                 f"数据状态：{record.get('resultCompleteness', '')}", "本次运行已收到的结果（非正常完成结论）：",
+                 json.dumps(record.get("resultPackages", []), ensure_ascii=False, indent=2, default=str),
+                 "各轴向保留记录：", json.dumps(record.get("axisSteps", []), ensure_ascii=False, indent=2, default=str)]
+        y = height - 48
+        document.setFont(font_name, 10)
+        for source in lines:
+            for line in str(source).splitlines():
+                for offset in range(0, max(1, len(line)), 45):
+                    if y < 48:
+                        document.showPage()
+                        document.setFont(font_name, 10)
+                        y = height - 48
+                    document.drawString(48, y, line[offset:offset + 45])
+                    y -= 16
+        document.showPage()
     document.save()
 
 
@@ -482,6 +512,7 @@ def archive_completion_reports(
     run_no: str,
     axis_code: str = "",
     completed_at: str = "",
+    report_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Generate one PDF per affected sample and never interrupt completion."""
     attempted = succeeded = skipped = failed = 0
@@ -534,7 +565,8 @@ def archive_completion_reports(
                 current_index = indexes.get(export_key)
                 current = dict(records[current_index]) if current_index is not None else {}
                 current_path = Path(_text(current.get("filePath"))) if _text(current.get("filePath")) else None
-                if _text(current.get("status")) == "success" and current_path is not None and current_path.is_file():
+                if (_text(current.get("status")) == "success" and current_path is not None and current_path.is_file()
+                        and (not report_metadata or current.get("resultRevision") == report_metadata.get("resultRevision"))):
                     skipped += 1
                     items.append(current)
                     continue
@@ -543,6 +575,7 @@ def archive_completion_reports(
                 record = {
                     **current,
                     **context,
+                    **(report_metadata or {}),
                     "exportKey": export_key,
                     "sampleCode": sample_code,
                     "status": "pending",
@@ -600,6 +633,12 @@ def retry_failed_exports(*, export_keys: Iterable[str] | None = None, storage: A
     attempted = succeeded = failed = 0
     items: list[dict[str, Any]] = []
     try:
+        from app.services.device_fault_reports import retry_device_fault_archives
+        for outcome in retry_device_fault_archives(backend, export_keys=requested):
+            attempted += int(outcome.get("attempted", 0))
+            succeeded += int(outcome.get("succeeded", 0))
+            failed += int(outcome.get("failed", 0))
+            items.extend(outcome.get("items", []))
         root = Path(read_test_data_settings(storage=backend)["savePath"])
         with _PERSISTENCE_LOCK:
             repository = get_test_data_repository(backend)

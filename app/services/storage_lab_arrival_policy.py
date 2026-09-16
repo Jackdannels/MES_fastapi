@@ -48,7 +48,7 @@ def _sample_has_lab_arrival_history(sample: Any) -> bool:
     return False
 
 
-def validate_samples_lab_arrival(current_samples: Any, next_samples: Any) -> None:
+def validate_samples_lab_arrival(current_samples: Any, next_samples: Any, snapshot: dict | None = None) -> None:
     if not isinstance(next_samples, list):
         return
     current_by_code = {
@@ -77,6 +77,10 @@ def validate_samples_lab_arrival(current_samples: Any, next_samples: Any) -> Non
             current_tray = current_trays.get(_text(next_tray.get("tray_code")))
             if _status(current_tray) == LAB_ARRIVED_STATUS or _sample_was_lab_arrived(current_sample):
                 continue
+            if _status(current_tray) == "设备故障试验取消":
+                from app.services.device_fault_cancellation import canceled_fault_tray_context
+                if canceled_fault_tray_context(snapshot or {}, task_code=_text(current_sample.get("task_code")), tray_code=_text(next_tray.get("tray_code"))):
+                    continue
             if (_status(current_tray) in COMPLETED_EXPERIMENT_STATUSES or _sample_was_completed_experiment(current_sample)) and _sample_has_lab_arrival_history(next_sample):
                 continue
             if _status(current_tray) != LAB_DISPATCHED_STATUS and not _sample_was_dispatched(current_sample):

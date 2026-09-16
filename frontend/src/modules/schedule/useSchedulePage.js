@@ -240,7 +240,7 @@ function useSchedulePage(options = {}) {
   );
   const pendingExceptionRows = computed(() =>
     rawConflicts.value.filter(
-      (entry) => normalizeText(entry?.status) === "pending",
+      (entry) => normalizeText(entry?.status) === "pending" && entry?.type !== "device_fault_archive_pending",
     ),
   );
   const pendingExceptionCount = computed(() => pendingExceptionRows.value.length);

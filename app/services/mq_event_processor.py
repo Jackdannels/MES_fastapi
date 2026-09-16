@@ -58,6 +58,7 @@ from app.services.salt_spray_resume_preparation import (
 )
 from app.services.storage_update_bus import publish_storage_update
 from app.services.test_data_reports import archive_completion_reports
+from app.services.device_fault_cancellation import FAULT_CANCELED, FAULT_END_MODE, build_fault_cancellation_updates
 from app.services.mq_event_protocol import (
     ACK_MESSAGE_TYPE,
     BEIJING_TZ,
@@ -281,6 +282,15 @@ def apply_mqtt_schedule_cascade(
 
 
 class MySQLMqEventRepository:
+    def assert_device_available(self, lab_code: str) -> None:
+        from app.core.master_data import DEFAULT_LABS
+        from app.services.storage_maintenance_policy import device_is_unavailable
+        aliases = {lab_code}
+        aliases.update(normalize_text(lab.get("lab_name")) for lab in DEFAULT_LABS if lab.get("lab_code") == lab_code)
+        for device in get_storage_backend().read("mes.devices"):
+            if aliases & {normalize_text(device.get(key)) for key in ("code", "name", "location", "lab_code")} and device_is_unavailable(device):
+                raise ValueError("设备维修中，禁止开始或恢复实验")
+
     def message_exists(self, message_id: str) -> bool:
         with get_connection() as connection:
             with connection.cursor() as cursor:
@@ -518,9 +528,16 @@ class MySQLMqEventRepository:
         run_no: str,
         cancel_request_id: str = "",
     ) -> dict[str, Any]:
+        return self._find_pending_cancel(run_no, cancel_request_id, lab_code=MOLD_LAB_CODE, end_mode="cancel")
+
+    def find_pending_device_fault_cancel(self, run_no: str, cancel_request_id: str = "") -> dict[str, Any]:
+        run = self.find_run_by_no(run_no) or {}
+        return self._find_pending_cancel(run_no, cancel_request_id, lab_code=normalize_text(run.get("lab_code")), end_mode=FAULT_END_MODE)
+
+    def _find_pending_cancel(self, run_no: str, cancel_request_id: str, *, lab_code: str, end_mode: str) -> dict[str, Any]:
         normalized_request_id = normalize_text(cancel_request_id)
         request_filter = ""
-        params: list[Any] = [MOLD_LAB_CODE, normalize_text(run_no)]
+        params: list[Any] = [lab_code, normalize_text(run_no)]
         if normalized_request_id:
             request_filter = "AND JSON_UNQUOTE(JSON_EXTRACT(command.payload_json, '$.cancel_request_id'))=%s"
             params.append(normalized_request_id)
@@ -534,14 +551,14 @@ class MySQLMqEventRepository:
                     WHERE command.direction='MES_TO_HOST'
                       AND command.lab_code=%s
                       AND command.message_type='END_REQUEST'
-                      AND JSON_UNQUOTE(JSON_EXTRACT(command.payload_json, '$.end_mode'))='cancel'
+                      AND JSON_UNQUOTE(JSON_EXTRACT(command.payload_json, '$.end_mode'))='{end_mode}'
                       AND JSON_UNQUOTE(JSON_EXTRACT(command.payload_json, '$.run_no'))=%s
                       {request_filter}
                       AND command.process_status NOT IN ('FAILED','SKIPPED')
                       AND NOT EXISTS (
                         SELECT 1 FROM biz_experiment_event event
                         WHERE event.event_type='EXPERIMENT_ENDED'
-                          AND JSON_UNQUOTE(JSON_EXTRACT(event.payload_json, '$.end_mode'))='cancel'
+                          AND JSON_UNQUOTE(JSON_EXTRACT(event.payload_json, '$.end_mode'))='{end_mode}'
                           AND JSON_UNQUOTE(JSON_EXTRACT(event.payload_json, '$.cancel_request_id')) =
                               JSON_UNQUOTE(JSON_EXTRACT(command.payload_json, '$.cancel_request_id'))
                       )
@@ -557,7 +574,7 @@ class MySQLMqEventRepository:
                     pending_seconds = int(row.get("pending_seconds") or 0)
                 except (TypeError, ValueError):
                     pending_seconds = 0
-                if pending_seconds >= COMMAND_CONFIRMATION_TIMEOUT_SECONDS:
+                if end_mode == "cancel" and pending_seconds >= COMMAND_CONFIRMATION_TIMEOUT_SECONDS:
                     cursor.execute(
                         """
                         UPDATE biz_mq_message_log
@@ -745,6 +762,32 @@ class MySQLMqEventRepository:
                 new_end_at=occurred_at,
                 reason="盐雾实验异常停止",
             )
+
+    def mark_device_fault_canceled(self, run_no: str, occurred_at: str, command: dict[str, Any]) -> None:
+        storage = get_storage_backend()
+        with acquire_laboratory_storage_commit_lock():
+            payload = storage.read_all()
+            updates = build_fault_cancellation_updates(
+                payload, run_no=run_no, task_code=normalize_text(command.get("task_code")),
+                experiment_code=normalize_text(command.get("experiment_code")),
+                canceled_at=occurred_at, reason=normalize_text(command.get("cancel_reason")),
+                operator=normalize_text(command.get("operator")),
+            )
+            if updates:
+                updates["mes.conflicts"].append({"id": f"device-fault-archive-{run_no}",
+                    "type": "device_fault_archive_pending", "status": "pending", "run_no": run_no,
+                    "task_code": command.get("task_code"), "experiment_code": command.get("experiment_code"),
+                    "created_at": occurred_at, "reason": "设备故障取消结果待归档，可在试验数据页重试",
+                    "detail": command.get("cancel_reason"), "archive_command": command})
+                # This validated terminal command owns schedule cleanup; generic delete remains locked.
+                storage.write_many(updates)
+        if updates:
+            publish_storage_update(list(updates))
+        from app.services.device_fault_reports import archive_device_fault_reports
+        try:
+            archive_device_fault_reports(storage, run_no=run_no, command=command)
+        except Exception:
+            logger.exception("设备故障取消结果归档失败，已保留待重试任务 run=%s", run_no)
 
     def mark_mold_run_canceled(self, run_no: str, occurred_at: str, reason: str) -> None:
         storage = get_storage_backend()
@@ -1349,6 +1392,9 @@ def process_laboratory_event(
     created_run_from_context = False
     started_existing_axis = False
     if message_type == "EXPERIMENT_STARTED":
+        checker = getattr(repo, "assert_device_available", None)
+        if callable(checker):
+            checker(lab_code)
         existing_payload_run = repo.find_run_by_no(payload_run_no) if payload_run_no else None
         if (
             lab_code == SALT_LAB_CODE
@@ -1380,8 +1426,29 @@ def process_laboratory_event(
                 )
     if message_type == "EXPERIMENT_ENDED" and not run:
         raise ValueError(f"active experiment run is required for lab_code: {lab_code}")
+    fault_cancel_command: dict[str, Any] = {}
+    if message_type == "EXPERIMENT_ENDED" and normalize_text((run or {}).get("run_status") or (run or {}).get("status")) == FAULT_CANCELED:
+        if payload_end_mode == FAULT_END_MODE and normalize_text((run or {}).get("lab_code")) == lab_code:
+            return build_ack(message_id, "DUPLICATE")
+        raise ValueError("设备故障取消的历史运行不能改为正常完成")
+    fault_finder = getattr(repo, "find_pending_device_fault_cancel", None)
+    if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_STARTED", "EXPERIMENT_PAUSED", "EXPERIMENT_RESUMED", "EXPERIMENT_STOPPED"} and callable(fault_finder):
+        pending_fault = fault_finder(payload_run_no or normalize_text((run or {}).get("run_no")))
+        if pending_fault and (message_type != "EXPERIMENT_ENDED" or payload_end_mode != FAULT_END_MODE):
+            raise ValueError("当前运行等待设备故障取消确认，不能执行其他运行转换")
+    if message_type == "EXPERIMENT_ENDED" and payload_end_mode == FAULT_END_MODE:
+        if not payload_run_no or not payload_cancel_request_id or not callable(fault_finder):
+            raise ValueError("设备故障取消确认必须携带 run_no 和 cancel_request_id")
+        fault_cancel_command = fault_finder(payload_run_no, payload_cancel_request_id)
+        if not fault_cancel_command:
+            raise ValueError("matching device fault cancellation request is required")
+        if normalize_text((run or {}).get("lab_code")) != lab_code:
+            raise ValueError("设备故障取消运行与实验室不匹配")
+        for key, actual in (("task_code", first_text(payload, "task_code", "taskCode")), ("experiment_code", first_text(payload, "experiment_code", "experimentCode"))):
+            if actual and actual != normalize_text(fault_cancel_command.get(key)):
+                raise ValueError("设备故障取消上下文不匹配")
     mold_cancel_command: dict[str, Any] = {}
-    if message_type == "EXPERIMENT_ENDED" and lab_code == MOLD_LAB_CODE:
+    if message_type == "EXPERIMENT_ENDED" and lab_code == MOLD_LAB_CODE and not fault_cancel_command:
         finder = getattr(repo, "find_pending_mold_cancel", None)
         resolved_run_no = payload_run_no or normalize_text((run or {}).get("run_no"))
         pending_cancel = finder(resolved_run_no, payload_cancel_request_id) if callable(finder) and resolved_run_no else {}
@@ -1410,7 +1477,9 @@ def process_laboratory_event(
             raise ValueError("run_no does not belong to LAB_SALT")
     if message_type == "EXPERIMENT_RESULT" and not run:
         raise ValueError(f"experiment run is required for lab_code: {lab_code}")
-    if message_type == "EXPERIMENT_ENDED" and run_axis_codes(run) and not payload_axis_code:
+    if message_type == "EXPERIMENT_RESULT" and normalize_text((run or {}).get("lab_code")) != lab_code:
+        raise ValueError("结果运行批次不属于当前实验室")
+    if message_type == "EXPERIMENT_ENDED" and run_axis_codes(run) and not payload_axis_code and not fault_cancel_command:
         raise ValueError("axis_code is required for axis-aware experiment end")
     context_task_no = normalize_text((run or {}).get("task_no")) or normalize_text((context or {}).get("task_no"))
     authoritative_context = created_run_from_context or started_existing_axis or message_type in {
@@ -1461,6 +1530,9 @@ def process_laboratory_event(
         if message_type == "EXPERIMENT_PAUSED":
             repo.mark_salt_run_paused(run_no, pause_no, occurred_at, command_payload)
         elif message_type == "EXPERIMENT_RESUMED":
+            checker = getattr(repo, "assert_device_available", None)
+            if callable(checker):
+                checker(lab_code)
             repo.mark_salt_run_resumed(run_no, pause_no, occurred_at)
         else:
             termination_type = normalize_text(command_payload.get("termination_type"))
@@ -1470,6 +1542,8 @@ def process_laboratory_event(
             repo.mark_salt_run_stopped(run_no, pause_no, occurred_at, termination_type, termination_reason)
             if termination_type != TERMINATION_ABNORMAL:
                 repo.mark_run_ended(run_no, occurred_at, "", "", sub_experiment_code)
+    if fault_cancel_command:
+        repo.mark_device_fault_canceled(run_no, occurred_at, fault_cancel_command)
     if mold_cancel_command:
         cancel_reason = normalize_text(mold_cancel_command.get("cancel_reason"))
         if not cancel_reason:
@@ -1546,14 +1620,14 @@ def process_laboratory_event(
             started_at=occurred_at,
         )
     elif message_type == "EXPERIMENT_ENDED":
-        if not mold_cancel_command:
+        if not mold_cancel_command and not fault_cancel_command:
             repo.mark_run_ended(run_no, occurred_at, payload_axis_code, payload_next_axis_code, sub_experiment_code)
         attendance_service = get_attendance_service()
-        if mold_cancel_command:
+        if mold_cancel_command or fault_cancel_command:
             attendance_service.logout_lab(
                 lab_code=lab_code,
                 lab_name=normalize_text((run or {}).get("device_name") or (run or {}).get("device")),
-                reason="mold-cancel",
+                reason="device-fault-cancel" if fault_cancel_command else "mold-cancel",
                 ended_at=occurred_at,
                 source="mqtt",
             )
@@ -1578,12 +1652,19 @@ def process_laboratory_event(
                 "result_time": occurred_at,
                 "conclusion": normalize_text(result_package.get("conclusion")),
                 "summary": normalize_text(result_package.get("summary")),
-                "result_payload": result_package,
+                "result_payload": {**result_package, "run_no": run_no},
                 "message_id": message_id,
                 "message_log_id": message_log_id,
                 "status": "RECEIVED",
             }
         )
+
+        if normalize_text((run or {}).get("run_status") or (run or {}).get("status")) == FAULT_CANCELED:
+            from app.services.device_fault_reports import archive_device_fault_reports
+            try:
+                archive_device_fault_reports(get_storage_backend(), run_no=run_no)
+            except Exception:
+                logger.exception("设备故障取消结果补传归档失败 run=%s", run_no)
 
     publish_realtime_update()
     return build_ack(message_id, "PROCESSED")

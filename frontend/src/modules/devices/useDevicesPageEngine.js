@@ -41,6 +41,8 @@ import {
 import { useDeviceClock } from "./useDeviceClock";
 import { createDeviceRunningRepair } from "./deviceRunningRepair";
 import { createDeviceMaintenanceSchedule } from "./deviceMaintenanceSchedule";
+import { publishDeviceFaultCancelRequest } from "@/lib/laboratoryMqApi";
+import { resolveLaboratoryRouteKey } from "@/lib/labs";
 
 // 将设备存储记录转换为页面所需的表格、表单、抽屉和弹窗状态。
 function useDevicesPageEngine() {
@@ -80,6 +82,10 @@ function useDevicesPageEngine() {
   const runningRepairChoiceModal = useDialogState();
   const runningRepairChoiceDetail = ref(null);
   const runningRepairChoiceWarning = ref("");
+  const runningRepairSubmitting = ref(false);
+  const runningRepairPending = ref(false);
+  const runningRepairConfirmed = ref(false);
+  const runningRepairReason = ref("");
   const now = ref(serverNowDate());
   let flushPendingStorageRefresh = () => false;
 
@@ -132,7 +138,8 @@ function useDevicesPageEngine() {
     );
   });
   const canSetDeviceAvailable = computed(
-    () => hasFuturePlannedMaintenance.value || hasActivePlannedMaintenance.value || !["空闲", "工作中"].includes(normalizeText(deviceForm.value.status)),
+    () => !rawExperimentRuns.value.some((run) => ["实验进行中", "实验中", "实验暂停"].includes(normalizeText(run.status)) && scheduleMatchesLab(run, deviceForm.value))
+      && (hasFuturePlannedMaintenance.value || hasActivePlannedMaintenance.value || !["空闲", "工作中"].includes(normalizeText(deviceForm.value.status))),
   );
   const deviceLifecycleActionLabel = computed(() => {
     if (hasFuturePlannedMaintenance.value) {
@@ -202,7 +209,6 @@ function useDevicesPageEngine() {
   } = maintenanceSchedule;
 
   const {
-    buildRunningRepairUpdates,
     findRunningSchedulesForDevice,
     resolveDeviceRef,
   } = createDeviceRunningRepair({
@@ -315,6 +321,9 @@ function useDevicesPageEngine() {
         runningSchedules,
       };
       runningRepairChoiceWarning.value = "";
+      runningRepairPending.value = false;
+      runningRepairConfirmed.value = false;
+      runningRepairReason.value = normalizeText(form.note);
       runningRepairChoiceModal.openWith(runningRepairChoiceDetail.value);
       return;
     }
@@ -358,6 +367,9 @@ function useDevicesPageEngine() {
   };
 
   const closeRunningRepairChoice = () => {
+    if (runningRepairSubmitting.value) return;
+    if (runningRepairPending.value) closeMaintenancePlan();
+    runningRepairPending.value = false;
     runningRepairChoiceDetail.value = null;
     runningRepairChoiceWarning.value = "";
     runningRepairChoiceModal.close();
@@ -365,12 +377,12 @@ function useDevicesPageEngine() {
   };
 
   const persistRunningRepairChoice = async (mode) => {
+    if (runningRepairSubmitting.value || runningRepairPending.value) return;
     const detail = runningRepairChoiceDetail.value;
     if (!detail) {
       runningRepairChoiceModal.close();
       return;
     }
-    const timestamp = toBusinessDateTimeValue(serverNowDate());
     runningRepairChoiceWarning.value = "";
     if (mode === "complete") {
       try {
@@ -388,30 +400,27 @@ function useDevicesPageEngine() {
       closeMaintenancePlan();
       return;
     }
-    const updates = buildRunningRepairUpdates({
-      form: {
-        ...detail.form,
-        startAt: timestamp,
-      },
-      mode,
-      runningSchedules: detail.runningSchedules,
-      timestamp,
-    });
-    try {
-      await persistSnapshot(updates);
-    } catch (error) {
-      runningRepairChoiceWarning.value = normalizeText(error?.message) || "维修操作失败，请刷新后重试";
+    if (!normalizeText(runningRepairReason.value)) {
+      runningRepairChoiceWarning.value = "请填写设备故障原因";
       return;
     }
-    rawDevices.value = updates[STORAGE_KEYS.devices];
-    rawExperiments.value = updates[STORAGE_KEYS.experiments];
-    rawExperimentRuns.value = updates[STORAGE_KEYS.experiment_runs];
-    rawExperimentRunTrays.value = updates[STORAGE_KEYS.experiment_run_trays];
-    rawSamples.value = updates[STORAGE_KEYS.samples];
-    rawSchedules.value = updates[STORAGE_KEYS.schedules];
-    rawTasks.value = updates[STORAGE_KEYS.tasks];
-    closeRunningRepairChoice();
-    closeMaintenancePlan();
+    runningRepairSubmitting.value = true;
+    try {
+      for (const target of detail.runningSchedules) {
+        const labCode = resolveLaboratoryRouteKey(target.lab_code || target.device || detail.deviceCode);
+        if (!target.run_no || !labCode.startsWith("LAB_")) throw new Error("当前运行缺少批次或实验室编码，请刷新后重试");
+        await publishDeviceFaultCancelRequest({
+          task_code: target.task_code, experiment_code: target.experiment_code,
+          run_no: target.run_no, lab_code: labCode, cancel_reason: normalizeText(runningRepairReason.value),
+        });
+      }
+      runningRepairPending.value = true;
+      runningRepairChoiceWarning.value = "设备故障取消请求已发送，等待上位机确认。确认前不得移动样品；原运行及已收到结果将保留。可关闭此窗口，确认后页面会更新。";
+    } catch (error) {
+      runningRepairChoiceWarning.value = normalizeText(error?.message) || "故障取消请求失败，请刷新后重试";
+    } finally {
+      runningRepairSubmitting.value = false;
+    }
   };
 
   const confirmRunningRepairReschedule = () => persistRunningRepairChoice("reschedule");
@@ -423,6 +432,7 @@ function useDevicesPageEngine() {
     if (!deviceCode || !canSetDeviceAvailable.value) {
       return;
     }
+    if (findRunningSchedulesForDevice(deviceCode).length) return;
     const endedAt = serverNowDate();
     const nextMaintenanceRecords = [
       buildMaintenanceRecord({
@@ -497,10 +507,15 @@ function useDevicesPageEngine() {
     rawSamples.value = Array.isArray(snapshot[STORAGE_KEYS.samples]) ? snapshot[STORAGE_KEYS.samples] : [];
     rawSchedules.value = Array.isArray(snapshot[STORAGE_KEYS.schedules]) ? snapshot[STORAGE_KEYS.schedules] : [];
     rawTasks.value = Array.isArray(snapshot[STORAGE_KEYS.tasks]) ? snapshot[STORAGE_KEYS.tasks] : [];
+    if (runningRepairPending.value && runningRepairChoiceDetail.value?.runningSchedules.every((target) =>
+      rawExperimentRuns.value.some((run) => normalizeText(run.run_no || run.id) === normalizeText(target.run_no) && run.status === "设备故障试验取消"))) {
+      runningRepairConfirmed.value = true;
+      runningRepairChoiceWarning.value = "上位机已确认：设备故障试验取消，本次运行记录已保留。可继续比对下一试验或扫码入库；本次结果及待补齐状态可在归档报告中查看。";
+    }
     await syncTimedMaintenanceStatuses(now.value);
   };
 
-  const isRealtimeRefreshPaused = () => Boolean(
+  const isRealtimeRefreshPaused = () => !runningRepairPending.value && Boolean(
     deviceDrawer.open.value
     || editDeviceModal.open.value
     || maintenancePlanModal.open.value
@@ -604,6 +619,10 @@ function useDevicesPageEngine() {
     runningRepairChoiceDetail,
     runningRepairChoiceOpen: runningRepairChoiceModal.open,
     runningRepairChoiceWarning,
+    runningRepairSubmitting,
+    runningRepairPending,
+    runningRepairConfirmed,
+    runningRepairReason,
     saveCurrentDevice,
     saveEditedDevice,
     saveMaintenancePlan,

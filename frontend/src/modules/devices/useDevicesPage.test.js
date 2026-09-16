@@ -6,7 +6,10 @@ const mocks = vi.hoisted(() => ({
   loadSnapshot: vi.fn(),
   persistRunningRepair: vi.fn(),
   persistSnapshot: vi.fn(),
+  publishDeviceFaultCancelRequest: vi.fn(),
 }));
+
+vi.mock("@/lib/laboratoryMqApi", () => ({ publishDeviceFaultCancelRequest: mocks.publishDeviceFaultCancelRequest }));
 
 vi.mock("@/composables/useStorageSnapshot", () => ({
   useStorageSnapshot: () => ({
@@ -96,6 +99,8 @@ describe("useDevicesPage", () => {
     vi.setSystemTime(new Date("2099-03-20T07:30:00"));
     mocks.persistRunningRepair.mockResolvedValue(undefined);
     mocks.persistSnapshot.mockResolvedValue(undefined);
+    mocks.publishDeviceFaultCancelRequest.mockReset();
+    mocks.publishDeviceFaultCancelRequest.mockResolvedValue({ published: true, cancelRequestId: "FAULT-1" });
     mocks.loadSnapshot.mockResolvedValue({
       "mes.devices": [
         { code: "冲击一室", name: "冲击试验系统-1", status: "可用" },
@@ -565,7 +570,7 @@ describe("useDevicesPage", () => {
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
   });
 
-  test("reschedules the running experiment and rolls trays back to the previous stable state", async () => {
+  test("requests fault cancellation without deleting the run or rolling trays back before host confirmation", async () => {
     mocks.loadSnapshot.mockResolvedValueOnce(buildRunningExperimentSnapshot());
     const wrapper = mount(TestHarness);
     await settle(wrapper);
@@ -573,31 +578,16 @@ describe("useDevicesPage", () => {
     wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
     wrapper.vm.maintenancePlanForm.type = "维修";
     await wrapper.vm.saveMaintenancePlan();
+    wrapper.vm.runningRepairReason = "设备温控故障";
     await wrapper.vm.confirmRunningRepairReschedule();
     await settle(wrapper);
 
-    expect(mocks.persistSnapshot).toHaveBeenCalledWith(
-      expect.objectContaining({
-        "mes.devices": [
-          expect.objectContaining({
-            code: "冲击一室",
-            maintenance_start_at: "2099-03-20 07:30:00",
-            maintenance_type: "维修",
-            status: "维修",
-          }),
-        ],
-        "mes.schedules": [],
-        "mes.samples": [
-          expect.objectContaining({
-            flow_status: "实验已完成",
-            location: "高低温试验室",
-            status: "实验已完成",
-            trays: [expect.objectContaining({ status: "实验已完成", tray_code: "TASK-001-TP-001" })],
-          }),
-        ],
-        "mes.experiment_runs": [],
-      }),
-    );
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+    expect(mocks.publishDeviceFaultCancelRequest).toHaveBeenCalledWith({ task_code: "TASK-001", experiment_code: "TASK-001-A", run_no: "RUN-001", lab_code: "LAB_IMPACT_1", cancel_reason: "设备温控故障" });
+    expect(wrapper.vm.runningRepairPending).toBe(true);
+    expect(wrapper.vm.runningRepairChoiceOpen).toBe(true);
+    await wrapper.vm.confirmRunningRepairReschedule();
+    expect(mocks.publishDeviceFaultCancelRequest).toHaveBeenCalledTimes(1);
   });
 
   test("completes the running experiment before saving the repair status", async () => {
@@ -622,6 +612,28 @@ describe("useDevicesPage", () => {
       })],
     });
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+  });
+
+  test("requires a fault reason and leaves failed publication retryable", async () => {
+    mocks.loadSnapshot.mockResolvedValueOnce(buildRunningExperimentSnapshot());
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+    wrapper.vm.maintenancePlanForm.type = "维修";
+    await wrapper.vm.saveMaintenancePlan();
+    await wrapper.vm.confirmRunningRepairReschedule();
+    expect(wrapper.vm.runningRepairChoiceWarning).toBe("请填写设备故障原因");
+    expect(mocks.publishDeviceFaultCancelRequest).not.toHaveBeenCalled();
+    wrapper.vm.runningRepairReason = "设备故障";
+    mocks.publishDeviceFaultCancelRequest.mockRejectedValueOnce(new Error("MQTT 未连接"));
+    await wrapper.vm.confirmRunningRepairReschedule();
+    expect(wrapper.vm.runningRepairSubmitting).toBe(false);
+    expect(wrapper.vm.runningRepairPending).toBe(false);
+    expect(wrapper.vm.runningRepairChoiceOpen).toBe(true);
+    expect(wrapper.vm.runningRepairChoiceWarning).toContain("MQTT 未连接");
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+    await wrapper.vm.confirmRunningRepairReschedule();
+    expect(wrapper.vm.runningRepairPending).toBe(true);
   });
 
   test("keeps the running repair confirmation open and shows an actionable error when the command fails", async () => {

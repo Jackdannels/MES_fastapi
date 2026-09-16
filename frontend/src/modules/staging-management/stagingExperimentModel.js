@@ -488,6 +488,11 @@ const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experimen
   const normalizedTaskCode = normalizeText(taskCode);
   const normalizedTrayCode = normalizeText(trayCode);
   const experimentMap = buildExperimentMap(experiments);
+  const faultRelation = asArray(experimentRunTrays)
+    .filter((entry) => normalizeText(entry.task_code) === normalizedTaskCode && normalizeText(entry.tray_code) === normalizedTrayCode)
+    .sort((a, b) => Date.parse(a.updated_at || a.ended_at || a.started_at) - Date.parse(b.updated_at || b.ended_at || b.started_at)).at(-1);
+  if (normalizeText(faultRelation?.run_tray_status || faultRelation?.status) === "设备故障试验取消"
+      && appearanceExperimentIsAllowed(resolveExperimentName(experimentMap.get(normalizeText(faultRelation.experiment_code))))) return true;
   const hasCanceledMoldRun = asArray(experimentRunTrays).some((entry) => {
     if (
       normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) !== normalizedTaskCode
