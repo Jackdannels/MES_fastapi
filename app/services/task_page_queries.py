@@ -289,7 +289,7 @@ class MySQLTaskPageQueryRepository:
             reference_time = datetime.fromisoformat(normalize_text(reference).replace("Z", "+00:00")) if normalize_text(reference) else datetime.now()
         except ValueError:
             reference_time = datetime.now()
-        prefix = f"SYLU-{reference_time.year:04d}-{reference_time.month:02d}-"
+        prefix = f"SYLUN-{reference_time.year:04d}-{reference_time.month:02d}-"
         with get_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(

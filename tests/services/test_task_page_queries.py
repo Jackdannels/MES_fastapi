@@ -166,12 +166,12 @@ def test_next_task_code_uses_month_prefix_and_includes_archived_rows(monkeypatch
         "2026-08-02T12:30:00+08:00"
     )
 
-    assert code == "SYLU-2026-08-042"
+    assert code == "SYLUN-2026-08-042"
     sql, params = cursor.executed[0]
     assert "FROM biz_task" in sql
     assert "task_no LIKE %s" in sql
     assert "transfer_status" not in sql
-    assert params == ["SYLU-2026-08-%"]
+    assert params == ["SYLUN-2026-08-%"]
 
 
 def test_history_query_filters_and_pages_before_related_data_is_loaded(monkeypatch):

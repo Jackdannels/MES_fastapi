@@ -1,7 +1,8 @@
-import { mount } from "@vue/test-utils";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import VisualizationPage from "./page.vue";
+enableAutoUnmount(afterEach);
 
 const { REAL_DEVICE_LEDGER, snapshotState } = vi.hoisted(() => ({
   REAL_DEVICE_LEDGER: [
@@ -332,6 +333,8 @@ describe("VisualizationPage runtime", () => {
 
     expect(seventhCard.text()).toContain("试验间状态监测屏");
     expect(labCards).toHaveLength(11);
+    expect(seventhCard.findAll(".visual-lab-status-alarm")).toHaveLength(11);
+    expect(seventhCard.text()).toContain("等待首次有效数据");
     expect(hostlessLab?.text()).toContain("无搬运设备");
     expect(seventhCard.findAll(".visual-lab-status-metric.is-unavailable")).toHaveLength(2);
   });
@@ -381,6 +384,7 @@ describe("VisualizationPage runtime", () => {
       expect(vibrationRoom.text()).toContain("试验设备温度过高：68.5 °C");
       expect(vibrationRoom.text()).toContain("试验设备电压过低：82.0 V");
       expect(vibrationRoom.findAll(".visual-lab-status-metric.is-alarm")).toHaveLength(2);
+      expect(vibrationRoom.find(".visual-lab-status-alarm.is-empty").exists()).toBe(false);
     });
   });
 
@@ -877,7 +881,7 @@ describe("VisualizationPage runtime", () => {
     const flowSteps = wrapper.findAll('[data-testid="visual-single-preview"] .visual-flow-step');
     const runningStep = flowSteps.find((step) => step.get("strong").text() === "振动试验进行中");
     const stagingStep = flowSteps.find((step) => step.get("strong").text() === "送至暂存间");
-    const confirmedSteps = ["送至振动一室", "已到达实验室", "工装夹具安装", "实验准备就绪"]
+    const confirmedSteps = ["送至振动一室", "已到达振动一室", "工装夹具安装", "实验准备就绪"]
       .map((label) => flowSteps.find((step) => step.get("strong").text() === label));
     expect(runningStep?.classes()).toContain("is-active");
     expect(runningStep?.attributes("title")).toBe("05-22 10:00:00");

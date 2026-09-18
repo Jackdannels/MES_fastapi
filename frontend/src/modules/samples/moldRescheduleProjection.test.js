@@ -47,8 +47,11 @@ const expectCompletedVibration = (flow) => {
   expect(flow.steps.find((step) => step.label === "振动试验已完成").time).toBe("2026-09-10 20:38:48");
   expect(flow.steps.some((step) => step.label === "霉菌试验进行中")).toBe(false);
   expect(flow.steps.find((step) => step.label === "霉菌试验未完成")).toMatchObject({ active: false, reached: false });
-  for (const step of flow.steps.filter((step) => ["送至暂存间", "已到达暂存间", "送至霉菌试验室", "已到达实验室", "工装夹具安装", "实验准备就绪"].includes(step.label))) {
+  for (const step of flow.steps.filter((step) => ["送至霉菌试验室", "已到达实验室", "工装夹具安装", "实验准备就绪"].includes(step.label))) {
     expect(step.active || step.reached).toBe(false);
+  }
+  for (const label of ["送至暂存间", "已到达暂存间"]) {
+    expect(flow.steps.find((step) => step.label === label)).toMatchObject({ reached: true, active: false, inferred: true, time: "" });
   }
 };
 
@@ -180,6 +183,7 @@ describe("mold cancellation route folding", () => {
       expect(flow.steps.find((step) => step.label === label)).toMatchObject({
         active: false,
         reached: true,
+        inferred: true,
         time: "",
       });
     }
@@ -189,7 +193,7 @@ describe("mold cancellation route folding", () => {
     });
   });
 
-  test("TP-003 removes the canceled attempt staging template when no staging event occurred", () => {
+  test("TP-003 retains a fresh optional staging route after cancellation recovery", () => {
     const currentTrayCode = `${taskCode}-TP-003`;
     const canceledRunNo = "old-mold-tp003";
     const flow = buildTrayFlowView({
@@ -268,8 +272,12 @@ describe("mold cancellation route folding", () => {
     });
 
     const labels = flow.steps.map((step) => step.label);
-    expect(labels).not.toContain("送至暂存间");
-    expect(labels).not.toContain("已到达暂存间");
+    expect(labels).toContain("送至暂存间");
+    expect(labels).toContain("已到达暂存间");
+    for (const label of ["送至暂存间", "已到达暂存间"]) {
+      expect(flow.steps.find((step) => step.label === label)).toMatchObject({ active: false, reached: false, time: "" });
+      expect(labels.indexOf(label)).toBeGreaterThan(labels.indexOf("霉菌取消后恢复处理"));
+    }
     expect(labels.indexOf("振动试验已完成")).toBeLessThan(labels.indexOf("霉菌试验已取消"));
     expect(labels.indexOf("霉菌试验已取消")).toBeLessThan(labels.indexOf("霉菌取消后恢复处理"));
     expect(labels.indexOf("霉菌取消后恢复处理")).toBeLessThan(labels.indexOf("霉菌试验未完成"));

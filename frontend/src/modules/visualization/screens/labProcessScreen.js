@@ -2,6 +2,7 @@ import { h, ref } from "vue";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { resolveVisualFlowStepTitle, visualFlowStepClass } from "../flowStepState";
 import { findSelectedLabTask, findSelectedLabTray } from "./helpers";
+import { LiveClock } from "./liveClock";
 
 const buildLabTaskOptions = (lab) => {
   const taskMap = new Map();
@@ -71,7 +72,7 @@ export const LabProcessScreen = {
           ]),
           h("div", { class: "visual-board-state" }, [
             h("span", { class: "visual-board-live" }, "LIVE"),
-            h("span", { class: "visual-board-time" }, "2026-05-22 14:00:00"),
+            h(LiveClock),
           ]),
         ]),
         h("div", { class: "visual-board-main" }, [
@@ -91,7 +92,14 @@ export const LabProcessScreen = {
 
               return h("div", { class: "visual-lab-panel", key: lab.name }, [
                 h("div", { class: "visual-lab-panel-head" }, [
-                  h("div", { class: "visual-lab-name", title: lab.name }, lab.name),
+                  h("div", { class: "visual-lab-heading" }, [
+                    h("div", { class: "visual-lab-name", title: lab.name }, lab.name),
+                    h(
+                      "div",
+                      { class: ["visual-lab-state", lab.alert ? "is-alert" : "is-ok", lab.healthState ? `is-${lab.healthState}` : ""] },
+                      lab.healthLabel || (lab.alert ? "复核" : "正常"),
+                    ),
+                  ]),
                   h("div", { class: "visual-lab-head-actions" }, [
                     props.interactive
                       ? h(
@@ -105,11 +113,6 @@ export const LabProcessScreen = {
                         "切换试验间",
                       )
                       : null,
-                    h(
-                      "div",
-                      { class: ["visual-lab-state", lab.alert ? "is-alert" : "is-ok", lab.healthState ? `is-${lab.healthState}` : ""] },
-                      lab.healthLabel || (lab.alert ? "复核" : "正常"),
-                    ),
                   ]),
                 ]),
                 props.interactive && !props.compact && taskOptions.length
@@ -166,7 +169,7 @@ export const LabProcessScreen = {
                               title: resolveVisualFlowStepTitle(step, formatBeijingFlowTime),
                             }, [
                               h("span", { class: "visual-flow-dot" }),
-                              h("strong", step.label),
+                              h("strong", step.displayLabel || step.label),
                               h("small", { "aria-hidden": "true" }, ""),
                             ]),
                           ),

@@ -930,18 +930,19 @@ describe("tasks model", () => {
     expect(options.testTypeOptions).not.toContain("高低温湿热试验 / 霉菌试验");
   });
 
-  test("buildTaskCode generates the next monthly SYLU sequence", () => {
+  test("buildTaskCode generates the next monthly SYLUN sequence", () => {
     expect(
       buildTaskCode(
         "冲击试验",
         [
-          { code: "SYLU-2026-03-001" },
-          { code: "SYLU-2026-03-003" },
-          { code: "SYLU-2026-02-007" },
+          { code: "SYLUN-2026-03-001" },
+          { code: "SYLUN-2026-03-003" },
+          { code: "SYLUN-2026-02-007" },
+          { code: "SYLUW-2026-03-999" },
         ],
         "2026-03-27T09:15:00",
       ),
-    ).toBe("SYLU-2026-03-004");
+    ).toBe("SYLUN-2026-03-004");
   });
 
   test("buildTaskCode counts returned archived task codes when generating the next sequence", () => {
@@ -949,15 +950,20 @@ describe("tasks model", () => {
       buildTaskCode(
         "振动试验",
         [
-          { code: "SYLU-2026-05-001", status: "厂家收回", transfer_status: "厂家收回" },
-          { code: "SYLU-2026-05-002", status: "待排程" },
+          { code: "SYLUN-2026-05-001", status: "厂家收回", transfer_status: "厂家收回" },
+          { code: "SYLUN-2026-05-002", status: "待排程" },
         ],
         "2026-05-13T09:15:00",
       ),
-    ).toBe("SYLU-2026-05-003");
+    ).toBe("SYLUN-2026-05-003");
   });
 
-  test("createTaskRecord auto-generates a SYLU code when the form code is empty", () => {
+  test("internal monthly sequence does not wrap after 999", () => {
+    expect(buildTaskCode("盐雾试验", [{ code: "SYLUN-2026-09-1000" }], "2026-09-18")).toBe("SYLUN-2026-09-1001");
+    expect(buildTaskCode("盐雾试验", [{ code: "SYLUW-2026-09-999" }], "2026-09-18")).toBe("SYLUN-2026-09-001");
+  });
+
+  test("createTaskRecord auto-generates a SYLUN code when the form code is empty", () => {
     const task = createTaskRecord(
       {
         code: "",
@@ -969,12 +975,12 @@ describe("tasks model", () => {
         due_at: "2026-03-18T12:30",
       },
       [
-        { code: "SYLU-2026-03-001" },
-        { code: "SYLU-2026-03-002" },
+        { code: "SYLUN-2026-03-001" },
+        { code: "SYLUN-2026-03-002" },
       ],
     );
 
-    expect(task.code).toBe("SYLU-2026-03-003");
+    expect(task.code).toBe("SYLUN-2026-03-003");
   });
 
   test("createTaskRecord defaults an empty due_at to Beijing creation time plus 72 hours", () => {

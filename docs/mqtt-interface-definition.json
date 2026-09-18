@@ -1,6 +1,6 @@
 {
   "name": "MES与上位机MQTT接口定义",
-  "version": "2.3",
+  "version": "2.5",
   "encoding": "UTF-8",
   "payloadFormat": "JSON",
   "timeFormat": "北京时间 YYYY-MM-DD HH:mm:ss",
@@ -61,7 +61,10 @@
       "direction": "HOST_TO_MES",
       "topic": "mes/v1/labs/{lab_code}/telemetry/snapshot",
       "qos": 1,
-      "intervalSeconds": 3,
+      "intervalSeconds": 1,
+      "delayedAfterSeconds": 5,
+      "offlineAfterSeconds": 15,
+      "recoveryFreshSamples": 2,
       "payload": {
         "schema_version": "1.0",
         "message_id": "UUID",
@@ -74,8 +77,8 @@
         "cycle": 1,
         "alarms": [],
         "environment": {"temperature_c": 23.6, "humidity_rh": 51.2, "quality": "good"},
-        "test_device": {"configured": true, "online": true, "temperature_c": 38.4, "voltage_v": 220.7, "alarm_code": null},
-        "carrier_device": {"configured": true, "online": true, "temperature_c": 31.2, "voltage_v": 223.1, "alarm_code": null}
+        "test_device": {"configured": true, "online": true, "observed_at": "2026-09-16T14:30:05+08:00", "temperature_c": 38.4, "voltage_v": 220.7, "alarm_code": null},
+        "carrier_device": {"configured": true, "online": true, "observed_at": "2026-09-16T14:30:05+08:00", "temperature_c": 31.2, "voltage_v": 223.1, "alarm_code": null}
       }
     },
     {

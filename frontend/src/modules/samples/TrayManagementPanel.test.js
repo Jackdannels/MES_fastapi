@@ -20,6 +20,42 @@ const buildSamplesFlow = (overrides = {}) => ({
 });
 
 describe("TrayManagementPanel", () => {
+  test("shows the exact arrival room and uses green history for a canceled experiment", () => {
+    const taskCode = "T-ARRIVAL", trayCode = "T-ARRIVAL-TP-001";
+    const samplesFlow = buildSamplesFlow({
+      rawTasks: [{ code: taskCode, status: "已排程" }],
+      rawExperiments: [
+        { task_code: taskCode, experiment_code: "E", experiment_name: "四综合试验", status: "待排程" },
+        { task_code: taskCode, experiment_code: "NEXT", experiment_name: "盐雾试验", status: "已排程" },
+      ],
+      rawExperimentTrays: ["E", "NEXT"].map((experiment_code) => ({ task_code: taskCode, experiment_code, tray_code: trayCode })),
+      rawExperimentRuns: [{ run_no: "OLD", task_code: taskCode, experiment_code: "E", device: "四综合实验室", status: "设备故障试验取消", started_at: "2099-09-15 08:00:00", ended_at: "2099-09-15 09:00:00" }],
+      rawExperimentRunTrays: [{ run_no: "OLD", task_code: taskCode, experiment_code: "E", tray_code: trayCode, run_tray_status: "设备故障试验取消", ended_at: "2099-09-15 09:00:00" }],
+      rawSchedules: [{ id: "S2", task_code: taskCode, experiment_code: "NEXT", device: "盐雾试验室", start_at: "2099-09-15 10:00:00", status: "已排程" }],
+      rawSamples: [{ code: "SP", task_code: taskCode, location: "盐雾试验室", status: "工装夹具安装", flow_status: "工装夹具安装",
+        trays: [{ tray_code: trayCode, quantity: 1, status: "工装夹具安装" }],
+        history: [
+          { status: "已到达实验室", location: "盐雾试验室", time: "2099-09-15 10:00:00", detail: `${taskCode} / 盐雾试验 / 已到达实验室` },
+          { status: "工装夹具安装", location: "盐雾试验室", time: "2099-09-15 10:01:00", detail: `${taskCode} / 盐雾试验 / 工装夹具安装` },
+        ],
+      }],
+      trayRows: [{ taskCode, trayCode, status: "工装夹具安装", sampleCount: 1, sampleCodes: ["SP"] }],
+    });
+    const wrapper = mount(TrayManagementPanel, { props: { samplesFlow } });
+    expect(wrapper.text()).toContain("已到达盐雾试验室");
+    const canceled = wrapper.get('[data-testid="samples-tray-flow-step-device-fault-canceled-OLD"]');
+    expect(canceled.classes()).toContain("reached");
+    expect(canceled.classes()).not.toContain("fault-canceled");
+    expect(canceled.text()).toContain("设备故障试验取消");
+    for (const label of ["送至暂存间", "已到达暂存间"]) {
+      const inferred = wrapper.findAll(".sample-flow-unified--timed li").find((node) => node.get(".sample-flow-label").text() === label);
+      expect(inferred.classes()).toContain("reached");
+      expect(inferred.classes()).not.toContain("current");
+      expect(inferred.get(".sample-flow-time").text()).toBe("-");
+      expect(inferred.attributes("title")).toBe("推导节点，暂无实际时间记录");
+    }
+    wrapper.unmount();
+  });
   test("shows the salt-spray pause remark without replacing the tray flow status", async () => {
     const taskCode = "TASK-SALT-PAUSED";
     const experimentCode = "EXP-SALT-PAUSED";

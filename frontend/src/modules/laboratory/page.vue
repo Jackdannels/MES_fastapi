@@ -160,7 +160,7 @@
               </button>
             </div>
           </div>
-          <div class="laboratory-flow-status" data-testid="laboratory-tray-flow-status">{{ selectedTrayFlow.currentStatus }}</div>
+          <div class="laboratory-flow-status" data-testid="laboratory-tray-flow-status">{{ formatLaboratoryFlowStatus(selectedTrayFlow) }}</div>
           <ol class="laboratory-flow-steps laboratory-flow-steps--tray" data-testid="laboratory-tray-flow-list">
             <li
               v-for="step in selectedTrayFlow.steps"
@@ -168,7 +168,7 @@
               :data-testid="`laboratory-tray-flow-step-${step.key}`"
               :class="{ 'is-active': step.active, 'is-reached': step.reached }"
             >
-              <span class="laboratory-flow-label">{{ step.label }}</span>
+              <span class="laboratory-flow-label">{{ step.displayLabel || step.label }}</span>
               <span class="laboratory-flow-time" :title="formatFlowTime(step.time)">{{ formatFlowTime(step.time) }}</span>
             </li>
           </ol>
@@ -1051,6 +1051,7 @@ import { normalizeTrayScanCode } from "@/lib/trayQrCode";
 import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 import { useLaboratoryPage } from "./useLaboratoryPage";
+import { formatLaboratoryFlowStatus } from "@/modules/samples/sampleFlow.arrivalPresentation";
 
 const TASK_TRAY_PREVIEW_LIMIT = 3;
 const RUNNING_TRAY_PREVIEW_LIMIT = 3;

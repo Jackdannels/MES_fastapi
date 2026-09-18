@@ -236,7 +236,7 @@
               'pause-reset': step.pauseResetState === 'historical' || step.pauseResetRequired,
             }"
           >
-            <span class="sample-flow-label">{{ step.label }}</span>
+            <span class="sample-flow-label">{{ step.displayLabel || step.label }}</span>
             <span class="sample-flow-time">{{ formatFlowTime(step.time) }}</span>
           </li>
         </ol>

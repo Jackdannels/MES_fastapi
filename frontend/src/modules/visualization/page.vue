@@ -51,6 +51,8 @@
             :labs="labsForScreen(screen)"
             :lab-names="labNames"
             :telemetry="laboratoryTelemetry"
+            :monitor-status="telemetryMonitorStatus"
+            :monitor-message="telemetryMonitorMessage"
             :current-lab-task-view="currentLabTaskView"
             :attendance-sessions="attendanceSessions"
             :devices="deviceItems"
@@ -87,6 +89,8 @@
             :labs="labsForScreen(selectedScreen)"
             :lab-names="labNames"
             :telemetry="laboratoryTelemetry"
+            :monitor-status="telemetryMonitorStatus"
+            :monitor-message="telemetryMonitorMessage"
             :current-lab-task-view="currentLabTaskView"
             :attendance-sessions="attendanceSessions"
             :devices="deviceItems"
@@ -179,6 +183,8 @@
                   :labs="labsForScreen(screen)"
                   :lab-names="labNames"
                   :telemetry="laboratoryTelemetry"
+                  :monitor-status="telemetryMonitorStatus"
+                  :monitor-message="telemetryMonitorMessage"
                   :current-lab-task-view="currentLabTaskView"
                   :attendance-sessions="attendanceSessions"
                   :devices="deviceItems"
@@ -239,7 +245,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { listLaboratoryAttendanceSessions } from "@/lib/attendanceApi";
-import { listLaboratoryTelemetry } from "@/lib/laboratoryTelemetryApi";
+import { readLaboratoryTelemetrySnapshot } from "@/lib/laboratoryTelemetryApi";
 import { serverNowDate } from "@/lib/serverClock";
 import { readStorageSnapshot } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -369,6 +375,10 @@ const { loadSnapshot: loadInitialSnapshot } = useStorageSnapshot(VISUALIZATION_S
 const rawSnapshot = ref({});
 const attendanceSessions = ref([]);
 const laboratoryTelemetry = ref([]);
+const telemetryMonitorStatus = ref("online");
+const telemetryMonitorMessage = ref("");
+let telemetryRequestController = null;
+let telemetryStopped = false;
 const hasOwn = (source, key) => Object.prototype.hasOwnProperty.call(source, key);
 
 const normalizeVisualizationRefreshKeys = (keys) => {
@@ -416,7 +426,7 @@ let telemetryRefreshTimer = null;
 const SCREEN_STAGE_WIDTH = 1920;
 const SCREEN_STAGE_HEIGHT = 1080;
 const ATTENDANCE_REFRESH_MS = 10_000;
-const TELEMETRY_REFRESH_MS = 3_000;
+const TELEMETRY_REFRESH_MS = 1_000;
 const COMBINED_COLUMNS = 4;
 const COMBINED_ROWS = 2;
 const COMBINED_GAP = 6;
@@ -708,10 +718,22 @@ const refreshAttendanceSessions = async () => {
   }
 };
 const refreshLaboratoryTelemetry = async () => {
+  if (telemetryRequestController || telemetryStopped) return;
+  const controller = new AbortController();
+  telemetryRequestController = controller;
+  const timeout = window.setTimeout(() => controller.abort(), 3000);
   try {
-    laboratoryTelemetry.value = await listLaboratoryTelemetry();
+    const result = await readLaboratoryTelemetrySnapshot({ signal: controller.signal });
+    if (telemetryStopped) return;
+    laboratoryTelemetry.value = result.items;
+    telemetryMonitorStatus.value = result.monitorStatus;
+    telemetryMonitorMessage.value = result.monitorMessage;
   } catch {
-    // Keep the last valid MQTT snapshot while the API connection recovers.
+    telemetryMonitorStatus.value = "offline";
+    telemetryMonitorMessage.value = "MES 查询链路中断，设备状态暂不可确认";
+  } finally {
+    window.clearTimeout(timeout);
+    telemetryRequestController = null;
   }
 };
 useStorageSnapshotRefresh({
@@ -739,6 +761,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  telemetryStopped = true;
+  telemetryRequestController?.abort();
   window.removeEventListener("resize", refreshViewportSize);
   if (attendanceRefreshTimer) {
     window.clearInterval(attendanceRefreshTimer);

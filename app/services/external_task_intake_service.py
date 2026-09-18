@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from app.core.axis_codes import axis_codes_for_experiment_type, normalize_axis_codes_for_experiment_type
 from app.core.storage_backend import get_storage_backend
 from app.core.time_utils import now_business_text
+from app.core.task_codes import validate_task_code_source
 from app.services.lims_rabbitmq import LIMS_OUTBOX_KEY
 
 
@@ -234,6 +235,7 @@ def store_external_task_intake(
     task_code_value = task_code(next_intake)
     if not task_code_value:
         raise HTTPException(status_code=400, detail="请填写任务编号")
+    validate_task_code_source(task_code_value, external=True)
     if "test_types" not in next_intake:
         raise HTTPException(status_code=400, detail="test_types is required")
     next_intake["test_types"] = parse_test_types(next_intake.get("test_types"))

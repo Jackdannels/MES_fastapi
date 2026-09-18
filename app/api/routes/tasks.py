@@ -10,6 +10,7 @@ from app.core.axis_codes import (
 )
 from app.core.demo_data_reset import run_demo_reset
 from app.core.storage_backend import get_storage_backend
+from app.core.task_codes import validate_task_code_source
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
 from app.api.routes.storage import publish_storage_update, _validate_fixture_locked_schedules
 from app.services.attendance_service import get_attendance_service
@@ -898,6 +899,7 @@ def add_task_to_snapshot(
     normalized_task_code = normalize_text(next_task.get("code"))
     if not normalized_task_code:
         raise HTTPException(status_code=400, detail="请填写任务编号")
+    validate_task_code_source(normalized_task_code, external=source == EXTERNAL_SOURCE)
     next_task["code"] = normalized_task_code
     next_task["id"] = normalize_text(next_task.get("id")) or normalized_task_code
     if not normalize_text(next_task.get("name")):
@@ -1187,6 +1189,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
     previous_task_code = task_code(previous_task)
     next_task_code = task_code(updated_task)
     if next_task_code != previous_task_code:
+        validate_task_code_source(next_task_code, external=previous_task.get("source") == EXTERNAL_SOURCE)
         ensure_storage_task_code_available(storage, next_task_code, exclude_task_code=previous_task_code)
     existing_experiments = [experiment for experiment in all_experiments if normalize_text(experiment.get("task_code")) == previous_task_code]
     if task_is_completed(previous_task, existing_experiments):
@@ -1237,6 +1240,8 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
             storage.write_many(snapshot)
         publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
         return running_task
+    if "source" in payload_dict and normalize_text(payload_dict["source"]) != normalize_text(previous_task.get("source")):
+        raise HTTPException(status_code=400, detail="任务来源不可修改")
     if explicit_sample_codes_value is not None and task_storage_confirmed(previous_task, samples):
         raise HTTPException(status_code=400, detail=SAMPLE_CODES_LOCKED_MESSAGE)
     if (

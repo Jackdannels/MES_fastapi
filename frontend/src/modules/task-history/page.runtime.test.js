@@ -129,6 +129,31 @@ describe("TaskHistoryPage runtime", () => {
     vi.clearAllMocks();
   });
 
+  test("renders historical dispatch and arrival with their actual room after schedules are released", async () => {
+    const sample = {
+      ...returnedSnapshot[STORAGE_KEYS.samples][0], location: "厂家收回",
+      trays: [{ tray_code: "TP-HISTORY-KEEP", status: "厂家收回", quantity: 1 }],
+      history: [
+        ...returnedSnapshot[STORAGE_KEYS.samples][0].history,
+        { status: "送至实验室", location: "盐雾试验室", time: "2026-05-20 08:00:00", detail: "TP-HISTORY-KEEP -> 盐雾试验室" },
+        { status: "已到达实验室", location: "盐雾试验室", time: "2026-05-20 09:00:00", detail: "TASK-HISTORY-KEEP / 盐雾试验 / 已到达实验室" },
+        { status: "实验已完成", location: "盐雾试验室", time: "2026-05-20 10:00:00", detail: "TASK-HISTORY-KEEP / 盐雾试验 / 实验已完成" },
+      ],
+    };
+    readTaskHistoryPage.mockResolvedValueOnce({
+      currentPage: 1, totalCount: 1, totalPages: 1, tasks: returnedTasks, samples: [sample],
+      experiments: [{ task_code: "TASK-HISTORY-KEEP", experiment_code: "E", experiment_name: "盐雾试验", status: "实验已完成" }],
+      experimentTrays: [{ task_code: "TASK-HISTORY-KEEP", experiment_code: "E", tray_code: "TP-HISTORY-KEEP" }],
+      experimentRuns: [], experimentRunTrays: [], schedules: [], stagingEvents: [], attendanceOperations: [],
+    });
+    const mounted = await mountPage();
+    const flow = mounted.get('[data-testid="history-tray-unified-flow"]');
+    expect(flow.text()).toContain("送至盐雾试验室");
+    expect(flow.text()).toContain("已到达盐雾试验室");
+    expect(flow.text()).not.toContain("送至实验室");
+    expect(flow.text()).not.toContain("已到达实验室");
+  });
+
   test("keeps history rows and selected tray detail when a background refresh omits array snapshot keys", async () => {
     const mounted = await mountPage();
 

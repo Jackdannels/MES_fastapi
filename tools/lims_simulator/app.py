@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import os
 import threading
 import uuid
 from collections import deque
@@ -16,8 +17,10 @@ from pydantic import BaseModel, Field
 
 try:
     from .rabbitmq_runtime import LimsRabbitClient
+    from .task_numbers import TaskNumberSequence
 except ImportError:  # pragma: no cover - direct uvicorn launch from this directory
     from rabbitmq_runtime import LimsRabbitClient
+    from task_numbers import TaskNumberSequence
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -58,11 +61,11 @@ class RandomBatchRequest(BaseModel):
 
 
 class LimsSimulator:
-    def __init__(self) -> None:
+    def __init__(self, *, sequence_path: Path | None = None) -> None:
         self._lock = threading.RLock()
         self._logs: deque[dict[str, Any]] = deque(maxlen=MAX_LOGS)
         self._sent_count = 0
-        self._sequence = 0
+        self._numbers = TaskNumberSequence(sequence_path or Path(os.environ.get("LIMS_SEQUENCE_PATH") or BASE_DIR / "data" / "task-sequence.sqlite3"))
         self._task_statuses: dict[str, str] = {}
         self.rabbit: LimsRabbitClient | None = None
 
@@ -91,11 +94,8 @@ class LimsSimulator:
         }
 
     def next_task_code(self) -> str:
-        current = now_beijing()
         with self._lock:
-            self._sequence = (self._sequence + 1) % 100
-            sequence = self._sequence
-        return f"SYLU-{current.strftime('%Y-%m-%d-%H%M%S')}-{sequence:02d}"
+            return self._numbers.next_code(now_beijing().strftime("%Y-%m"))
 
     def random_task(self) -> dict[str, Any]:
         rng = random.SystemRandom()
@@ -134,6 +134,11 @@ class LimsSimulator:
         next_payload = dict(payload)
         next_payload["lims_request_id"] = normalize_text(next_payload.get("lims_request_id")) or f"LIMS-{uuid.uuid4().hex}"
         next_payload["source"] = "外部委托"
+        next_payload["code"] = normalize_text(next_payload.get("code"))
+        try:
+            self._numbers.observe(next_payload["code"])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         try:
             if not self.rabbit:
                 raise RuntimeError("RabbitMQ 运行时未初始化")

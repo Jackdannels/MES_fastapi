@@ -1,4 +1,6 @@
 import { normalizeText } from "./sampleFlow.shared";
+import { insertMoldPendingRoute } from "./sampleFlow.moldPendingRoute";
+import { projectMoldFollowup } from "./sampleFlow.moldFollowup";
 import {
   asArray,
   parseTimeValue,
@@ -507,6 +509,14 @@ const decorateMoldCancellationSteps = (flow, input = {}) => {
     steps.splice(steps.indexOf(existingUnfinishedStep), 1);
   }
 
+  if ((cancellationIsCurrent || recoveryIsCurrent) && currentCancellationStep) {
+    insertMoldPendingRoute(steps, input, {
+      cancellation: currentCancellationStep,
+      recovery: recoveryStep,
+      relation: latestCancellationRelation,
+    });
+  }
+
   if (recoveryIsCurrent) {
     steps.forEach((step) => {
       step.active = false;
@@ -533,6 +543,9 @@ const decorateMoldCancellationSteps = (flow, input = {}) => {
     };
   }
   if (!cancellationIsCurrent) {
+    if (currentCancellationStep) {
+      projectMoldFollowup(steps, input, { cancellation: currentCancellationStep, recovery: recoveryStep, relation: latestCancellationRelation });
+    }
     return { ...flow, steps };
   }
   steps.forEach((step) => {

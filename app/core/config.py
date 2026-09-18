@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     MQTT_CONNECT_TIMEOUT_SECONDS: float = 10.0
     MQTT_PUBLISH_TIMEOUT_SECONDS: float = 10.0
     MQTT_PUBLISH_SLOW_MS: float = 250.0
+    TELEMETRY_DELAYED_AFTER_SECONDS: float = 5.0
+    TELEMETRY_OFFLINE_AFTER_SECONDS: float = 15.0
 
     RABBITMQ_ENABLED: bool = False
     RABBITMQ_REQUIRED: bool = True

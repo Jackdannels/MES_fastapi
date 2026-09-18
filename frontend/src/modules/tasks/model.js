@@ -39,7 +39,7 @@ const COMPLETED_TRAY_STATUSES = new Set([
 ]);
 const COMPLETED_EXPERIMENT_STATUSES = new Set([EXPERIMENT_STATUS_COMPLETED, LEGACY_STATUS_COMPLETED, LEGACY_STATUS_COMPLETED_ALT]);
 const RETURNED_TRAY_STATUSES = new Set(["厂家收回"]);
-const SYLU_TASK_CODE_PATTERN = /^SYLU-(\d{4})-(\d{2})-(\d{3})$/;
+const INTERNAL_TASK_CODE_PATTERN = /^SYLUN-(\d{4})-(\d{2})-(\d{3,})$/;
 const MIN_SAMPLE_COUNT = 1;
 const MAX_SAMPLE_COUNT = 99;
 const MAX_CONTACT_LENGTH = 15;
@@ -507,7 +507,7 @@ const resolveTaskCodeDate = (referenceValue) => {
   return parsed;
 };
 
-// 所有新任务统一按 SYLU-YYYY-MM-NNN 递增，不再按旧实验前缀分流。
+// 内部新建按 SYLUN-YYYY-MM-NNN 递增，与 LIMS 的 SYLUW 号段隔离。
 function buildTaskCode(testType, tasks, referenceValue = serverNowDate()) {
   const codeDate = resolveTaskCodeDate(referenceValue);
   const year = codeDate.getFullYear();
@@ -518,7 +518,7 @@ function buildTaskCode(testType, tasks, referenceValue = serverNowDate()) {
   // 同月任务共用一条主线编号，不再按实验类型拆前缀。
   taskList.forEach((task) => {
     const taskCode = normalizeText(task?.code);
-    const matched = taskCode.match(SYLU_TASK_CODE_PATTERN);
+    const matched = taskCode.match(INTERNAL_TASK_CODE_PATTERN);
     if (!matched) {
       return;
     }
@@ -531,7 +531,7 @@ function buildTaskCode(testType, tasks, referenceValue = serverNowDate()) {
     }
   });
 
-  return `SYLU-${year}-${month}-${String(maxSeq + 1).padStart(3, "0")}`;
+  return `SYLUN-${year}-${month}-${String(maxSeq + 1).padStart(3, "0")}`;
 }
 
 const buildDefaultTaskName = (taskCode, tasks = []) => {
@@ -665,11 +665,10 @@ function createTaskRecord(form, tasks) {
     selectedTestTypes,
     selectedTestTypes.length > 0 ? "" : form?.test_type,
   );
-  // 优先使用表单中已有任务号，否则按试验类型自动生成，再兜底为时间戳编号。
+  // 优先使用表单中已有任务号，否则按内部任务月度流水生成。
   const currentDate = serverNowDate();
   const taskCode = normalizeText(form?.code)
-    || buildTaskCode(testTypeSummary, tasks, form?.due_at || form?.arrival_at || currentDate)
-    || `SYLU-${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-${serverNowMs().toString().slice(-3)}`;
+    || buildTaskCode(testTypeSummary, tasks, form?.due_at || form?.arrival_at || currentDate);
   return {
     id: createId("task"),
     code: taskCode,

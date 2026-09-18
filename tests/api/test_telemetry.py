@@ -26,4 +26,13 @@ def test_laboratory_telemetry_endpoint_returns_upper_computer_snapshot() -> None
     assert response.status_code == 200
     assert response.json()["items"][0]["lab_code"] == "LAB_IMPACT_1"
     assert response.json()["items"][0]["connection_status"] == "online"
-    assert response.json()["refresh_interval_seconds"] == 3
+    assert response.json()["refresh_interval_seconds"] == 1
+
+
+def test_mqtt_receiver_loss_is_reported_as_monitor_outage(monkeypatch):
+    monkeypatch.setattr(app.state.mq_runtime, "status", lambda: {"subscriber_running": False})
+    result = client.get("/api/telemetry/laboratories").json()
+    assert result["monitor_status"] == "offline"
+    assert "MQTT 接收链路中断" in result["monitor_message"]
+    monkeypatch.setattr(app.state.mq_runtime, "status", lambda: {"subscriber_running": True})
+    assert client.get("/api/telemetry/laboratories").json()["monitor_status"] == "online"

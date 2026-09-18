@@ -161,7 +161,7 @@
                 </p>
 
                 <div class="history-tray-unified-flow" data-testid="history-tray-unified-flow">
-                  <div class="history-tray-flow-current">{{ selectedTrayFlow.currentStatus }}</div>
+                  <div class="history-tray-flow-current">{{ formatLaboratoryFlowStatus(selectedTrayFlow) }}</div>
                   <div class="history-tray-flow-grid">
                     <div
                       v-for="(step, index) in selectedTrayFlow.steps"
@@ -169,7 +169,7 @@
                       class="history-tray-flow-step"
                       :class="{ current: step.active, reached: step.reached }"
                     >
-                      <span class="history-flow-label">{{ step.label }}</span>
+                      <span class="history-flow-label">{{ step.displayLabel || step.label }}</span>
                       <span class="history-flow-time" :title="formatHistoryTime(step.time)">
                         <span class="history-flow-time__date">{{ formatHistoryDatePart(step.time) }}</span>
                         <span class="history-flow-time__clock">{{ formatHistoryClockPart(step.time) }}</span>
@@ -232,6 +232,7 @@ import AppPagination from "@/components/shared/AppPagination.vue";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { readTaskHistoryPage } from "@/lib/taskHistoryApi";
 import { buildTrayFlowView } from "@/modules/samples/samplesFlowModel";
+import { formatLaboratoryFlowStatus } from "@/modules/samples/sampleFlow.arrivalPresentation";
 
 import {
   buildReturnedTaskHistoryView,

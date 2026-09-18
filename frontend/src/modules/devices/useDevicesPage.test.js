@@ -141,6 +141,63 @@ describe("useDevicesPage", () => {
     mocks.persistSnapshot.mockReset();
   });
 
+  test.each(["维修", "保养", "计划维修", "计划保养"])("saves %s without resubmitting completed schedules or unrelated workflow data", async (type) => {
+    const snapshot = buildRunningExperimentSnapshot();
+    snapshot["mes.experiment_runs"] = [];
+    snapshot["mes.samples"] = [];
+    snapshot["mes.schedules"][0].status = "实验已完成";
+    snapshot["mes.schedules"][0].planned_hours = 1;
+    mocks.loadSnapshot.mockResolvedValueOnce(snapshot);
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+    wrapper.vm.maintenancePlanForm.type = type;
+    await settle(wrapper);
+    if (type.startsWith("计划")) wrapper.vm.maintenancePlanForm.startAt = "2099-03-21T08:00";
+
+    await wrapper.vm.saveMaintenancePlan();
+
+    expect(mocks.persistSnapshot).toHaveBeenCalledTimes(1);
+    expect(Object.keys(mocks.persistSnapshot.mock.calls[0][0])).toEqual(["mes.devices"]);
+    expect(mocks.persistSnapshot.mock.calls[0][0]["mes.devices"][0].maintenance_type).toBe(type);
+    expect(wrapper.vm.maintenancePlanOpen).toBe(false);
+    // A subsequent save must still work with the retained local workflow arrays.
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+    await wrapper.vm.saveMaintenancePlan();
+    expect(mocks.persistSnapshot).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+  });
+
+  test.each(["维修", "保养"])("shows rejected %s saves without changing device state and allows retry", async (type) => {
+    mocks.loadSnapshot.mockResolvedValueOnce({
+      "mes.devices": [{ code: "冲击一室", name: "冲击试验系统-1", status: "可用" }],
+    });
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+    const previousRows = structuredClone(wrapper.vm.deviceRows);
+    const previousMetrics = { ...wrapper.vm.metrics };
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows[0]);
+    wrapper.vm.maintenancePlanForm.type = type;
+    wrapper.vm.maintenancePlanForm.note = "保留输入";
+    await settle(wrapper);
+    mocks.persistSnapshot.mockRejectedValueOnce(new Error("完成任务比对后排程不可删除或重新排程。"));
+
+    await expect(wrapper.vm.saveMaintenancePlan()).resolves.toBeUndefined();
+
+    expect(wrapper.vm.maintenancePlanWarning).toBe("完成任务比对后排程不可删除或重新排程。");
+    expect(wrapper.vm.maintenancePlanOpen).toBe(true);
+    expect(wrapper.vm.maintenancePlanForm.note).toBe("保留输入");
+    expect(wrapper.vm.deviceRows).toEqual(previousRows);
+    expect(wrapper.vm.metrics).toEqual(previousMetrics);
+
+    await wrapper.vm.saveMaintenancePlan();
+
+    expect(wrapper.vm.maintenancePlanWarning).toBe("");
+    expect(wrapper.vm.maintenancePlanOpen).toBe(false);
+    expect(wrapper.vm.deviceRows.find((row) => row.code === "冲击一室").status).toBe(type);
+    wrapper.unmount();
+  });
+
   test("blocks saving an overlapping maintenance plan without deleting schedules", async () => {
     const wrapper = mount(TestHarness);
     await settle(wrapper);

@@ -12,6 +12,7 @@ const visualizationScreenPaths = [
   "labScheduleScreen.js",
   "stagingSamplesScreen.js",
   "statusScreens.js",
+  "labTelemetryScreen.js",
   "taskPlanScreen.js",
 ].map((file) => resolve(process.cwd(), "src/modules/visualization/screens", file));
 const readVisualizationSource = () => [visualizationPagePath, ...visualizationScreenPaths]
@@ -19,6 +20,11 @@ const readVisualizationSource = () => [visualizationPagePath, ...visualizationSc
   .join("\n");
 
 describe("visualization styles", () => {
+  test("inferred process steps use green while retaining their distinct semantic class", () => {
+    const source = readFileSync(visualizationStylesPath, "utf8");
+    expect(source.match(/\.visual-flow-step\.is-inferred\s*\{([^}]+)\}/)?.[1]).toContain("var(--status-success-text)");
+    expect(source.match(/\.visual-flow-step\.is-inferred \.visual-flow-dot\s*\{([^}]+)\}/)?.[1]).toContain("var(--screen-green)");
+  });
   test("screen seven enlarges every text role in full-screen and compact previews", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
     const rules = new Map(Array.from(source.matchAll(/([^{}]+)\{([^{}]*)\}/g), ([, selector, body]) => [selector.trim(), body]));
@@ -53,11 +59,13 @@ describe("visualization styles", () => {
     }
   });
 
-  test("screen seven preserves readable cards when enlarged copy exceeds a small viewport", () => {
+  test("screen seven fits eleven cards in four columns and three bounded rows", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
     expect(source).toMatch(/\.visual-board\.visual-lab-status-board\s*{[^}]*grid-template-rows:\s*auto auto minmax\(0,\s*1fr\);/s);
-    expect(source).toMatch(/\.visual-lab-status-grid\s*{[^}]*grid-auto-rows:\s*minmax\(min-content,\s*1fr\);[^}]*overflow:\s*auto;/s);
+    expect(source).toMatch(/\.visual-lab-status-grid\s*{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\);[^}]*grid-template-rows:repeat\(3,minmax\(0,1fr\)\);[^}]*overflow:hidden;/s);
+    expect(source).toMatch(/\.visual-lab-status-card\s*{[^}]*min-height:0;[^}]*overflow:hidden;/s);
+    expect(source).toMatch(/\.visual-lab-status-metrics\s*{[^}]*grid-template-rows:repeat\(3,minmax\(0,1fr\)\);[^}]*min-height:0;/s);
     expect(source).toMatch(/\.visual-lab-status-board \.visual-board-header\s*{[^}]*flex-wrap:\s*wrap;/s);
     expect(source).toMatch(/\.visual-lab-status-card-head strong\s*{[^}]*overflow-wrap:\s*anywhere;/s);
     expect(source).toMatch(/\.visual-lab-status-metric span\s*{[^}]*overflow-wrap:\s*anywhere;/s);
@@ -68,8 +76,11 @@ describe("visualization styles", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
     const pageSource = readVisualizationSource();
 
-    expect(pageSource).toContain('h("b", "异常警报")');
-    expect(pageSource).toContain('h("em", "超出安全范围")');
+    expect(pageSource).toContain('row.alarm ? "异常警报" : "通信提示"');
+    expect(pageSource).toContain('row.notice ? "" : "is-empty"');
+    expect(source).toMatch(/\.visual-lab-status-card\s*{[^}]*grid-template-rows:28px 28px minmax\(0,1fr\) 20px;/s);
+    expect(source).toMatch(/\.visual-lab-status-alarm\s*{[^}]*height:28px;[^}]*min-height:28px;[^}]*overflow:hidden;/s);
+    expect(source).toMatch(/\.visual-lab-status-alarm\.is-empty\s*{\s*visibility:hidden;/s);
     expect(source).toMatch(/\.visual-lab-status-card\.tone-alarm\s*{[^}]*border:2px solid #ff394f;[^}]*animation:visual-critical-pulse/s);
     expect(source).toMatch(/\.visual-lab-status-metric\.is-alarm\s*{[^}]*border:2px solid #ff5065;/s);
     expect(source).toMatch(/@media \(prefers-reduced-motion:reduce\)\s*{\s*\.visual-lab-status-card\.tone-alarm\s*{\s*animation:none;/s);
@@ -239,11 +250,11 @@ describe("visualization styles", () => {
     expect(pageSource).toContain("flowStepConnectorClass(stepIndex, flowLayoutColumns)");
   });
 
-  test("uses a yellow inferred-node tone instead of orange for reset and compatibility states", () => {
+  test("uses green inferred-node tone rather than the legacy yellow", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
 
-    expect(source).toMatch(/\.visual-flow-step\.is-inferred\s*{[^}]*color:\s*var\(--status-warning-text\);/s);
-    expect(source).toMatch(/\.visual-flow-step\.is-inferred \.visual-flow-dot\s*{[^}]*background:\s*#facc15;/s);
+    expect(source).toMatch(/\.visual-flow-step\.is-inferred\s*{[^}]*color:\s*var\(--status-success-text\);/s);
+    expect(source).toMatch(/\.visual-flow-step\.is-inferred \.visual-flow-dot\s*{[^}]*background:\s*var\(--screen-green\);/s);
     expect(source).not.toMatch(/\.visual-flow-step\.is-inferred \.visual-flow-dot\s*{[^}]*background:\s*#eab308;/s);
   });
 
@@ -263,6 +274,9 @@ describe("visualization styles", () => {
     expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-cycle\s*{[^}]*min-height:\s*44px;[^}]*padding:\s*0 20px;[^}]*font-size:\s*20px;[^}]*white-space:\s*nowrap;/s);
     expect(source).toMatch(/\.visual-board\.is-compact \.visual-lab-name\s*{[^}]*font-size:\s*14px;/s);
     expect(source).not.toContain(".visual-task-code");
+    expect(source).toMatch(/\.visual-lab-heading\s*{[^}]*display:\s*flex;[^}]*flex-wrap:\s*wrap;[^}]*align-items:\s*center;/s);
+    expect(source).toMatch(/\.visual-board\.is-layout-a \.visual-lab-state\s*{[^}]*min-height:\s*38px;[^}]*font-size:\s*24px;/s);
+    expect(source).toMatch(/\.visual-preview-shell\.is-screen-only \.visual-board\.is-layout-a \.visual-board-top\s*{[^}]*padding-right:\s*40px;/s);
   });
 
   test("staging sample screen defines full and compact industrial board layouts", () => {

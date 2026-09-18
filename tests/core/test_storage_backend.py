@@ -120,7 +120,7 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     external_intakes = snapshot["mes.external_task_intakes"]
 
     assert len(tasks) == 20
-    assert [task["code"] for task in tasks] == [f"SYLU-2026-05-{index:03d}" for index in range(1, 21)]
+    assert [task["code"] for task in tasks] == [f"SYLUW-2026-05-{index:03d}" for index in range(1, 11)] + [f"SYLUN-2026-05-{index:03d}" for index in range(1, 11)]
     assert tasks[0]["created_at"].startswith("2026-05-13 ")
     assert tasks[0]["arrival_at"].startswith("2026-05-13")
     assert tasks[0]["due_at"].startswith("2026-05-20")
@@ -133,7 +133,7 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     assert all("盐雾试验" in task["test_types"] for task in tasks)
     assert all(len(set(str(task["test_type"]).split(" / "))) == 3 for task in tasks)
     assert len(external_intakes) == 8
-    assert [item["code"] for item in external_intakes] == [f"SYLU-2026-05-{index:03d}" for index in range(21, 29)]
+    assert [item["code"] for item in external_intakes] == [f"SYLUW-2026-05-{index:03d}" for index in range(11, 19)]
     assert all(item["source"] == "外部委托" and item["acceptance_status"] == "pending" for item in external_intakes)
     assert all(str(item["client"]).endswith("单位") for item in external_intakes)
 
@@ -171,7 +171,7 @@ def test_demo_reset_snapshot_generates_20_fresh_tasks_with_expected_structure() 
     assert all(len(task_samples) > 4 for task_samples in samples_by_task.values())
 
     for task in tasks:
-        assert re.fullmatch(r"SYLU-2026-05-\d{3}", task["code"])
+        assert re.fullmatch(r"SYLU[NW]-2026-05-\d{3}", task["code"])
         assert task["experiment_count"] == 3
         assert len(task["experiment_codes"]) == 3
         assert task["test_type"] == " / ".join(task["test_types"])
@@ -1301,7 +1301,7 @@ def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_
     assert writes["mes.experiment_run_steps"] == []
     assert writes["mes.staging_events"] == []
     today = datetime.now()
-    assert writes["mes.tasks"][0]["code"] == f"SYLU-{today.year}-{today.month:02d}-001"
+    assert writes["mes.tasks"][0]["code"] == f"SYLUW-{today.year}-{today.month:02d}-001"
 
 
 def test_run_demo_reset_returns_summary_counts() -> None:

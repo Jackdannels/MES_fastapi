@@ -2999,7 +2999,7 @@ describe("LaboratoryPage runtime", () => {
     await flushPageUpdates();
 
     expect(mounted.get('[data-testid="laboratory-tray-flow-status"]').text()).toBe(
-      "当前托盘：SYLU-2026-07-001-TP-002 | 当前状态：已到达实验室",
+      "当前托盘：SYLU-2026-07-001-TP-002 | 当前状态：已到达振动一室",
     );
     expect(resetTaskButton()?.hasAttribute("disabled")).toBe(false);
   });

@@ -10383,7 +10383,7 @@ describe("samplesFlowModel", () => {
     expect(stagingArrivalIndex).toBeLessThan(moldDispatchIndex);
     ["送至暂存间", "已到达暂存间"].forEach((label) => {
       expect(view.steps.find((step) => step.label === label)).toEqual(
-        expect.objectContaining({ active: false, reached: true, time: "" }),
+        expect.objectContaining({ active: false, reached: true, inferred: true, time: "" }),
       );
     });
     expect(view.steps.find((step) => step.label === "送至霉菌试验室")).toEqual(
@@ -10490,7 +10490,7 @@ describe("samplesFlowModel", () => {
     expect(dispatchedView.currentStatus).toBe(`当前托盘：${trayCode} | 当前状态：送至四综合实验室`);
     ["送至暂存间", "已到达暂存间"].forEach((label) => {
       expect(dispatchedView.steps.find((step) => step.label === label)).toEqual(
-        expect.objectContaining({ active: false, reached: true, time: "" }),
+        expect.objectContaining({ active: false, reached: true, inferred: true, time: "" }),
       );
     });
 
@@ -10631,7 +10631,9 @@ describe("samplesFlowModel", () => {
     expect(appearanceIndex).toBeGreaterThan(-1);
     expect(canceledIndex).toBeGreaterThan(appearanceIndex);
     expect(recoveryIndex).toBeGreaterThan(canceledIndex);
-    expect(unfinishedIndex).toBe(recoveryIndex + 1);
+    expect(labels.slice(recoveryIndex + 1, recoveryIndex + 3)).toEqual(["送至暂存间", "已到达暂存间"]);
+    // The next actual experiment's preparation precedes the remaining mold obligation.
+    expect(unfinishedIndex).toBe(recoveryIndex + 7);
     expect(vibrationIndex).toBeGreaterThan(recoveryIndex);
     expect(view.steps[canceledIndex].time).toBe("2026-09-10 17:07:35");
     expect(view.steps[recoveryIndex].time).toBe("2026-09-10 17:07:44");
@@ -10688,9 +10690,11 @@ describe("samplesFlowModel", () => {
     const unfinishedIndex = canceledView.steps.findIndex((step) => step.label === "霉菌试验未完成");
     expect(canceledIndex).toBeGreaterThan(-1);
     expect(recoveryIndex).toBe(canceledIndex + 1);
-    expect(stagingDispatchIndex).toBe(-1);
-    expect(stagingArrivalIndex).toBe(-1);
-    expect(unfinishedIndex).toBe(recoveryIndex + 1);
+    expect(stagingDispatchIndex).toBe(recoveryIndex + 1);
+    expect(stagingArrivalIndex).toBe(recoveryIndex + 2);
+    expect(unfinishedIndex).toBe(recoveryIndex + 8);
+    expect(canceledView.steps[stagingDispatchIndex]).toMatchObject({ reached: false, active: false, time: "" });
+    expect(canceledView.steps[stagingArrivalIndex]).toMatchObject({ reached: false, active: false, time: "" });
     expect(canceledView.steps[canceledIndex]).toEqual(expect.objectContaining({
       active: true,
       reached: true,
@@ -10710,8 +10714,8 @@ describe("samplesFlowModel", () => {
     expect(canceledView.steps.slice(unfinishedIndex).every((step) => (
       step.active === false && step.reached === false
     ))).toBe(true);
-    ["送至暂存间", "已到达暂存间", "送至霉菌试验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "霉菌试验进行中"].forEach((label) => {
-      expect(canceledView.steps.map((step) => step.label)).not.toContain(label);
+    ["待重新排程", "送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪"].forEach((label) => {
+      expect(canceledView.steps.find((step) => step.label === label)).toMatchObject({ active: false, reached: false, time: "" });
     });
     expect(canceledView.steps.map((step) => step.label)).toContain("霉菌试验未完成");
     expect(canceledView.steps.map((step) => step.label)).toContain("冲击试验未完成");
@@ -10749,9 +10753,8 @@ describe("samplesFlowModel", () => {
     expect(completedView.steps.find((step) => step.label === "霉菌试验已取消")).toEqual(
       expect.objectContaining({ active: false, reached: true }),
     );
-    expect(completedView.steps[completedDispatchIndex]).toEqual(
-      expect.objectContaining({ reached: true }),
-    );
+    // In-place reruns do not fabricate a dispatch when there is no new dispatch evidence.
+    expect(completedDispatchIndex).toBe(-1);
     expect(completedView.steps.find((step) => step.label === "霉菌试验已完成")).toEqual(
       expect.objectContaining({ active: true, reached: false }),
     );
@@ -10915,9 +10918,10 @@ describe("samplesFlowModel", () => {
     const recoveryIndex = labels.indexOf("霉菌取消后恢复处理");
     const unfinishedIndex = labels.indexOf("霉菌试验未完成");
     expect(recoveryIndex).toBe(canceledIndex + 1);
-    expect(unfinishedIndex).toBe(recoveryIndex + 1);
-    ["送至霉菌试验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "霉菌试验进行中"].forEach((label) => {
-      expect(labels).not.toContain(label);
+    expect(labels.slice(recoveryIndex + 1, recoveryIndex + 3)).toEqual(["送至暂存间", "已到达暂存间"]);
+    expect(unfinishedIndex).toBe(recoveryIndex + 8);
+    ["待重新排程", "送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪"].forEach((label) => {
+      expect(view.steps.find((step) => step.label === label)).toMatchObject({ active: false, reached: false, time: "" });
     });
     expect(labels).toContain("霉菌试验未完成");
     expect(view.steps.map((step) => step.label)).not.toContain("霉菌试验已完成");

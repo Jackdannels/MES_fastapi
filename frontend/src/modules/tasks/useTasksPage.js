@@ -277,7 +277,7 @@ function useTasksPage() {
 
   const syncIntakeDerivedFields = () => {
     intakeForm.value.test_type = intakeExperimentPlainSummary.value;
-    // 任务编号统一按 SYLU-年月-序号生成，月份优先跟随期望完成时间。
+    // 内部任务按 SYLUN-年月-序号生成，月份优先跟随期望完成时间。
     const nextCode = buildTaskCode(
       intakeForm.value.test_type,
       [...rawTasks.value, ...rawExternalTaskIntakes.value],

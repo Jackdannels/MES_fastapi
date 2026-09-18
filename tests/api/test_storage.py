@@ -3739,6 +3739,49 @@ def test_storage_key_update_publishes_changed_key(monkeypatch):
     assert published == [["mes.tasks"]]
 
 
+@pytest.mark.parametrize("maintenance_type", ["维修", "保养"])
+@pytest.mark.parametrize("incoming_hours, expected_status", [(1, 200), ("1.00", 200), (1.5, 400), ("invalid", 400), (None, 400)])
+def test_storage_maintenance_preserves_numeric_duration_of_locked_schedule(
+    monkeypatch, maintenance_type, incoming_hours, expected_status
+):
+    schedule = {
+        "id": "schedule-completed",
+        "task_code": "TASK-COMPLETED",
+        "experiment_code": "EXP-COMPLETED",
+        "device": "盐雾试验室",
+        "planned_hours": 1.0,
+        "status": "实验已完成",
+    }
+    device = {"code": "冲击一室", "status": "可用"}
+    client, storage = build_client(monkeypatch, {
+        "mes.devices": [device],
+        "mes.schedules": [schedule],
+        "mes.experiment_runs": [{
+            "run_no": "RUN-COMPLETED",
+            "schedule_id": schedule["id"],
+            "task_code": schedule["task_code"],
+            "experiment_code": schedule["experiment_code"],
+            "status": "实验已完成",
+            "started_at": "2026-06-23 08:00:00",
+        }],
+    })
+    updated_device = {**device, "status": maintenance_type, "maintenance_type": maintenance_type}
+
+    response = client.put("/api/storage", json={
+        "mes.devices": [updated_device],
+        "mes.schedules": [{**schedule, "planned_hours": incoming_hours}],
+    })
+
+    assert response.status_code == expected_status
+    if expected_status == 200:
+        assert storage.read("mes.devices") == [updated_device]
+        assert float(storage.read("mes.schedules")[0]["planned_hours"]) == 1.0
+    else:
+        assert response.json()["detail"] == "完成任务比对后排程不可删除或重新排程。"
+        assert storage.read("mes.devices") == [device]
+        assert storage.read("mes.schedules") == [schedule]
+
+
 def test_storage_rejects_deleting_schedule_after_fixture_install(monkeypatch):
     schedules = [
         {

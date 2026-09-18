@@ -55,7 +55,6 @@ function createDeviceMaintenanceSchedule({ maintenancePlanDevice, state }) {
     const removedScheduleIds = new Set(conflictingSchedules.map((schedule) => normalizeText(schedule?.id)).filter(Boolean));
     const removedExperimentKeys = new Set(conflictingSchedules.map((schedule) =>
       `${normalizeText(schedule?.task_code)}::${normalizeText(schedule?.experiment_code)}`));
-    const { samplesByTaskCode, taskByCode } = buildTransferConfirmedContext();
     const nextDevices = rawDevicesIncludingMaintenanceTarget(deviceCode).map((device) => {
       if (normalizeText(device?.code) !== normalizeText(deviceCode)) {
         return { ...device };
@@ -71,6 +70,11 @@ function createDeviceMaintenanceSchedule({ maintenancePlanDevice, state }) {
       }
       return nextDevice;
     });
+    // Ordinary maintenance does not edit schedules, tasks, or experiments.
+    if (conflictingSchedules.length === 0) {
+      return { [STORAGE_KEYS.devices]: nextDevices };
+    }
+    const { samplesByTaskCode, taskByCode } = buildTransferConfirmedContext();
     const nextSchedules = state.rawSchedules.value.filter((schedule) => !removedScheduleIds.has(normalizeText(schedule?.id)));
     const nextExperiments = state.rawExperiments.value.map((experiment) => {
       const key = `${normalizeText(experiment?.task_code)}::${normalizeText(experiment?.experiment_code)}`;

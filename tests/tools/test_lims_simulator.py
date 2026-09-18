@@ -1,6 +1,15 @@
 from fastapi.testclient import TestClient
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+import pytest
 
 from tools.lims_simulator import app as lims_app
+from tools.lims_simulator.task_numbers import TaskNumberSequence
+
+
+@pytest.fixture(autouse=True)
+def isolate_simulator_sequence(monkeypatch, tmp_path):
+    monkeypatch.setattr(lims_app, "simulator", lims_app.LimsSimulator(sequence_path=tmp_path / "sequence.sqlite3"))
 
 
 class FakeRabbitClient:
@@ -52,6 +61,7 @@ def test_lims_simulator_serves_rabbit_state_and_generates_valid_task(monkeypatch
     assert state.json()["version"] == "1.0"
     assert client.get("/openapi.json").json()["info"]["version"] == "1.0"
     assert generated.status_code == 200
+    assert generated.json()["code"] == f"SYLUW-{lims_app.now_beijing():%Y-%m}-021"
     assert generated.json()["source"] == "外部委托"
     assert generated.json()["client"].endswith("单位")
     assert generated.json()["test_types"]
@@ -82,7 +92,7 @@ def test_lims_simulator_serves_rabbit_state_and_generates_valid_task(monkeypatch
 def test_lims_simulator_publishes_only_through_rabbitmq(monkeypatch):
     client, fake = build_client(monkeypatch)
     payload = {
-        "code": "SYLU-2026-07-021",
+        "code": "SYLUW-2026-07-021",
         "name": "LIMS委托021",
         "client": "37单位",
         "contact": "李四",
@@ -99,3 +109,35 @@ def test_lims_simulator_publishes_only_through_rabbitmq(monkeypatch):
     assert fake.published[0]["source"] == "外部委托"
     assert fake.published[0]["lims_request_id"].startswith("LIMS-")
     assert fake.published[0]["axis_codes_by_test_type"] == {}
+
+
+def test_sequence_survives_restart_and_resets_by_month(tmp_path):
+    path = tmp_path / "sequence.sqlite3"
+    assert TaskNumberSequence(path).next_code("2026-09") == "SYLUW-2026-09-021"
+    assert TaskNumberSequence(path).next_code("2026-09") == "SYLUW-2026-09-022"
+    assert TaskNumberSequence(path).next_code("2026-10") == "SYLUW-2026-10-021"
+    assert TaskNumberSequence(path).next_code("2026-09") == "SYLUW-2026-09-023"
+
+
+def test_sequence_allocates_unique_numbers_across_instances(tmp_path):
+    path = tmp_path / "sequence.sqlite3"
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        codes = list(pool.map(lambda _: TaskNumberSequence(path).next_code("2026-09"), range(24)))
+    assert set(codes) == {f"SYLUW-2026-09-{value:03d}" for value in range(21, 45)}
+
+
+def test_manual_send_advances_sequence_without_wrapping(monkeypatch):
+    monkeypatch.setattr(lims_app, "now_beijing", lambda: datetime(2026, 9, 18, tzinfo=lims_app.BEIJING_TZ))
+    client, fake = build_client(monkeypatch)
+    assert client.post("/api/tasks/send", json={"code": "SYLUW-2026-09-999"}).status_code == 200
+    assert fake.published[0]["code"] == "SYLUW-2026-09-999"
+    assert client.post("/api/tasks/generate").json()["code"] == "SYLUW-2026-09-1000"
+
+
+@pytest.mark.parametrize("code", ["SYLUN-2026-09-001", "SYLU-2026-09-001", "SYLUW-2026-13-001", "SYLUW-2026-09-000"])
+def test_simulator_rejects_wrong_namespace_before_publishing(monkeypatch, code):
+    client, fake = build_client(monkeypatch)
+    response = client.post("/api/tasks/send", json={"code": code})
+    assert response.status_code == 400
+    assert "SYLUW" in response.json()["detail"]
+    assert fake.published == []

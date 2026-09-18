@@ -55,8 +55,8 @@
 .visual-lab-status-summary-item strong { color:#ecfffb; font:700 24px/1 "Cascadia Mono", Consolas, monospace; }
 .visual-lab-status-summary-item:first-child strong { color:#ff6476; }
 .visual-lab-status-board:has(.tone-alarm) .visual-board-clock strong { color:#ff6476; }
-.visual-lab-status-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); grid-auto-rows:minmax(min-content,1fr); gap:8px; min-height:0; align-content:stretch; overflow:auto; }
-.visual-lab-status-card { display:grid; grid-template-rows:auto 1fr; min-width:0; min-height:min-content; padding:9px; border:1px solid rgba(91,221,213,.22); background:rgba(3,17,18,.78); }
+.visual-lab-status-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); grid-template-rows:repeat(3,minmax(0,1fr)); gap:8px; min-height:0; align-content:stretch; overflow:hidden; }
+.visual-lab-status-card { display:grid; grid-template-rows:28px 28px minmax(0,1fr) 20px; min-width:0; min-height:0; overflow:hidden; padding:6px; border:2px solid rgba(91,221,213,.22); background:rgba(3,17,18,.78); }
 .visual-lab-status-card.tone-running { border-color:rgba(94,229,139,.5); box-shadow:inset 3px 0 0 var(--status-green); }
 .visual-lab-status-card.tone-idle { border-color:rgba(244,182,74,.38); box-shadow:inset 3px 0 0 var(--status-amber); }
 .visual-lab-status-card.tone-online { border-color:rgba(94,229,139,.5); box-shadow:inset 3px 0 0 var(--status-green); }
@@ -65,7 +65,7 @@
 .visual-lab-status-card.tone-alarm { border:2px solid #ff394f; box-shadow:inset 5px 0 0 #ff394f,0 0 24px rgba(255,57,79,.36); background:linear-gradient(135deg,rgba(88,11,24,.94),rgba(23,9,14,.94)); animation:visual-critical-pulse 1.2s ease-in-out infinite; }
 .visual-lab-status-card-head { display:flex; justify-content:space-between; align-items:center; gap:8px; padding-bottom:7px; border-bottom:1px solid rgba(91,221,213,.16); }
 .visual-lab-status-card-head strong { min-width:0; overflow-wrap:anywhere; font-size:20px; }
-.visual-lab-status-card-head span { display:inline-flex; align-items:center; flex-shrink:0; gap:4px; color:#a6c5c1; font-size:15px; white-space:nowrap; }
+.visual-lab-status-card-head span { display:inline-flex; align-items:center; flex-shrink:0; max-width:50%; gap:4px; color:#a6c5c1; font-size:15px; white-space:nowrap; }
 .visual-lab-status-card-head i { width:6px; height:6px; border-radius:50%; background:var(--status-cyan); box-shadow:0 0 8px currentColor; }
 .tone-running .visual-lab-status-card-head i { background:var(--status-green); }
 .tone-idle .visual-lab-status-card-head i { background:var(--status-amber); }
@@ -74,11 +74,12 @@
 .tone-offline .visual-lab-status-card-head i,.tone-missing .visual-lab-status-card-head i { background:#ef4444; }
 .tone-alarm .visual-lab-status-card-head span { color:#ffd9de; font-weight:900; }
 .tone-alarm .visual-lab-status-card-head i { background:#ff394f; box-shadow:0 0 14px #ff394f; }
-.visual-lab-status-alarm { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:9px; padding:8px 10px; border:1px solid rgba(255,100,117,.72); background:rgba(142,12,34,.72); color:#fff; }
+.visual-lab-status-alarm { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:6px; width:100%; height:28px; min-height:28px; padding:2px 4px; overflow:hidden; border:1px solid rgba(255,100,117,.72); background:rgba(142,12,34,.72); color:#fff; }
+.visual-lab-status-alarm.is-empty { visibility:hidden; }
 .visual-lab-status-alarm b { padding:3px 6px; background:#fff; color:#a30822; font-size:13px; white-space:nowrap; }
-.visual-lab-status-alarm span { font-size:14px; font-weight:900; overflow-wrap:anywhere; }
-.visual-lab-status-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; padding-top:7px; }
-.visual-lab-status-metric { display:grid; gap:3px; min-width:0; padding:5px 6px; background:rgba(7,31,32,.78); border:1px solid rgba(91,221,213,.12); }
+.visual-lab-status-alarm span { min-width:0; overflow:hidden; color:#fff; font-size:14px; font-weight:900; white-space:nowrap; text-overflow:ellipsis; }
+.visual-lab-status-metrics { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-rows:repeat(3,minmax(0,1fr)); min-height:0; gap:4px; padding-top:4px; }
+.visual-lab-status-metric { display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:minmax(0,1fr) 16px; align-items:center; column-gap:4px; min-width:0; min-height:0; overflow:hidden; padding:3px 4px; background:rgba(7,31,32,.78); border:2px solid rgba(91,221,213,.12); }
 .visual-lab-status-metric span { color:#79aaa7; font-size:14px; overflow-wrap:anywhere; }
 .visual-lab-status-metric strong { color:#effffc; font:700 20px/1.1 "Cascadia Mono", Consolas, monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .visual-lab-status-metric.room strong,.visual-lab-status-metric.humidity strong { color:#72e9e2; }
@@ -86,7 +87,6 @@
 .visual-lab-status-metric.is-unavailable strong { color:#8ca5a2; font-family:inherit; font-size:17px; white-space:normal; overflow-wrap:anywhere; }
 .visual-lab-status-metric.is-alarm { border:2px solid #ff5065; background:rgba(145,12,35,.68); }
 .visual-lab-status-metric.is-alarm span,.visual-lab-status-metric.is-alarm strong { color:#fff; }
-.visual-lab-status-metric em { color:#ffd2d8; font-size:11px; font-style:normal; font-weight:900; }
 @keyframes visual-critical-pulse { 0%,100% { box-shadow:inset 5px 0 0 #ff394f,0 0 14px rgba(255,57,79,.22); } 50% { box-shadow:inset 5px 0 0 #ff394f,0 0 32px rgba(255,57,79,.62); } }
 .visual-board.visual-lab-status-board.is-compact .visual-board-kicker { font-size:10px; }
 .visual-board.visual-lab-status-board.is-compact .visual-board-title { font-size:18px; }
@@ -96,20 +96,42 @@
 .visual-lab-status-board.is-compact .visual-lab-status-summary-item span { font-size:10px; }
 .visual-lab-status-board.is-compact .visual-lab-status-summary-item strong { font-size:14px; }
 .visual-lab-status-board.is-compact .visual-lab-status-grid { gap:4px; }
-.visual-lab-status-board.is-compact .visual-lab-status-card { padding:5px; }
+.visual-lab-status-board.is-compact .visual-lab-status-card { grid-template-rows:18px 20px minmax(0,1fr) 14px; padding:3px; }
 .visual-lab-status-board.is-compact .visual-lab-status-card-head { padding-bottom:4px; }
 .visual-lab-status-board.is-compact .visual-lab-status-card-head strong { font-size:11px; }
 .visual-lab-status-board.is-compact .visual-lab-status-card-head span { font-size:10px; }
 .visual-lab-status-board.is-compact .visual-lab-status-metrics { gap:3px; padding-top:4px; }
-.visual-lab-status-board.is-compact .visual-lab-status-metric { padding:3px; }
+.visual-lab-status-board.is-compact .visual-lab-status-metric { grid-template-rows:minmax(0,1fr) 12px; padding:1px 2px; }
 .visual-lab-status-board.is-compact .visual-lab-status-metric span { font-size:9px; }
 .visual-lab-status-board.is-compact .visual-lab-status-metric strong { font-size:11px; }
-.visual-lab-status-board.is-compact .visual-lab-status-alarm { gap:4px; padding:3px 4px; }
+.visual-lab-status-board.is-compact .visual-lab-status-alarm { gap:4px; height:20px; min-height:20px; padding:2px 3px; }
 .visual-lab-status-board.is-compact .visual-lab-status-alarm b,.visual-lab-status-board.is-compact .visual-lab-status-alarm span { font-size:8px; }
-.visual-lab-status-board.is-compact .visual-lab-status-metric em { font-size:7px; }
 @media (prefers-reduced-motion:reduce) { .visual-lab-status-card.tone-alarm { animation:none; } }
-@media (max-width: 980px) { .visual-lab-status-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media (max-width: 640px) { .visual-lab-status-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } .visual-lab-status-grid { grid-template-columns:1fr; } }
+.visual-telemetry-last-value,.visual-telemetry-footer { display:block; grid-column:1 / -1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:#9eb3b7; font:12px/16px Consolas,"Microsoft YaHei",sans-serif; }
+.visual-telemetry-footer { line-height:20px; }
+.is-compact .visual-telemetry-last-value,.is-compact .visual-telemetry-footer { font-size:9px; line-height:12px; }
+.visual-lab-status-metric.is-stale strong { color:#aab6bb; }
+.tone-delayed .visual-lab-status-alarm { background:#483613; border-color:#c69b40; }
+.tone-delayed .visual-lab-status-alarm b { color:#483613; }
+.tone-unknown .visual-lab-status-alarm { background:#25343b; border-color:#607982; }
+.visual-lab-status-card.tone-unknown { border-color:#607982; }
+.visual-lab-status-card-head strong,.visual-lab-status-card-head span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.visual-lab-status-board .visual-board-clock { max-width:50%; height:48px; font-size:17px; }
+.visual-lab-status-board .visual-board-clock strong { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--status-green); font-size:20px; }
+.visual-lab-status-board.is-compact .visual-board-clock { height:30px; font-size:11px; }
+.visual-lab-status-metric > span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.visual-lab-status-board.is-monitor-offline .visual-board-clock strong { color:#ff6476; }
+@media (max-width: 1400px) {
+  .visual-lab-status-board:not(.is-compact) .visual-lab-status-card-head strong { font-size:16px; }
+  .visual-lab-status-board:not(.is-compact) .visual-lab-status-card-head span { font-size:12px; }
+  .visual-lab-status-board:not(.is-compact) .visual-lab-status-metric span { font-size:11px; }
+  .visual-lab-status-board:not(.is-compact) .visual-lab-status-metric strong { font-size:16px; }
+  .visual-lab-status-board:not(.is-compact) .visual-lab-status-alarm span { font-size:12px; }
+  .visual-lab-status-board:not(.is-compact) .visual-telemetry-footer { font-size:10px; }
+}
+@media (max-width: 980px) and (orientation:portrait) {
+  .visual-lab-status-grid { grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-rows:repeat(6,minmax(190px,1fr)); overflow:auto; }
+}
 
 .visualization-toolbar {
   display: flex;
@@ -512,6 +534,10 @@
   padding-bottom: 5px;
 }
 
+.visual-preview-shell.is-screen-only .visual-board.is-layout-a .visual-board-top {
+  padding-right: 40px;
+}
+
 .visual-board.is-layout-a .visual-board-title-group {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: baseline;
@@ -700,6 +726,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.visual-lab-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
+.visual-lab-heading .visual-lab-state {
+  flex-shrink: 0;
 }
 
 .visual-lab-head-actions {
@@ -898,17 +936,16 @@
 }
 
 .visual-flow-step.is-inferred {
-  color: var(--status-warning-text);
+  color: var(--status-success-text);
 }
 
 .visual-flow-step.is-inferred::before {
-  background: rgba(250, 204, 21, 0.58);
+  background: rgba(132, 204, 22, 0.6);
 }
 
 .visual-flow-step.is-inferred .visual-flow-dot {
-  border-color: rgba(250, 204, 21, 0.76);
-  background: #facc15;
-  box-shadow: 0 0 14px rgba(250, 204, 21, 0.24);
+  border-color: rgba(132, 204, 22, 0.72);
+  background: var(--screen-green);
 }
 
 .visual-flow-step.is-active {
@@ -1029,9 +1066,9 @@
 }
 
 .visual-board.is-layout-a .visual-lab-state {
-  min-height: 22px;
-  padding: 0 8px;
-  font-size: 11px;
+  min-height: 38px;
+  padding: 0 16px;
+  font-size: 24px;
 }
 
 .visual-board.is-layout-a .visual-lab-switchboard {

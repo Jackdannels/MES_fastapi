@@ -6,14 +6,16 @@ from typing import Any
 
 from app.core.axis_codes import axis_codes_for_experiment_type, sort_axis_codes
 from app.core.storage_backend import AXIS_EXPERIMENT_TYPES, EXPERIMENT_TYPE_OPTIONS, normalize_storage_payload
+from app.core.task_codes import EXTERNAL_TASK_PREFIX, INTERNAL_TASK_PREFIX
 
 TASK_COUNT = 20
 EXTERNAL_INTAKE_COUNT = 8
 MANDATORY_EXPERIMENT_TYPE = "盐雾试验"
 
 
-def _task_code(index: int, base_time: datetime) -> str:
-    return f"SYLU-{base_time.year}-{base_time.month:02d}-{index:03d}"
+def _task_code(index: int, base_time: datetime, *, external: bool) -> str:
+    prefix = EXTERNAL_TASK_PREFIX if external else INTERNAL_TASK_PREFIX
+    return f"{prefix}-{base_time.year}-{base_time.month:02d}-{index:03d}"
 
 
 def _task_source(index: int) -> str:
@@ -38,7 +40,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
     base_time = current_time.replace(hour=8, minute=0, second=0, microsecond=0)
 
     for index in range(1, TASK_COUNT + 1):
-        task_code = _task_code(index, base_time)
+        task_code = _task_code(index if index <= 10 else index - 10, base_time, external=index <= 10)
         remaining_experiment_types = [
             experiment_type for experiment_type in EXPERIMENT_TYPE_OPTIONS if experiment_type != MANDATORY_EXPERIMENT_TYPE
         ]
@@ -122,7 +124,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
 
     for intake_index in range(1, EXTERNAL_INTAKE_COUNT + 1):
         task_index = TASK_COUNT + intake_index
-        task_code = _task_code(task_index, base_time)
+        task_code = _task_code(10 + intake_index, base_time, external=True)
         remaining_experiment_types = [
             experiment_type for experiment_type in EXPERIMENT_TYPE_OPTIONS if experiment_type != MANDATORY_EXPERIMENT_TYPE
         ]

@@ -1,0 +1,66 @@
+/* Screen 07: a fixed 4 × 3 matrix; each room has three equipment rows. */
+.visual-board.visual-lab-status-board {
+  --telemetry-name-size: clamp(18px, 1.05vw, 27px);
+  --telemetry-value-size: clamp(22px, 1.35vw, 35px);
+  --telemetry-label-size: clamp(12px, .68vw, 17px);
+  --telemetry-small-size: clamp(11px, .6vw, 15px);
+  gap: 10px;
+  padding: 12px;
+}
+.visual-lab-status-board .visual-board-title { font-size: clamp(26px, 1.55vw, 40px); }
+.visual-lab-status-board .visual-board-header { padding-bottom: 8px; }
+.visual-lab-status-summary-item { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 14px; background:rgba(7,31,32,.38); }
+.visual-lab-status-summary-item span { font-size:clamp(14px,.78vw,20px); color:#aac8c5; }
+.visual-lab-status-summary-item strong { font-size:clamp(24px,1.6vw,40px); }
+.visual-lab-status-card { grid-template-rows:34px 28px minmax(0,1fr) 24px; padding:8px 10px 4px; background:transparent; }
+.visual-lab-status-card-head { padding-bottom:5px; gap:6px; }
+.visual-lab-status-card-head strong { font-size:var(--telemetry-name-size); font-weight:800; letter-spacing:.025em; }
+.visual-lab-status-card-head span { font-size:var(--telemetry-small-size); max-width:42%; }
+.visual-lab-status-card-head i { width:7px; height:7px; flex-shrink:0; }
+.visual-lab-status-metrics { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:repeat(3,minmax(0,1fr)); gap:5px; padding:5px 0; }
+.visual-telemetry-group { display:grid; grid-template-columns:70px repeat(2,minmax(0,1fr)); min-width:0; min-height:0; border-top:1px solid rgba(91,221,213,.18); background:rgba(7,31,32,.7); }
+.visual-telemetry-group-name { display:flex; flex-direction:column; justify-content:center; gap:5px; padding:0 8px; border-right:1px solid rgba(91,221,213,.14); }
+.visual-telemetry-group-name > span { font:11px/1 Consolas,monospace; color:#538681; letter-spacing:.14em; }
+.visual-telemetry-group-name b { font-size:var(--telemetry-label-size); font-weight:600; color:#c1d9d5; white-space:nowrap; }
+.visual-lab-status-metric { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:16px minmax(0,1fr) 15px; align-items:center; justify-items:start; padding:3px 8px; border:2px solid transparent; border-left-color:rgba(91,221,213,.08); background:transparent; }
+.visual-lab-status-metric > span { color:#8eb5af; font-size:var(--telemetry-label-size); line-height:16px; }
+.visual-lab-status-metric strong { max-width:100%; font-size:var(--telemetry-value-size); font-weight:700; line-height:1.05; font-variant-numeric:tabular-nums; letter-spacing:-.025em; }
+.visual-lab-status-metric strong em { color:#91b6b1; font:500 var(--telemetry-label-size)/1 "Segoe UI","Microsoft YaHei",sans-serif; font-style:normal; letter-spacing:0; }
+.visual-lab-status-metric.is-unavailable { opacity:1; border-style:solid; }
+.visual-lab-status-metric.is-unavailable strong { font-size:var(--telemetry-label-size); white-space:nowrap; }
+.visual-telemetry-last-value { font:var(--telemetry-small-size)/15px "Segoe UI","Microsoft YaHei",sans-serif; color:#a4b9b5; width:100%; }
+.visual-lab-status-card .visual-telemetry-footer { align-self:center; margin:0; padding:0; border:0; background:none; background-color:transparent; box-shadow:none; color:#a7bfbb; font:var(--telemetry-small-size)/24px "Segoe UI","Microsoft YaHei",sans-serif; font-variant-numeric:tabular-nums; }
+.visual-lab-status-card.tone-alarm { background:transparent; }
+.visual-lab-status-metric.is-alarm { border-color:#ff5065; background:rgba(145,12,35,.68); }
+.visual-lab-status-metric.is-alarm strong em { color:#fff; }
+.visual-lab-status-alarm { font-size:var(--telemetry-label-size); }
+.visual-lab-status-alarm b { font-size:var(--telemetry-small-size); }
+.visual-lab-status-alarm span { font-size:var(--telemetry-label-size); }
+.visual-board.visual-lab-status-board.is-compact { --telemetry-name-size:11px; --telemetry-value-size:13px; --telemetry-label-size:9px; --telemetry-small-size:8px; gap:5px; padding:6px; }
+.visual-lab-status-board.is-compact .visual-lab-status-card { grid-template-rows:20px 18px minmax(0,1fr) 14px; padding:3px; }
+.visual-lab-status-board.is-compact .visual-lab-status-metrics { grid-template-columns:minmax(0,1fr); padding:2px 0; gap:2px; }
+.visual-lab-status-board.is-compact .visual-telemetry-group { grid-template-columns:38px repeat(2,minmax(0,1fr)); }
+.visual-lab-status-board.is-compact .visual-telemetry-group-name { padding:0 3px; gap:2px; }
+.visual-lab-status-board.is-compact .visual-telemetry-group-name > span { display:none; }
+.visual-lab-status-board.is-compact .visual-lab-status-metric { grid-template-rows:10px minmax(0,1fr) 10px; padding:1px 3px; }
+.visual-lab-status-board.is-compact .visual-lab-status-metric strong { font-size:13px; }
+.visual-lab-status-board.is-compact .visual-lab-status-metric > span { line-height:10px; }
+.visual-lab-status-board.is-compact .visual-lab-status-alarm { height:18px; min-height:18px; padding:1px 2px; }
+.visual-lab-status-board.is-compact .visual-telemetry-last-value { font-size:8px; line-height:10px; }
+.visual-lab-status-board.is-compact .visual-telemetry-footer { font-size:8px; line-height:14px; }
+.visual-lab-status-board.is-compact .visual-lab-status-summary-item { padding:3px 5px; }
+@media (min-width:2100px) { .visual-telemetry-group { grid-template-columns:90px repeat(2,minmax(0,1fr)); } }
+@media (max-width:1400px) {
+  .visual-lab-status-board:not(.is-compact) .visual-lab-status-card-head strong { font-size:18px; }
+  .visual-lab-status-board:not(.is-compact) .visual-lab-status-metric strong { font-size:22px; }
+  .visual-telemetry-group { grid-template-columns:56px repeat(2,minmax(0,1fr)); }
+  .visual-telemetry-group-name { padding:0 4px; }
+  .visual-lab-status-metric { padding-inline:4px; }
+}
+@media (max-height:850px) and (orientation:landscape) {
+  .visual-lab-status-board:not(.is-compact) .visual-lab-status-card { grid-template-rows:27px 23px minmax(0,1fr) 20px; padding:4px 6px; }
+  .visual-lab-status-board:not(.is-compact) .visual-lab-status-alarm { height:23px; min-height:23px; }
+  .visual-lab-status-board:not(.is-compact) .visual-lab-status-metric { grid-template-rows:13px minmax(0,1fr) 12px; padding-block:1px; }
+  .visual-lab-status-board:not(.is-compact) .visual-lab-status-metric strong { font-size:20px; }
+  .visual-lab-status-board:not(.is-compact) .visual-telemetry-last-value { font-size:10px; line-height:12px; }
+}

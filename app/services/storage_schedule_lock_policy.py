@@ -1,6 +1,7 @@
 """Schedule immutability rules after comparison, fixture work, or lab start."""
 
 from typing import Any
+from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException
 
@@ -240,10 +241,22 @@ def schedule_is_locked_for_automatic_reschedule(snapshot: Any, schedule: Any) ->
 def _locked_schedule_fields_changed(current_schedule: Any, next_schedule: Any) -> bool:
     if not isinstance(current_schedule, dict) or not isinstance(next_schedule, dict):
         return True
-    return any(
-        _normalize_text(current_schedule.get(field)) != _normalize_text(next_schedule.get(field))
-        for field in SCHEDULE_LOCKED_FIELDS
-    )
+    for field in SCHEDULE_LOCKED_FIELDS:
+        current = _normalize_text(current_schedule.get(field))
+        incoming = _normalize_text(next_schedule.get(field))
+        if current == incoming:
+            continue
+        if field == "planned_hours" and current and incoming:
+            # JavaScript serializes integral durations as 1, while MySQL reads 1.0.
+            # Compare duration values without weakening the other locked fields.
+            try:
+                current_hours, incoming_hours = Decimal(current), Decimal(incoming)
+                if current_hours.is_finite() and incoming_hours.is_finite() and current_hours == incoming_hours:
+                    continue
+            except InvalidOperation:
+                pass
+        return True
+    return False
 
 
 def validate_fixture_locked_schedules(

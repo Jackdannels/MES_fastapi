@@ -6,6 +6,10 @@ import {
 } from "./flowStepState";
 
 describe("visualization flow step state", () => {
+  test("uses the ordinary green history tone for cancellation and retains current-step highlighting", () => {
+    expect(visualFlowStepClass({ kind: "device-fault-cancel", reached: true, time: "2099-09-15 09:00:00" })).toMatchObject({ "is-done": true, "is-active": false });
+    expect(visualFlowStepClass({ kind: "device-fault-cancel", reached: true, active: true })).toMatchObject({ "is-active": true, "is-done": false });
+  });
   test("marks actual reached steps with time as done and exposes time only in title", () => {
     const step = { label: "实验后暂存间存放", reached: true, time: "2026-06-07T16:31:49+08:00" };
 

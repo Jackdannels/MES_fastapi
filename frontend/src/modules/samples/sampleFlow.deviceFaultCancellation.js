@@ -2,6 +2,7 @@ import { DEVICE_FAULT_CANCELED } from "@/lib/deviceFaultCancellation";
 import { SAMPLE_FLOW_STEPS } from "./sampleFlow.constants";
 import { normalizeHistoryFlowLabel } from "./sampleFlow.flowTimeHelpers";
 import { historyEntryAppliesToTray } from "./sampleFlow.runtimeEvidence";
+import { projectDeviceFaultFollowup } from "./sampleFlow.deviceFaultFollowup";
 
 const text = (value) => String(value ?? "").trim();
 const rows = (value) => Array.isArray(value) ? value : [];
@@ -62,7 +63,6 @@ function decorateDeviceFaultCancellation(flow, input = {}) {
     step.time = step.time || eventTime(evidence);
   }
   const seen = new Set();
-  let previousCancellationTime = 0;
   for (const relation of cancellations) {
     const runNo = text(relation.run_no || relation.runNo);
     if (seen.has(runNo)) continue;
@@ -70,36 +70,9 @@ function decorateDeviceFaultCancellation(flow, input = {}) {
     const time = text(relation.ended_at || relation.updated_at);
     const experiment = rows(input.experiments).find((row) => text(row.experiment_code || row.experimentCode) === text(relation.experiment_code));
     const name = text(experiment?.experiment_name || experiment?.experimentName || experiment?.name || relation.experiment_code);
-    const run = runs.find((entry) => text(entry.run_no || entry.id) === runNo && text(entry.task_code) === taskCode) || {};
-    const lab = text(run.device || run.lab_name);
-    const startedAt = text(run.started_at || relation.started_at);
-    const segment = [];
-    // Full milestone reconstruction is only needed for the current single template. Other
-    // templates retain their own route; they still receive an immutable run-start anchor.
-    if (isCurrentSingleAttempt) {
-      for (const stage of SAMPLE_FLOW_STEPS.filter((entry) => attemptKeys.has(entry.key) && !["running", "completed"].includes(entry.key))) {
-        const candidates = history.filter((entry) => {
-          const at = timestamp(eventTime(entry));
-          if (!at || at <= previousCancellationTime || at > timestamp(time)) return false;
-          if (startedAt && at > timestamp(startedAt)) return false;
-          if (normalizeHistoryFlowLabel(entry.status, entry.location) !== stage.label) return false;
-          const parts = text(entry.detail).split(" / ");
-          if (parts[0] === taskCode && parts.length >= 3 && parts[1] !== name) return false;
-          return !["sent_to_lab", "arrived_lab", "fixture_install", "ready"].includes(stage.key)
-            || !lab || !text(entry.location) || text(entry.location) === lab;
-        }).sort((a, b) => timestamp(eventTime(b)) - timestamp(eventTime(a)));
-        if (candidates[0]) segment.push({ key: `device-fault-history-${runNo}-${stage.key}`,
-          label: stage.key === "sent_to_lab" && lab ? `送至${lab}` : stage.label,
-          time: eventTime(candidates[0]), reached: true, active: false, runNo });
-      }
-    }
-    if (startedAt && !steps.some((step) => step.reached && timestamp(step.time) === timestamp(startedAt) && step.label === `${name}进行中`)) {
-      segment.push({ key: `device-fault-history-${runNo}-running`, label: `${name}进行中`, time: startedAt, reached: true, active: false, runNo });
-    }
     const index = insertionIndex(steps, time);
-    steps.splice(index, 0, ...segment, { key: `device-fault-canceled-${runNo}`, label: DEVICE_FAULT_CANCELED,
+    steps.splice(index, 0, { key: `device-fault-canceled-${runNo}`, label: `${name}｜${DEVICE_FAULT_CANCELED}`, kind: "device-fault-cancel",
       reached: true, active: false, time, detail: `${name} / ${runNo}`, runNo, experimentCode: text(relation.experiment_code) });
-    previousCancellationTime = timestamp(time);
   }
   if (currentCanceled) {
     // Cancellation leaves the experiment unfinished; the default post-test storage
@@ -108,10 +81,6 @@ function decorateDeviceFaultCancellation(flow, input = {}) {
     // A canceled attempt is historical, while the experiment remains an obligation.
     // Fold the old dispatch/install/start milestones into its cancellation summary,
     // then show a clean, untimed route for the next attempt (as for mold cancellation).
-    for (const cancellation of steps.filter((step) => step.key.startsWith("device-fault-canceled-"))) {
-      cancellation.collapsedSteps = steps.filter((step) => step.key.startsWith(`device-fault-history-${cancellation.runNo}-`));
-    }
-    steps = steps.filter((step) => !step.key.startsWith("device-fault-history-"));
     if (isCurrentSingleAttempt) {
       const experiment = rows(input.experiments).find((entry) => text(entry.experiment_code || entry.experimentCode) === text(latestCancellation.experiment_code));
       const name = text(experiment?.experiment_name || experiment?.experimentName || experiment?.name || latestCancellation.experiment_code);
@@ -132,6 +101,13 @@ function decorateDeviceFaultCancellation(flow, input = {}) {
         const pendingLabel = `${name}未完成`;
         const resultStep = steps.find((step) => !step.key.startsWith("device-fault-")
           && [pendingLabel, `${name}进行中`, `${name}已完成`].includes(step.label));
+        const canceledAt = Math.max(...cancellations.filter((entry) => text(entry.experiment_code) === experimentCode).map((entry) => timestamp(eventTime(entry))));
+        const completedAfterCancellation = rows(input.experimentRunTrays || input.experiment_run_trays).some((entry) =>
+          text(entry.task_code) === taskCode && text(entry.tray_code) === trayCode
+          && text(entry.experiment_code) === experimentCode
+          && ["实验已完成", "实验完成", "实验已经完成"].includes(text(entry.run_tray_status || entry.status))
+          && timestamp(eventTime(entry)) > canceledAt);
+        if (completedAfterCancellation) continue;
         if (resultStep) {
           resultStep.label = pendingLabel;
           resultStep.time = "";
@@ -151,6 +127,40 @@ function decorateDeviceFaultCancellation(flow, input = {}) {
             label: pendingLabel, time: "", reached: false, active: false, experimentCode });
         }
       }
+      // The old multi-experiment route is reset above, but must also move behind
+      // the historical cancellation. Merely clearing its flags leaves it before the event.
+      const pendingRoute = steps.filter((step) => /^route-\d+-\d+$/.test(step.key) && !step.reached && !step.active);
+      const experimentForStep = (step) => rows(input.experiments).find((entry) =>
+        text(entry.task_code || entry.taskCode) === taskCode
+        && step?.label === `${text(entry.experiment_name || entry.experimentName || entry.name)}未完成`);
+      const pendingResults = steps.filter((step) => !step.reached && !step.active && experimentForStep(step));
+      const canceledScheduleIds = new Set(runs.filter((run) => run.status === DEVICE_FAULT_CANCELED)
+        .map((run) => text(run.schedule_id || run.schedule_no)).filter(Boolean));
+      const scheduleForStep = (step) => {
+        const experiment = experimentForStep(step);
+        return rows(input.schedules).filter((schedule) => text(schedule.task_code) === taskCode
+          && text(schedule.experiment_code) === text(experiment?.experiment_code || experiment?.experimentCode)
+          && !canceledScheduleIds.has(text(schedule.id || schedule.schedule_id))
+          && !["实验已完成", "实验完成", "实验已经完成"].includes(text(schedule.status))
+          && (!rows(schedule.tray_codes).length || schedule.tray_codes.includes(trayCode)))
+          .sort((a, b) => timestamp(a.start_at) - timestamp(b.start_at))[0];
+      };
+      pendingResults.sort((a, b) => {
+        const left = scheduleForStep(a), right = scheduleForStep(b);
+        if (Boolean(left) !== Boolean(right)) return left ? -1 : 1;
+        return left && right ? timestamp(left.start_at) - timestamp(right.start_at) : 0;
+      });
+      const nextLab = text(scheduleForStep(pendingResults[0])?.device);
+      pendingRoute.forEach((step) => {
+        step.time = "";
+        if (step.label === "送至实验室" || /^送至.*(?:实验室|试验室|一室|二室)$/.test(step.label)) {
+          step.label = nextLab ? `送至${nextLab}` : "送至实验室";
+        }
+      });
+      const pending = new Set([...pendingRoute, ...pendingResults]);
+      steps = steps.filter((step) => !pending.has(step));
+      const cancellationIndex = steps.findLastIndex((step) => step.key.startsWith("device-fault-canceled-"));
+      steps.splice(cancellationIndex + 1, 0, ...pendingRoute, ...pendingResults);
     }
     steps.forEach((step) => { step.active = false; });
     const latest = [...steps].reverse().find((step) => step.key.startsWith("device-fault-canceled-"));
@@ -158,7 +168,7 @@ function decorateDeviceFaultCancellation(flow, input = {}) {
     return { ...flow, steps, canonicalStatus: DEVICE_FAULT_CANCELED, status: DEVICE_FAULT_CANCELED,
       currentStatus: `当前托盘：${trayCode} | 当前状态：${DEVICE_FAULT_CANCELED}` };
   }
-  return { ...flow, steps };
+  return projectDeviceFaultFollowup({ ...flow, steps }, input, { history, cancellations });
 }
 
 export { decorateDeviceFaultCancellation };

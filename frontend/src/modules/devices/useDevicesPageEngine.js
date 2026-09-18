@@ -172,12 +172,12 @@ function useDevicesPageEngine() {
   };
 
   const persistDevices = async (nextDevices, nextMaintenanceRecords = rawMaintenanceRecords.value) => {
-    rawDevices.value = nextDevices;
-    rawMaintenanceRecords.value = nextMaintenanceRecords;
     await persistSnapshot({
       [STORAGE_KEYS.devices]: nextDevices,
       [STORAGE_KEYS.maintenance_records]: nextMaintenanceRecords,
     });
+    rawDevices.value = nextDevices;
+    rawMaintenanceRecords.value = nextMaintenanceRecords;
   };
 
   const syncTimedMaintenanceStatuses = async (currentDate = serverNowDate()) => {
@@ -229,12 +229,14 @@ function useDevicesPageEngine() {
   const persistMaintenancePlan = async ({ conflictingSchedules = [], deviceCode, form }) => {
     const timestamp = toBusinessDateTimeValue(serverNowDate());
     const updates = buildMaintenancePlanUpdates({ conflictingSchedules, deviceCode, form, timestamp });
-    rawConflicts.value = updates[STORAGE_KEYS.conflicts];
-    rawDevices.value = updates[STORAGE_KEYS.devices];
-    rawExperiments.value = updates[STORAGE_KEYS.experiments];
-    rawSchedules.value = updates[STORAGE_KEYS.schedules];
-    rawTasks.value = updates[STORAGE_KEYS.tasks];
     await persistSnapshot(updates);
+    rawDevices.value = updates[STORAGE_KEYS.devices];
+    if (updates[STORAGE_KEYS.schedules]) {
+      rawConflicts.value = updates[STORAGE_KEYS.conflicts];
+      rawExperiments.value = updates[STORAGE_KEYS.experiments];
+      rawSchedules.value = updates[STORAGE_KEYS.schedules];
+      rawTasks.value = updates[STORAGE_KEYS.tasks];
+    }
   };
 
   const openDeviceDrawer = (row) => {
@@ -362,7 +364,12 @@ function useDevicesPageEngine() {
       maintenancePlanWarning.value = MAINTENANCE_SCHEDULE_CONFLICT_WARNING;
       return;
     }
-    await persistMaintenancePlan({ deviceCode, form });
+    try {
+      await persistMaintenancePlan({ deviceCode, form });
+    } catch (error) {
+      maintenancePlanWarning.value = normalizeText(error?.message) || "维保保存失败，请重试";
+      return;
+    }
     closeMaintenancePlan();
   };
 
