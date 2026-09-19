@@ -16,6 +16,7 @@ from urllib import request, error as url_error
 from app.core.config import Settings
 from app.core.storage_backend import get_storage_backend
 from app.services.laboratory_operations import acquire_laboratory_storage_commit_lock
+from app.services.lims_communication_store import SENT_KEY, wire_event
 
 LIMS_OUTBOX_KEY = "mes.lims_outbox"
 EXTERNAL_INTAKE_LOCK = RLock()
@@ -45,6 +46,7 @@ class LimsHttpRuntime:
         self.pending_count = 0
         self.delivered_count = 0
         self.completion_error = ""
+        self.communication = None
 
     async def start(self) -> None:
         if self.settings.LIMS_HTTP_CALLBACK_URL and self.runner is None:
@@ -64,7 +66,7 @@ class LimsHttpRuntime:
                 "last_error": self.last_error, "completion_error": self.completion_error}
 
     def _post(self, event: dict[str, Any]) -> None:
-        body = {key: value for key, value in event.items() if key not in {"routing_key", "_delivery"}}
+        body = wire_event(event)
         headers = {"Content-Type": "application/json", "Idempotency-Key": str(event["event_id"])}
         if self.settings.LIMS_HTTP_TOKEN:
             headers["Authorization"] = f"Bearer {self.settings.LIMS_HTTP_TOKEN}"
@@ -82,7 +84,7 @@ class LimsHttpRuntime:
         return list(get_storage_backend().read(LIMS_OUTBOX_KEY) or [])
 
     @staticmethod
-    def _finish(event_id: str, error: str = "") -> None:
+    def _finish(event_id: str, error: str = "", retry_seconds: float = 10) -> None:
         with acquire_laboratory_storage_commit_lock(), EXTERNAL_INTAKE_LOCK:
             storage = get_storage_backend()
             events = list(storage.read(LIMS_OUTBOX_KEY) or [])
@@ -94,7 +96,7 @@ class LimsHttpRuntime:
                     attempts = int(event.get("_delivery", {}).get("attempts", 0)) + 1
                     updated.append({**event, "_delivery": {
                         "attempts": attempts, "last_error": error[:500],
-                        "next_attempt_at": time.time() + min(300, 2 ** min(attempts, 9)),
+                        "next_attempt_at": time.time() + retry_seconds,
                     }})
             storage.write(LIMS_OUTBOX_KEY, updated)
 
@@ -111,13 +113,16 @@ class LimsHttpRuntime:
                     record["state"] = "delivered"
             storage.write(COMPLETION_KEY, records)
 
-    async def deliver_once(self) -> None:
+    async def deliver_once(self, *, ignore_deadlines=False, max_events=None, max_duration_seconds=None) -> None:
         events = await asyncio.to_thread(self._read)
         self.pending_count = len(events)
         self.last_error = ""
-        for event in events:
+        started = time.monotonic()
+        for event in events if max_events is None else events[:max_events]:
+            if max_duration_seconds is not None and time.monotonic() - started >= max_duration_seconds:
+                break
             delivery = event.get("_delivery", {})
-            if delivery.get("next_attempt_at", 0) > time.time():
+            if not ignore_deadlines and delivery.get("next_attempt_at", 0) > time.time():
                 self.last_error = delivery.get("last_error", "")
                 continue
             try:
@@ -128,8 +133,13 @@ class LimsHttpRuntime:
                 if isinstance(exc, url_error.HTTPError):
                     error = f"HTTP delivery failed (status {exc.code})"
                 self.last_error = error
-                await asyncio.to_thread(self._finish, event["event_id"], error)
+                await asyncio.to_thread(self._finish, event["event_id"], error, self.settings.LIMS_COMMUNICATION_RETRY_SECONDS)
+                if self.communication and self.communication.enabled:
+                    break
             else:
+                if self.communication and self.communication.enabled:
+                    # Journal before deleting outbox: a crash can duplicate delivery, never lose it.
+                    await asyncio.to_thread(self.communication.repository.record, SENT_KEY, event["event_id"], wire_event(event))
                 await asyncio.to_thread(self._record_completion_delivery, event)
                 await asyncio.to_thread(self._finish, event["event_id"])
                 self.pending_count -= 1
@@ -147,7 +157,16 @@ class LimsHttpRuntime:
                     except Exception as exc:
                         self.completion_error = f"Completion materialization failed ({type(exc).__name__})"
                     refresh_at = time.monotonic() + 5
-                await self.deliver_once()
+                if self.communication and self.communication.enabled:
+                    cycle = asyncio.create_task(self.communication.tick())
+                    try:
+                        await asyncio.shield(cycle)
+                    except asyncio.CancelledError:
+                        # Finish bounded I/O and journal writes before releasing the scheduler lock.
+                        await cycle
+                        raise
+                else:
+                    await self.deliver_once()
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

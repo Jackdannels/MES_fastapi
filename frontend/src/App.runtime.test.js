@@ -89,6 +89,7 @@ const mountApp = () => {
   wrapper = mount(App, {
     global: {
       stubs: {
+        IntegrationConnectionStatus: { name: "IntegrationConnectionStatus", emits: ["update"], template: '<div>LIMS 上位机系统</div>' },
         RouterLink: {
           props: ["to"],
           template: '<a class="router-link-stub"><slot /></a>',
@@ -103,6 +104,19 @@ const mountApp = () => {
 };
 
 describe("App runtime boundary", () => {
+  test("keeps the real severe alarm entry in the header across central pages", async () => {
+    mountApp();
+    wrapper.findComponent({ name: "IntegrationConnectionStatus" }).vm.$emit("update", { lims: { state: "offline", alert_severity: "critical" } });
+    await nextTick();
+    expect(wrapper.find('.header-actions [data-testid="critical-alarm-trigger"]').exists()).toBe(true);
+    reactiveRoute.name = "tasks";
+    reactiveRoute.meta = { module: "central", title: "任务受理" };
+    await nextTick();
+    expect(wrapper.find('.header-actions [data-testid="critical-alarm-trigger"]').exists()).toBe(true);
+    wrapper.findComponent({ name: "IntegrationConnectionStatus" }).vm.$emit("update", { lims: { state: "online" } });
+    await nextTick();
+    expect(wrapper.find('[data-testid="critical-alarm-trigger"]').exists()).toBe(false);
+  });
   afterEach(() => {
     wrapper?.unmount();
     wrapper = undefined;

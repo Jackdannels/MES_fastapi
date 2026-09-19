@@ -27,7 +27,7 @@
         </RouterLink>
       </nav>
       <div class="sidebar-footer">
-        已连接：Modbus
+        <IntegrationConnectionStatus @update="integrationSnapshot = $event" />
         <button
           class="action-btn secondary theme-toggle theme-toggle--sidebar"
           data-testid="theme-toggle"
@@ -47,9 +47,10 @@
     <main class="main">
       <header class="page-header page-header--central">
         <div class="page-header__copy">
-          <h1>{{ pageTitle }}</h1>
+          <h1 tabindex="-1">{{ pageTitle }}</h1>
         </div>
         <div class="header-actions">
+          <CriticalAlarmIndicator :status="integrationSnapshot?.lims || null" />
           <button
             v-if="showTaskResetAction"
             class="action-btn secondary"
@@ -152,6 +153,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
+import IntegrationConnectionStatus from "@/components/shared/IntegrationConnectionStatus.vue";
+import CriticalAlarmIndicator from "@/components/shared/CriticalAlarmIndicator.vue";
 import TrayErrorSampleDialog from "@/components/shared/TrayErrorSampleDialog.vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
@@ -175,6 +178,7 @@ const route = useRoute();
 const router = useRouter();
 const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.experiments, STORAGE_KEYS.schedules, STORAGE_KEYS.samples, STORAGE_KEYS.conflicts]);
 const exitDialogOpen = ref(false);
+const integrationSnapshot = ref(null);
 const hasTaskOverviewAlert = ref(false);
 const pendingScheduleExceptionCount = ref(0);
 const errorSample = useTrayErrorSampleHandling();

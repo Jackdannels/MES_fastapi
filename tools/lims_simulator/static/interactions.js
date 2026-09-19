@@ -177,9 +177,11 @@
   }
   function navigate() {
     const interactions = location.hash === "#interactions";
-    byId("dispatchPage").hidden = interactions;
+    const communication = location.hash === "#communication";
+    byId("dispatchPage").hidden = interactions || communication;
     byId("interactionPage").hidden = !interactions;
-    for (const [id, active] of [["dispatchTab", !interactions], ["interactionTab", interactions]]) {
+    byId("communicationPage").hidden = !communication;
+    for (const [id, active] of [["dispatchTab", !interactions && !communication], ["interactionTab", interactions], ["communicationTab", communication]]) {
       if (active) byId(id).setAttribute("aria-current", "page");
       else byId(id).removeAttribute("aria-current");
     }

@@ -54,7 +54,10 @@ def test_failed_delivery_survives_runtime_restart_and_retries_same_event(storage
     monkeypatch.setattr(replacement, "_post", lambda e: sent.append(e))
     asyncio.run(replacement.deliver_once())
     assert sent == []
-    clock[0] = 103.0
+    clock[0] = 109.0
+    asyncio.run(replacement.deliver_once())
+    assert sent == []
+    clock[0] = 110.0
     asyncio.run(replacement.deliver_once())
     assert sent[0]["event_id"] == "EV-1"
     assert storage.events == []

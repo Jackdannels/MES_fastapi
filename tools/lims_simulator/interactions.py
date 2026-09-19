@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -49,6 +50,18 @@ class InteractionStore:
                     if previous_payload["revision"] == payload["revision"] and previous_payload != payload:
                         raise ValueError("完成记录的同一 revision 内容不同，请增加版本号")
         return duplicate
+
+    def reconcile(self, entries):
+        results = []
+        with closing(self._connect()) as conn:
+            for entry in entries:
+                row = conn.execute("SELECT body FROM interactions WHERE event_id=?", (entry["id"],)).fetchone()
+                if not row:
+                    status = "missing"
+                else:
+                    status = "matched" if hashlib.sha256(row[0].encode()).hexdigest() == entry["digest"] else "conflict"
+                results.append({"id": entry["id"], "status": status})
+        return results
 
     def list(self, *, task_code: str = "", limit: int = 50, offset: int = 0) -> dict[str, Any]:
         """Project one latest revision per completion; retain raw events for dedupe.

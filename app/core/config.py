@@ -95,9 +95,18 @@ class Settings(BaseSettings):
 
     # Empty disables delivery, but never discards pending notifications.
     LIMS_HTTP_CALLBACK_URL: str = ""
+    # Read-only peer status endpoint; must return {"connected": true|false}.
+    LIMS_HEALTH_URL: str = ""
     LIMS_HTTP_TOKEN: str = ""
     LIMS_DATA_PUBLIC_BASE_URL: str = ""
     LIMS_HTTP_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0, le=60)
+    LIMS_COMMUNICATION_ENABLED: bool = True
+    LIMS_COMMUNICATION_URL: str = ""
+    # Consumed by the simulator; accepted here so a shared .env remains valid.
+    LIMS_MES_BASE_URL: str = "http://127.0.0.1:8000"
+    LIMS_COMMUNICATION_INTERVAL_SECONDS: float = Field(default=60.0, ge=1, le=3600)
+    # Temporary acceptance policy requested by the user (not ten minutes).
+    LIMS_COMMUNICATION_RETRY_SECONDS: float = Field(default=10.0, ge=1, le=3600)
 
     @field_validator("LIMS_DATA_PUBLIC_BASE_URL")
     @classmethod
@@ -111,7 +120,7 @@ class Settings(BaseSettings):
                 raise ValueError("LIMS data base must be an explicit HTTP(S) URL without credentials, query or fragment")
         return value
 
-    @field_validator("LIMS_HTTP_CALLBACK_URL")
+    @field_validator("LIMS_HTTP_CALLBACK_URL", "LIMS_HEALTH_URL", "LIMS_COMMUNICATION_URL")
     @classmethod
     def validate_lims_callback_url(cls, value: str) -> str:
         from urllib.parse import urlsplit

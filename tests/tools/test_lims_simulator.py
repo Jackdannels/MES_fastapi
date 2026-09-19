@@ -21,16 +21,9 @@ class FakeRabbitClient:
     def state(self):
         return {"connected": True, "rabbitmq_url": "127.0.0.1:5672/", "last_error": ""}
 
-    async def publish_intake(self, payload):
-        self.published.append(dict(payload))
-        return {
-            "message_id": "MSG-001",
-            "correlation_id": payload["lims_request_id"],
-            "type": "lims.external-intake.created.v1",
-            "schema_version": 1,
-            "payload": dict(payload),
-        }
-
+    async def publish_envelope(self, envelope):
+        self.published.append(dict(envelope["payload"]))
+        return envelope
 
 def build_client(monkeypatch):
     fake = FakeRabbitClient()

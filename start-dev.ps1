@@ -143,8 +143,8 @@ $launcherSessionId = [Guid]::NewGuid().ToString("N")
 
 if ($condaBat) {
     $backendReloadArgument = if ($Production) { "" } else { " --reload" }
-    $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"LIMS_DATA_PUBLIC_BASE_URL=$limsDataPublicBaseUrl`" && set `"LIMS_HTTP_CALLBACK_URL=$limsHttpCallbackUrl`" && set `"RABBITMQ_ENABLED=true`" && set `"RABBITMQ_REQUIRED=true`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py$backendReloadArgument --host $BackendHost --port $BackendPort"
-    $limsSimulatorCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$LimsSimulatorRoot`" && python -m uvicorn app:app --host $LimsSimulatorHost --port $LimsSimulatorPort"
+    $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"LIMS_HEALTH_URL=$limsSimulatorReadyUrl`" && set `"LIMS_DATA_PUBLIC_BASE_URL=$limsDataPublicBaseUrl`" && set `"LIMS_HTTP_CALLBACK_URL=$limsHttpCallbackUrl`" && set `"RABBITMQ_ENABLED=true`" && set `"RABBITMQ_REQUIRED=true`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py$backendReloadArgument --host $BackendHost --port $BackendPort"
+    $limsSimulatorCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"LIMS_MES_BASE_URL=http://127.0.0.1:$BackendPort`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$LimsSimulatorRoot`" && python -m uvicorn app:app --host $LimsSimulatorHost --port $LimsSimulatorPort"
 } else {
     $backendCommand = "echo Unable to find conda.bat. Please install Anaconda/Miniconda or add conda to PATH. && echo Expected environment: $CondaEnv"
     $limsSimulatorCommand = "echo Unable to find conda.bat. LIMS simulator was not started."
@@ -244,6 +244,8 @@ if ($Production) {
     $previousRabbitRequired = $env:RABBITMQ_REQUIRED
     $previousRabbitUrl = $env:RABBITMQ_URL
     $previousLimsCallbackUrl = $env:LIMS_HTTP_CALLBACK_URL
+    $previousLimsHealthUrl = $env:LIMS_HEALTH_URL
+    $previousLimsMesBaseUrl = $env:LIMS_MES_BASE_URL
     $previousLimsDataUrl = $env:LIMS_DATA_PUBLIC_BASE_URL
     try {
         $env:MES_LAUNCHER_SESSION = $launcherSessionId
@@ -251,6 +253,8 @@ if ($Production) {
         $env:RABBITMQ_REQUIRED = "true"
         $env:RABBITMQ_URL = $RabbitMqUrl
         $env:LIMS_HTTP_CALLBACK_URL = $limsHttpCallbackUrl
+        $env:LIMS_HEALTH_URL = $limsSimulatorReadyUrl
+        $env:LIMS_MES_BASE_URL = "http://127.0.0.1:$BackendPort"
         $env:LIMS_DATA_PUBLIC_BASE_URL = $limsDataPublicBaseUrl
         $backendConsoleCommand = "chcp 65001 >nul && title MES Backend && set `"PYTHONUTF8=1`" && set `"PYTHONIOENCODING=utf-8`" && `"$condaPython`" scripts\run_local.py --host $BackendHost --port $BackendPort"
         $frontendConsoleCommand = "title MES Frontend && $frontendCommand"
@@ -270,6 +274,8 @@ if ($Production) {
         $env:RABBITMQ_REQUIRED = $previousRabbitRequired
         $env:RABBITMQ_URL = $previousRabbitUrl
         $env:LIMS_HTTP_CALLBACK_URL = $previousLimsCallbackUrl
+        $env:LIMS_HEALTH_URL = $previousLimsHealthUrl
+        $env:LIMS_MES_BASE_URL = $previousLimsMesBaseUrl
         $env:LIMS_DATA_PUBLIC_BASE_URL = $previousLimsDataUrl
     }
 } elseif ($windowsTerminal) {

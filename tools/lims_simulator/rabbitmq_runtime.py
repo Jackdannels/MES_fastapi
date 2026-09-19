@@ -3,9 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import uuid
 from contextlib import suppress
-from datetime import datetime, timezone
 from typing import Any
 
 
@@ -65,32 +63,29 @@ class LimsRabbitClient:
             self.command_exchange = None
             await asyncio.sleep(1)
 
-    async def publish_intake(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not self.connected or not self.command_exchange:
+    async def publish_envelope(self, envelope):
+        if not self.connected:
             raise RuntimeError("RabbitMQ 未连接")
         import aio_pika
-
-        message_id = str(uuid.uuid4())
-        correlation_id = str(payload.get("lims_request_id") or payload.get("intake_id") or message_id)
-        envelope = {
-            "message_id": message_id,
-            "correlation_id": correlation_id,
-            "type": "lims.external-intake.created.v1",
-            "schema_version": 1,
-            "source": "LIMS",
-            "occurred_at": datetime.now(timezone.utc).isoformat(),
-            "payload": payload,
-        }
         message = aio_pika.Message(
             json.dumps(envelope, ensure_ascii=False).encode("utf-8"),
             content_type="application/json",
             delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
-            message_id=message_id,
-            correlation_id=correlation_id,
+            message_id=envelope["message_id"],
+            correlation_id=envelope["correlation_id"],
             type=envelope["type"],
         )
         await self.command_exchange.publish(message, routing_key=self.intake_routing_key, mandatory=True)
         return envelope
+
+    async def publish_probe(self, check_id, routing_key):
+        if not self.connected:
+            raise RuntimeError("RabbitMQ 未连接")
+        import aio_pika
+        message = aio_pika.Message(json.dumps({"check_id": check_id, "schema_version": 1,
+                                             "type": "lims.communication.probe.v1"}).encode(),
+                                   content_type="application/json", expiration=10)
+        await self.command_exchange.publish(message, routing_key=routing_key, mandatory=True)
 
     def state(self) -> dict[str, Any]:
         safe_url = self.url

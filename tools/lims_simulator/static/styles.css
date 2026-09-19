@@ -12,6 +12,44 @@
   font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
 }
 [hidden] { display: none !important; }
+.communication-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.communication-metrics article { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-strong); }
+.communication-metrics span { color: var(--muted); font-size: 13px; }
+.communication-metrics strong { font-size: 20px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.communication-actions { gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+.communication-list { display: grid; gap: 8px; padding: 0; list-style: none; }
+.communication-list li { padding: 10px 12px; border-left: 3px solid var(--border); background: var(--panel-strong); overflow-wrap: anywhere; line-height: 1.6; }
+.communication-faults { display: grid; gap: 12px; margin-top: 20px; }
+.communication-faults label { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.communication-faults input { width: 20px; height: 20px; min-height: 20px; accent-color: var(--accent); }
+.communication-faults .actions { flex-wrap: wrap; gap: 12px; }
+.communication-summary [data-severity="critical"], #communicationActionFeedback.is-error { color: var(--danger); }
+.communication-summary [data-severity="warning"] { color: var(--warning); }
+.communication-summary [data-severity="none"] { color: var(--accent); }
+.communication-metrics .communication-critical { position: relative; border-color: var(--danger); }
+/* Slow red-frame pulse keeps the text continuously legible. */
+.communication-critical::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border: 2px solid var(--danger);
+  border-radius: inherit;
+  box-shadow: 0 0 10px var(--danger);
+  pointer-events: none;
+  animation: communication-critical-pulse 1.6s ease-in-out infinite;
+}
+@keyframes communication-critical-pulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .communication-critical::before { animation: none; opacity: 1; }
+}
+@media (max-width: 700px) {
+  .communication-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workspace-tabs { gap: 0; }
+  .workspace-tabs a { padding-inline: 12px; }
+}
 .workspace-tabs { display: flex; gap: 12px; margin: 24px 0; border-bottom: 1px solid var(--border); }
 .workspace-tabs a { min-height: 48px; padding: 12px 20px; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; }
 .workspace-tabs a[aria-current="page"] { color: var(--accent); border-color: var(--accent); background: var(--panel-strong); font-weight: 700; }

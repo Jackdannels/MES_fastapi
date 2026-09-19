@@ -30,10 +30,11 @@ python -m uvicorn app:app --app-dir tools/lims_simulator --host 127.0.0.1 --port
 - 下发 Routing Key：`lims.external-intake.created.v1`
 - MES Queue：`mes.external-intake.v1`
 
-## 两个页面
+## 三个页面
 
 - `/#dispatch`：任务编辑、随机生成、批量下发；计数和日志为本次进程会话数据。
 - `/#interactions`：持久化 HTTP 通知列表、完整任务编号查询、分页、原始报文。
+- `/#communication`：双向应用检测、数据对账、10 秒重试、三次失败升级、持久化补传、告警历史及本机故障注入。详见 [通讯保障说明](../../docs/integration-connection-status.md)。
 - 切换页面保留未下发的表单。MQ 连接状态不代表 HTTP 回调状态。
 - 完成详情的缺失值显示“无”（实际 0 秒仍显示“0 秒”）；所有时间统一转换为北京时间 `YYYY-MM-DD HH:mm:ss`，不受浏览器时区影响。原始报文不改写。
 - 人员和登录会话显示报文中的人员姓名，不追加账号；“退出时间（考勤截止）”显示真实退出、会话截止、试验完成时间三者中最早的有效时间。未退出时使用截止/完成时间，仅作展示，不修改真实会话。
@@ -72,11 +73,11 @@ python -m uvicorn app:app --app-dir tools/lims_simulator --host 127.0.0.1 --port
 - MES：`LIMS_DATA_PUBLIC_BASE_URL` 指定 LIMS 可访问的 MES 下载地址。空时使用明确的 `TEST_DATA_PUBLIC_BASE_URL`；`auto` 不能用于后台推送。标准启动脚本使用本机后端的局域网 URL。
 - 两端：`LIMS_HTTP_TOKEN` 配置相同 Bearer Token。模拟器从环境变量或项目根 `.env` 读取此项；环境变量优先。未设置时只接受 loopback 回调，部署应设置 token 并使用 HTTPS。
 - 标准启动脚本按 `LimsSimulatorPort` 自动为 MES 设置本机回调 URL。单独启动 MES 时需要自行设置 URL。
-- MES 使用现有 `mes.lims_outbox`，接收/受理回执与业务数据一起保存。HTTP 后台发送独立于 RabbitMQ 连接；失败记录保留并以 2、4、8…最多 300 秒间隔持续重试，不阻塞任务受理。
+- MES 使用现有 `mes.lims_outbox`，接收/受理回执与业务数据一起保存。启用通讯保障时后台统一调度双向检查和补传；首次失败告警，每 10 秒重试，第三次失败升级，之后继续重试，不阻塞任务受理。关闭保障时，单独 HTTP 发送也使用固定配置的重试间隔。
 - 只有 HTTP 2xx 且响应 `ok=true`、`event_id` 匹配才删除待发送记录；拒绝重定向。超时后可能重复发送，接收端负责去重。
 - 发送尝试数、下次重试时间及错误类型保存在 `_delivery` 内部字段，不发送给 LIMS。
 - MES `GET /health/lims-http` 查看运行状态、待发送数和最近错误；计数为当前发送轮次观测值，成功计数为本次进程累计。该集成不可用不会让 MES 核心就绪检查失败。
-- **本版没有人工补发按钮**，恢复服务/修正配置后自动重试；成功通知在模拟器保留，MES 待发送队列不充当审计历史。
+- “检测 / 补传”可请求检查，故障期间不提前或清零重试；恢复服务/修正配置后自动补传。MES 新增私有发送/接收账本作为对账历史，模拟器新增持久化下发队列；失败任务返回 `queued`，保持原消息 ID 补传。
 - 保持现有 MQTT 实验控制和高低温湿热二室夹具例外不变。
 
 迁移时同时重启 MES 与模拟器。旧的 RabbitMQ 状态交换机/队列不再声明、订阅或发布，旧配置字段仅为兼容保留；不会自动清除旧队列里的历史消息。现有 outbox 未发送记录会改走 HTTP。

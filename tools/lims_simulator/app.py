@@ -25,10 +25,14 @@ try:
     from .rabbitmq_runtime import LimsRabbitClient
     from .task_numbers import TaskNumberSequence
     from .interactions import COMPLETION_EVENT, InteractionStore
+    from .communication import CommunicationStore
+    from .communication_api import register_communication_routes
 except ImportError:  # pragma: no cover - direct uvicorn launch from this directory
     from rabbitmq_runtime import LimsRabbitClient
     from task_numbers import TaskNumberSequence
     from interactions import COMPLETION_EVENT, InteractionStore
+    from communication import CommunicationStore
+    from communication_api import register_communication_routes
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -106,6 +110,7 @@ class LimsSimulator:
         self._numbers = TaskNumberSequence(sequence_path)
         self.inbox = InteractionStore(inbox_path or Path(os.environ.get("LIMS_INBOX_PATH") or sequence_path.with_name("interactions.sqlite3")))
         self._task_statuses: dict[str, str] = {}
+        self.communication = CommunicationStore(sequence_path.with_name("communication.sqlite3"))
         self.rabbit: LimsRabbitClient | None = None
 
     def log(self, level: str, message: str, payload: Any | None = None) -> None:
@@ -124,7 +129,7 @@ class LimsSimulator:
         rabbit_state = self.rabbit.state() if self.rabbit else {"connected": False, "rabbitmq_url": "-", "last_error": "runtime unavailable"}
         with self._lock:
             sent_count = self._sent_count
-            pending_count = sum(1 for status in self._task_statuses.values() if status in {"published", "received", "pending"})
+            pending_count = self.communication.summary()["pending"]
         return {
             "version": SIMULATOR_VERSION,
             **rabbit_state,
@@ -181,17 +186,31 @@ class LimsSimulator:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         try:
-            if not self.rabbit:
-                raise RuntimeError("RabbitMQ 运行时未初始化")
-            envelope = await self.rabbit.publish_intake(next_payload)
-        except Exception as exc:
-            self.log("error", f"任务发布失败：{exc}", next_payload)
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        self.mark_sent()
+            envelope = await asyncio.to_thread(self.communication.enqueue, next_payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        published = await self.publish_pending(envelope["message_id"])
         with self._lock:
-            self._task_statuses.setdefault(next_payload["lims_request_id"], "published")
-        self.log("success", f"任务已发布到 RabbitMQ：{normalize_text(next_payload.get('code'))}", envelope)
-        return {**next_payload, "message_id": envelope["message_id"], "publish_status": "published"}
+            self._task_statuses.setdefault(next_payload["lims_request_id"], "published" if published else "queued")
+        return {**next_payload, "message_id": envelope["message_id"], "publish_status": "published" if published else "queued"}
+
+    async def publish_pending(self, identity, *, timeout=5):
+        envelope = await asyncio.to_thread(self.communication.claim, identity)
+        if envelope is None:
+            return False
+        try:
+            if not self.rabbit or self.communication.faults().get("rabbit_blocked"):
+                raise RuntimeError("RabbitMQ 发送不可用")
+            await asyncio.wait_for(self.rabbit.publish_envelope(envelope), timeout=timeout)
+        except Exception as exc:
+            error = f"RabbitMQ 发布失败（{type(exc).__name__}），已持久化等待补传"
+            await asyncio.to_thread(self.communication.attempted, identity, error)
+            self.log("error", error)
+            return False
+        await asyncio.to_thread(self.communication.attempted, identity)
+        self.mark_sent()
+        self.log("success", f"任务已发布到 RabbitMQ：{envelope['payload']['code']}", envelope)
+        return True
 
     async def handle_status(self, event: dict[str, Any]) -> None:
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
@@ -203,6 +222,7 @@ class LimsSimulator:
         if not event_status:
             event_status = "accepted" if ".accepted." in event_type else "failed" if ".failed." in event_type else "received"
         if intake_id:
+            await asyncio.to_thread(self.communication.business_status, intake_id, event_status)
             with self._lock:
                 current = self._task_statuses.get(intake_id)
                 if current != "accepted" and not (current == "failed" and event_status in {"received", "pending"}):
@@ -249,8 +269,7 @@ def interactions(task_code: str = "", limit: int = Query(50, ge=1, le=100), offs
     return simulator.inbox.list(task_code=task_code.strip(), limit=limit, offset=offset)
 
 
-@app.post("/api/mes/events")
-async def receive_mes_event(request: Request) -> dict[str, Any]:
+def authorize_mes(request: Request):
     token = http_token()
     if token:
         if not secrets.compare_digest(request.headers.get("authorization", ""), f"Bearer {token}"):
@@ -262,6 +281,21 @@ async def receive_mes_event(request: Request) -> dict[str, Any]:
             local = False
         if not local:
             raise HTTPException(status_code=403, detail="Remote callbacks require LIMS_HTTP_TOKEN")
+
+
+async def simulate_http_failure():
+    faults = simulator.communication.faults()
+    if faults.get("http_timeout"):
+        await asyncio.sleep(10)
+        raise HTTPException(status_code=504, detail="模拟 HTTP 超时")
+    if faults.get("http_503"):
+        raise HTTPException(status_code=503, detail="模拟 HTTP 中断")
+
+
+@app.post("/api/mes/events")
+async def receive_mes_event(request: Request) -> dict[str, Any]:
+    authorize_mes(request)
+    await simulate_http_failure()
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
@@ -274,12 +308,17 @@ async def receive_mes_event(request: Request) -> dict[str, Any]:
     key = request.headers.get("idempotency-key")
     if key and key != event["event_id"]:
         raise HTTPException(status_code=409, detail="Idempotency-Key must match event_id")
+    if simulator.communication.take_fault("omit_next_event"):
+        simulator.log("error", "故障注入：模拟确认成功但遗漏一条接收记录", {"event_id": event["event_id"]})
+        return {"ok": True, "event_id": event["event_id"], "duplicate": False}
     try:
         duplicate = await asyncio.to_thread(simulator.inbox.receive, event, now_text())
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not duplicate:
         await simulator.handle_status(event)
+    if simulator.communication.take_fault("drop_ack"):
+        raise HTTPException(status_code=503, detail="故障注入：落盘后丢失确认")
     return {"ok": True, "event_id": event["event_id"], "duplicate": duplicate}
 
 
@@ -299,3 +338,6 @@ async def send_random_tasks(payload: RandomBatchRequest) -> dict[str, Any]:
     for _index in range(payload.count):
         sent.append(await simulator.send(simulator.random_task()))
     return {"count": len(sent), "items": sent}
+
+
+register_communication_routes(app, lambda: simulator, authorize_mes, simulate_http_failure, http_token, SIMULATOR_ENV)

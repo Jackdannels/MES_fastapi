@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from app.core.config import Settings
 from app.core.time_utils import now_business_text
 from app.services.lims_http import EXTERNAL_INTAKE_LOCK, LIMS_OUTBOX_KEY, enqueue_lims_event
+from app.services.lims_communication_store import RECEIVED_KEY, digest
 
 
 INTAKE_MESSAGE_TYPE = "lims.external-intake.created.v1"
@@ -28,6 +29,10 @@ class LimsRabbitRuntime:
         self.command_exchange: Any | None = None
         self.consumer_queue: Any | None = None
         self.last_error = ""
+        self.communication_repository = None
+        self.communication_routing_key = f"lims.communication.probe.{uuid.uuid4().hex}"
+        self.communication_queue = None
+        self._communication_probes = {}
 
     @property
     def connected(self) -> bool:
@@ -72,6 +77,9 @@ class LimsRabbitRuntime:
                 routing_key=self.settings.RABBITMQ_INTAKE_ROUTING_KEY,
             )
             await self.consumer_queue.consume(self._handle_intake_message)
+            self.communication_queue = await self.consumer_channel.declare_queue("", exclusive=True, auto_delete=True)
+            await self.communication_queue.bind(self.command_exchange, routing_key=self.communication_routing_key)
+            await self.communication_queue.consume(self._handle_communication_probe)
             self.last_error = ""
         except Exception as exc:
             self.last_error = str(exc)
@@ -86,6 +94,34 @@ class LimsRabbitRuntime:
         self.consumer_channel = None
         self.command_exchange = None
         self.consumer_queue = None
+        self.communication_queue = None
+        for future in self._communication_probes.values():
+            if not future.done():
+                future.cancel()
+        self._communication_probes.clear()
+
+    def prepare_communication_probe(self, check_id):
+        future = asyncio.get_running_loop().create_future()
+        self._communication_probes[check_id] = future
+        return future
+
+    def forget_communication_probe(self, check_id):
+        future = self._communication_probes.pop(check_id, None)
+        if future is not None and not future.done():
+            future.cancel()
+
+    async def _handle_communication_probe(self, message):
+        try:
+            payload = json.loads(message.body)
+            if payload.get("type") != "lims.communication.probe.v1" or payload.get("schema_version") != 1:
+                raise ValueError("Invalid probe")
+            future = self._communication_probes.get(payload.get("check_id"))
+            if future is not None and not future.done():
+                future.set_result(True)
+        except (ValueError, AttributeError):
+            await message.reject(requeue=False)
+            return
+        await message.ack()
 
     def status(self) -> dict[str, Any]:
         return {
@@ -119,6 +155,17 @@ class LimsRabbitRuntime:
         payload: dict[str, Any] = {}
         try:
             envelope, payload = self._decode_envelope(message.body)
+            if self.communication_repository:
+                records = await asyncio.to_thread(self.communication_repository.read, RECEIVED_KEY, [])
+                existing = next((row for row in records if row["id"] == envelope["message_id"]), None)
+                if existing:
+                    if existing["digest"] != digest(envelope):
+                        self.last_error = "Message identity/content conflict"
+                        # Preserve the first durable message; no requeue storm or duplicate failure receipts.
+                        await message.reject(requeue=False)
+                        return
+                    await message.ack()
+                    return
             if self.store_intake is None:
                 raise RuntimeError("LIMS intake handler is not configured")
             await asyncio.to_thread(
@@ -126,11 +173,17 @@ class LimsRabbitRuntime:
                 payload,
                 message_id=str(envelope.get("message_id") or ""),
             )
+            if self.communication_repository:
+                await asyncio.to_thread(self.communication_repository.record, RECEIVED_KEY,
+                                        envelope["message_id"], envelope, outcome="received")
         except (ValueError, HTTPException) as exc:
             detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
             self.last_error = str(detail)
             try:
                 await self._publish_failure(envelope, payload, str(detail))
+                if self.communication_repository and envelope.get("message_id"):
+                    await asyncio.to_thread(self.communication_repository.record, RECEIVED_KEY,
+                                            envelope["message_id"], envelope, outcome="failed")
             except Exception:
                 # Do not discard the intake before its failure receipt is durable.
                 await message.nack(requeue=True)

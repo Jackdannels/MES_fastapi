@@ -387,7 +387,7 @@ async function sendCurrent() {
     const result = await requestJson("/api/tasks/send", { method: "POST", body: JSON.stringify(readForm()) });
     await Promise.all([refreshState(), refreshLogs()]);
     await generate({ announce: false });
-    feedback(`已发布 ${result.code}，请在 MES 外部受理中确认。`);
+    feedback(result.publish_status === "queued" ? `${result.code} 已持久化排队，通讯恢复后自动补传。` : `已发布 ${result.code}，请在 MES 外部受理中确认。`);
   } catch (error) { feedback(error.message, true); }
   finally { setBusy(false); }
 }
@@ -398,7 +398,8 @@ async function sendBatch() {
     const count = Number($("batchCount").value || 1);
     const result = await requestJson("/api/tasks/send-random", { method: "POST", body: JSON.stringify({ count }) });
     await Promise.all([refreshState(), refreshLogs(), generate({ announce: false })]);
-    feedback(`已批量下发 ${result.count} 条外部委托。`);
+    const queued = result.items.filter((item) => item.publish_status === "queued").length;
+    feedback(`已保存 ${result.count} 条外部委托，其中 ${queued} 条等待通讯恢复后补传。`);
   } catch (error) { feedback(error.message, true); }
   finally { setBusy(false); }
 }

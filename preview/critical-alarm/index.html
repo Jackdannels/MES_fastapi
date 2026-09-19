@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src data:; base-uri 'none'; form-action 'none'">
+  <title>MES 严重告警 · 三方案交互预览</title>
+  <style>
+    :root{color-scheme:dark;--bg:#06090d;--panel:#0d1218;--raised:#131a22;--text:#edfdf9;--muted:#8ba9a4;--accent:#63e6be;--line:rgba(113,232,209,.2);--grid:rgba(99,230,190,.055);--red:#ff767d;--redtext:#ffced0;--redbg:#30191f;--redborder:#dc5965;--scrim:rgba(0,0,0,.65)}
+    :root[data-theme=light]{color-scheme:light;--bg:#f3f7f8;--panel:#fff;--raised:#e9f0f1;--text:#112d2d;--muted:#496765;--accent:#087f6b;--line:rgba(13,110,93,.22);--grid:rgba(8,127,107,.06);--red:#bc263a;--redtext:#a5192e;--redbg:#fff0f2;--redborder:#d54154;--scrim:rgba(15,37,37,.46)}
+    *{box-sizing:border-box} [hidden]{display:none!important}
+    body{margin:0;background:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px),var(--bg);background-size:28px 28px;color:var(--text);font:14px/1.5 "Microsoft YaHei UI","Segoe UI",sans-serif}
+    button,select,input{font:inherit} button,select{min-height:42px;border:1px solid var(--line);border-radius:4px;background:var(--panel);color:var(--muted);padding:8px 14px} button{cursor:pointer} button:hover{border-color:var(--accent);color:var(--text)} button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:4px} button:disabled{opacity:.5;cursor:default}
+    .studio{padding:18px 28px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+    .studio-top,.studio-controls,.switches,.workspace-header,.actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .studio-top{justify-content:space-between;margin-bottom:14px}.eyebrow{color:var(--accent);font-size:11px;letter-spacing:2px;font-weight:700}.studio-title{font-size:19px;font-weight:700;margin-right:12px}.preview-label{color:var(--muted);font-size:12px}.studio-controls{justify-content:space-between}.switches{gap:6px}
+    .choice[aria-pressed=true]{background:var(--raised);color:var(--accent);border-color:var(--accent)}.choice b{margin-right:8px;font-family:Consolas,monospace}.recommend{font-size:10px;margin-left:8px;color:var(--accent)}
+    .settings{display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:12px;color:var(--muted)}.settings label{display:flex;gap:8px;align-items:center}.settings select{min-height:36px;padding:5px 10px}.settings input{accent-color:var(--accent)}
+    .scheme-note{padding:10px 28px;border-bottom:1px solid var(--line);background:var(--raised);color:var(--muted);font-size:12px}.scheme-note strong{color:var(--text);margin-right:12px}
+    .app{display:flex;min-height:calc(100vh - 178px)}.sidebar{width:260px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:22px 18px;display:flex;flex-direction:column}.brand{font-size:18px;line-height:1.4;font-weight:700;padding-bottom:20px;border-bottom:1px solid var(--line)}.brand small{display:block;margin-top:6px;font-weight:400;font-size:12px;color:var(--muted)}.nav{display:grid;gap:5px;padding:18px 0}.nav button{text-align:left;font-size:16px;font-weight:600;min-height:47px;border-color:transparent;background:transparent;padding:10px 12px}.nav button[aria-current=page]{border-color:var(--accent);background:var(--raised);color:var(--text)}.footer{margin-top:auto;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}.connection{display:flex;justify-content:space-between;margin-bottom:6px}.ok{color:var(--accent)}.red{color:var(--redtext)}.old-alert{padding:7px 9px;border:1px solid var(--redborder);border-radius:4px;background:var(--redbg);color:var(--redtext);margin:10px 0;font-weight:700}
+    main{min-width:0;flex:1;padding:28px 32px 40px}.workspace-header{justify-content:space-between;padding:18px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(135deg,var(--panel),var(--raised));margin-bottom:22px;min-height:92px}h1{font-size:clamp(32px,2.5vw,44px);line-height:1.2;margin:0;font-weight:750;letter-spacing:-1px}.actions{justify-content:flex-end;gap:10px}.actions .primary{color:var(--accent);border-color:var(--accent);background:var(--raised)}
+    .alarm{position:relative;border:1px solid var(--redborder);background:var(--redbg);color:var(--redtext);border-radius:6px}.alarm::before{content:"";position:absolute;inset:-1px;border:2px solid var(--redborder);border-radius:inherit;box-shadow:0 0 12px var(--redborder);opacity:.25;animation:alarm-pulse 1.6s ease-in-out infinite;pointer-events:none}@keyframes alarm-pulse{0%,100%{opacity:.2}50%{opacity:1}}
+    .paused .alarm::before{animation:none;opacity:.6}@media(prefers-reduced-motion:reduce){.alarm::before{animation:none;opacity:.65}}
+    .alarm:hover{border-color:var(--red);color:var(--redtext)}.alarm-dot{width:9px;height:9px;display:inline-block;flex:none;background:var(--red);border-radius:50%;box-shadow:0 0 9px var(--red)}
+    .alarm-inline{display:flex;align-items:center;text-align:left;gap:14px;padding:11px 16px;min-width:300px}.alarm-inline .text{display:grid;gap:3px}.alarm-inline strong{font-size:15px}.alarm-inline small{font-size:12px;opacity:.86}.chevron{margin-left:auto;font-size:21px}
+    .alarm-chip{display:flex;align-items:center;gap:10px;font-weight:700;min-height:42px;padding:8px 14px}.alarm-count{border-left:1px solid var(--redborder);padding-left:10px;font:700 18px/1 Consolas,monospace}
+    .banner{display:flex;align-items:center;gap:16px;padding:16px 20px;margin:-5px 0 22px;flex-wrap:wrap}.banner strong{font-size:16px}.banner span:not(.alarm-dot){font-size:13px}.banner button{margin-left:auto;background:transparent;color:var(--redtext);border-color:var(--redborder)}.banner-copy{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+    .cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}.card{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:18px;min-width:0}.muted{color:var(--muted)}.kpi{font:700 30px/1.4 Consolas,monospace;margin:3px 0}.card small{font-size:12px;color:var(--muted)}.columns{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:18px;margin-top:22px}h2{font-size:17px;margin:0 0 18px}table{width:100%;border-collapse:collapse;text-align:left;font-size:13px}th{color:var(--muted);font-weight:500}td,th{padding:13px 8px;border-bottom:1px solid var(--line)}.badge{display:inline-block;border:1px solid var(--line);background:var(--raised);padding:3px 8px;border-radius:4px;color:var(--accent);white-space:nowrap;font-size:12px}.device{display:flex;gap:12px;padding:12px 0}.device .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);margin-top:7px}.device small{display:block;margin-top:4px}.empty{padding:26px 0;color:var(--muted)}.task-tools{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}.task-tools input{background:var(--raised);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:10px 12px;min-width:0;width:240px}.table-wrap{overflow:auto}.footnote{margin-top:26px;color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    dialog{position:fixed;inset:0 0 0 auto;margin:0;height:100dvh;max-height:100dvh;width:min(460px,100%);max-width:100%;border:0;border-left:1px solid var(--line);padding:30px;background:var(--panel);color:var(--text);box-shadow:-20px 0 80px rgba(0,0,0,.3)}dialog::backdrop{background:var(--scrim)}.drawer-head{display:flex;justify-content:space-between;gap:16px;align-items:center}.drawer-head h2{margin:0;font-size:22px}.drawer-alert{margin:24px 0;padding:18px}.drawer-alert strong{display:block;font-size:18px;margin:8px 0}.drawer-alert p{margin:0;font-size:13px;color:var(--redtext)}dl{margin:24px 0}dl div{display:flex;gap:12px;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--line)}dt{color:var(--muted)}dd{margin:0;text-align:right}.timeline{border-left:1px solid var(--line);padding-left:18px;list-style:none;font-size:13px}.timeline li{margin:18px 0}.timeline small{display:block;color:var(--muted);margin-bottom:4px}.drawer-note{font-size:12px;color:var(--muted);line-height:1.8}.ack{width:100%;margin:18px 0;color:var(--text)}
+    /* Selected implementation: centered modal, not a right-side drawer. */
+    dialog{inset:0;margin:auto;width:min(680px,calc(100vw - 32px));height:fit-content;max-height:calc(100dvh - 32px);border:1px solid var(--line);border-radius:8px;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,.4)}
+    @media(max-width:1250px){.sidebar{width:220px}.cards{grid-template-columns:repeat(3,minmax(0,1fr))}.columns{grid-template-columns:1.5fr 1fr}.columns>.card:last-child{grid-column:1/-1}.studio-controls{gap:16px}main{padding:22px}}
+    @media(max-width:760px){.sidebar{display:none}.studio{padding:16px}.scheme-note{padding:12px 16px}.studio-top{align-items:flex-start}.switches{width:100%;display:grid;grid-template-columns:1fr}.choice{text-align:left}.settings{gap:10px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.columns{grid-template-columns:1fr}.columns>.card:last-child{grid-column:auto}main{padding:16px}.workspace-header{align-items:flex-start;gap:20px}.actions{justify-content:flex-start;width:100%}.alarm-inline{min-width:0;width:100%}.banner{padding:16px}.banner button{margin-left:0}.card{padding:14px}.workspace-header h1{font-size:34px}}
+  </style>
+</head>
+<body>
+  <header class="studio">
+    <div class="studio-top"><div><span class="eyebrow">MES / DESIGN PREVIEW</span><br><span class="studio-title">严重告警 · 位置与提醒强度</span></div><span class="preview-label">独立设计预览 · 全部为演示数据 · 不连接业务接口</span></div>
+    <div class="studio-controls">
+      <nav class="switches" aria-label="选择预览方案">
+        <button class="choice" data-scheme="1"><b>01</b>总览内嵌卡片</button>
+        <button class="choice" data-scheme="2"><b>02</b>全局右侧入口<span class="recommend">推荐</span></button>
+        <button class="choice" data-scheme="3"><b>03</b>全宽告警横幅</button>
+      </nav>
+      <div class="settings">
+        <label>当前页面<select id="pageSelect"><option value="dashboard">中控总览</option><option value="tasks">任务受理</option></select></label>
+        <label>演示状态<select id="stateSelect"><option value="critical">严重告警</option><option value="recovered">已恢复</option></select></label>
+        <label><input id="motion" type="checkbox" checked>显示慢闪</label>
+        <button id="theme">切换白色主题</button>
+      </div>
+    </div>
+  </header>
+  <div class="scheme-note" role="status"><strong id="schemeName"></strong><span id="schemeDescription"></span></div>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">七二四新火工区信息化中控管理系统<small>实验室中控管理</small></div>
+      <nav class="nav" aria-label="演示导航">
+        <button data-page="dashboard">中控总览</button><button data-page="tasks">任务受理</button>
+        <button disabled>任务/托盘总览</button><button disabled>样品预接驳</button><button disabled>排程看板</button><button disabled>样品/托盘信息</button><button disabled>试验过程管控</button><button disabled>设备资源</button><button disabled>试验数据</button><button disabled>人员信息</button><button disabled>历史任务数据</button>
+      </nav>
+      <div class="footer"><div class="connection"><span>LIMS</span><span id="peerStatus" class="red">未连接</span></div><div class="connection"><span>上位机系统</span><span class="ok">已连接</span></div><div class="old-alert" id="sidebarAlarm">严重告警 · 已重试 3 次</div><small>演示状态，非真实系统状态</small></div>
+    </aside>
+    <main>
+      <header class="workspace-header">
+        <h1 id="pageTitle">中控总览</h1>
+        <button id="inlineAlarm" class="alarm alarm-inline" data-detail hidden><span class="alarm-dot" aria-hidden="true"></span><span class="text"><strong>严重告警 · LIMS 通讯异常</strong><small>连续重试 3 次失败 · 正在自动重试</small></span><span class="chevron" aria-hidden="true">›</span></button>
+        <div class="actions" id="headerActions">
+          <button id="chipAlarm" class="alarm alarm-chip" data-detail hidden><span class="alarm-dot" aria-hidden="true"></span>严重告警<span class="alarm-count">1</span></button>
+          <button class="task-action" disabled hidden>任务重置</button><button class="task-action primary" disabled hidden>外部受理</button><button class="task-action primary" disabled hidden>新建任务</button>
+          <button id="refreshDemo">刷新预览</button><button disabled>退出登录</button>
+        </div>
+      </header>
+      <section id="bannerAlarm" class="alarm banner" aria-label="严重告警提示" hidden><span class="alarm-dot" aria-hidden="true"></span><div class="banner-copy"><strong>严重告警：LIMS 通讯中断</strong><span>连续重试 3 次失败，系统正在每 10 秒自动重试</span></div><button data-detail>查看详情 →</button></section>
+      <div id="dashboardContent">
+        <section class="cards" aria-label="演示统计">
+          <article class="card"><div class="muted">已受理任务</div><div class="kpi">20</div><small>外部 10 / 内部 10</small></article>
+          <article class="card"><div class="muted">已排程</div><div class="kpi">0</div><small>当前待执行排程</small></article>
+          <article class="card"><div class="muted">待排程</div><div class="kpi">20</div><small>需设备可用</small></article>
+          <article class="card"><div class="muted">正在运行（实验）</div><div class="kpi">0</div><small>当前运行实验数量</small></article>
+          <article class="card"><div class="muted">业务预警</div><div class="kpi">0</div><small>不包含通讯告警</small></article>
+        </section>
+        <section class="columns">
+          <article class="card"><h2>任务队列</h2><div class="table-wrap"><table><thead><tr><th>序号</th><th>任务</th><th>来源</th><th>状态</th></tr></thead><tbody><tr><td>1</td><td>SYLUW-2026-09-001</td><td>外部</td><td><span class="badge">待排程</span></td></tr><tr><td>2</td><td>SYLUW-2026-09-002</td><td>外部</td><td><span class="badge">待排程</span></td></tr><tr><td>3</td><td>SYLUN-2026-09-001</td><td>内部</td><td><span class="badge">待排程</span></td></tr><tr><td>4</td><td>SYLUN-2026-09-002</td><td>内部</td><td><span class="badge">待排程</span></td></tr></tbody></table></div></article>
+          <article class="card"><h2>设备状态</h2><div class="device"><span class="dot"></span><div>冲击试验设备<small>空闲 · 可用</small></div></div><div class="device"><span class="dot"></span><div>振动试验设备<small>空闲 · 可用</small></div></div><div class="device"><span class="dot"></span><div>温度冲击试验箱<small>空闲 · 可用</small></div></div><div class="device"><span class="dot"></span><div>高低温湿热试验箱<small>空闲 · 可用</small></div></div></article>
+          <article class="card"><h2>未排程实验计时</h2><div class="device"><span class="dot"></span><div>SYLUW-2026-09-001<small>高低温湿热试验 · 等待 00:12:38</small></div></div><div class="device"><span class="dot"></span><div>SYLUW-2026-09-002<small>冲击试验 · 等待 00:08:16</small></div></div></article>
+        </section>
+      </div>
+      <section id="tasksContent" class="card" hidden><h2>任务列表</h2><div class="task-tools"><input aria-label="演示任务搜索" placeholder="可输入文字，切换方案不会丢失"><select aria-label="演示任务状态"><option>全部状态</option><option>待排程</option></select><button disabled>查询</button></div><div class="table-wrap"><table><thead><tr><th>任务编号</th><th>任务名称</th><th>来源</th><th>样品数</th><th>任务状态</th></tr></thead><tbody><tr><td>SYLUW-2026-09-001</td><td>高低温湿热试验委托</td><td>外部委托</td><td>4</td><td><span class="badge">待排程</span></td></tr><tr><td>SYLUW-2026-09-002</td><td>冲击试验委托</td><td>外部委托</td><td>6</td><td><span class="badge">待排程</span></td></tr><tr><td>SYLUN-2026-09-001</td><td>振动试验任务</td><td>内部任务</td><td>3</td><td><span class="badge">待排程</span></td></tr></tbody></table></div><p class="muted">共 20 条演示任务 · 业务操作在预览中禁用</p></section>
+      <div class="footnote"><span>点击红色告警可查看详情；顶部可模拟恢复、暂停闪烁或切换主题。</span><span>仅预览，不会触发真实告警、重试或任务操作。</span></div>
+    </main>
+  </div>
+  <dialog id="details" aria-labelledby="detailTitle">
+    <div class="drawer-head"><div><span class="eyebrow">ALARM DETAIL / DEMO</span><h2 id="detailTitle">严重告警详情</h2></div><button id="closeDetails" aria-label="关闭告警详情">关闭</button></div>
+    <div class="drawer-alert alarm"><span>通讯保障 / LIMS</span><strong>连续 3 次重试失败</strong><p>HTTP 连接超时，尚未恢复双向通讯。</p></div>
+    <dl><div><dt>告警来源</dt><dd>LIMS 通讯保障</dd></div><div><dt>当前等级</dt><dd class="red">严重告警</dd></div><div><dt>故障持续</dt><dd>00:00:45（演示）</dd></div><div><dt>已重试</dt><dd>3 次 / 每 10 秒</dd></div><div><dt>处理状态</dt><dd id="ackStatus">未确认</dd></div></dl>
+    <h2>事件过程</h2><ol class="timeline"><li><small>23:10:00 · 演示时间</small>首次检测失败，生成普通告警</li><li><small>23:10:10 — 23:10:30</small>连续三次重试未恢复</li><li><small>23:10:30</small><span class="red">升级严重告警，继续自动重试</span></li></ol>
+    <button id="acknowledge" class="ack">确认已知悉（仅演示）</button><p class="drawer-note">确认不等于恢复，也不会停止红色提醒。可关闭详情，在顶部将演示状态切换为“已恢复”查看消失效果。</p>
+  </dialog>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const schemes = {
+      1: ['方案一 · 总览内嵌卡片', '只在中控总览显示完整故障摘要；切换到任务受理可观察提醒消失。'],
+      2: ['方案二 · 全局右侧入口（推荐）', '每个中控页面右侧保留统一入口；点击展开详情，不离开当前工作页面。'],
+      3: ['方案三 · 全宽告警横幅', '标题下方独占一行，直接展示故障原因与重试状态，提醒最强。']
+    };
+    let scheme = ['1','2','3'].includes(location.hash.slice(1)) ? location.hash.slice(1) : '2';
+    function render() {
+      const critical = $('stateSelect').value === 'critical';
+      const dashboard = $('pageSelect').value === 'dashboard';
+      $('schemeName').textContent = schemes[scheme][0]; $('schemeDescription').textContent = schemes[scheme][1];
+      document.querySelectorAll('[data-scheme]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.scheme === scheme)));
+      document.querySelectorAll('[data-page]').forEach((button) => { if(button.dataset.page === $('pageSelect').value) button.setAttribute('aria-current','page'); else button.removeAttribute('aria-current'); });
+      $('pageTitle').textContent = dashboard ? '中控总览' : '任务受理';
+      $('dashboardContent').hidden = !dashboard; $('tasksContent').hidden = dashboard;
+      document.querySelectorAll('.task-action').forEach((button) => { button.hidden = dashboard; });
+      $('inlineAlarm').hidden = !critical || scheme !== '1' || !dashboard;
+      $('chipAlarm').hidden = !critical || scheme !== '2'; $('bannerAlarm').hidden = !critical || scheme !== '3';
+      $('sidebarAlarm').hidden = !critical; $('peerStatus').textContent = critical ? '未连接' : '已连接'; $('peerStatus').className = critical ? 'red' : 'ok';
+      if (!critical && $('details').open) $('details').close();
+    }
+    document.querySelectorAll('[data-scheme]').forEach((button) => button.addEventListener('click', () => { scheme = button.dataset.scheme; history.replaceState(null,'','#'+scheme); render(); }));
+    window.addEventListener('hashchange', () => { if(schemes[location.hash.slice(1)]) scheme=location.hash.slice(1); render(); });
+    document.querySelectorAll('[data-page]').forEach((button) => button.addEventListener('click', () => { $('pageSelect').value = button.dataset.page; render(); }));
+    $('pageSelect').addEventListener('change',render); $('stateSelect').addEventListener('change',render);
+    $('motion').addEventListener('change', () => document.body.classList.toggle('paused', !$('motion').checked));
+    $('theme').addEventListener('click', () => { const light = document.documentElement.dataset.theme !== 'light'; document.documentElement.dataset.theme = light ? 'light' : 'dark'; $('theme').textContent = light ? '切换暗色主题' : '切换白色主题'; });
+    document.querySelectorAll('[data-detail]').forEach((button) => button.addEventListener('click', () => $('details').showModal()));
+    $('closeDetails').addEventListener('click', () => $('details').close());
+    $('acknowledge').addEventListener('click', () => { $('ackStatus').textContent = '已知悉（演示）'; $('acknowledge').textContent = '已确认，等待恢复'; $('acknowledge').disabled = true; });
+    $('refreshDemo').addEventListener('click', () => { $('ackStatus').textContent = '未确认'; $('acknowledge').textContent = '确认已知悉（仅演示）'; $('acknowledge').disabled = false; render(); });
+    render();
+  </script>
+</body>
+</html>
