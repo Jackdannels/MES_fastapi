@@ -58,6 +58,7 @@ from app.services.salt_spray_resume_preparation import (
 )
 from app.services.storage_update_bus import publish_storage_update
 from app.services.test_data_reports import archive_completion_reports
+from app.services.lims_completion import prepare_completion_updates
 from app.services.device_fault_cancellation import FAULT_CANCELED, FAULT_END_MODE, build_fault_cancellation_updates
 from app.services.mq_event_protocol import (
     ACK_MESSAGE_TYPE,
@@ -1237,6 +1238,10 @@ class MySQLMqEventRepository:
                 }
             if "stagingEvents" in result:
                 updates["mes.staging_events"] = result["stagingEvents"]
+            updates.update(prepare_completion_updates(
+                storage, scoped_snapshot, result, task_code=task_no,
+                experiment_code=experiment_no, run_no=run_no, completed_at=occurred_at,
+            ))
             write_laboratory_updates(
                 storage,
                 updates,
@@ -1549,6 +1554,10 @@ def process_laboratory_event(
         if not cancel_reason:
             raise ValueError("cancel_reason is required for mold cancellation")
         repo.mark_mold_run_canceled(run_no, occurred_at, cancel_reason)
+    if message_type == "EXPERIMENT_ENDED" and not mold_cancel_command and not fault_cancel_command:
+        # Persist physical completion AND the LIMS intent before marking the
+        # MQTT message processed. A failed commit must remain retryable.
+        repo.mark_run_ended(run_no, occurred_at, payload_axis_code, payload_next_axis_code, sub_experiment_code)
     message_log_id = repo.record_message(
         {
             "message_id": message_id,
@@ -1620,8 +1629,6 @@ def process_laboratory_event(
             started_at=occurred_at,
         )
     elif message_type == "EXPERIMENT_ENDED":
-        if not mold_cancel_command and not fault_cancel_command:
-            repo.mark_run_ended(run_no, occurred_at, payload_axis_code, payload_next_axis_code, sub_experiment_code)
         attendance_service = get_attendance_service()
         if mold_cancel_command or fault_cancel_command:
             attendance_service.logout_lab(

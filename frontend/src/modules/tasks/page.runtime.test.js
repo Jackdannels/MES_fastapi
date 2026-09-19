@@ -6,6 +6,12 @@ import { buildApiUrl, getFrontendApiBaseUrl } from "../../lib/apiBase.js";
 import { TEST_PREFIX_MAP } from "../../lib/labs.js";
 import TasksPage from "./page.vue";
 
+// 原有业务回归在已认证前提下执行；真实认证交互另有独立测试。
+vi.mock("@/lib/taskAdminAuth", async (importOriginal) => ({
+  ...await importOriginal(),
+  requestTaskAdminAction: (_action, execute) => execute({ adminUsername: "admin", adminPassword: "123" }),
+}));
+
 const SCHEDULES_KEY = "mes.schedules";
 const SAMPLES_KEY = "mes.samples";
 const STREAMS_KEY = "mes.streams";

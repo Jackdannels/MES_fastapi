@@ -11,6 +11,7 @@ import {
   readAttendanceUserQrToken,
   resetAttendanceUserQrToken,
   resetAttendanceUserPassword,
+  updateAttendanceUser,
 } from "@/lib/attendanceApi";
 import { buildQrCodeSvg, buildSvgImageDataUrl } from "@/lib/qrCode";
 import { formatBusinessDateKey } from "@/lib/dateTime";
@@ -117,6 +118,8 @@ function useSystemPage() {
   const workTimePageRange = createPaginationRange(workTimeCurrentPage, filteredWorkTimeRows);
 
   const createEmployeeFields = ref(createEmployeeForm(EMPTY_EMPLOYEE_FORM));
+  const createEmployeeAdminFields = ref({ ...DEFAULT_ADMIN_CREDENTIALS });
+  const createEmployeeSubmitting = ref(false);
   const createEmployeeError = ref("");
   const adminActionFields = ref(createAdminActionFields());
   const adminActionError = ref("");
@@ -159,8 +162,14 @@ function useSystemPage() {
     return selected.length === 1 ? selected[0] : `已选 ${selected.length} 个试验间`;
   });
 
-  // 编辑弹窗始终从当前 payload 重新派生表单，避免残留上一次编辑状态。
-  const editEmployeeFields = computed(() => createEmployeeForm(editEmployeeDialog.payload.value?.form || EMPTY_EMPLOYEE_FORM));
+  const editEmployeeFields = ref(createEmployeeForm(EMPTY_EMPLOYEE_FORM));
+  const employeeHasChanges = computed(() => {
+    const original = editEmployeeDialog.payload.value;
+    return Boolean(original) && ["employeeName", "username", "roleName"].some(
+      (key) => editEmployeeFields.value[key].trim() !== String(original[key] || "").trim(),
+    );
+  });
+  const employeeSaving = ref(false);
 
   const refreshSummaryCards = () => {
     summaryCards.value = [
@@ -197,13 +206,16 @@ function useSystemPage() {
   };
 
   const openEmployeeModal = () => {
+    if (createEmployeeSubmitting.value) return;
     // 每次打开新增弹窗都重置为空白员工表单。
     createEmployeeFields.value = createEmployeeForm(EMPTY_EMPLOYEE_FORM);
+    createEmployeeAdminFields.value = { ...DEFAULT_ADMIN_CREDENTIALS };
     createEmployeeError.value = "";
     createEmployeeDialog.openWith({ id: "new-employee" });
   };
 
   const closeEmployeeModal = () => {
+    if (createEmployeeSubmitting.value) return;
     createEmployeeError.value = "";
     createEmployeeDialog.close();
   };
@@ -217,11 +229,18 @@ function useSystemPage() {
   };
 
   const saveNewEmployee = async () => {
+    if (createEmployeeSubmitting.value) return;
     const form = createEmployeeFields.value;
     createEmployeeError.value = "";
+    if (!createEmployeeAdminFields.value.adminUsername.trim() || !createEmployeeAdminFields.value.adminPassword.trim()) {
+      createEmployeeError.value = "请输入管理员账号和密码";
+      return;
+    }
     let createdEmployee;
+    createEmployeeSubmitting.value = true;
     try {
       createdEmployee = await createAttendanceUser({
+        ...createEmployeeAdminFields.value,
         active: true,
         employeeName: form.employeeName,
         password: form.password,
@@ -231,6 +250,8 @@ function useSystemPage() {
     } catch (error) {
       createEmployeeError.value = formatCreateEmployeeError(error);
       return;
+    } finally {
+      createEmployeeSubmitting.value = false;
     }
     const employee = createEmployeeRow(createdEmployee);
     employeeRows.value = [
@@ -250,13 +271,56 @@ function useSystemPage() {
     adminActionFields.value = createAdminActionFields();
     adminActionError.value = "";
     adminActionSuccess.value = "";
+    editEmployeeFields.value = createEmployeeForm(employee);
     editEmployeeDialog.openWith(employee);
   };
 
   const closeEmployeeDrawer = () => {
+    if (adminActionSubmitting.value) return;
     adminActionError.value = "";
     adminActionSuccess.value = "";
     editEmployeeDialog.close();
+  };
+
+  const saveEmployeeChanges = async () => {
+    const employee = editEmployeeDialog.payload.value;
+    if (!employee?.id || !employeeHasChanges.value || adminActionSubmitting.value) return;
+    adminActionError.value = "";
+    adminActionSuccess.value = "";
+    const form = editEmployeeFields.value;
+    if (!form.employeeName.trim() || !form.username.trim()) {
+      adminActionError.value = "请填写员工姓名和账号";
+      return;
+    }
+    if (!adminActionFields.value.adminUsername.trim() || !adminActionFields.value.adminPassword.trim()) {
+      adminActionError.value = "请输入管理员账号和密码";
+      return;
+    }
+    adminActionSubmitting.value = true;
+    employeeSaving.value = true;
+    try {
+      const updated = await updateAttendanceUser(employee.id, {
+        employeeName: form.employeeName,
+        username: form.username,
+        roleName: form.roleName,
+        adminUsername: adminActionFields.value.adminUsername,
+        adminPassword: adminActionFields.value.adminPassword,
+      });
+      employeeRows.value = employeeRows.value.map((row) => {
+        if (row.id !== employee.id) return row;
+        const next = createEmployeeRow({ ...row, ...updated });
+        return { ...next, form: createEmployeeForm(next) };
+      });
+      const saved = employeeRows.value.find((row) => row.id === employee.id);
+      editEmployeeDialog.openWith(saved);
+      editEmployeeFields.value = createEmployeeForm(saved);
+      adminActionSuccess.value = "员工信息已保存";
+    } catch (error) {
+      adminActionError.value = String(error?.message || "保存员工信息失败，请重试");
+    } finally {
+      adminActionSubmitting.value = false;
+      employeeSaving.value = false;
+    }
   };
 
   const resetEmployeePassword = async () => {
@@ -293,7 +357,7 @@ function useSystemPage() {
       await deleteAttendanceUser(employee.id, adminActionFields.value);
       employeeRows.value = employeeRows.value.filter((row) => row.id !== employee.id);
       refreshSummaryCards();
-      closeEmployeeDrawer();
+      editEmployeeDialog.close();
     } catch (error) {
       adminActionError.value = String(error?.message || error || "删除账号失败");
     } finally {
@@ -486,7 +550,12 @@ function useSystemPage() {
     closeEmployeeOperationLogs,
     createEmployeeError,
     createEmployeeFields,
+    createEmployeeAdminFields,
+    createEmployeeSubmitting,
     editEmployeeFields,
+    employeeHasChanges,
+    employeeSaving,
+    saveEmployeeChanges,
     employeeCurrentPage,
     employeeRoleOptions: EMPLOYEE_ROLE_OPTIONS,
     employeePageCount,

@@ -43,7 +43,7 @@ class AttendanceOperationLogQuery(AttendanceAdminRequest):
     lab_names: list[str] = Field(default_factory=list, alias="labNames")
 
 
-class AttendanceUserCreate(BaseModel):
+class AttendanceUserCreate(AttendanceAdminRequest):
     username: str
     password: str
     employee_name: str = Field(alias="employeeName")
@@ -51,7 +51,8 @@ class AttendanceUserCreate(BaseModel):
     active: bool = True
 
 
-class AttendanceUserUpdate(BaseModel):
+class AttendanceUserUpdate(AttendanceAdminRequest):
+    username: str | None = None
     password: str | None = None
     employee_name: str | None = Field(default=None, alias="employeeName")
     role_name: str | None = Field(default=None, alias="roleName")
@@ -116,7 +117,7 @@ def _laboratory_has_elapsed_run(lab_name: str) -> bool:
 
 def _verify_admin_credentials(payload: AttendanceAdminRequest) -> None:
     if normalize_text(payload.admin_username) != "admin" or normalize_text(payload.admin_password) != "123":
-        raise HTTPException(status_code=401, detail="Invalid administrator credentials")
+        raise HTTPException(status_code=401, detail="管理员账号或密码错误")
 
 
 @router.get("/users")
@@ -129,6 +130,7 @@ def list_users() -> list[dict[str, Any]]:
 
 @router.post("/users", status_code=status.HTTP_201_CREATED)
 def create_user(payload: AttendanceUserCreate) -> dict[str, Any]:
+    _verify_admin_credentials(payload)
     try:
         return get_attendance_service().create_user(
             active=payload.active,
@@ -143,9 +145,11 @@ def create_user(payload: AttendanceUserCreate) -> dict[str, Any]:
 
 @router.put("/users/{user_id}")
 def update_user(user_id: int, payload: AttendanceUserUpdate) -> dict[str, Any]:
+    _verify_admin_credentials(payload)
     try:
         return get_attendance_service().update_user(
             user_id,
+            username=payload.username,
             active=payload.active,
             employee_name=payload.employee_name,
             password=payload.password,

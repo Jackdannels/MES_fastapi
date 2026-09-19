@@ -1,7 +1,7 @@
 from typing import Optional
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -92,6 +92,35 @@ class Settings(BaseSettings):
     RABBITMQ_INTAKE_ROUTING_KEY: str = "lims.external-intake.created.v1"
     RABBITMQ_STATUS_QUEUE: str = "lims.external-intake-status.v1"
     RABBITMQ_PREFETCH_COUNT: int = 10
+
+    # Empty disables delivery, but never discards pending notifications.
+    LIMS_HTTP_CALLBACK_URL: str = ""
+    LIMS_HTTP_TOKEN: str = ""
+    LIMS_DATA_PUBLIC_BASE_URL: str = ""
+    LIMS_HTTP_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0, le=60)
+
+    @field_validator("LIMS_DATA_PUBLIC_BASE_URL")
+    @classmethod
+    def validate_lims_data_url(cls, value: str) -> str:
+        from urllib.parse import urlsplit
+        value = value.strip().rstrip("/")
+        if value:
+            parsed = urlsplit(value)
+            _port = parsed.port
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+                raise ValueError("LIMS data base must be an explicit HTTP(S) URL without credentials, query or fragment")
+        return value
+
+    @field_validator("LIMS_HTTP_CALLBACK_URL")
+    @classmethod
+    def validate_lims_callback_url(cls, value: str) -> str:
+        from urllib.parse import urlsplit
+        value = value.strip()
+        if value:
+            parsed = urlsplit(value)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+                raise ValueError("LIMS callback must be an HTTP(S) URL without credentials or fragment")
+        return value
 
     UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE: bool = False
     UPPER_COMPUTER_SIMULATOR_AUTO_START: bool = True

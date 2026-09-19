@@ -1,5 +1,6 @@
 <template>
   <section ref="overviewRoot" class="card section">
+    <TaskAdminAuthDialog />
     <TaskOverviewToolbar
       v-model:view-mode="viewMode"
       v-model:keyword="keyword"
@@ -56,6 +57,7 @@
 </template>
 
 <script setup>
+import TaskAdminAuthDialog from "@/components/shared/TaskAdminAuthDialog.vue";
 defineOptions({
   name: "TaskOverviewPage",
 });

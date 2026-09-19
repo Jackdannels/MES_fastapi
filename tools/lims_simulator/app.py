@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import random
+import asyncio
+import secrets
+import ipaddress
 import os
 import threading
 import uuid
@@ -10,24 +13,30 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from pydantic import ValidationError
+from typing import Literal
+from dotenv import dotenv_values
 
 try:
     from .rabbitmq_runtime import LimsRabbitClient
     from .task_numbers import TaskNumberSequence
+    from .interactions import COMPLETION_EVENT, InteractionStore
 except ImportError:  # pragma: no cover - direct uvicorn launch from this directory
     from rabbitmq_runtime import LimsRabbitClient
     from task_numbers import TaskNumberSequence
+    from interactions import COMPLETION_EVENT, InteractionStore
 
 
 BASE_DIR = Path(__file__).resolve().parent
+SIMULATOR_ENV = dotenv_values(BASE_DIR.parents[1] / ".env")
 STATIC_DIR = BASE_DIR / "static"
 BEIJING_TZ = timezone(timedelta(hours=8))
 MAX_LOGS = 300
-SIMULATOR_VERSION = "1.0"
+SIMULATOR_VERSION = "1.1"
 EXPERIMENT_TYPES = (
     "冲击试验",
     "振动试验",
@@ -56,16 +65,46 @@ def normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
 
+def http_token() -> str:
+    # Read only the needed setting; never inject MES database secrets into os.environ.
+    return os.environ.get("LIMS_HTTP_TOKEN", str(SIMULATOR_ENV.get("LIMS_HTTP_TOKEN") or ""))
+
+
 class RandomBatchRequest(BaseModel):
     count: int = Field(default=1, ge=1, le=20)
 
 
+class MesEvent(BaseModel):
+    event_id: str = Field(min_length=1, max_length=128, pattern=r"\S")
+    type: str = Field(min_length=1, max_length=160, pattern=r"^mes\.")
+    schema_version: Literal[1]
+    source: Literal["MES"] = "MES"
+    occurred_at: str = Field(min_length=1, max_length=64)
+    correlation_id: str = Field(default="", max_length=128)
+    message_id: str = Field(default="", max_length=128)
+    payload: dict[str, Any]
+
+    @model_validator(mode="after")
+    def validate_completion_identity(self):
+        if self.type == COMPLETION_EVENT:
+            for value in (self.payload.get("completion_id"), self.payload.get("experiment_code"),
+                          self.payload.get("code") or self.payload.get("task_code")):
+                if not isinstance(value, str) or not value.strip() or len(value) > 128:
+                    raise ValueError("Completion requires completion_id, task code and experiment_code")
+            revision = self.payload.get("revision")
+            if type(revision) is not int or revision < 1:
+                raise ValueError("Completion revision must be a positive integer")
+        return self
+
+
 class LimsSimulator:
-    def __init__(self, *, sequence_path: Path | None = None) -> None:
+    def __init__(self, *, sequence_path: Path | None = None, inbox_path: Path | None = None) -> None:
         self._lock = threading.RLock()
         self._logs: deque[dict[str, Any]] = deque(maxlen=MAX_LOGS)
         self._sent_count = 0
-        self._numbers = TaskNumberSequence(sequence_path or Path(os.environ.get("LIMS_SEQUENCE_PATH") or BASE_DIR / "data" / "task-sequence.sqlite3"))
+        sequence_path = sequence_path or Path(os.environ.get("LIMS_SEQUENCE_PATH") or BASE_DIR / "data" / "task-sequence.sqlite3")
+        self._numbers = TaskNumberSequence(sequence_path)
+        self.inbox = InteractionStore(inbox_path or Path(os.environ.get("LIMS_INBOX_PATH") or sequence_path.with_name("interactions.sqlite3")))
         self._task_statuses: dict[str, str] = {}
         self.rabbit: LimsRabbitClient | None = None
 
@@ -91,6 +130,8 @@ class LimsSimulator:
             **rabbit_state,
             "pending_count": pending_count,
             "sent_count": sent_count,
+            "http_receiver": {"path": "/api/mes/events", "auth_required": bool(http_token()),
+                              "received_count": self.inbox.list(limit=1)["raw_total"]},
         }
 
     def next_task_code(self) -> str:
@@ -148,7 +189,7 @@ class LimsSimulator:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         self.mark_sent()
         with self._lock:
-            self._task_statuses[next_payload["lims_request_id"]] = "published"
+            self._task_statuses.setdefault(next_payload["lims_request_id"], "published")
         self.log("success", f"任务已发布到 RabbitMQ：{normalize_text(next_payload.get('code'))}", envelope)
         return {**next_payload, "message_id": envelope["message_id"], "publish_status": "published"}
 
@@ -157,17 +198,21 @@ class LimsSimulator:
         intake_id = normalize_text(payload.get("lims_request_id") or payload.get("intake_id") or event.get("correlation_id"))
         event_type = normalize_text(event.get("type"))
         event_status = normalize_text(payload.get("acceptance_status"))
+        if not event_type.startswith("mes.external-intake."):
+            return
         if not event_status:
             event_status = "accepted" if ".accepted." in event_type else "failed" if ".failed." in event_type else "received"
         if intake_id:
             with self._lock:
-                self._task_statuses[intake_id] = event_status
+                current = self._task_statuses.get(intake_id)
+                if current != "accepted" and not (current == "failed" and event_status in {"received", "pending"}):
+                    self._task_statuses[intake_id] = event_status
         level = "error" if event_status == "failed" else "success"
-        self.log(level, f"MES 状态回传：{intake_id or '-'} → {event_status}", event)
+        self.log(level, f"MES HTTP 回执：{intake_id or '-'} → {event_status}", event)
 
 
 simulator = LimsSimulator()
-rabbit_client = LimsRabbitClient(simulator.handle_status)
+rabbit_client = LimsRabbitClient()
 simulator.rabbit = rabbit_client
 
 
@@ -197,6 +242,45 @@ def state() -> dict[str, Any]:
 @app.get("/api/logs")
 def logs() -> dict[str, Any]:
     return {"logs": simulator.logs()}
+
+
+@app.get("/api/interactions")
+def interactions(task_code: str = "", limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)) -> dict[str, Any]:
+    return simulator.inbox.list(task_code=task_code.strip(), limit=limit, offset=offset)
+
+
+@app.post("/api/mes/events")
+async def receive_mes_event(request: Request) -> dict[str, Any]:
+    token = http_token()
+    if token:
+        if not secrets.compare_digest(request.headers.get("authorization", ""), f"Bearer {token}"):
+            raise HTTPException(status_code=401, detail="Invalid LIMS bearer token")
+    else:
+        try:
+            local = bool(request.client and ipaddress.ip_address(request.client.host).is_loopback)
+        except ValueError:
+            local = False
+        if not local:
+            raise HTTPException(status_code=403, detail="Remote callbacks require LIMS_HTTP_TOKEN")
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Event exceeds 1 MiB")
+    try:
+        event = MesEvent.model_validate_json(body).model_dump()
+    except ValidationError:
+        raise HTTPException(status_code=422, detail="Invalid MES event envelope") from None
+    key = request.headers.get("idempotency-key")
+    if key and key != event["event_id"]:
+        raise HTTPException(status_code=409, detail="Idempotency-Key must match event_id")
+    try:
+        duplicate = await asyncio.to_thread(simulator.inbox.receive, event, now_text())
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not duplicate:
+        await simulator.handle_status(event)
+    return {"ok": True, "event_id": event["event_id"], "duplicate": duplicate}
 
 
 @app.post("/api/tasks/generate")

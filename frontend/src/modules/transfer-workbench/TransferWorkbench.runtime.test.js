@@ -916,6 +916,11 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
 
     await wrapper.get('[data-testid="transfer-dispatch-scan-input"]').setValue("UNKNOWN-TRAY");
+    fetch.mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => ({ detail: "Tray not found: UNKNOWN-TRAY" }),
+    });
     await wrapper.get('[data-testid="transfer-dispatch-scan-submit"]').trigger("click");
     await settle(wrapper);
 
@@ -1680,7 +1685,7 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
 
     expect(wrapper.text()).not.toContain("[object Object]");
-    expect(wrapper.text()).toContain("body.trayLimit: Input should be less than or equal to 16");
+    expect(wrapper.text()).toContain("托盘样品上限： 输入值不能大于 16");
   });
 
   test("removes a task from the active workspace when the workspace endpoint reports it archived", async () => {

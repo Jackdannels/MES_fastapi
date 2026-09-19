@@ -105,26 +105,34 @@
   </section>
 
   <AppModal :open="employeeModalOpen" title="新增员工账号" @close="closeEmployeeModal">
-    <div class="form-grid">
+    <fieldset class="form-grid system-employee-fields" :disabled="createEmployeeSubmitting">
       <div class="form-field">
-        <label>员工姓名</label>
-        <input v-model="createEmployeeFields.employeeName" data-testid="employee-name-input" type="text" placeholder="例如：张三" />
+        <label for="create-employee-name">员工姓名</label>
+        <input id="create-employee-name" v-model="createEmployeeFields.employeeName" data-testid="employee-name-input" type="text" placeholder="例如：张三" />
       </div>
       <div class="form-field">
-        <label>账号</label>
-        <input v-model="createEmployeeFields.username" data-testid="employee-username-input" type="text" placeholder="例如：zhangsan" />
+        <label for="create-employee-username">账号</label>
+        <input id="create-employee-username" v-model="createEmployeeFields.username" data-testid="employee-username-input" type="text" placeholder="例如：zhangsan" />
       </div>
       <div class="form-field">
-        <label>密码</label>
-        <input v-model="createEmployeeFields.password" data-testid="employee-password-input" type="password" placeholder="请输入初始密码" />
+        <label for="create-employee-password">密码</label>
+        <input id="create-employee-password" v-model="createEmployeeFields.password" data-testid="employee-password-input" type="password" placeholder="请输入初始密码" autocomplete="new-password" />
       </div>
       <div class="form-field">
-        <label>角色</label>
-        <select v-model="createEmployeeFields.roleName" data-testid="employee-role-select">
+        <label for="create-employee-role">角色</label>
+        <select id="create-employee-role" v-model="createEmployeeFields.roleName" data-testid="employee-role-select">
           <option v-for="role in employeeRoleOptions" :key="role" :value="role">{{ role }}</option>
         </select>
       </div>
-    </div>
+      <div class="form-field">
+        <label for="create-employee-admin-username">管理员账号</label>
+        <input id="create-employee-admin-username" v-model="createEmployeeAdminFields.adminUsername" data-testid="create-employee-admin-username" type="text" placeholder="请输入管理员账号" />
+      </div>
+      <div class="form-field">
+        <label for="create-employee-admin-password">管理员密码</label>
+        <input id="create-employee-admin-password" v-model="createEmployeeAdminFields.adminPassword" data-testid="create-employee-admin-password" type="password" placeholder="请输入管理员密码" autocomplete="off" />
+      </div>
+    </fieldset>
     <AppFeedback
       :message="createEmployeeError"
       tone="error"
@@ -132,40 +140,40 @@
       @close="createEmployeeError = ''"
     />
     <template #footer>
-      <button class="action-btn" data-testid="employee-save" type="button" @click="saveNewEmployee">保存</button>
-      <button class="action-btn secondary" type="button" @click="closeEmployeeModal">取消</button>
+      <button class="action-btn" data-testid="employee-save" type="button" :disabled="createEmployeeSubmitting" :aria-busy="createEmployeeSubmitting" @click="saveNewEmployee">{{ createEmployeeSubmitting ? "保存中…" : "保存" }}</button>
+      <button class="action-btn secondary" type="button" :disabled="createEmployeeSubmitting" @click="closeEmployeeModal">取消</button>
     </template>
   </AppModal>
 
-  <AppModal :open="employeeDrawerOpen" title="员工账号详情" @close="closeEmployeeDrawer">
-    <div class="form-grid">
+  <AppModal :open="employeeDrawerOpen" title="员工账号详情" content-class="system-employee-edit-modal" @close="closeEmployeeDrawer">
+    <fieldset class="form-grid system-employee-fields" :disabled="adminActionSubmitting">
       <div class="form-field">
-        <label>员工姓名</label>
-        <input :value="editEmployeeFields.employeeName" type="text" placeholder="张三" />
+        <label for="edit-employee-name">员工姓名</label>
+        <input id="edit-employee-name" v-model="editEmployeeFields.employeeName" data-testid="edit-employee-name" type="text" placeholder="张三" />
       </div>
       <div class="form-field">
-        <label>账号</label>
-        <input :value="editEmployeeFields.username" type="text" placeholder="zhangsan" />
+        <label for="edit-employee-username">账号</label>
+        <input id="edit-employee-username" v-model="editEmployeeFields.username" data-testid="edit-employee-username" type="text" placeholder="zhangsan" />
       </div>
       <div class="form-field">
-        <label>角色</label>
-        <select :value="editEmployeeFields.roleName" disabled>
+        <label for="edit-employee-role">角色</label>
+        <select id="edit-employee-role" v-model="editEmployeeFields.roleName" data-testid="edit-employee-role">
           <option v-for="role in employeeRoleOptions" :key="role" :value="role">{{ role }}</option>
         </select>
       </div>
       <div class="form-field">
-        <label>管理员账号</label>
-        <input v-model="adminActionFields.adminUsername" data-testid="admin-username-input" type="text" placeholder="admin" />
+        <label for="employee-admin-username">管理员账号</label>
+        <input id="employee-admin-username" v-model="adminActionFields.adminUsername" data-testid="admin-username-input" type="text" placeholder="admin" />
       </div>
       <div class="form-field">
-        <label>管理员密码</label>
-        <input v-model="adminActionFields.adminPassword" data-testid="admin-password-input" type="password" placeholder="请输入管理员密码" />
+        <label for="employee-admin-password">管理员密码</label>
+        <input id="employee-admin-password" v-model="adminActionFields.adminPassword" data-testid="admin-password-input" type="password" placeholder="请输入管理员密码" autocomplete="off" />
       </div>
       <div class="form-field">
-        <label>新密码</label>
-        <input v-model="adminActionFields.newPassword" data-testid="reset-password-input" type="password" placeholder="用于重置员工密码" />
+        <label for="employee-new-password">新密码</label>
+        <input id="employee-new-password" v-model="adminActionFields.newPassword" data-testid="reset-password-input" type="password" placeholder="用于重置员工密码" autocomplete="new-password" />
       </div>
-    </div>
+    </fieldset>
     <AppFeedback
       v-if="adminActionError"
       :message="adminActionError"
@@ -189,6 +197,16 @@
         @click="resetEmployeePassword"
       >
         重置密码
+      </button>
+      <button
+        class="action-btn system-employee-save"
+        data-testid="employee-save-changes"
+        type="button"
+        :disabled="!employeeHasChanges || adminActionSubmitting"
+        :aria-busy="employeeSaving"
+        @click="saveEmployeeChanges"
+      >
+        {{ employeeSaving ? "保存中…" : "保存修改" }}
       </button>
       <button
         class="action-btn danger"
@@ -316,9 +334,14 @@ const {
   closeEmployeeOperationLogs,
   createEmployeeError,
   createEmployeeFields,
+  createEmployeeAdminFields,
+  createEmployeeSubmitting,
   deleteEmployee,
   downloadEmployeeQrCode,
   editEmployeeFields,
+  employeeHasChanges,
+  employeeSaving,
+  saveEmployeeChanges,
   employeeCurrentPage,
   employeePageCount,
   employeePageRange,

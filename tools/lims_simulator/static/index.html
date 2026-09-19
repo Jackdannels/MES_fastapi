@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MES LIMS 模拟器</title>
-    <link rel="stylesheet" href="/static/styles.css?v=1.0.3" />
+    <link rel="stylesheet" href="/static/styles.css?v=1.2.1" />
   </head>
   <body>
     <main class="shell">
@@ -12,14 +12,20 @@
         <div>
           <div class="eyebrow">开发联调工具</div>
           <h1>MES LIMS 模拟器</h1>
-          <p>通过 RabbitMQ 模拟 LIMS 向 MES 下发外部委托任务。</p>
+          <p>RabbitMQ 下发任务 · HTTP 接收 MES 回执与结果</p>
         </div>
         <div class="header-badges">
-          <span id="versionBadge" class="badge">v1.0</span>
+          <span id="versionBadge" class="badge">v1.1</span>
           <span id="statusBadge" class="status">RabbitMQ 未连接</span>
         </div>
       </header>
 
+      <nav class="workspace-tabs" aria-label="模拟器页面">
+        <a id="dispatchTab" href="#dispatch" aria-current="page">下发任务</a>
+        <a id="interactionTab" href="#interactions">MES交互</a>
+      </nav>
+
+      <div id="dispatchPage" aria-labelledby="dispatchTab">
       <section class="metrics">
         <article><span>RabbitMQ 地址</span><strong id="mesUrl">-</strong></article>
         <article><span>待确认任务</span><strong id="pendingCount">0</strong></article>
@@ -102,8 +108,36 @@
       </section>
 
       <section class="panel">
-        <div class="panel-title"><div><h2>通信日志</h2><p>记录模拟器向 MES 的下发结果。</p></div><button id="refreshBtn" type="button">刷新</button></div>
+        <div class="panel-title"><div><h2>下发日志</h2><p>本次会话的下发记录；持久化 HTTP 通知请前往 MES交互。</p></div><button id="refreshBtn" type="button">刷新</button></div>
         <div id="logs" class="logs"><div class="empty">暂无日志</div></div>
+      </section>
+      </div>
+
+      <section id="interactionPage" aria-labelledby="interactionTab" hidden>
+        <section class="metrics interaction-metrics">
+          <article><span>HTTP 接收接口 · POST</span><strong id="receiverUrl">/api/mes/events</strong></article>
+          <article><span>已接收通知 · 持久化</span><strong id="receivedCount">—</strong></article>
+          <article><span>接收鉴权</span><strong id="receiverAuth">—</strong></article>
+        </section>
+        <section class="panel">
+          <div class="panel-title"><div><h2>MES 通知记录</h2><p>至少一个托盘完成全部轴向及步骤后才回传。完成记录仅展示最新版本；补传数据不会新增一次完成，原始通知仍持久化保存。</p></div><button id="refreshInteractions" type="button">刷新记录</button></div>
+          <form id="interactionFilter" class="interaction-filter">
+            <label for="interactionTaskCode">任务编号（精确查询）<input id="interactionTaskCode" placeholder="输入完整任务编号" /></label>
+            <button type="submit">查询</button>
+            <button id="clearInteractionFilter" type="button">重置</button>
+          </form>
+          <p id="interactionFeedback" role="status" aria-live="polite">正在读取接收记录…</p>
+          <div id="interactions" class="interaction-list"></div>
+          <div class="interaction-pagination">
+            <button id="previousInteractions" type="button" disabled>上一页</button>
+            <span id="interactionPageInfo">第 1 页</span>
+            <button id="nextInteractions" type="button" disabled>下一页</button>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>试验完成回传口径</h2>
+          <p>MES 主动汇总新完成托盘对应的全部执行阶段、人员登录与考勤、设备运行区间、样品和实验数据链接。此页面只接收和展示，不参与统计；共享执行区间按稳定编号关联，不按托盘数量重复累计。</p>
+        </section>
       </section>
     </main>
     <div id="testTypesModal" class="selection-modal" hidden>
@@ -147,6 +181,7 @@
       </section>
     </div>
 
-    <script src="/static/app.js?v=1.0.3"></script>
+    <script src="/static/app.js?v=1.1.0"></script>
+    <script src="/static/interactions.js?v=1.2.1"></script>
   </body>
 </html>

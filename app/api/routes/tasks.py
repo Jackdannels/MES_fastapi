@@ -1,7 +1,9 @@
 from typing import Any
 import re
 
-from fastapi import APIRouter, Body, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+
+from app.api.task_admin_auth import require_task_admin
 
 from app.core.axis_codes import (
     axis_codes_for_experiment_type as default_axis_codes_for_experiment_type,
@@ -1025,7 +1027,7 @@ def read_next_task_code(reference: str = Query(default="")) -> dict[str, str]:
     return {"code": get_task_page_query_repository().next_task_code(reference)}
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_task_admin)])
 @with_laboratory_storage_commit_lock
 def create_task(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     storage = get_storage_backend()
@@ -1077,7 +1079,7 @@ def store_external_task_intake(payload: dict[str, Any], *, message_id: str = "")
         )
 
 
-@router.post("/external-intakes/{intake_id}/accept")
+@router.post("/external-intakes/{intake_id}/accept", dependencies=[Depends(require_task_admin)])
 @with_laboratory_storage_commit_lock
 def accept_external_task_intake(intake_id: str) -> dict[str, Any]:
     with EXTERNAL_INTAKE_LOCK:
@@ -1169,7 +1171,7 @@ def read_task_detail(task_id: str) -> dict[str, Any]:
     }
 
 
-@router.put("/{task_id}")
+@router.put("/{task_id}", dependencies=[Depends(require_task_admin)])
 @with_laboratory_storage_commit_lock
 def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     storage = get_storage_backend()
@@ -1423,7 +1425,7 @@ def update_task(task_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, 
     return updated_task
 
 
-@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_task_admin)])
 @with_laboratory_storage_commit_lock
 def delete_task(task_id: str) -> None:
     storage = get_storage_backend()

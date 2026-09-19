@@ -22,6 +22,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 
 import { DEFAULT_FEEDBACK_DISMISS_MS } from "@/composables/useFeedback";
+import { localizeResponseMessage } from "@/lib/responseMessages";
 
 const emit = defineEmits(["close"]);
 
@@ -57,7 +58,9 @@ const dismiss = () => {
   emit("close");
 };
 
-const normalizedMessage = computed(() => String(props.message || "").trim());
+const normalizedMessage = computed(() => props.message
+  ? localizeResponseMessage(props.message, props.tone === "success" ? "操作成功" : "操作未完成，请稍后重试")
+  : "");
 const normalizedTone = computed(() => {
   const tone = String(props.tone || "").trim();
   return toneSet.has(tone) ? tone : "info";

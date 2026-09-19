@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
+  buildExternalIntakeRows,
   buildFilterOptions,
   buildTaskCode,
   buildTaskEditForm,
@@ -20,6 +21,27 @@ import {
 describe("tasks model", () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  test("orders pending external intakes by task code descending without mutating the input", () => {
+    const intakes = [
+      { id: "intake-22", code: "SYLUW-2026-09-022" },
+      { id: "intake-23", code: "SYLUW-2026-09-023", acceptance_status: "pending" },
+      { id: "intake-9", code: "SYLUW-2026-09-9" },
+      { id: "intake-36", code: "SYLUW-2026-09-036" },
+      { id: "intake-next-month", code: "SYLUW-2026-10-001" },
+      { id: "intake-accepted", code: "SYLUW-2026-10-002", acceptance_status: "accepted" },
+    ];
+    const original = structuredClone(intakes);
+
+    expect(buildExternalIntakeRows(intakes).map((row) => row.code)).toEqual([
+      "SYLUW-2026-10-001",
+      "SYLUW-2026-09-036",
+      "SYLUW-2026-09-023",
+      "SYLUW-2026-09-022",
+      "SYLUW-2026-09-9",
+    ]);
+    expect(intakes).toEqual(original);
   });
 
   test("orders task rows by task code ascending by default", () => {

@@ -51,6 +51,8 @@ def test_attendance_numeric_account_321_login_regression(client):
     created = client.post(
         "/api/attendance/users",
         json={
+            "adminUsername": "admin",
+            "adminPassword": "123",
             "username": "321",
             "password": "123",
             "employeeName": "账号321",
@@ -236,7 +238,7 @@ def test_attendance_login_rejects_wrong_password(client):
     )
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid employee credentials"}
+    assert response.json() == {"detail": "员工账号或密码错误"}
 
 
 def test_attendance_login_allows_employee_in_any_laboratory(client):
@@ -314,6 +316,8 @@ def test_attendance_creates_employee_account_for_role_information_maintenance(cl
     created = client.post(
         "/api/attendance/users",
         json={
+            "adminUsername": "admin",
+            "adminPassword": "123",
             "username": "worker-unique",
             "password": "pw123",
             "employeeName": "新增员工",
@@ -342,6 +346,8 @@ def test_attendance_qr_token_login_opens_lab_session_and_reset_invalidates_old_t
     created = client.post(
         "/api/attendance/users",
         json={
+            "adminUsername": "admin",
+            "adminPassword": "123",
             "username": "qr-worker",
             "password": "pw123",
             "employeeName": "扫码员工",
@@ -388,13 +394,15 @@ def test_attendance_qr_token_login_opens_lab_session_and_reset_invalidates_old_t
         json={"qrPayload": first_payload},
     )
     assert old_login.status_code == 401
-    assert old_login.json() == {"detail": "Invalid employee QR code"}
+    assert old_login.json() == {"detail": "员工二维码无效，请重新生成或扫码"}
 
 
 def test_attendance_read_qr_token_rejects_employee_without_generated_code(client):
     created = client.post(
         "/api/attendance/users",
         json={
+            "adminUsername": "admin",
+            "adminPassword": "123",
             "username": "no-qr-worker",
             "password": "pw123",
             "employeeName": "无码员工",
@@ -407,13 +415,15 @@ def test_attendance_read_qr_token_rejects_employee_without_generated_code(client
     response = client.get(f"/api/attendance/users/{created.json()['id']}/qr-token")
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Employee QR code not generated"}
+    assert response.json() == {"detail": "尚未生成员工二维码"}
 
 
 def test_attendance_qr_login_rejects_inactive_employee(client):
     created = client.post(
         "/api/attendance/users",
         json={
+            "adminUsername": "admin",
+            "adminPassword": "123",
             "username": "inactive-qr-worker",
             "password": "pw123",
             "employeeName": "停用扫码员工",
@@ -435,7 +445,7 @@ def test_attendance_qr_login_rejects_inactive_employee(client):
     )
 
     assert response.status_code == 401
-    assert response.json() == {"detail": "Invalid employee QR code"}
+    assert response.json() == {"detail": "员工二维码无效，请重新生成或扫码"}
 
 
 def test_attendance_work_time_date_filter_is_accepted(client):
@@ -461,6 +471,8 @@ def test_attendance_work_time_starts_when_laboratory_step_begins(client, monkeyp
     created = client.post(
         "/api/attendance/users",
         json={
+            "adminUsername": "admin",
+            "adminPassword": "123",
             "username": "timer-worker",
             "password": "pw123",
             "employeeName": "计时员工",
@@ -497,6 +509,8 @@ def test_attendance_admin_can_reset_password_and_delete_employee(client):
     created = client.post(
         "/api/attendance/users",
         json={
+            "adminUsername": "admin",
+            "adminPassword": "123",
             "username": "managed-worker",
             "password": "old-pw",
             "employeeName": "受管员工",

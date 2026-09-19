@@ -9,6 +9,8 @@ from tools.lims_simulator.task_numbers import TaskNumberSequence
 
 @pytest.fixture(autouse=True)
 def isolate_simulator_sequence(monkeypatch, tmp_path):
+    monkeypatch.setenv("LIMS_HTTP_TOKEN", "")
+    monkeypatch.delenv("LIMS_INBOX_PATH", raising=False)
     monkeypatch.setattr(lims_app, "simulator", lims_app.LimsSimulator(sequence_path=tmp_path / "sequence.sqlite3"))
 
 
@@ -39,7 +41,7 @@ def build_client(monkeypatch):
     monkeypatch.setattr(lims_app.rabbit_client, "start", noop)
     monkeypatch.setattr(lims_app.rabbit_client, "stop", noop)
     monkeypatch.setattr(lims_app.simulator, "rabbit", fake)
-    return TestClient(lims_app.app), fake
+    return TestClient(lims_app.app, client=("127.0.0.1", 50000)), fake
 
 
 def test_lims_simulator_uses_type_specific_axis_sequences():
@@ -58,8 +60,8 @@ def test_lims_simulator_serves_rabbit_state_and_generates_valid_task(monkeypatch
     assert state.status_code == 200
     assert state.json()["connected"] is True
     assert state.json()["rabbitmq_url"] == "127.0.0.1:5672/"
-    assert state.json()["version"] == "1.0"
-    assert client.get("/openapi.json").json()["info"]["version"] == "1.0"
+    assert state.json()["version"] == "1.1"
+    assert client.get("/openapi.json").json()["info"]["version"] == "1.1"
     assert generated.status_code == 200
     assert generated.json()["code"] == f"SYLUW-{lims_app.now_beijing():%Y-%m}-021"
     assert generated.json()["source"] == "外部委托"

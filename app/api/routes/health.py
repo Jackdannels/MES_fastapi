@@ -124,3 +124,9 @@ def health_capacity(request: Request):
             content={"status": "unhealthy", "detail": str(exc)},
         )
     return report
+
+
+@router.get("/lims-http")
+def health_lims_http(request: Request):
+    runtime = request.app.state.lims_http_runtime
+    return runtime.status()

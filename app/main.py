@@ -13,6 +13,7 @@ from app.services.data_retention import DataRetentionRuntime
 from app.services.mq_runtime import MqttRuntimeController
 from app.services.mq_publisher import start_mqtt_publisher, shutdown_mqtt_publisher
 from app.services.lims_rabbitmq import LimsRabbitRuntime
+from app.services.lims_http import LimsHttpRuntime
 from app.services.upper_computer_simulator import restart_upper_computer_simulator_auto_mode, stop_upper_computer_simulator
 from app.db.readiness import require_runtime_database_ready
 from app.web import routes as web_routes
@@ -22,6 +23,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     configured_settings = app_settings or settings
     mq_runtime = MqttRuntimeController(configured_settings)
     lims_rabbit_runtime = LimsRabbitRuntime(configured_settings, store_intake=store_external_task_intake)
+    lims_http_runtime = LimsHttpRuntime(configured_settings)
     data_retention_runtime = DataRetentionRuntime(configured_settings)
 
     @asynccontextmanager
@@ -31,6 +33,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         try:
             if configured_settings.APP_ENV == "prod":
                 require_runtime_database_ready(configured_settings)
+            await lims_http_runtime.start()
             if configured_settings.RABBITMQ_ENABLED:
                 await lims_rabbit_runtime.start()
             if configured_settings.MQTT_ENABLED:
@@ -43,6 +46,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
         finally:
             await data_retention_runtime.stop()
             await lims_rabbit_runtime.stop()
+            await lims_http_runtime.stop()
             mq_runtime.shutdown()
             shutdown_mqtt_publisher(configured_settings)
             stop_upper_computer_simulator(configured_settings)
@@ -50,6 +54,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=configured_settings.APP_NAME, debug=configured_settings.DEBUG, lifespan=lifespan)
     app.state.mq_runtime = mq_runtime
     app.state.lims_rabbit_runtime = lims_rabbit_runtime
+    app.state.lims_http_runtime = lims_http_runtime
     app.state.data_retention_runtime = data_retention_runtime
     app.state.settings = configured_settings
 

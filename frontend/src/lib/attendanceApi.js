@@ -1,10 +1,11 @@
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
+import { localizeResponseMessage } from "./responseMessages.js";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 
 const readErrorMessage = async (response) => {
   const payload = await response.json().catch(() => null);
-  return payload?.detail || payload?.message || `请求失败（${response.status}）`;
+  return localizeResponseMessage(payload?.detail || payload?.message, `请求失败（${response.status}）`);
 };
 
 const readJson = async (path, message) => {
@@ -119,6 +120,8 @@ async function listAttendanceUsers() {
 async function createAttendanceUser(payload = {}) {
   return writeJson("/api/attendance/users", {
     body: {
+      adminUsername: String(payload.adminUsername || "").trim(),
+      adminPassword: String(payload.adminPassword || ""),
       username: String(payload.username || "").trim(),
       password: String(payload.password || ""),
       employeeName: String(payload.employeeName || "").trim(),
@@ -133,6 +136,9 @@ async function updateAttendanceUser(userId, payload = {}) {
   return writeJson(`/api/attendance/users/${encodeURIComponent(String(userId))}`, {
     method: "PUT",
     body: {
+      adminUsername: String(payload.adminUsername || "").trim(),
+      adminPassword: String(payload.adminPassword || ""),
+      ...(payload.username !== undefined ? { username: String(payload.username || "").trim() } : {}),
       ...(payload.password !== undefined ? { password: String(payload.password || "") } : {}),
       ...(payload.employeeName !== undefined ? { employeeName: String(payload.employeeName || "").trim() } : {}),
       ...(payload.roleName !== undefined ? { roleName: String(payload.roleName || "").trim() } : {}),

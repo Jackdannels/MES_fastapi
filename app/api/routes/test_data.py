@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import ipaddress
+import html
 from typing import Any
 from urllib.parse import urlsplit
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse
@@ -32,6 +34,46 @@ from app.services.test_data_reports import (
 
 
 router = APIRouter(prefix="/api/test-data", tags=["test-data"])
+
+
+@router.get("/completions/{token}", response_class=HTMLResponse)
+def completion_data_page(token: str) -> HTMLResponse:
+    from app.services.lims_completion import resolve_completion, build_data_manifest
+    from app.services.test_data_repository import get_test_data_repository
+    storage = get_storage_backend()
+    try:
+        record = resolve_completion(token, storage)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    exports = {r["exportKey"]: r for r in get_test_data_repository(storage).list_exports()}
+    # Relative links; no Host header or request-origin trust needed.
+    data = build_data_manifest(storage, record, exports, "http://local.invalid")
+    rows = []
+    for item in data["files"]:
+        label = html.escape(f"{item['sample_code']} · {item['run_no']} · {item['axis_code'] or '非轴向'}")
+        if item["status"] == "ready":
+            url = f"/api/test-data/completions/{quote(token, safe='')}/files/{quote(item['export_key'], safe='')}"
+            rows.append(f'<li><a href="{url}">{label} · PDF</a></li>')
+        else:
+            rows.append(f'<li>{label} · 数据待生成</li>')
+    payload = record["payload"]
+    page = ('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<title>本次试验完成数据</title><body><main><h1>本次试验完成数据</h1>'
+            f'<p>{html.escape(payload["code"])} / {html.escape(payload["experiment_name"])}</p>'
+            f'<p>托盘：{html.escape("、".join(payload["tray_codes"]))}</p>'
+            f'<ul>{"".join(rows) or "<li>暂无可用数据文件</li>"}</ul></main></body></html>')
+    return HTMLResponse(page, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'"})
+
+
+@router.get("/completions/{token}/files/{export_key:path}")
+def completion_data_file(token: str, export_key: str) -> FileResponse:
+    from app.services.lims_completion import resolve_completion_file
+    try:
+        path = resolve_completion_file(token, export_key)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return FileResponse(path, media_type="application/pdf", filename=path.name,
+                        headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
 
 class DataSettingsRequest(BaseModel):

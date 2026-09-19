@@ -2,7 +2,7 @@
 
 本项目是一个基于 `FastAPI + Vue 3 + Vite` 的 MES 示例系统。
 
-开发工具版本：MES 启动器 `v1.2`、固定工作台设置 `v2.3`、MES 控制中心 `v2.3`、终端管理 `v1.3`、上位机模拟器 `v2.7`、LIMS 模拟器 `v1.0`。各模拟器通过后端版本常量和状态接口向页面提供版本号。
+开发工具版本：MES 启动器 `v1.2`、固定工作台设置 `v2.3`、MES 控制中心 `v2.3`、终端管理 `v1.3`、上位机模拟器 `v2.7`、LIMS 模拟器 `v1.1`。各模拟器通过后端版本常量和状态接口向页面提供版本号。
 
 当前默认运行方式：
 
@@ -173,6 +173,8 @@ python scripts\trial_run.py --port 8021
 ## LIMS 外部委托开发联调
 
 LIMS 模拟器位于 `tools/lims_simulator`，通过 RabbitMQ AMQP 向 MES 下发外部委托，不调用 MES 接收 HTTP API，也不直接写数据库：
+
+模拟器分为“下发任务”和“MES交互”两页。MES 接收/受理/失败回执和托盘完成试验结果通过 HTTP 回调推送，支持持久化、重试和去重。仅当至少一个托盘完成该试验全部轴向及步骤时回传，支持部分托盘批次；报告晚到更新同一完成记录。标准启动脚本自动设置本机回调及下载地址。配置与协议见 [LIMS 模拟器说明](tools/lims_simulator/README.md) 和 [完成回传协议](docs/lims-experiment-completion.md)。
 
 ```text
 Exchange: lims.mes.commands

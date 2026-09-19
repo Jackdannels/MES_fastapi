@@ -177,6 +177,7 @@ SNAPSHOT_STORAGE_KEYS = (
     "mes.external_task_intakes",
     "mes.lims_inbox",
     "mes.lims_outbox",
+    "mes.lims_completions",
     "mes.maintenance_records",
     "mes.staging_events",
     "mes.test_data_settings",
@@ -546,6 +547,15 @@ class MySQLMesStorageBackend(StorageBackend):
                 if relational_updates:
                     self._backfill_schedule_task_ids(cursor)
                     self._sync_progress_statuses(cursor)
+                # Completion intent is committed with its physical workflow state.
+                if "mes.lims_completions" in snapshot_updates:
+                    for key in ("mes.lims_completions", "mes.lims_outbox"):
+                        if key in snapshot_updates:
+                            cursor.execute(
+                                "INSERT INTO app_storage_snapshot (storage_key, payload_json) VALUES (%s, %s) "
+                                "ON DUPLICATE KEY UPDATE payload_json=VALUES(payload_json), updated_at=CURRENT_TIMESTAMP",
+                                (key, snapshot_updates.pop(key)),
+                            )
             connection.commit()
 
         if snapshot_updates:
@@ -772,6 +782,7 @@ class MySQLMesStorageBackend(StorageBackend):
                     "mes.experiment_samples",
                     "mes.streams",
                     "mes.staging_events",
+                    "mes.lims_completions",
                 }
             }
             if not normalized_updates:
@@ -837,6 +848,12 @@ class MySQLMesStorageBackend(StorageBackend):
                                 )
                         self._backfill_schedule_task_ids(cursor)
                         self._sync_progress_statuses(cursor)
+                        if "mes.lims_completions" in normalized_updates:
+                            cursor.execute(
+                                "INSERT INTO app_storage_snapshot (storage_key, payload_json) VALUES (%s, %s) "
+                                "ON DUPLICATE KEY UPDATE payload_json=VALUES(payload_json), updated_at=CURRENT_TIMESTAMP",
+                                ("mes.lims_completions", self._serialize_snapshot_updates(normalized_updates)["mes.lims_completions"]),
+                            )
                     connection.commit()
                 except Exception:
                     connection.rollback()

@@ -133,14 +133,17 @@ $backendReadyUrl = "http://127.0.0.1:$BackendPort/health/ready"
 $frontendLocalUrl = "http://127.0.0.1:$FrontendPort/"
 $limsSimulatorUrl = "http://127.0.0.1:$LimsSimulatorPort/"
 $limsSimulatorReadyUrl = "http://127.0.0.1:$LimsSimulatorPort/api/state"
+$limsHttpCallbackUrl = "http://127.0.0.1:$LimsSimulatorPort/api/mes/events"
 $upperComputerSimulatorUrl = "http://127.0.0.1:$UpperComputerSimulatorPort/"
 $frontendNetworkHost = if ([string]::IsNullOrWhiteSpace($FrontendNetworkHost)) { Resolve-PrimaryLanIpv4 } else { $FrontendNetworkHost.Trim() }
 $frontendNetworkUrl = "http://${frontendNetworkHost}:$FrontendPort/"
+$limsDataHost = if ($BackendHost -in @("127.0.0.1", "localhost")) { "127.0.0.1" } else { $frontendNetworkHost }
+$limsDataPublicBaseUrl = "http://${limsDataHost}:$BackendPort"
 $launcherSessionId = [Guid]::NewGuid().ToString("N")
 
 if ($condaBat) {
     $backendReloadArgument = if ($Production) { "" } else { " --reload" }
-    $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"RABBITMQ_ENABLED=true`" && set `"RABBITMQ_REQUIRED=true`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py$backendReloadArgument --host $BackendHost --port $BackendPort"
+    $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"LIMS_DATA_PUBLIC_BASE_URL=$limsDataPublicBaseUrl`" && set `"LIMS_HTTP_CALLBACK_URL=$limsHttpCallbackUrl`" && set `"RABBITMQ_ENABLED=true`" && set `"RABBITMQ_REQUIRED=true`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py$backendReloadArgument --host $BackendHost --port $BackendPort"
     $limsSimulatorCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$LimsSimulatorRoot`" && python -m uvicorn app:app --host $LimsSimulatorHost --port $LimsSimulatorPort"
 } else {
     $backendCommand = "echo Unable to find conda.bat. Please install Anaconda/Miniconda or add conda to PATH. && echo Expected environment: $CondaEnv"
@@ -240,11 +243,15 @@ if ($Production) {
     $previousRabbitEnabled = $env:RABBITMQ_ENABLED
     $previousRabbitRequired = $env:RABBITMQ_REQUIRED
     $previousRabbitUrl = $env:RABBITMQ_URL
+    $previousLimsCallbackUrl = $env:LIMS_HTTP_CALLBACK_URL
+    $previousLimsDataUrl = $env:LIMS_DATA_PUBLIC_BASE_URL
     try {
         $env:MES_LAUNCHER_SESSION = $launcherSessionId
         $env:RABBITMQ_ENABLED = "true"
         $env:RABBITMQ_REQUIRED = "true"
         $env:RABBITMQ_URL = $RabbitMqUrl
+        $env:LIMS_HTTP_CALLBACK_URL = $limsHttpCallbackUrl
+        $env:LIMS_DATA_PUBLIC_BASE_URL = $limsDataPublicBaseUrl
         $backendConsoleCommand = "chcp 65001 >nul && title MES Backend && set `"PYTHONUTF8=1`" && set `"PYTHONIOENCODING=utf-8`" && `"$condaPython`" scripts\run_local.py --host $BackendHost --port $BackendPort"
         $frontendConsoleCommand = "title MES Frontend && $frontendCommand"
         $backendProcess = Start-Process -FilePath $env:ComSpec -ArgumentList "/d", "/k", $backendConsoleCommand `
@@ -262,6 +269,8 @@ if ($Production) {
         $env:RABBITMQ_ENABLED = $previousRabbitEnabled
         $env:RABBITMQ_REQUIRED = $previousRabbitRequired
         $env:RABBITMQ_URL = $previousRabbitUrl
+        $env:LIMS_HTTP_CALLBACK_URL = $previousLimsCallbackUrl
+        $env:LIMS_DATA_PUBLIC_BASE_URL = $previousLimsDataUrl
     }
 } elseif ($windowsTerminal) {
     $terminalProcess = Start-Process -FilePath $windowsTerminal.Source `

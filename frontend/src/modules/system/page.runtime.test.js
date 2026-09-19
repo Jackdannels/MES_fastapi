@@ -309,6 +309,8 @@ describe("SystemPage runtime", () => {
 
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
     expect(wrapper.text()).toContain("新增员工账号");
+    expect(wrapper.get('[data-testid="create-employee-admin-username"]').element.value).toBe("admin");
+    expect(wrapper.get('[data-testid="create-employee-admin-password"]').element.value).toBe("123");
     expect(wrapper.find('[data-testid="employee-role-select"]').exists()).toBe(true);
     expect(wrapper.findAll('[data-testid="employee-role-select"] option').map((option) => option.text())).toEqual(["试验员", "试验组长"]);
     expect(wrapper.text()).not.toContain("可登录试验间");
@@ -357,6 +359,8 @@ describe("SystemPage runtime", () => {
     expect(fetch).toHaveBeenCalledWith("/api/attendance/users", expect.objectContaining({
       method: "POST",
       body: JSON.stringify({
+        adminUsername: "admin",
+        adminPassword: "123",
         username: "wangwu",
         password: "pw123",
         employeeName: "王五",
@@ -368,6 +372,66 @@ describe("SystemPage runtime", () => {
     expect(wrapper.findAll("#employee-table tbody tr")).toHaveLength(2);
     expect(wrapper.text()).toContain("王五");
     expect(wrapper.text()).toContain("试验组长");
+  });
+
+  test("validates create admin input, preserves rejected form, and resets credentials on reopen", async () => {
+    const employees = stubAttendanceFetch();
+    fetch.mockImplementation(async (input, options = {}) => options.method === "POST"
+      ? { ok: false, status: 401, json: async () => ({ detail: "管理员账号或密码错误" }) }
+      : { ok: true, json: async () => employees });
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+    await wrapper.get('[data-testid="open-employee-modal"]').trigger("click");
+    await wrapper.get('[data-testid="employee-name-input"]').setValue("新员工");
+    await wrapper.get('[data-testid="employee-username-input"]').setValue("new-worker");
+    await wrapper.get('[data-testid="employee-password-input"]').setValue("employee-password");
+    await wrapper.get('[data-testid="create-employee-admin-password"]').setValue("");
+    await wrapper.get('[data-testid="employee-save"]').trigger("click");
+    expect(wrapper.get('[data-testid="employee-create-error"]').text()).toContain("请输入管理员账号和密码");
+    expect(fetch.mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
+    await wrapper.get('[data-testid="create-employee-admin-username"]').setValue("bad-admin");
+    await wrapper.get('[data-testid="create-employee-admin-password"]').setValue("wrong");
+    await wrapper.get('[data-testid="employee-save"]').trigger("click");
+    await flushPromises(10);
+    expect(wrapper.get('[data-testid="employee-create-error"]').text()).toContain("管理员账号或密码错误");
+    expect(wrapper.get('[data-testid="employee-name-input"]').element.value).toBe("新员工");
+    expect(wrapper.get('[data-testid="employee-password-input"]').element.value).toBe("employee-password");
+    expect(wrapper.get('[data-testid="employee-save"]').element.disabled).toBe(false);
+    expect(wrapper.findAll("#employee-table tbody tr")).toHaveLength(1);
+    const posted = fetch.mock.calls.find(([, options]) => options?.method === "POST");
+    expect(JSON.parse(posted[1].body)).toMatchObject({ adminUsername: "bad-admin", adminPassword: "wrong" });
+    await wrapper.get(".modal-close").trigger("click");
+    await wrapper.get('[data-testid="open-employee-modal"]').trigger("click");
+    expect(wrapper.get('[data-testid="create-employee-admin-username"]').element.value).toBe("admin");
+    expect(wrapper.get('[data-testid="create-employee-admin-password"]').element.value).toBe("123");
+    expect(wrapper.get('[data-testid="employee-name-input"]').element.value).toBe("");
+    expect(wrapper.find('[data-testid="employee-create-error"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  test("disables duplicate creation and releases the form after the request settles", async () => {
+    const employees = stubAttendanceFetch();
+    let resolveCreate;
+    fetch.mockImplementation(async (input, options = {}) => options.method === "POST"
+      ? new Promise((resolve) => { resolveCreate = resolve; })
+      : { ok: true, json: async () => employees });
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+    await wrapper.get('[data-testid="open-employee-modal"]').trigger("click");
+    await wrapper.get('[data-testid="employee-name-input"]').setValue("新员工");
+    await wrapper.get('[data-testid="employee-save"]').trigger("click");
+    expect(wrapper.get('[data-testid="employee-save"]').text()).toBe("保存中…");
+    expect(wrapper.get('[data-testid="employee-save"]').element.disabled).toBe(true);
+    expect(wrapper.get("fieldset.system-employee-fields").element.disabled).toBe(true);
+    await wrapper.get('[data-testid="employee-save"]').trigger("click");
+    await wrapper.get(".modal-close").trigger("click");
+    expect(wrapper.find(".modal.is-open").exists()).toBe(true);
+    expect(fetch.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+    resolveCreate({ ok: false, status: 401, json: async () => ({ detail: "管理员账号或密码错误" }) });
+    await flushPromises(10);
+    expect(wrapper.get('[data-testid="employee-save"]').element.disabled).toBe(false);
+    expect(wrapper.get("fieldset.system-employee-fields").element.disabled).toBe(false);
+    wrapper.unmount();
   });
 
   test("shows a duplicate username prompt and keeps the create modal open", async () => {
@@ -420,6 +484,85 @@ describe("SystemPage runtime", () => {
     expect(wrapper.find(".drawer.is-open").exists()).toBe(false);
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
     expect(wrapper.text()).toContain("员工账号详情");
+  });
+
+  test("only employee edits enable saving and saves with administrator verification", async () => {
+    const employees = stubAttendanceFetch();
+    let completeSave;
+    fetch.mockImplementation(async (input, options = {}) => {
+      if (options.method === "PUT") {
+        return new Promise((resolve) => { completeSave = resolve; });
+      }
+      return { ok: true, json: async () => employees };
+    });
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+    await wrapper.get('[data-testid="open-employee-drawer-0"]').trigger("click");
+    const save = wrapper.get('[data-testid="employee-save-changes"]');
+    expect(save.element.disabled).toBe(true);
+    const actions = wrapper.findAll(".system-employee-edit-modal .form-actions button");
+    expect(actions.map((button) => button.text())).toEqual(["重置密码", "保存修改", "删除账号"]);
+    await wrapper.get('[data-testid="admin-password-input"]').setValue("123");
+    await wrapper.get('[data-testid="reset-password-input"]').setValue("do-not-submit");
+    expect(save.element.disabled).toBe(true);
+    for (const [selector, changed, original] of [
+      ["edit-employee-name", "张四", "张三"],
+      ["edit-employee-username", "zhangsi", "zhangsan"],
+      ["edit-employee-role", "试验组长", "试验员"],
+    ]) {
+      await wrapper.get(`[data-testid="${selector}"]`).setValue(changed);
+      expect(save.element.disabled).toBe(false);
+      await wrapper.get(`[data-testid="${selector}"]`).setValue(original);
+      expect(save.element.disabled).toBe(true);
+    }
+    await wrapper.get('[data-testid="edit-employee-name"]').setValue("张四");
+    await wrapper.get('[data-testid="edit-employee-username"]').setValue("zhangsi");
+    await wrapper.get('[data-testid="edit-employee-role"]').setValue("试验组长");
+    await save.trigger("click");
+    expect(save.text()).toBe("保存中…");
+    expect(save.element.disabled).toBe(true);
+    expect(wrapper.get('[data-testid="employee-reset-password"]').element.disabled).toBe(true);
+    const request = fetch.mock.calls.find(([, options]) => options?.method === "PUT");
+    expect(request[0]).toBe("/api/attendance/users/1");
+    expect(JSON.parse(request[1].body)).toEqual({
+      adminUsername: "admin", adminPassword: "123", employeeName: "张四", username: "zhangsi", roleName: "试验组长",
+    });
+    completeSave({ ok: true, json: async () => ({ ...employees[0], employeeName: "张四", username: "zhangsi", roleName: "试验组长" }) });
+    await flushPromises(10);
+    expect(save.element.disabled).toBe(true);
+    expect(wrapper.get('[data-testid="employee-admin-action-feedback"]').text()).toContain("员工信息已保存");
+    expect(wrapper.get("#employee-table").text()).toContain("张四");
+    expect(wrapper.get("#employee-worktime-table").text()).toContain("zhangsi");
+    expect(wrapper.get("#employee-worktime-table").text()).toContain("2小时35分0秒");
+    expect(wrapper.get('[data-testid="admin-password-input"]').element.value).toBe("123");
+    wrapper.unmount();
+  });
+
+  test("failed saves keep edits and require administrator input", async () => {
+    const employees = stubAttendanceFetch();
+    fetch.mockImplementation(async (input, options = {}) => options.method === "PUT"
+      ? { ok: false, status: 401, json: async () => ({ detail: "Invalid administrator credentials" }) }
+      : { ok: true, json: async () => employees });
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+    await wrapper.get('[data-testid="open-employee-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="edit-employee-role"]').setValue("试验组长");
+    await wrapper.get('[data-testid="admin-password-input"]').setValue("");
+    await wrapper.get('[data-testid="employee-save-changes"]').trigger("click");
+    expect(wrapper.text()).toContain("请输入管理员账号和密码");
+    expect(fetch.mock.calls.some(([, options]) => options?.method === "PUT")).toBe(false);
+    await wrapper.get('[data-testid="admin-password-input"]').setValue("wrong");
+    await wrapper.get('[data-testid="employee-save-changes"]').trigger("click");
+    await flushPromises(10);
+    expect(wrapper.text()).toContain("管理员账号或密码错误");
+    expect(wrapper.get('[data-testid="edit-employee-role"]').element.value).toBe("试验组长");
+    expect(wrapper.get('[data-testid="employee-save-changes"]').element.disabled).toBe(false);
+    expect(wrapper.get("#employee-table").text()).not.toContain("试验组长");
+    await wrapper.get(".system-employee-edit-modal .modal-close").trigger("click");
+    await wrapper.get('[data-testid="open-employee-drawer-0"]').trigger("click");
+    expect(wrapper.get('[data-testid="edit-employee-role"]').element.value).toBe("试验员");
+    expect(wrapper.get('[data-testid="employee-save-changes"]').element.disabled).toBe(true);
+    wrapper.unmount();
   });
 
   test("requires administrator credentials to reset password and delete an employee", async () => {
@@ -509,7 +652,7 @@ describe("SystemPage runtime", () => {
     await flushPromises();
 
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
-    expect(wrapper.get('[data-testid="employee-admin-action-feedback"]').text()).toContain("Invalid administrator credentials");
+    expect(wrapper.get('[data-testid="employee-admin-action-feedback"]').text()).toContain("管理员账号或密码错误");
     expect(wrapper.get('[data-testid="reset-password-input"]').element.value).toBe("new-password");
 
     await wrapper.get('[data-testid="employee-delete"]').trigger("click");
@@ -517,7 +660,7 @@ describe("SystemPage runtime", () => {
 
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
     expect(wrapper.findAll("#employee-table tbody tr")).toHaveLength(1);
-    expect(wrapper.get('[data-testid="employee-admin-action-feedback"]').text()).toContain("Invalid administrator credentials");
+    expect(wrapper.get('[data-testid="employee-admin-action-feedback"]').text()).toContain("管理员账号或密码错误");
   });
 
   test("generates an employee QR code from the personnel management table", async () => {

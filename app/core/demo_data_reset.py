@@ -168,6 +168,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
             "mes.external_task_intakes": external_task_intakes,
             "mes.lims_inbox": [],
             "mes.lims_outbox": [],
+            "mes.lims_completions": [],
             "mes.samples": samples,
             "mes.experiments": experiments,
             "mes.schedules": [],

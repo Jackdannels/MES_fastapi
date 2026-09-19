@@ -513,12 +513,13 @@ def archive_completion_reports(
     axis_code: str = "",
     completed_at: str = "",
     report_metadata: dict[str, Any] | None = None,
+    storage: Any | None = None,
 ) -> dict[str, Any]:
     """Generate one PDF per affected sample and never interrupt completion."""
     attempted = succeeded = skipped = failed = 0
     items: list[dict[str, Any]] = []
     try:
-        backend = get_storage_backend()
+        backend = storage if storage is not None else get_storage_backend()
         normalized_task = _text(task_code)
         normalized_experiment = _text(experiment_code)
         normalized_run = _text(run_no)

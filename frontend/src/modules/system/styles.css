@@ -1,4 +1,34 @@
 /* 人员信息页的页面布局和人员管理区块样式。 */
+.system-employee-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.system-employee-edit-modal .form-actions {
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.system-employee-edit-modal .form-actions > :first-child {
+  margin-right: 0;
+}
+
+.system-employee-edit-modal [data-testid="employee-delete"] {
+  margin-left: auto;
+}
+
+.system-employee-save:not(:disabled) {
+  border-color: var(--accent);
+  background: rgba(var(--industrial-accent-rgb), 0.3);
+  box-shadow: 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.2);
+}
+
+.system-employee-save:disabled {
+  opacity: 0.5;
+}
+
 /* 页面采用标准纵向区块布局。 */
 .system-page {
   display: grid;

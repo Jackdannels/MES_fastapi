@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+// 本模块验证传输契约；真实认证弹窗行为由 TaskAdminAuthDialog.test.js 覆盖。
+vi.mock("./taskAdminAuth", () => ({
+  requestTaskAdminAction: (_action, execute) => execute({ adminUsername: "admin", adminPassword: "123" }),
+}));
+
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
 import { acceptExternalTaskIntake, createTask, deleteTask, readExternalTaskIntakes, readTaskPage, readTasks, resetTasks, updateTask } from "./tasksApi";
 
@@ -160,7 +165,7 @@ describe("tasksApi", () => {
     );
 
     await expect(createTask({ code: "SYLU-2026-03-009" })).rejects.toThrow(
-      "Failed to create task: 400 Bad Request，任务编号已存在",
+      "任务编号已存在",
     );
   });
 

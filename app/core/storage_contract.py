@@ -14,6 +14,7 @@ STORAGE_KEYS: Iterable[str] = (
     "mes.external_task_intakes",
     "mes.lims_inbox",
     "mes.lims_outbox",
+    "mes.lims_completions",
     "mes.schedules",
     "mes.experiments",
     "mes.experiment_runs",

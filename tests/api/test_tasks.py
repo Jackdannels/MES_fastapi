@@ -8,6 +8,45 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
+@pytest.mark.parametrize("method,path,payload", [
+    ("POST", "/api/tasks", {"code": "SYLUN-2026-09-100"}),
+    ("POST", "/api/tasks/external-intakes/intake-1/accept", None),
+    ("PUT", "/api/tasks/task-1", {"name": "修改名称"}),
+    ("DELETE", "/api/tasks/task-1", None),
+])
+@pytest.mark.parametrize("headers", [
+    {},
+    {"X-Admin-Username": "admin"},
+    {"X-Admin-Password": "123"},
+    {"X-Admin-Username": "admin", "X-Admin-Password": "wrong"},
+    {"X-Admin-Username": "worker", "X-Admin-Password": "123"},
+])
+def test_manual_task_mutations_require_admin_before_touching_storage(monkeypatch, method, path, payload, headers):
+    from app.api.routes import tasks as tasks_route
+
+    def forbidden_storage_access():
+        raise AssertionError("Unauthenticated requests must not read or mutate task storage")
+
+    monkeypatch.setattr(tasks_route, "get_storage_backend", forbidden_storage_access)
+    app = FastAPI()
+    app.include_router(tasks_route.router)
+    response = TestClient(app).request(method, path, headers=headers, json=payload)
+    assert response.status_code == 401
+    assert response.json()["detail"] in {"请输入管理员账号和密码", "管理员账号或密码错误"}
+
+
+def test_task_admin_credentials_are_not_persisted_in_task_data(monkeypatch):
+    client = build_client(monkeypatch)
+    response = client.post("/api/tasks", json={
+        "code": "SYLUN-2026-09-100", "name": "认证新增", "contact": "张三",
+        "contact_info": "13800001234", "sample_count": 1, "test_types": ["盐雾试验"],
+    })
+    assert response.status_code == 201
+    task = client.app.state.storage.read("mes.tasks")[0]
+    assert task["name"] == "认证新增"
+    assert not {"adminUsername", "adminPassword", "X-Admin-Username", "X-Admin-Password"} & task.keys()
+
+
 class FakeTaskStorage:
     def __init__(
         self,
@@ -142,7 +181,7 @@ def build_scoped_crud_client(monkeypatch, storage):
     app = FastAPI()
     app.state.storage = storage
     app.include_router(tasks_route.router)
-    return TestClient(app)
+    return TestClient(app, headers={"X-Admin-Username": "admin", "X-Admin-Password": "123"})
 
 
 def build_client(
@@ -187,7 +226,7 @@ def build_client(
     app = FastAPI()
     app.state.storage = storage
     app.include_router(tasks_route.router)
-    return TestClient(app)
+    return TestClient(app, headers={"X-Admin-Username": "admin", "X-Admin-Password": "123"})
 
 
 def test_tasks_router_supports_full_lifecycle(monkeypatch):

@@ -5,6 +5,8 @@ from datetime import date, datetime, time, timedelta, timezone
 from threading import Lock
 from typing import Any, Callable
 
+from pymysql.err import IntegrityError
+
 from app.core.master_data import DEFAULT_LABS
 from app.db.session import get_connection
 from app.db.schema_version import require_schema_version
@@ -75,6 +77,17 @@ class InMemoryAttendanceRepository:
             user = self.users.get(user_id)
             if user is None:
                 return None
+            old_username = user["username"]
+            new_username = updates.get("username", old_username)
+            if any(row["id"] != user_id and row["username"] == new_username for row in self.users.values()):
+                raise AttendanceError(409, "员工账号已存在")
+            # 工时、会话和日志以账号关联，改名必须在同一临界区同步关联。
+            for rows in (self.sessions, self.intervals, self.operation_logs):
+                for row in rows:
+                    if row.get("username") == old_username:
+                        row["username"] = new_username
+                        if rows is self.sessions and row.get("active") and "employee_name" in updates:
+                            row["employee_name"] = updates["employee_name"]
             user.update(deepcopy(updates))
             return deepcopy(user)
 
@@ -189,6 +202,12 @@ class InMemoryAttendanceRepository:
     def list_intervals(self) -> list[dict[str, Any]]:
         with self._lock:
             return [deepcopy(interval) for interval in self.intervals]
+
+    def completion_records(self, run_nos: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        with self._lock:
+            intervals = [deepcopy(row) for row in self.intervals if row.get("run_no") in run_nos]
+            ids = {row.get("session_id") for row in intervals}
+            return intervals, [deepcopy(row) for row in self.sessions if row.get("id") in ids]
 
     def clear_intervals(self) -> int:
         with self._lock:
@@ -312,9 +331,32 @@ class MySQLAttendanceRepository:
                 values.append(value)
         values.append(user_id)
         with get_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(f"UPDATE sys_attendance_user SET {', '.join(assignments)} WHERE user_id = %s", values)
-            connection.commit()
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT username FROM sys_attendance_user WHERE user_id = %s FOR UPDATE", (user_id,))
+                    existing = cursor.fetchone()
+                    if existing is None:
+                        return None
+                    old_username = self._first_value(existing, "")
+                    cursor.execute(f"UPDATE sys_attendance_user SET {', '.join(assignments)} WHERE user_id = %s", values)
+                    new_username = updates.get("username", old_username)
+                    if new_username != old_username:
+                        for table in ("biz_lab_attendance_session", "biz_lab_work_interval", "biz_lab_operation_log"):
+                            cursor.execute(f"UPDATE {table} SET username = %s WHERE username = %s", (new_username, old_username))
+                    if "employee_name" in updates:
+                        cursor.execute(
+                            "UPDATE biz_lab_attendance_session SET employee_name = %s WHERE username = %s AND active = 1",
+                            (updates["employee_name"], new_username),
+                        )
+                connection.commit()
+            except IntegrityError as exc:
+                connection.rollback()
+                if exc.args[0] == 1062:
+                    raise AttendanceError(409, "员工账号已存在") from exc
+                raise
+            except Exception:
+                connection.rollback()
+                raise
         return self.find_user_by_id(user_id)
 
     def delete_user(self, user_id: int) -> dict[str, Any] | None:
@@ -561,6 +603,31 @@ class MySQLAttendanceRepository:
                 )
                 return self._rows(cursor)
 
+    def completion_records(self, run_nos: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        self.ensure_schema()
+        if not run_nos:
+            return [], []
+        placeholders = ",".join(["%s"] * len(run_nos))
+        with get_connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT interval_id AS id, session_id, username, employee_name, lab_name, lab_code, "
+                    "run_no, task_no AS task_code, experiment_no AS experiment_code, source, started_at, ended_at "
+                    f"FROM biz_lab_work_interval WHERE run_no IN ({placeholders}) ORDER BY started_at, interval_id",
+                    run_nos,
+                )
+                intervals = self._rows(cursor)
+                ids = sorted({row["session_id"] for row in intervals if row.get("session_id") is not None})
+                sessions = []
+                if ids:
+                    cursor.execute(
+                        "SELECT session_id AS id, username, employee_name, lab_name, lab_code, logged_in_at, logged_out_at "
+                        f"FROM biz_lab_attendance_session WHERE session_id IN ({','.join(['%s'] * len(ids))})",
+                        ids,
+                    )
+                    sessions = self._rows(cursor)
+        return intervals, sessions
+
     def clear_intervals(self) -> int:
         self.ensure_schema()
         with get_connection() as connection:
@@ -706,9 +773,9 @@ class AttendanceService:
     def create_user(self, *, username: str, password: str, employee_name: str, role_name: str, active: bool = True) -> dict[str, Any]:
         normalized_username = normalize_text(username)
         if not normalized_username:
-            raise AttendanceError(400, "Username is required")
+            raise AttendanceError(400, "请输入员工账号")
         if self.repository.find_user_by_username(normalized_username):
-            raise AttendanceError(409, "Employee username already exists")
+            raise AttendanceError(409, "员工账号已存在")
         user = self.repository.create_user(
             {
                 "active": bool(active),
@@ -720,31 +787,45 @@ class AttendanceService:
         )
         return self.serialize_user(user)
 
-    def update_user(self, user_id: int, *, password: str | None = None, employee_name: str | None = None, role_name: str | None = None, active: bool | None = None) -> dict[str, Any]:
+    def update_user(self, user_id: int, *, username: str | None = None, password: str | None = None, employee_name: str | None = None, role_name: str | None = None, active: bool | None = None) -> dict[str, Any]:
         self.ensure_seed_users()
+        if self.repository.find_user_by_id(user_id) is None:
+            raise AttendanceError(404, "员工账号不存在")
         updates: dict[str, Any] = {}
+        if username is not None:
+            username = normalize_text(username)
+            if not username:
+                raise AttendanceError(400, "请输入员工账号")
+            existing = self.repository.find_user_by_username(username)
+            if existing and existing["id"] != user_id:
+                raise AttendanceError(409, "员工账号已存在")
+            updates["username"] = username
         if password is not None:
             updates["password_hash"] = hash_password(password)
         if employee_name is not None:
+            if not normalize_text(employee_name):
+                raise AttendanceError(400, "请输入员工姓名")
             updates["employee_name"] = normalize_text(employee_name)
         if role_name is not None:
+            if normalize_text(role_name) not in {"试验员", "试验组长"}:
+                raise AttendanceError(400, "请选择有效的员工角色")
             updates["role_name"] = normalize_text(role_name)
         if active is not None:
             updates["active"] = bool(active)
         user = self.repository.update_user(user_id, updates)
         if user is None:
-            raise AttendanceError(404, "Employee account not found")
+            raise AttendanceError(404, "员工账号不存在")
         return self.serialize_user(user)
 
     def reset_password(self, user_id: int, new_password: str) -> dict[str, Any]:
         if not normalize_text(new_password):
-            raise AttendanceError(400, "New password is required")
+            raise AttendanceError(400, "请输入新密码")
         return {"ok": True, "user": self.update_user(user_id, password=new_password)}
 
     def reset_qr_token(self, user_id: int) -> dict[str, Any]:
         self.ensure_seed_users()
         if self.repository.find_user_by_id(user_id) is None:
-            raise AttendanceError(404, "Employee account not found")
+            raise AttendanceError(404, "员工账号不存在")
         token = generate_qr_token()
         qr_payload = build_qr_payload(token)
         token_hash = hash_qr_token(token)
@@ -757,7 +838,7 @@ class AttendanceService:
             },
         )
         if user is None:
-            raise AttendanceError(404, "Employee account not found")
+            raise AttendanceError(404, "员工账号不存在")
         return {
             "ok": True,
             "qrPayload": qr_payload,
@@ -769,10 +850,10 @@ class AttendanceService:
         self.ensure_seed_users()
         user = self.repository.find_user_by_id(user_id)
         if user is None:
-            raise AttendanceError(404, "Employee account not found")
+            raise AttendanceError(404, "员工账号不存在")
         qr_payload = normalize_text(user.get("qr_token_payload"))
         if not qr_payload:
-            raise AttendanceError(404, "Employee QR code not generated")
+            raise AttendanceError(404, "尚未生成员工二维码")
         return {
             "qrPayload": qr_payload,
             "user": self.serialize_user(user),
@@ -783,7 +864,7 @@ class AttendanceService:
         now = self._now()
         user = self.repository.delete_user(user_id)
         if user is None:
-            raise AttendanceError(404, "Employee account not found")
+            raise AttendanceError(404, "员工账号不存在")
         username = normalize_text(user.get("username"))
         for session in self.repository.list_active_sessions():
             if normalize_text(session.get("username")) == username:
@@ -854,7 +935,7 @@ class AttendanceService:
         self.ensure_seed_users()
         user = self.repository.find_user_by_username(username)
         if not user or not user.get("active") or not verify_password(password, normalize_text(user.get("password_hash"))):
-            raise AttendanceError(401, "Invalid employee credentials")
+            raise AttendanceError(401, "员工账号或密码错误")
         return self._login_user_to_lab(user, lab_name, lab_code=lab_code)
 
     def login_lab_by_qr(self, lab_name: str, *, qr_payload: str, lab_code: str = "") -> dict[str, Any]:
@@ -862,7 +943,7 @@ class AttendanceService:
         token_hash = hash_qr_token(qr_payload)
         user = self.repository.find_user_by_qr_token_hash(token_hash)
         if not user or not user.get("active"):
-            raise AttendanceError(401, "Invalid employee QR code")
+            raise AttendanceError(401, "员工二维码无效，请重新生成或扫码")
         return self._login_user_to_lab(user, lab_name, lab_code=lab_code)
 
     def logout_lab(
@@ -901,7 +982,7 @@ class AttendanceService:
         now = self._now()
         session = self.repository.find_active_session(lab_name=lab_name)
         if not session:
-            raise AttendanceError(409, "Laboratory employee login is required")
+            raise AttendanceError(409, "请先登录试验间员工账号")
         if parse_datetime(session.get("work_started_at")) is None:
             session = self.repository.update_session(int(session["id"]), {"last_seen_at": now, "work_started_at": now}) or session
         self.start_work_interval(lab_name=lab_name, run_no=f"manual-{session['id']}", source="api", started_at=now)
@@ -1145,7 +1226,7 @@ class AttendanceService:
         try:
             return date.fromisoformat(raw_date)
         except ValueError as exc:
-            raise AttendanceError(400, "Invalid date") from exc
+            raise AttendanceError(400, "日期格式无效，请重新选择日期") from exc
 
     def interval_seconds_for_date(self, interval: dict[str, Any], report_date: date, now: datetime) -> int:
         started_at = parse_datetime(interval.get("started_at"))

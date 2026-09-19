@@ -604,6 +604,7 @@ function useTasksPage() {
   };
 
   const buildFailureMessage = (prefix, error) => {
+    if (error?.name === "TaskAdminCancelledError") return "";
     const detail = normalizeText(error instanceof Error ? error.message : "");
     return detail ? `${prefix}，${detail}` : prefix;
   };

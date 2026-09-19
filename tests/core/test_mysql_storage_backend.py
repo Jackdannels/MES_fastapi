@@ -4530,6 +4530,57 @@ def test_write_task_scope_updates_only_target_task_collections(monkeypatch) -> N
     assert connection.commit_count == 1
 
 
+@pytest.mark.parametrize("task_scope", [True, False])
+@pytest.mark.parametrize("fail_snapshot", [True, False])
+def test_lims_completion_intent_is_in_same_transaction_as_workflow_or_outbox(monkeypatch, task_scope, fail_snapshot):
+    events = []
+    class Cursor:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def execute(self, sql, params=None):
+            assert "app_storage_snapshot" in sql
+            events.append(("snapshot", params[0]))
+            if fail_snapshot:
+                raise RuntimeError("injected snapshot failure")
+    class Connection:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def cursor(self): return Cursor()
+        def commit(self): events.append(("commit",))
+        def rollback(self): events.append(("rollback",))
+    backend = MySQLMesStorageBackend(
+        MySQLConnectionSettings(host="127.0.0.1", port=3306, user="root", password="", database="mes"),
+        _DummySnapshotRepository(),
+    )
+    monkeypatch.setattr(backend, "_ensure_schema_extensions", lambda: None)
+    monkeypatch.setattr(backend, "_connect", lambda: Connection())
+    monkeypatch.setattr(backend, "_replace_task_experiments", lambda *args: events.append(("workflow",)))
+    monkeypatch.setattr(backend, "_backfill_schedule_task_ids", lambda *args: None)
+    monkeypatch.setattr(backend, "_sync_progress_statuses", lambda *args: None)
+    monkeypatch.setattr(mysql_storage_backend_module, "replace_task_workflow_relations", lambda *args, **kwargs: None)
+    updates = {"mes.lims_completions": [{"completion_id": "C1", "payload": {"revision": 1}}]}
+    if task_scope:
+        updates["mes.experiments"] = []
+        write = lambda: backend.write_task_scope(updates, task_codes={"T1"})
+    else:
+        updates["mes.lims_outbox"] = [{"event_id": "EV1"}]
+        write = lambda: backend.write_many(updates)
+    if fail_snapshot:
+        with pytest.raises(RuntimeError, match="snapshot failure"):
+            write()
+        assert ("commit",) not in events
+        if task_scope:
+            assert events[-1] == ("rollback",)
+    else:
+        write()
+        assert events[-1] == ("commit",)
+        assert ("snapshot", "mes.lims_completions") in events
+        if task_scope:
+            assert events[0] == ("workflow",)
+        else:
+            assert ("snapshot", "mes.lims_outbox") in events
+
+
 def test_write_task_scope_empty_task_collection_deletes_only_selected_task(monkeypatch) -> None:
     class CaptureCursor:
         def __init__(self):

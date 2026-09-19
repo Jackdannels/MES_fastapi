@@ -1,5 +1,6 @@
 <template>
   <div class="tasks-page">
+  <TaskAdminAuthDialog />
   <section class="grid cols-3 stagger">
     <div class="card">
       <div class="muted">外部委托</div>
@@ -655,6 +656,7 @@
 </template>
 
 <script setup>
+import TaskAdminAuthDialog from "@/components/shared/TaskAdminAuthDialog.vue";
 defineOptions({
   name: "TasksPage",
 });

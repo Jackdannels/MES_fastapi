@@ -1,4 +1,6 @@
 import { buildApiUrl, getFrontendApiBaseUrl } from "./apiBase.js";
+import { requestTaskAdminAction } from "./taskAdminAuth";
+import { localizeResponseMessage } from "./responseMessages";
 
 const API_BASE_URL = getFrontendApiBaseUrl();
 
@@ -13,8 +15,33 @@ async function readErrorDetail(response) {
 
 async function throwApiError(response, message) {
   const detail = await readErrorDetail(response);
-  const suffix = detail ? `，${detail}` : "";
-  throw new Error(`${message}: ${response.status} ${response.statusText}${suffix}`);
+  const error = new Error(localizeResponseMessage(detail || message, `请求失败（${response.status}），请稍后重试`));
+  error.status = response.status;
+  throw error;
+}
+
+const taskAdminHeaders = (admin) => ({
+  "X-Admin-Username": encodeURIComponent(admin.adminUsername),
+  "X-Admin-Password": encodeURIComponent(admin.adminPassword),
+});
+
+function writeTaskWithAdmin(action, path, { body, method }) {
+  // 在认证弹窗打开前固定本次请求内容，避免等待认证时修改了另一份任务。
+  const serializedBody = body === undefined ? undefined : JSON.stringify(body);
+  return requestTaskAdminAction(action, async (admin) => {
+    const response = await fetch(buildApiUrl(path, API_BASE_URL), {
+      method,
+      headers: {
+        Accept: "application/json",
+        ...(serializedBody === undefined ? {} : { "Content-Type": "application/json" }),
+        ...taskAdminHeaders(admin),
+      },
+      credentials: "include",
+      ...(serializedBody === undefined ? {} : { body: serializedBody }),
+    });
+    if (!response.ok) await throwApiError(response, `${action}失败`);
+    return method === "DELETE" ? undefined : response.json();
+  });
 }
 
 async function readTasks(options = {}) {
@@ -92,20 +119,7 @@ async function readNextTaskCode(reference = "") {
 }
 
 async function createTask(task) {
-  const payload = task ?? {};
-  const response = await fetch(buildApiUrl("/api/tasks", API_BASE_URL), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    credentials: "include",
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    await throwApiError(response, "Failed to create task");
-  }
-  return response.json();
+  return writeTaskWithAdmin(`确认新增任务 ${task?.code || ""}`, "/api/tasks", { method: "POST", body: task ?? {} });
 }
 
 async function readExternalTaskIntakes(options = {}) {
@@ -123,42 +137,15 @@ async function readExternalTaskIntakes(options = {}) {
 }
 
 async function acceptExternalTaskIntake(intakeId) {
-  const response = await fetch(buildApiUrl(`/api/tasks/external-intakes/${encodeURIComponent(intakeId)}/accept`, API_BASE_URL), {
-    method: "POST",
-    headers: { Accept: "application/json" },
-    credentials: "include",
-  });
-  if (!response.ok) {
-    await throwApiError(response, `Failed to accept external task intake ${intakeId}`);
-  }
-  return response.json();
+  return writeTaskWithAdmin(`确认受理外部任务 ${intakeId}`, `/api/tasks/external-intakes/${encodeURIComponent(intakeId)}/accept`, { method: "POST" });
 }
 
 async function updateTask(taskId, task) {
-  const payload = task ?? {};
-  const response = await fetch(buildApiUrl(`/api/tasks/${taskId}`, API_BASE_URL), {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    credentials: "include",
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    await throwApiError(response, `Failed to update task ${taskId}`);
-  }
-  return response.json();
+  return writeTaskWithAdmin(`保存任务修改 ${task?.code || taskId}`, `/api/tasks/${encodeURIComponent(taskId)}`, { method: "PUT", body: task ?? {} });
 }
 
 async function deleteTask(taskId) {
-  const response = await fetch(buildApiUrl(`/api/tasks/${taskId}`, API_BASE_URL), {
-    method: "DELETE",
-    credentials: "include",
-  });
-  if (!response.ok) {
-    await throwApiError(response, `Failed to delete task ${taskId}`);
-  }
+  return writeTaskWithAdmin(`删除任务 ${taskId}`, `/api/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
 }
 
 async function resetTasks() {

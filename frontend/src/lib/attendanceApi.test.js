@@ -93,6 +93,8 @@ describe("attendanceApi", () => {
 
     await listAttendanceWorkTimes("2026-07-02");
     await createAttendanceUser({
+      adminUsername: " admin ",
+      adminPassword: "123",
       username: "worker",
       password: "pw",
       employeeName: "员工",
@@ -112,6 +114,8 @@ describe("attendanceApi", () => {
       },
       credentials: "include",
       body: JSON.stringify({
+        adminUsername: "admin",
+        adminPassword: "123",
         username: "worker",
         password: "pw",
         employeeName: "员工",

@@ -800,6 +800,9 @@ def apply_terminal_experiments_for_returned_trays(payload: Dict[str, Any]) -> tu
 
 
 def _normalize_value(key: str, value: Any) -> Any:
+    if key in {"mes.lims_completions", "mes.lims_outbox"}:
+        # Versioned HTTP snapshots are immutable wire contracts, not UI date fields.
+        return value
     value = _normalize_datetime_collection(value)
     if key == "mes.samples" and isinstance(value, list):
         return _normalize_status_collection(_sanitize_sample_collection(value), status_scope="experiment")

@@ -602,7 +602,8 @@ function buildExternalIntakeRows(intakes) {
         remark: normalizeText(item?.remark),
         receivedAt: formatDateTime(item?.received_at),
       };
-    });
+    })
+    .sort((left, right) => compareTaskCodes(right.code, left.code));
 }
 
 function createTaskEditForm() {

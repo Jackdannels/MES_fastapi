@@ -43,6 +43,7 @@ from app.services.laboratory_start import start_storage_laboratory_experiment
 from app.services.schedule_cascade_runtime import apply_run_schedule_cascade, run_forecast_end_at
 from app.services.salt_spray_resume_preparation import apply_salt_resume_preparation_operation
 from app.services.test_data_reports import archive_completion_reports
+from app.services.lims_completion import prepare_completion_updates
 from app.services.laboratory_withdrawal import (
     COMPLETED_EXPERIMENT_STATUSES,
     completed_axis_tray_codes,
@@ -242,6 +243,7 @@ def write_snapshot(snapshot: dict[str, list[dict[str, Any]]], task_code: str = "
 
 def write_completion_snapshot(result: dict[str, Any], task_code: str = "") -> None:
     payload = completion_updates(result)
+    payload.update(result.get("_lims_updates", {}))
     write_laboratory_updates(
         get_storage_backend(),
         payload,
@@ -1050,7 +1052,12 @@ def complete_current_experiment(
                     )
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+            result["_lims_updates"] = prepare_completion_updates(
+                get_storage_backend(), snapshot, result, task_code=normalized_task_code,
+                experiment_code=normalized_experiment_code, run_no=request.run_no, completed_at=completed_at,
+            )
             write_completion_snapshot(result, normalized_task_code)
+            result.pop("_lims_updates", None)
             schedule_cascade = apply_result_schedule_cascade(
                 result,
                 run_no=request.run_no,
