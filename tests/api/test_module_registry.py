@@ -34,6 +34,7 @@ def test_module_registry_preserves_expected_route_surfaces():
         "/device",
         "/material",
         "/api/storage",
+        "/api/device-resources",
         "/yt_barcode",
         "/yt_object",
         "/api/test-data",

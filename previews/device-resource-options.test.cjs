@@ -1,0 +1,58 @@
+const { readFileSync } = require('node:fs');
+const { resolve } = require('node:path');
+const { createRequire } = require('node:module');
+const assert = require('node:assert/strict');
+const requireFrontend = createRequire(resolve(__dirname, '../frontend/package.json'));
+const { JSDOM } = requireFrontend('jsdom');
+const html = readFileSync(resolve(__dirname, 'device-resource-options.html'), 'utf8');
+const source = readFileSync(resolve(__dirname, 'device-resource-options.js'), 'utf8');
+let checks = 0;
+for (const option of ['a', 'b', 'c']) {
+  const dom = new JSDOM(html, { url: `http://127.0.0.1:8766/device-resource-options.html#${option}`, runScripts: 'outside-only' });
+  const { window } = dom;
+  window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  window.HTMLDialogElement.prototype.close = function () { this.open = false; };
+  window.fetch = () => { throw new Error('Preview must not send API requests'); };
+  window.eval(source);
+  const $ = selector => window.document.querySelector(selector);
+  const click = selector => { assert.ok($(selector), selector); $(selector).click(); };
+  const fill = (selector, value) => { $(selector).value = value; $(selector).dispatchEvent(new window.Event('input', { bubbles: true })); };
+  const submit = () => $('#replenish-form').dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
+  assert.equal($('[data-option][aria-pressed="true"]').dataset.option, option);
+  assert.equal($('#workspace [data-resource="salt"] .quantity strong').textContent, '8');
+  assert.equal($('[data-replenish="tray"]'), null);
+  click('[data-replenish="salt"]');
+  for (const invalid of ['', '0', '-1', '1.5', '10001']) {
+    fill('#amount', invalid); submit();
+    assert.equal($('#replenish-dialog').open, true);
+    assert.match($('#amount-error').textContent, /正整数/);
+    assert.equal($('#workspace [data-resource="salt"] .quantity strong').textContent, '8');
+    checks++;
+  }
+  fill('#amount', '20'); fill('#remark', '<img src=x onerror=alert(1)>');
+  assert.equal($('#after-value').textContent, '28'); submit();
+  assert.equal($('#replenish-dialog').open, false);
+  assert.equal($('#workspace [data-resource="salt"] .quantity strong').textContent, '28');
+  assert.equal($('#mirror-content [data-resource="salt"] .quantity strong').textContent, '28');
+  assert.equal($('#records-content img'), null);
+  assert.match($('#records-content').textContent, /<img src=x onerror=alert\(1\)>/);
+  click('[data-replenish="mold"]'); click('[data-amount="50"]'); submit();
+  assert.equal($('#workspace [data-resource="mold"] .quantity strong').textContent, '114');
+  assert.equal($('#mirror-content [data-resource="mold"] .quantity strong').textContent, '114');
+  click('[data-replenish="salt"]'); fill('#amount', '10'); click('.close-dialog');
+  assert.equal($('#workspace [data-resource="salt"] .quantity strong').textContent, '28');
+  if (option === 'c') click('[data-tab="devices"]');
+  fill('#device-search', '盐雾'); assert.equal(window.document.querySelectorAll('#device-body tr').length, 1);
+  assert.match($('#device-body').textContent, /盐雾试验箱/);
+  click('[data-option="a"]');
+  assert.equal($('#workspace [data-resource="salt"] .quantity strong').textContent, '28');
+  $('#scenario').value = 'empty'; $('#scenario').dispatchEvent(new window.Event('change'));
+  assert.equal($('#workspace [data-resource="salt"] .badge').textContent, '已耗尽');
+  $('#scenario').value = 'full'; $('#scenario').dispatchEvent(new window.Event('change'));
+  assert.equal($('#workspace [data-resource="tray"] .quantity strong').textContent, '10');
+  assert.equal($('#workspace [data-resource="salt"] .quantity strong').textContent, '100');
+  assert.match($('#records-content').textContent, /暂无演示补充记录/);
+  assert.equal(window.localStorage.length, 0); assert.equal(window.sessionStorage.length, 0);
+  dom.window.close(); checks += 20;
+}
+console.log(`PASS: ${checks} preview checks across A/B/C; validation, replenishment, mirror, escaping, cancellation, filtering, reset and no persistence.`);

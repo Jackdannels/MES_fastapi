@@ -19,6 +19,7 @@ const { REAL_DEVICE_LEDGER, snapshotState } = vi.hoisted(() => ({
     { code: "振动二室", status: "可用" },
   ],
   snapshotState: {
+    resourceRemaining: 99,
     attendanceSessions: [],
     refreshRegistrations: [],
     snapshot: {},
@@ -199,9 +200,13 @@ describe("VisualizationPage runtime", () => {
     snapshotState.refreshRegistrations = [];
     snapshotState.snapshot = {};
     snapshotState.telemetry = [];
+    snapshotState.resourceRemaining = 99;
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url) => {
+        if (String(url).includes("/api/device-resources")) {
+          return { ok: true, json: async () => ({ resources: ["salt", "mold"].map((key) => ({ key, remaining: snapshotState.resourceRemaining, used: 100 - snapshotState.resourceRemaining })), records: [] }) };
+        }
         if (String(url).includes("/api/attendance/lab-sessions")) {
           return {
             ok: true,
@@ -236,8 +241,9 @@ describe("VisualizationPage runtime", () => {
   test("subscribes to realtime snapshot updates for visualization data", () => {
     mountPage();
 
-    expect(snapshotState.refreshRegistrations).toHaveLength(1);
-    expect(snapshotState.refreshRegistrations[0].keys).toEqual(expect.arrayContaining([
+    expect(snapshotState.refreshRegistrations).toHaveLength(2);
+    expect(snapshotState.refreshRegistrations.find((item) => item.keys.includes("mes.resource_inventory"))).toBeTruthy();
+    expect(snapshotState.refreshRegistrations.find((item) => item.keys.includes("mes.devices")).keys).toEqual(expect.arrayContaining([
       "mes.tasks",
       "mes.samples",
       "mes.experiments",
@@ -253,7 +259,7 @@ describe("VisualizationPage runtime", () => {
     mountPage();
     await Promise.resolve();
 
-    await snapshotState.refreshRegistrations[0].refresh(["mes.samples", "mes.schedules"]);
+    await snapshotState.refreshRegistrations.find((item) => item.keys.includes("mes.devices")).refresh(["mes.samples", "mes.schedules"]);
     await Promise.resolve();
 
     const storageReadUrl = fetch.mock.calls
@@ -279,7 +285,7 @@ describe("VisualizationPage runtime", () => {
     snapshotState.snapshot = {
       "mes.samples": "not-an-array",
     };
-    await snapshotState.refreshRegistrations[0].refresh();
+    await snapshotState.refreshRegistrations.find((item) => item.keys.includes("mes.devices")).refresh();
     await Promise.resolve();
     await wrapper.vm.$nextTick();
 
@@ -1346,10 +1352,10 @@ describe("VisualizationPage runtime", () => {
     expect(preview.text()).toContain("托盘剩余8");
     expect(preview.text()).toContain("已用托盘 2");
     expect(preview.text()).toContain("盐雾剩余99");
-    expect(preview.text()).toContain("已用盐量 1");
+    expect(preview.text()).toContain("累计用盐 1");
     expect(preview.text()).not.toContain("盐雾托盘");
     expect(preview.text()).toContain("霉菌剩余99");
-    expect(preview.text()).toContain("已用菌体 1");
+    expect(preview.text()).toContain("累计用菌 1");
     expect(preview.text()).not.toContain("霉菌托盘");
     expect(preview.findAll('[data-testid="visual-staging-capacity-card"]')[0].findAll(".visual-staging-capacity-tick")).toHaveLength(10);
     expect(preview.findAll('[data-testid="visual-staging-capacity-card"]')[0].findAll(".visual-staging-capacity-tick.is-active")).toHaveLength(8);
@@ -1538,6 +1544,7 @@ describe("VisualizationPage runtime", () => {
   });
 
   test("applies low-stock segmented warnings to salt spray and mold remaining metrics", async () => {
+    snapshotState.resourceRemaining = 10;
     const saltTrays = Array.from({ length: 90 }, (_, index) => `SALT-LOW-${String(index + 1).padStart(3, "0")}`);
     const moldTrays = Array.from({ length: 90 }, (_, index) => `MOLD-LOW-${String(index + 1).padStart(3, "0")}`);
 
@@ -1589,7 +1596,7 @@ describe("VisualizationPage runtime", () => {
     expect(saltCapacityCard.findAll(".visual-staging-capacity-tick")).toHaveLength(10);
     expect(saltCapacityCard.findAll(".visual-staging-capacity-tick.is-active")).toHaveLength(1);
     expect(saltCapacityCard.get('[data-testid="visual-staging-capacity-alert"]').text()).toContain("!");
-    expect(saltCapacityCard.text()).toContain("已用盐量 90");
+    expect(saltCapacityCard.text()).toContain("累计用盐 90");
     expect(saltCapacityCard.text()).toContain("盐量库存不足");
     expect(saltCapacityCard.text()).not.toContain("盐雾托盘");
 
@@ -1597,7 +1604,7 @@ describe("VisualizationPage runtime", () => {
     expect(moldCapacityCard.findAll(".visual-staging-capacity-tick")).toHaveLength(10);
     expect(moldCapacityCard.findAll(".visual-staging-capacity-tick.is-active")).toHaveLength(1);
     expect(moldCapacityCard.get('[data-testid="visual-staging-capacity-alert"]').text()).toContain("!");
-    expect(moldCapacityCard.text()).toContain("已用菌体 90");
+    expect(moldCapacityCard.text()).toContain("累计用菌 90");
     expect(moldCapacityCard.text()).toContain("菌体库存不足");
     expect(moldCapacityCard.text()).not.toContain("霉菌托盘");
   });

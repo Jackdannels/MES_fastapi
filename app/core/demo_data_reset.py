@@ -205,7 +205,12 @@ def reset_demo_data(storage_backend: Any) -> dict[str, Any]:
     }
     snapshot = build_demo_reset_snapshot(preserved_snapshot)
 
-    storage_backend.write_many(snapshot)
+    reset_writer = getattr(storage_backend, "write_demo_reset_snapshot", None)
+    if callable(reset_writer):
+        reset_writer(snapshot)
+    else:
+        # Isolated test backends implement only the basic snapshot contract.
+        storage_backend.write_many(snapshot)
     return snapshot
 
 

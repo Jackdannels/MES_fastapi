@@ -7,6 +7,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.companydepartment import router as companydepartment_router
 from app.api.routes.customer import router as customer_router
 from app.api.routes.device import router as device_router
+from app.api.routes.resource_inventory import router as resource_inventory_router
 from app.api.routes.health import router as health_router
 from app.api.routes.laboratory import router as laboratory_router
 from app.api.routes.manufactureplan import router as manufactureplan_router
@@ -73,7 +74,7 @@ MODULES = (
     ),
     AppModule(
         key="devices",
-        api_routers=(material_router, storage_router),
+        api_routers=(material_router, storage_router, resource_inventory_router),
         spa_routes=("/devices",),
     ),
     AppModule(key="data", api_routers=(yt_barcode_router, yt_object_router, test_data_router), spa_routes=("/data",)),

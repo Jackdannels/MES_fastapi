@@ -329,12 +329,15 @@ const isReleasedTray = (sample, tray, latestEvent) => {
   return normalizeText(sample?.status) === "厂家收回" || normalizeText(tray?.status) === "厂家收回";
 };
 
-const countUsedSystemTrays = ({ samples, latestEventByTray }) => {
+const countUsedSystemTrays = ({ samples, latestEventByTray, ...input }) => {
   const trayCodes = new Set();
   asArray(samples).forEach((sample) => {
     asArray(sample?.trays).forEach((tray) => {
       const trayCode = resolveTrayCode(tray);
       if (!trayCode || isReleasedTray(sample, tray, latestEventByTray.get(trayCode))) {
+        return;
+      }
+      if (trayAssignedExperimentsAreCompleted({ ...input, samples, taskCode: resolveTaskCode(sample), trayCode })) {
         return;
       }
       trayCodes.add(trayCode);
@@ -343,8 +346,14 @@ const countUsedSystemTrays = ({ samples, latestEventByTray }) => {
   return trayCodes.size;
 };
 
+// Shared by central control and screen 06. A shared tray is released only after
+// ALL assigned experiments complete, not when an intermediate stage finishes.
+export function buildTrayResourceSummary(input = {}) {
+  const used = countUsedSystemTrays({ ...input, latestEventByTray: buildLatestStagingEventByTray(input.stagingEvents) });
+  return { key: "tray", name: "托盘", capacity: SYSTEM_TRAY_TOTAL, remaining: clampRemaining(SYSTEM_TRAY_TOTAL, used), used };
+}
+
 function buildStagingSamplesView(input = {}) {
-  const capacity = Number.isFinite(Number(input.capacity)) ? Number(input.capacity) : 100;
   const trayCapacity = Number.isFinite(Number(input.trayCapacity)) ? Number(input.trayCapacity) : SYSTEM_TRAY_TOTAL;
   const samples = asArray(input.samples);
   const experimentRunSteps = firstNonEmptyArray(input.experimentRunSteps, input.experiment_run_steps);
@@ -360,7 +369,7 @@ function buildStagingSamplesView(input = {}) {
   const storageNow = input.now || serverNowDate();
   const stagingRowByKey = buildStorageRowMap(buildZancunRowsFromSnapshot(storageSnapshot, { now: storageNow, room: "staging" }));
   const appearanceRowByKey = buildStorageRowMap(buildZancunRowsFromSnapshot(storageSnapshot, { now: storageNow, room: "appearance" }));
-  const usedSystemTrayCount = countUsedSystemTrays({ latestEventByTray, samples });
+  const usedSystemTrayCount = countUsedSystemTrays({ ...input, experimentRunSteps, experimentRunTrays, experimentTrays, latestEventByTray, samples });
   const trayMap = new Map();
 
   samples.forEach((sample) => {
@@ -532,8 +541,8 @@ function buildStagingSamplesView(input = {}) {
     }, new Map()).values(),
   ).sort((left, right) => compareText(left.taskCode, right.taskCode));
 
-  const saltSprayTrayCount = trays.filter((tray) => tray.experimentType.includes("盐雾")).length;
-  const moldTrayCount = trays.filter((tray) => tray.experimentType.includes("霉菌")).length;
+  const salt = input.resourceInventory?.resources?.find((resource) => resource.key === "salt");
+  const mold = input.resourceInventory?.resources?.find((resource) => resource.key === "mold");
 
   return {
     summary: {
@@ -541,12 +550,13 @@ function buildStagingSamplesView(input = {}) {
       appearanceTrayCount: trays.filter((tray) => tray.stagingKind === "appearance").length,
       allowedTrayCount: trays.filter((tray) => tray.stagingKind === "allowed").length,
       currentTrayCount: trays.filter((tray) => tray.stagingKind === "current").length,
-      moldRemaining: clampRemaining(capacity, moldTrayCount),
-      moldTrayCount,
+      moldRemaining: mold?.remaining ?? null,
+      moldTrayCount: mold?.used ?? null,
       plannedTrayCount: trays.filter((tray) => tray.stagingKind === "planned").length,
       postTestTrayCount: trays.filter((tray) => tray.stagingKind === "post-test").length,
-      saltSprayRemaining: clampRemaining(capacity, saltSprayTrayCount),
-      saltSprayTrayCount,
+      saltSprayRemaining: salt?.remaining ?? null,
+      saltSprayTrayCount: salt?.used ?? null,
+      resourceError: input.resourceError || "",
       totalSampleCount: trays.reduce((total, tray) => total + tray.sampleCount, 0),
       totalTaskCount: tasks.length,
       totalTrayCount: trays.length,

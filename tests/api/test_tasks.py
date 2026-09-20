@@ -3239,6 +3239,9 @@ def test_delete_task_also_removes_related_records(monkeypatch):
 
 
 def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and_meta(monkeypatch):
+    from app.api.routes import tasks as reset_route
+    published = []
+    monkeypatch.setattr(reset_route, "publish_storage_update", lambda keys: published.append(keys))
     client = build_client(
         monkeypatch,
         tasks=[{"id": "SYLUN-2026-03-999", "code": "SYLUN-2026-03-999", "name": "旧任务", "status": "实验进行中"}],
@@ -3297,6 +3300,7 @@ def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and
 
     assert "mes.experiment_run_steps" in tasks_route.TASK_STORAGE_UPDATE_KEYS
     assert "mes.staging_events" in tasks_route.TASK_STORAGE_UPDATE_KEYS
+    assert "mes.resource_inventory" in published[-1]
 
 
 def test_tasks_reset_deletes_generated_test_data_and_preserves_save_settings(monkeypatch, tmp_path):

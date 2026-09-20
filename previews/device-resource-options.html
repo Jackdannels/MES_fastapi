@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>设备资源 · 三种方案预览</title>
+  <link rel="stylesheet" href="device-resource-options.css">
+</head>
+<body>
+  <header class="preview-bar">
+    <div class="preview-brand"><span class="mark">M</span><div><strong>设备资源 / 设计预览</strong><small>三种布局 · 可交互原型 · 不写入真实数据</small></div></div>
+    <nav class="options" aria-label="选择设计方案">
+      <button data-option="a" aria-pressed="true">A <span>顶部资源卡</span><em>推荐</em></button>
+      <button data-option="b" aria-pressed="false">B <span>侧栏监控台</span></button>
+      <button data-option="c" aria-pressed="false">C <span>耗材管理页签</span></button>
+    </nav>
+    <button id="choose" class="primary">选择方案 A</button>
+  </header>
+  <section class="design-note"><div><span id="option-number">01 / 03</span><strong id="option-title">一眼看全设备与余量</strong><p id="option-description">在设备统计下新增三张资源卡，设备列表保持完整宽度；适合日常查看与快速补充。</p></div><label class="scenario-label" for="scenario">演示数据<select id="scenario"><option value="working">使用中 · 含低余量</option><option value="full">截图状态 · 10 / 100 / 100</option><option value="empty">耗材耗尽 · 0 / 0</option></select></label></section>
+  <main>
+    <header class="page-head"><div><p class="eyebrow">CENTRAL CONTROL / RESOURCE CENTER</p><h1>设备资源</h1></div><div class="head-actions"><span class="badge muted-badge">中控管理端 · 预览</span><button id="reset">重置演示</button></div></header>
+    <section class="device-stats" aria-label="设备统计"><article><span>可用设备</span><strong>11</strong><small>可排程</small></article><article><span>工作中</span><strong>0</strong><small>自动采集中</small></article><article><span>维保中</span><strong>0</strong><small>待处理</small></article></section>
+    <section id="workspace"></section>
+    <footer class="scope-note"><span>设计边界</span>托盘仅同步展示，不提供补充；盐雾、霉菌支持人工补充。当前使用演示数量，非 kg / L 等物理单位。阈值沿用 6 号屏的 ≤10% 提醒；100 为现有显示基准，非已确认的存储上限。</footer>
+  </main>
+  <dialog id="replenish-dialog" aria-labelledby="dialog-title">
+    <form id="replenish-form" novalidate>
+      <div class="dialog-head"><div><p class="eyebrow">RESOURCE REPLENISHMENT</p><h2 id="dialog-title">补充盐雾</h2></div><button type="button" class="close-dialog" aria-label="关闭补充窗口">×</button></div>
+      <p class="dialog-intro">登记本次新增数量，不会覆盖已有余量。</p>
+      <div class="before-after"><div><span>当前剩余</span><strong id="before-value">8</strong></div><span class="arrow">→</span><div><span>补充后预计</span><strong id="after-value">—</strong></div></div>
+      <label for="amount">本次补充数量 <span class="required">*</span></label><input id="amount" name="amount" type="number" min="1" max="10000" step="1" inputmode="numeric" placeholder="请输入正整数" aria-describedby="amount-help amount-error" required>
+      <div class="quick"><button type="button" data-amount="10">+10</button><button type="button" data-amount="20">+20</button><button type="button" data-amount="50">+50</button></div>
+      <small id="amount-help">演示按整数计量，每次 1–10,000；正式计量单位与补充上限待业务确认。</small><p id="amount-error" class="error" role="alert"></p>
+      <label for="remark">补充备注 <span class="optional">选填</span></label><textarea id="remark" rows="2" maxlength="120" placeholder="例如：本次耗材补入，批次号……"></textarea>
+      <p class="safe-note">仅在本预览中模拟同步中控与 6 号屏，不调用补充接口。</p>
+      <div class="dialog-footer"><button type="button" class="close-dialog">取消</button><button class="primary" type="submit">确认补充（演示）</button></div>
+    </form>
+  </dialog>
+  <dialog id="records-dialog" aria-labelledby="records-title"><div class="dialog-head"><h2 id="records-title">本次演示补充记录</h2><button class="close-records" aria-label="关闭补充记录">×</button></div><div id="records-content"></div><div class="dialog-footer"><button class="close-records">关闭</button></div></dialog>
+  <dialog id="mirror-dialog" aria-labelledby="mirror-title"><div class="dialog-head"><div><p class="eyebrow">SCREEN 06 / PREVIEW MIRROR</p><h2 id="mirror-title">6 号屏余量 · 联动演示</h2></div><button class="close-mirror" aria-label="关闭6号屏联动演示">×</button></div><p class="dialog-intro">以下数值与本预览的中控共用内存数据，并非真实大屏。</p><div id="mirror-content"></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="device-resource-options.js"></script>
+</body>
+</html>

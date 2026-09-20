@@ -43,6 +43,7 @@ import { createDeviceRunningRepair } from "./deviceRunningRepair";
 import { createDeviceMaintenanceSchedule } from "./deviceMaintenanceSchedule";
 import { publishDeviceFaultCancelRequest } from "@/lib/laboratoryMqApi";
 import { resolveLaboratoryRouteKey } from "@/lib/labs";
+import { buildTrayResourceSummary } from "@/modules/visualization/stagingSamplesModel";
 
 // 将设备存储记录转换为页面所需的表格、表单、抽屉和弹窗状态。
 function useDevicesPageEngine() {
@@ -52,6 +53,8 @@ function useDevicesPageEngine() {
     STORAGE_KEYS.experiments,
     STORAGE_KEYS.experiment_runs,
     STORAGE_KEYS.experiment_run_trays,
+    STORAGE_KEYS.experiment_run_steps,
+    STORAGE_KEYS.staging_events,
     STORAGE_KEYS.experiment_trays,
     STORAGE_KEYS.maintenance_records,
     STORAGE_KEYS.samples,
@@ -63,6 +66,9 @@ function useDevicesPageEngine() {
   const rawExperiments = ref([]);
   const rawExperimentRuns = ref([]);
   const rawExperimentRunTrays = ref([]);
+  const rawExperimentRunSteps = ref([]);
+  const rawStagingEvents = ref([]);
+  const trayResourcesLoaded = ref(false);
   const rawExperimentTrays = ref([]);
   const rawMaintenanceRecords = ref([]);
   const rawSamples = ref([]);
@@ -101,6 +107,11 @@ function useDevicesPageEngine() {
       .sort((left, right) => (parseTime(right?.ended_at) || 0) - (parseTime(left?.ended_at) || 0));
   });
   const metrics = computed(() => buildDeviceMetrics(baseRows.value));
+  const trayResource = computed(() => trayResourcesLoaded.value ? buildTrayResourceSummary({
+    samples: rawSamples.value, experiments: rawExperiments.value,
+    experimentTrays: rawExperimentTrays.value, experimentRunTrays: rawExperimentRunTrays.value,
+    experimentRunSteps: rawExperimentRunSteps.value, stagingEvents: rawStagingEvents.value,
+  }) : null);
   const locationOptions = computed(() => buildLocationOptions(rawDevices.value));
   const maintenancePlanIsPlanned = computed(() => isPlannedMaintenanceType(maintenancePlanForm.value.type));
   const maintenancePlanStartMin = computed(() => {
@@ -507,6 +518,9 @@ function useDevicesPageEngine() {
     rawExperiments.value = Array.isArray(snapshot[STORAGE_KEYS.experiments]) ? snapshot[STORAGE_KEYS.experiments] : [];
     rawExperimentRuns.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_runs]) ? snapshot[STORAGE_KEYS.experiment_runs] : [];
     rawExperimentRunTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_run_trays]) ? snapshot[STORAGE_KEYS.experiment_run_trays] : [];
+    rawExperimentRunSteps.value = snapshot[STORAGE_KEYS.experiment_run_steps] || [];
+    rawStagingEvents.value = snapshot[STORAGE_KEYS.staging_events] || [];
+    trayResourcesLoaded.value = true;
     rawExperimentTrays.value = Array.isArray(snapshot[STORAGE_KEYS.experiment_trays])
       ? snapshot[STORAGE_KEYS.experiment_trays]
       : [];
@@ -537,6 +551,8 @@ function useDevicesPageEngine() {
       STORAGE_KEYS.experiments,
       STORAGE_KEYS.experiment_runs,
       STORAGE_KEYS.experiment_run_trays,
+      STORAGE_KEYS.experiment_run_steps,
+      STORAGE_KEYS.staging_events,
       STORAGE_KEYS.experiment_trays,
       STORAGE_KEYS.maintenance_records,
       STORAGE_KEYS.samples,
@@ -590,6 +606,7 @@ function useDevicesPageEngine() {
   useDeviceClock({ loadDevicesPage, now, syncTimedMaintenanceStatuses });
 
   return {
+    trayResource,
     cancelMaintenanceConflict,
     canSetDeviceAvailable,
     closeRunningRepairChoice,

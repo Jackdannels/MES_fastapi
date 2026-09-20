@@ -157,6 +157,7 @@ from app.core.mysql_storage_status_sql import (
 )
 from app.core.master_data import DEFAULT_LABS, DEFAULT_TEST_TYPES
 from app.db.mysql_snapshot import MySQLConnectionSettings, MySQLSnapshotRepository
+from app.services.resource_inventory import capture_resource_consumption, read_inventory, replenish_inventory, reset_resource_inventory
 
 RELATIONAL_STORAGE_KEYS = (
     "mes.tasks",
@@ -503,7 +504,7 @@ class MySQLMesStorageBackend(StorageBackend):
             samples=samples,
         )
 
-    def _write_many_internal(self, updates: Dict[str, Any], *, patch_samples: bool = False) -> None:
+    def _write_many_internal(self, updates: Dict[str, Any], *, patch_samples: bool = False, reset_resources: bool = False) -> None:
         with performance_span("storage.schema"):
             self._ensure_schema_extensions()
         relational_updates = {key: updates.get(key) for key in RELATIONAL_STORAGE_KEYS if key in updates}
@@ -511,6 +512,10 @@ class MySQLMesStorageBackend(StorageBackend):
 
         with self._connect() as connection:
             with connection.cursor() as cursor:
+                if reset_resources:
+                    reset_resource_inventory(cursor)
+                else:
+                    capture_resource_consumption(cursor, updates)
                 if "mes.devices" in relational_updates:
                     self._replace_devices(cursor, relational_updates["mes.devices"] or [])
                 if "mes.tasks" in relational_updates:
@@ -671,6 +676,24 @@ class MySQLMesStorageBackend(StorageBackend):
     def read_many(self, keys: Iterable[str]) -> Dict[str, Any]:
         return self._read_many(keys)
 
+    def read_resource_inventory(self) -> Dict[str, Any]:
+        self._ensure_schema_extensions()
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                return read_inventory(cursor)
+
+    def replenish_resource_inventory(self, **kwargs: Any) -> Dict[str, Any]:
+        self._ensure_schema_extensions()
+        with self._connect() as connection:
+            try:
+                with connection.cursor() as cursor:
+                    result = replenish_inventory(cursor, **kwargs)
+                connection.commit()
+                return result
+            except Exception:
+                connection.rollback()
+                raise
+
     def read_operational_snapshot(self, keys: Iterable[str]) -> Dict[str, Any]:
         """Return dashboard/visualization keys with samples projected to active workflow fields."""
         return self._read_many(keys, operational_samples=True)
@@ -746,6 +769,13 @@ class MySQLMesStorageBackend(StorageBackend):
                 return
             self._write_many_internal(normalized_updates)
 
+    def write_demo_reset_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """Reset resources only through the explicit system-reset operation."""
+        with observed_lock(self._write_lock, "storage.write_lock"):
+            normalized = normalize_storage_payload(snapshot)
+            updates = {key: normalized[key] for key in (*STORAGE_KEYS, STORAGE_META_KEY) if key in normalized}
+            self._write_many_internal(updates, reset_resources=True)
+
     def write_many_scoped(self, updates: Dict[str, Any]) -> None:
         with observed_lock(self._write_lock, "storage.write_lock"):
             normalized_updates = {
@@ -791,6 +821,7 @@ class MySQLMesStorageBackend(StorageBackend):
             with self._connect() as connection:
                 try:
                     with connection.cursor() as cursor:
+                        capture_resource_consumption(cursor, normalized_updates)
                         if "mes.experiment_samples" in normalized_updates:
                             self._delete_task_experiment_samples(cursor, normalized_task_codes)
                         if "mes.tasks" in normalized_updates:
@@ -929,6 +960,7 @@ class MySQLMesStorageBackend(StorageBackend):
             with self._connect() as connection:
                 try:
                     with connection.cursor() as cursor:
+                        capture_resource_consumption(cursor, scoped_updates)
                         self._replace_tasks(cursor, task_rows, prune=False)
                         self._replace_task_samples(
                             cursor,

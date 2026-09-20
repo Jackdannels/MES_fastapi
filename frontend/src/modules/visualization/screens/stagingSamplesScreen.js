@@ -105,8 +105,8 @@ export const StagingSamplesScreen = {
       ];
       const capacityMetrics = [
         { capacity: SYSTEM_TRAY_TOTAL, key: "tray", label: "托盘剩余", shortageLabel: "托盘库存不足", usedLabel: "已用托盘", value: summary.trayRemaining ?? SYSTEM_TRAY_TOTAL, used: summary.usedSystemTrayCount ?? 0 },
-        { capacity: 100, key: "salt", label: "盐雾剩余", shortageLabel: "盐量库存不足", usedLabel: "已用盐量", value: summary.saltSprayRemaining ?? 100, used: summary.saltSprayTrayCount ?? 0 },
-        { capacity: 100, key: "mold", label: "霉菌剩余", shortageLabel: "菌体库存不足", usedLabel: "已用菌体", value: summary.moldRemaining ?? 100, used: summary.moldTrayCount ?? 0 },
+        { capacity: 100, key: "salt", label: "盐雾剩余", shortageLabel: "盐量库存不足", usedLabel: "累计用盐", value: summary.saltSprayRemaining, used: summary.saltSprayTrayCount },
+        { capacity: 100, key: "mold", label: "霉菌剩余", shortageLabel: "菌体库存不足", usedLabel: "累计用菌", value: summary.moldRemaining, used: summary.moldTrayCount },
       ];
 
       const selectedSampleKey = selectedTray ? `${selectedTray.taskCode}::${selectedTray.trayCode}` : "";
@@ -251,14 +251,15 @@ export const StagingSamplesScreen = {
           ]),
           h("aside", { class: "visual-staging-capacity" }, [
             h("div", { class: "visual-staging-section-title" }, "剩余容量"),
+            summary.resourceError ? h("div", { class: "visual-staging-low-stock", role: "status" }, "耗材同步失败，显示上次余量") : null,
             ...capacityMetrics.map((metric) => {
               const percent = Math.max(0, Math.min(100, ((Number(metric.value) || 0) / metric.capacity) * 100));
               const activeTickCount = percent <= 0 ? 0 : Math.max(1, Math.ceil(percent / 10));
-              const isLowStock = percent <= 10;
+              const isLowStock = metric.value != null && percent <= 10;
               return h("div", { class: ["visual-staging-capacity-card", isLowStock ? "is-low-stock" : ""], "data-testid": "visual-staging-capacity-card", key: metric.key }, [
                 h("span", metric.label),
-                h("strong", metric.value),
-                h("small", `${metric.usedLabel} ${metric.used}`),
+                h("strong", metric.value ?? "—"),
+                h("small", metric.value == null ? "等待库存同步" : `${metric.usedLabel} ${metric.used}`),
                 h("div", { class: "visual-staging-capacity-ticks", "aria-label": `${metric.label} ${metric.value}` }, Array.from({ length: 10 }, (_, index) =>
                   h("span", {
                     class: ["visual-staging-capacity-tick", index < activeTickCount ? "is-active" : ""],

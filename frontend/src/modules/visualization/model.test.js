@@ -2259,7 +2259,7 @@ describe("visualization model", () => {
 
   test("builds staging sample board grouped by task and tray with capacity metrics", () => {
     const view = buildStagingSamplesView({
-      capacity: 100,
+      resourceInventory: { resources: [{ key: "salt", remaining: 99, used: 1 }, { key: "mold", remaining: 99, used: 1 }] },
       tasks: [
         { code: "TASK-STAGING-001", name: "盐雾暂存任务", test_type: "盐雾试验" },
         { code: "TASK-STAGING-002", name: "霉菌暂存任务", test_type: "霉菌试验" },
@@ -2314,6 +2314,7 @@ describe("visualization model", () => {
       postTestTrayCount: 1,
       saltSprayRemaining: 99,
       saltSprayTrayCount: 1,
+      resourceError: "",
       totalSampleCount: 7,
       totalTaskCount: 2,
       totalTrayCount: 2,

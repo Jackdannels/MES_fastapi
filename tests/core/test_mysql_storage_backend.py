@@ -4314,6 +4314,12 @@ class _DummySnapshotRepository:
 
 
 class _DummyCursor:
+    def fetchone(self):
+        return None
+
+    def fetchall(self):
+        return []
+
     def execute(self, *args, **kwargs):
         return None
 
@@ -4591,6 +4597,9 @@ def test_write_task_scope_empty_task_collection_deletes_only_selected_task(monke
 
         def fetchall(self):
             return []
+
+        def fetchone(self):
+            return None
 
     class CaptureConnection:
         def __init__(self):
@@ -5205,7 +5214,7 @@ def test_reset_demo_data_preserves_devices_when_writing_mysql_backend(monkeypatc
     writes = {}
 
     monkeypatch.setattr(backend, "read_all", lambda: existing_snapshot)
-    monkeypatch.setattr(backend, "write_many", lambda updates: writes.update(updates))
+    monkeypatch.setattr(backend, "write_demo_reset_snapshot", lambda updates: writes.update(updates))
 
     snapshot = reset_demo_data(backend)
 

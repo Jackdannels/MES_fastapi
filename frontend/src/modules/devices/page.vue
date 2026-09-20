@@ -18,6 +18,7 @@
     </div>
   </section>
 
+  <div class="devices-resource-layout">
   <section class="card section devices-registry-card">
     <h3>设备列表</h3>
     <div class="toolbar">
@@ -26,6 +27,7 @@
         维保记录
       </button>
     </div>
+    <div class="devices-resource-table-scroll" tabindex="0" aria-label="设备列表，可横向滚动">
     <table class="table" id="device-table">
       <thead>
         <tr>
@@ -73,7 +75,10 @@
         </tr>
       </tbody>
     </table>
+    </div>
   </section>
+  <ResourceSidebar :tray-resource="trayResource" />
+  </div>
 
   <AppModal :open="editDeviceOpen" title="编辑设备" @close="closeEditDevice">
     <div class="form-grid">
@@ -259,8 +264,10 @@ defineOptions({
 import AppModal from "@/components/shared/AppModal.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { useDevicesPage } from "./useDevicesPage";
+import ResourceSidebar from "./ResourceSidebar.vue";
 
 const {
+  trayResource,
   cancelMaintenanceConflict,
   canSetDeviceAvailable,
   closeRunningRepairChoice,

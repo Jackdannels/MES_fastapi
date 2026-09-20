@@ -244,6 +244,7 @@ defineOptions({
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
+import { useResourceInventory } from "@/composables/useResourceInventory";
 import { listLaboratoryAttendanceSessions } from "@/lib/attendanceApi";
 import { readLaboratoryTelemetrySnapshot } from "@/lib/laboratoryTelemetryApi";
 import { serverNowDate } from "@/lib/serverClock";
@@ -258,6 +259,8 @@ import { LabProcessScreen } from "./screens/labProcessScreen";
 import { LabScheduleScreen } from "./screens/labScheduleScreen";
 import { StagingSamplesScreen } from "./screens/stagingSamplesScreen";
 import { TodayTaskPlanScreen } from "./screens/taskPlanScreen";
+
+const { inventory: resourceInventory, error: resourceError } = useResourceInventory();
 
 const screenCards = [
   { key: "lab-process", name: "实验室流程监控屏", kind: "lab-process", status: "运行中", tone: "live" },
@@ -466,6 +469,8 @@ const scheduleView = computed(() => {
 const stagingSamplesView = computed(() => {
   const snapshot = rawSnapshot.value || {};
   return buildStagingSamplesView({
+    resourceInventory: resourceInventory.value,
+    resourceError: resourceError.value,
     tasks: snapshot[STORAGE_KEYS.tasks],
     samples: snapshot[STORAGE_KEYS.samples],
     experiments: snapshot[STORAGE_KEYS.experiments],

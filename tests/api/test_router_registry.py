@@ -28,6 +28,7 @@ def test_api_router_registry_exposes_expected_prefixes():
         "/device",
         "/material",
         "/api/storage",
+        "/api/device-resources",
         "/yt_barcode",
         "/yt_object",
         "/api/test-data",

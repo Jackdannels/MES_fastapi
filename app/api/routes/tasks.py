@@ -11,6 +11,7 @@ from app.core.axis_codes import (
     sort_axis_codes,
 )
 from app.core.demo_data_reset import run_demo_reset
+from app.services.resource_inventory import RESOURCE_LEDGER_KEY
 from app.core.storage_backend import get_storage_backend
 from app.core.task_codes import validate_task_code_source
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
@@ -1129,7 +1130,7 @@ def reset_tasks() -> dict[str, int]:
     result = run_demo_reset(storage)
     result.update(clear_all_test_data_files(storage=storage, prepared=test_data_cleanup))
     get_attendance_service().clear_all_sessions(reason="task-reset")
-    publish_storage_update(list(TASK_STORAGE_UPDATE_KEYS))
+    publish_storage_update([*TASK_STORAGE_UPDATE_KEYS, RESOURCE_LEDGER_KEY])
     return result
 
 
