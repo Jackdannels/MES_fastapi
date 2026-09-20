@@ -36,6 +36,11 @@ from app.services.test_data_reports import (
 router = APIRouter(prefix="/api/test-data", tags=["test-data"])
 
 
+@router.get("/backup-status")
+def get_backup_status(request: Request) -> dict[str, Any]:
+    return request.app.state.test_data_backup_runtime.status()
+
+
 @router.get("/completions/{token}", response_class=HTMLResponse)
 def completion_data_page(token: str) -> HTMLResponse:
     from app.services.lims_completion import resolve_completion, build_data_manifest

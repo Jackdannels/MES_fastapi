@@ -10,6 +10,7 @@ from app.core.performance import PerformanceMiddleware
 from app.modules.registry import API_ROUTERS
 from app.api.routes.tasks import store_external_task_intake
 from app.services.data_retention import DataRetentionRuntime
+from app.services.test_data_backup_runtime import TestDataBackupRuntime
 from app.services.mq_runtime import MqttRuntimeController
 from app.services.mq_publisher import start_mqtt_publisher, shutdown_mqtt_publisher
 from app.services.lims_rabbitmq import LimsRabbitRuntime
@@ -30,6 +31,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     if lims_communication_runtime.enabled:
         lims_rabbit_runtime.communication_repository = lims_communication_runtime.repository
     data_retention_runtime = DataRetentionRuntime(configured_settings)
+    test_data_backup_runtime = TestDataBackupRuntime(configured_settings)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -52,8 +54,10 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
                 start_mqtt_publisher(configured_settings)
                 mq_runtime.set_mode("mqtt")
             data_retention_runtime.start()
+            test_data_backup_runtime.start()
             yield
         finally:
+            await test_data_backup_runtime.stop()
             await data_retention_runtime.stop()
             await lims_rabbit_runtime.stop()
             await lims_http_runtime.stop()
@@ -67,6 +71,7 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     app.state.lims_http_runtime = lims_http_runtime
     app.state.lims_communication_runtime = lims_communication_runtime
     app.state.data_retention_runtime = data_retention_runtime
+    app.state.test_data_backup_runtime = test_data_backup_runtime
     app.state.settings = configured_settings
 
     app.add_middleware(

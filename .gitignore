@@ -4,6 +4,7 @@ tools/lims_simulator/data/
 __pycache__/
 *.pyc
 .env
+.runtime/
 artifacts/performance/
 artifacts/p0-runtime/
 artifacts/db-backups/

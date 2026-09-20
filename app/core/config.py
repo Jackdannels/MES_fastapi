@@ -28,6 +28,25 @@ class Settings(BaseSettings):
     # same-host Origin (or the request URL). Production may set an explicit URL.
     TEST_DATA_PUBLIC_BASE_URL: str = ""
     TEST_DATA_SAVE_PATH: Optional[str] = None
+    # Empty disables the optional secondary file backup. Never replaces savePath.
+    TEST_DATA_BACKUP_PATH: str = ""
+    TEST_DATA_BACKUP_STATE_PATH: str = str(REPO_ROOT / ".runtime" / "test-data-backup.sqlite3")
+    TEST_DATA_BACKUP_INTERVAL_SECONDS: float = Field(default=30, ge=1, le=86400)
+    TEST_DATA_BACKUP_TIMEOUT_SECONDS: float = Field(default=120, ge=1, le=3600)
+    TEST_DATA_BACKUP_BATCH_SIZE: int = Field(default=50, ge=1, le=1000)
+
+    @field_validator("TEST_DATA_BACKUP_PATH", "TEST_DATA_BACKUP_STATE_PATH")
+    @classmethod
+    def validate_test_data_backup_paths(cls, value: str, info) -> str:
+        value = value.strip()
+        if not value and info.field_name == "TEST_DATA_BACKUP_PATH":
+            return ""
+        if not Path(value).is_absolute():
+            raise ValueError("试验数据备份路径必须是绝对路径；Windows UNC 配置请勿加引号")
+        if info.field_name == "TEST_DATA_BACKUP_STATE_PATH" and value.startswith(("\\\\", "//")):
+            raise ValueError("备份队列必须保存在本机，不能使用 UNC 路径")
+        return value
+
     STORAGE_BACKEND: str = "mysql"
 
     MYSQL_HOST: str = "127.0.0.1"

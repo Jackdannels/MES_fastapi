@@ -21,6 +21,15 @@ class MemoryStorage:
         self.values[key] = deepcopy(value)
 
 
+def test_backup_status_endpoint_does_not_change_report_settings(client, monkeypatch):
+    from app.main import app
+    expected = {"enabled": True, "counts": {"pending": 1, "synced": 2, "failed": 0}}
+    monkeypatch.setattr(app.state.test_data_backup_runtime, "status", lambda: expected)
+    response = client.get("/api/test-data/backup-status")
+    assert response.status_code == 200
+    assert response.json() == expected
+
+
 def test_settings_api_validates_and_persists_save_path(client, tmp_path, monkeypatch):
     storage = MemoryStorage()
     monkeypatch.setattr(test_data_route, "get_storage_backend", lambda: storage)
