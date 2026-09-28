@@ -11,6 +11,7 @@ from app.core.task_codes import EXTERNAL_TASK_PREFIX, INTERNAL_TASK_PREFIX
 TASK_COUNT = 20
 EXTERNAL_INTAKE_COUNT = 8
 MANDATORY_EXPERIMENT_TYPE = "盐雾试验"
+PRIORITY_OPTIONS = ("高", "中", "低")
 
 
 def _task_code(index: int, base_time: datetime, *, external: bool) -> str:
@@ -47,6 +48,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
         experiment_types = [MANDATORY_EXPERIMENT_TYPE, *rng.sample(remaining_experiment_types, 2)]
         rng.shuffle(experiment_types)
         sample_count = rng.randint(5, 12)
+        task_priority = rng.choice(PRIORITY_OPTIONS)
         created_at = (base_time + timedelta(hours=index)).strftime("%Y-%m-%d %H:%M:%S")
         arrival_at = (base_time + timedelta(hours=index)).strftime("%Y-%m-%d %H:%M")
         due_at = (base_time + timedelta(days=7, hours=index)).strftime("%Y-%m-%d %H:%M")
@@ -60,7 +62,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
                 "client": "" if index > 10 else f"委托方{index:03d}",
                 "contact": "" if index > 10 else f"联系人{index:03d}",
                 "contact_info": "" if index > 10 else f"1380000{index:04d}",
-                "priority": "",
+                "priority": task_priority,
                 "sample_count": str(sample_count),
                 "sample_type": "",
                 "test_type": " / ".join(experiment_types),
@@ -86,7 +88,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
                 "experiment_code": experiment_code,
                 "experiment_name": experiment_type,
                 "required_device": experiment_type,
-                "priority": "",
+                "priority": task_priority,
                 "planned_hours": 0,
                 "status": "待排程",
                 "created_at": created_at,
@@ -144,7 +146,7 @@ def build_demo_reset_snapshot(base_snapshot: dict[str, Any] | None = None, now: 
                 "client": f"{rng.randint(10, 99)}单位",
                 "contact": f"委托联系人{intake_index:02d}",
                 "contact_info": f"1390000{intake_index:04d}",
-                "priority": rng.choice(("高", "中", "低")),
+                "priority": rng.choice(PRIORITY_OPTIONS),
                 "sample_count": str(rng.randint(5, 12)),
                 "sample_type": rng.choice(("金属件", "复合材料", "电子组件")),
                 "test_type": " / ".join(experiment_types),

@@ -11,6 +11,7 @@ import time
 
 from app.core.config import REPO_ROOT
 from app.services.test_data_backup import backup_status
+from app.services.test_data_backup_settings import read_backup_path
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,15 @@ class TestDataBackupRuntime:
         self.last_finished_at = None
 
     @property
+    def destination(self):
+        return read_backup_path(self.settings)
+
+    @property
     def enabled(self):
-        return bool(self.settings.TEST_DATA_BACKUP_PATH.strip())
+        return bool(self.destination.strip())
 
     def start(self):
-        if self.enabled and (self.task is None or self.task.done()):
+        if self.task is None or self.task.done():
             self.task = asyncio.create_task(self._run())
 
     async def stop(self):
@@ -46,6 +51,7 @@ class TestDataBackupRuntime:
         # Settings passed via environment, not command line (contains DB credentials).
         environment = dict(os.environ)
         environment.update({key: str(value) for key, value in self.settings.model_dump().items() if value is not None})
+        environment["TEST_DATA_BACKUP_PATH"] = self.destination
         process = subprocess.Popen(
             [sys.executable, "-m", "app.services.test_data_backup"], cwd=REPO_ROOT,
             env=environment, stdout=subprocess.DEVNULL,
@@ -71,7 +77,8 @@ class TestDataBackupRuntime:
     async def _run(self):
         while True:
             try:
-                await self._pass()
+                if self.enabled:
+                    await self._pass()
                 self.last_error = ""
             except asyncio.CancelledError:
                 raise
@@ -82,12 +89,16 @@ class TestDataBackupRuntime:
             await asyncio.sleep(self.settings.TEST_DATA_BACKUP_INTERVAL_SECONDS)
 
     def status(self):
-        result = {"enabled": self.enabled, "destination": self.settings.TEST_DATA_BACKUP_PATH,
+        try:
+            destination = self.destination
+        except Exception as exc:
+            return {"enabled": False, "destination": "", "lastError": f"无法读取备份配置：{exc}"}
+        result = {"enabled": bool(destination), "destination": destination,
                   "running": self.process is not None, "lastError": self.last_error,
                   "lastFinishedAt": self.last_finished_at,
                   "intervalSeconds": self.settings.TEST_DATA_BACKUP_INTERVAL_SECONDS}
         try:
-            result.update(backup_status(Path(self.settings.TEST_DATA_BACKUP_STATE_PATH), self.settings.TEST_DATA_BACKUP_PATH))
+            result.update(backup_status(Path(self.settings.TEST_DATA_BACKUP_STATE_PATH), destination))
         except Exception as exc:
             result["lastError"] = f"无法读取本地备份记录：{exc}"
         return result

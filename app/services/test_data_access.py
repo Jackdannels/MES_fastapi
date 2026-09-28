@@ -42,7 +42,7 @@ def is_loopback_client(host: str | None) -> bool:
         return False
 
 
-def select_test_data_directory(initial_path: str = "") -> dict[str, Any]:
+def select_test_data_directory(initial_path: str = "", *, title: str = "选择 MES 试验数据保存目录") -> dict[str, Any]:
     if os.name != "nt":
         raise RuntimeError("目录浏览仅支持运行 MES 后端的 Windows 主机")
     if not _DIRECTORY_PICKER_LOCK.acquire(blocking=False):
@@ -57,7 +57,7 @@ def select_test_data_directory(initial_path: str = "") -> dict[str, Any]:
         root.attributes("-topmost", True)
         selected = filedialog.askdirectory(
             parent=root,
-            title="选择 MES 试验数据保存目录",
+            title=title,
             initialdir=initial_path or str(Path.home() / "Desktop"),
             mustexist=True,
         )

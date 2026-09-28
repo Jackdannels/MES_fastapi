@@ -3278,6 +3278,15 @@ def test_tasks_reset_rebuilds_task_related_collections_and_preserves_devices_and
     assert all(len(task["test_types"]) == 3 for task in storage.read("mes.tasks"))
     assert all(task["test_type"] == " / ".join(task["test_types"]) for task in storage.read("mes.tasks"))
     assert all(task["status"] == "待排程" for task in storage.read("mes.tasks"))
+    priorities_by_task = {task["code"]: task["priority"] for task in storage.read("mes.tasks")}
+    assert all(priority in {"高", "中", "低"} for priority in priorities_by_task.values())
+    assert all(experiment["priority"] == priorities_by_task[experiment["task_code"]] for experiment in storage.read("mes.experiments"))
+    first_task_code = next(iter(priorities_by_task))
+    for _ in range(2):
+        detail = client.get(f"/api/tasks/{first_task_code}")
+        assert detail.status_code == 200
+        assert detail.json()["task"]["priority"] == priorities_by_task[first_task_code]
+    assert {task["code"]: task["priority"] for task in storage.read("mes.tasks")} == priorities_by_task
     assert all("盐雾试验" in str(task["test_type"]).split(" / ") for task in storage.read("mes.tasks"))
     assert all(sample["status"] == "运输中" and sample["flow_status"] == "运输中" for sample in storage.read("mes.samples"))
     assert all(experiment["status"] == "待排程" for experiment in storage.read("mes.experiments"))

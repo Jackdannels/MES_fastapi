@@ -389,9 +389,33 @@ describe("VisualizationPage runtime", () => {
       expect(vibrationRoom.text()).toContain("异常警报");
       expect(vibrationRoom.text()).toContain("试验设备温度过高：68.5 °C");
       expect(vibrationRoom.text()).toContain("试验设备电压过低：82.0 V");
+      expect(vibrationRoom.find(".visual-telemetry-faults").text()).toContain("TEST_DEVICE_VOLTAGE_LOW");
+      expect(vibrationRoom.find(".visual-telemetry-faults").text()).toContain("TEST_DEVICE_TEMPERATURE_HIGH");
       expect(vibrationRoom.findAll(".visual-lab-status-metric.is-alarm")).toHaveLength(2);
       expect(vibrationRoom.find(".visual-lab-status-alarm.is-empty").exists()).toBe(false);
     });
+  });
+
+  test("screen seven receives device repair state in the overview and enlarged preview", async () => {
+    snapshotState.snapshot = { "mes.devices": [{ code: "冲击一室", status: "维修", maintenance_note: "检查电源" }] };
+    snapshotState.telemetry = [{
+      lab_code: "LAB_IMPACT_1", connection_status: "online",
+      environment: { temperature_c: 23, humidity_rh: 50 },
+      test_device: { temperature_c: 25, voltage_v: 0, alarm_code: "E101" },
+      carrier_device: { configured: true, temperature_c: 25, voltage_v: 220 },
+    }];
+    const wrapper = mountPage();
+    const seventhCard = wrapper.findAll('[data-testid="visual-screen-card"]')[6];
+    await vi.waitFor(() => {
+      expect(seventhCard.text()).toContain("维修中");
+      expect(seventhCard.text()).toContain("试验设备无电压");
+      expect(seventhCard.text()).toContain("故障代码：E101");
+    });
+    await seventhCard.trigger("click");
+    const preview = wrapper.find('[data-testid="visual-single-preview"]');
+    expect(preview.text()).toContain("维修中");
+    expect(preview.text()).toContain("试验设备无电压");
+    expect(preview.find(".visual-telemetry-faults").text()).toContain("故障代码：E101");
   });
 
   test("renders current laboratory login information on the fourth screen cards", async () => {

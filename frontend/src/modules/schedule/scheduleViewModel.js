@@ -729,6 +729,7 @@ function buildManualTaskOptions({ tasks, experiments, experimentTrays, experimen
       code: normalizeText(task?.code),
       label: normalizeText(task?.code),
       testType: normalizeText(task?.test_type),
+      priority: normalizeText(task?.priority),
     }));
 }
 

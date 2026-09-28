@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import random
 import re
 import sys
 from pathlib import Path
@@ -10,6 +11,7 @@ from datetime import datetime, timedelta
 import pytest
 
 import app.core.storage_backend as storage_backend_module
+import app.core.demo_data_reset as demo_data_reset_module
 from app.core.demo_data_reset import _random_axis_requirements, build_demo_reset_snapshot, reset_demo_data, run_demo_reset
 from app.core.storage_backend import normalize_storage_payload
 
@@ -194,6 +196,38 @@ def test_demo_reset_axis_requirements_use_random_count_and_standard_order() -> N
 
     assert _random_axis_requirements(_FakeRng(), "冲击试验") == ["z+", "y-", "z-"]
     assert _random_axis_requirements(_FakeRng(), "振动试验") == ["z+", "y-", "z-"]
+
+
+@pytest.mark.parametrize("offset", [0, 1, 2])
+def test_demo_reset_assigns_one_random_priority_per_task_and_shares_it_with_experiments(monkeypatch, offset) -> None:
+    class _PriorityRng(random.Random):
+        priority_choices = 0
+
+        def choice(self, values):
+            if tuple(values) == ("高", "中", "低"):
+                result = values[(self.priority_choices + offset) % 3]
+                self.priority_choices += 1
+                return result
+            return super().choice(values)
+
+    rng = _PriorityRng(42)
+    monkeypatch.setattr(demo_data_reset_module.random, "SystemRandom", lambda: rng)
+    snapshot = build_demo_reset_snapshot(now=datetime(2026, 9, 20, 8, 0))
+    expected = [("高", "中", "低")[(index + offset) % 3] for index in range(20)]
+
+    assert [task["priority"] for task in snapshot["mes.tasks"]] == expected
+    priorities_by_task = {task["code"]: task["priority"] for task in snapshot["mes.tasks"]}
+    assert all(experiment["priority"] == priorities_by_task[experiment["task_code"]] for experiment in snapshot["mes.experiments"])
+    assert rng.priority_choices == 20 + 8
+    assert [item["priority"] for item in snapshot["mes.external_task_intakes"]] == [
+        ("高", "中", "低")[(index + offset) % 3] for index in range(20, 28)
+    ]
+
+    # 再次生成必须重新取随机值，不能按任务编号固定等级或复用旧任务优先级。
+    next_snapshot = build_demo_reset_snapshot(snapshot, now=datetime(2026, 9, 20, 8, 0))
+    assert [task["priority"] for task in next_snapshot["mes.tasks"]] == [
+        ("高", "中", "低")[(index + offset) % 3] for index in range(28, 48)
+    ]
 
 
 def test_normalize_storage_payload_does_not_expand_custom_task_experiments_to_three() -> None:
@@ -1297,6 +1331,8 @@ def test_reset_demo_data_resets_backend_snapshot_with_fresh_tasks_and_preserves_
     assert all(sample["status"] == "运输中" and sample["flow_status"] == "运输中" for sample in snapshot["mes.samples"])
     assert all(experiment["status"] == "待排程" for experiment in snapshot["mes.experiments"])
     assert writes["mes.devices"] == snapshot["mes.devices"]
+    assert writes["mes.tasks"] == snapshot["mes.tasks"]
+    assert all(task["priority"] in {"高", "中", "低"} for task in writes["mes.tasks"])
     assert writes["mes.experiment_run_trays"] == []
     assert writes["mes.experiment_run_steps"] == []
     assert writes["mes.staging_events"] == []

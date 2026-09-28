@@ -16,13 +16,14 @@
     <form @submit.prevent="submitSchedule">
       <div class="form-grid">
         <div class="form-field">
-          <label>{{ uiText.taskCode }}</label>
-          <select v-model="scheduleForm.task_code" name="task_code">
-            <option value="">{{ taskOptions.length ? uiText.selectAcceptedTask : uiText.noAcceptedTask }}</option>
-            <option v-for="option in taskOptions" :key="option.code" :value="option.code">
-              {{ option.label }}
-            </option>
-          </select>
+          <label for="schedule-task-code">{{ uiText.taskCode }}</label>
+          <ScheduleTaskSelect
+            id="schedule-task-code"
+            v-model="scheduleForm.task_code"
+            :options="taskOptions"
+            :placeholder="uiText.selectAcceptedTask"
+            :empty-label="uiText.noAcceptedTask"
+          />
         </div>
         <div class="form-field">
           <label>{{ uiText.experimentCode }}</label>
@@ -754,6 +755,7 @@ import AppPagination from "@/components/shared/AppPagination.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { useSchedulePage } from "./useSchedulePage";
+import ScheduleTaskSelect from "./ScheduleTaskSelect.vue";
 
 const uiText = {
   actions: "操作",

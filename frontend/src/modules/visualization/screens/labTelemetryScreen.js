@@ -1,6 +1,7 @@
 import { computed, h } from "vue";
 import "../telemetryScreen.css";
 import { buildTelemetryRow } from "../labTelemetryModel";
+import { labIdentityMatches } from "@/lib/labIdentity";
 
 const DEFAULT_NAMES = ["冲击一室", "冲击二室", "四综合实验室", "振动一室", "振动二室", "温度冲击一室", "温度冲击二室", "盐雾试验室", "霉菌试验室", "高低温湿热一室", "高低温湿热二室"];
 import { LAB_CODE_BY_NAME } from "@/lib/labs";
@@ -10,18 +11,24 @@ export const LabTelemetryScreen = {
   props: {
     labNames: { type: Array, default: () => [] },
     telemetry: { type: Array, default: () => [] },
+    devices: { type: Array, default: () => [] },
     monitorStatus: { type: String, default: "online" },
     monitorMessage: { type: String, default: "" },
     compact: { type: Boolean, default: false },
     screen: { type: Object, default: () => ({}) },
   },
   setup(props) {
-    const rows = computed(() => (props.labNames.length ? props.labNames : DEFAULT_NAMES).slice(0, 11).map((name) => buildTelemetryRow(name, props.telemetry.find((s) => s.lab_code === LAB_CODE_BY_NAME[name]), props.monitorStatus)));
+    const rows = computed(() => (props.labNames.length ? props.labNames : DEFAULT_NAMES).slice(0, 11).map((name) => buildTelemetryRow(
+      name,
+      props.telemetry.find((s) => s.lab_code === LAB_CODE_BY_NAME[name]),
+      props.monitorStatus,
+      props.devices.find((device) => labIdentityMatches({ name, lab_code: LAB_CODE_BY_NAME[name] }, device)),
+    )));
     const summary = computed(() => [
       ["上位机失联", props.monitorStatus !== "online" ? "—" : rows.value.filter((r) => r.hostOffline).length],
       ["设备失联", props.monitorStatus !== "online" ? "—" : rows.value.reduce((n, r) => n + r.deviceOffline, 0)],
       ["数据延迟", rows.value.filter((r) => r.delayed).length],
-      ["数值超限", rows.value.filter((r) => r.alarm).length],
+      ["设备告警", rows.value.filter((r) => r.alarm).length],
     ]);
     return () => h("div", { class: ["visual-board", "visual-lab-status-board", props.compact ? "is-compact" : "", props.monitorStatus !== "online" ? "is-monitor-offline" : ""] }, [
       h("div", { class: "visual-board-header" }, [
@@ -34,7 +41,10 @@ export const LabTelemetryScreen = {
       h("div", { class: "visual-lab-status-summary" }, summary.value.map(([label, value]) => h("div", { class: "visual-lab-status-summary-item", key: label }, [h("span", label), h("strong", String(value))]))),
       h("div", { class: "visual-lab-status-grid" }, rows.value.map((row) => h("article", { class: ["visual-lab-status-card", `tone-${row.tone}`], key: row.name }, [
         h("div", { class: "visual-lab-status-card-head" }, [h("strong", row.name), h("span", { title: row.status }, [h("i"), row.status])]),
-        h("div", { class: ["visual-lab-status-alarm", row.notice ? "" : "is-empty"], role: row.notice ? "alert" : undefined, "aria-hidden": row.notice ? undefined : "true", title: row.notice }, [h("b", row.alarm ? "异常警报" : "通信提示"), h("span", row.notice || "当前参数正常")]),
+        h("div", { class: "visual-telemetry-notices" }, [
+          h("div", { class: ["visual-lab-status-alarm", row.notice ? "" : "is-empty"], role: row.notice ? "alert" : undefined, "aria-hidden": row.notice ? undefined : "true", title: row.notice }, [h("b", row.maintenance && !row.alarm ? "维护提示" : row.alarm ? "异常警报" : "通信提示"), h("span", row.notice || "当前参数正常")]),
+          row.faults.length ? h("ul", { class: "visual-telemetry-faults", "aria-label": "故障代码", tabindex: props.compact ? undefined : 0 }, row.faults.map((fault) => h("li", { key: `${fault.group}:${fault.code}` }, `${fault.pending ? "待确认 · " : ""}${fault.label}故障代码：${fault.code}`))) : null,
+        ]),
         h("div", { class: "visual-lab-status-metrics" }, ["环境", "试验设备", "搬运设备"].map((group, index) => h("section", { class: "visual-telemetry-group", key: group, "aria-label": group }, [
           h("div", { class: "visual-telemetry-group-name" }, [h("span", String(index + 1).padStart(2, "0")), h("b", group)]),
           ...row.metrics.slice(index * 2, index * 2 + 2).map((m, metricIndex) => {

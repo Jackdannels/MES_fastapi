@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import DataPage from "./page.vue";
 
+vi.mock("./BackupSettings.vue", () => ({ default: { template: '<section data-testid="backup-settings-panel">试验数据备份设置</section>' } }));
+
 const saveSettingsMock = vi.fn();
 const retryFailedMock = vi.fn();
 const retryAllFailedMock = vi.fn();
@@ -92,6 +94,10 @@ describe("DataPage runtime", () => {
     const wrapper = mount(DataPage);
 
     expect(wrapper.text()).toContain("试验数据保存设置");
+    expect(wrapper.text()).not.toContain("系统会为本批次的每个样品");
+    expect(wrapper.text()).not.toContain("默认地址：");
+    expect(wrapper.find(".data-archive-guide").exists()).toBe(false);
+    expect(wrapper.find('[data-testid="backup-settings-panel"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="data-task-query"]').classes()).toContain("search-input");
     expect(wrapper.get('[data-testid="data-save-path"]').element.value).toBe("C:\\Users\\tester\\Desktop\\MES试验数据");
     expect(wrapper.get('[data-testid="data-path-status"]').text()).toContain("目录可写");

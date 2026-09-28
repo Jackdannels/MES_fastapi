@@ -3,9 +3,7 @@
     <section class="card data-settings-card" aria-labelledby="data-settings-title">
       <div class="data-section-heading">
         <div>
-          <p class="data-eyebrow">PDF 自动归档</p>
           <h3 id="data-settings-title">试验数据保存设置</h3>
-          <p class="data-section-copy">试验或当前轴向完成后，系统会为本批次的每个样品自动生成一份 PDF。</p>
         </div>
         <span class="data-path-status" :class="pathStatusClass" data-testid="data-path-status" role="status">
           <span class="data-path-status__dot" aria-hidden="true"></span>
@@ -46,9 +44,6 @@
               {{ settingsSaving ? "正在检测…" : "保存并检测目录" }}
             </button>
           </div>
-          <p class="helper data-path-helper">
-            此路径位于运行 MES 后端的电脑上。默认地址：<span class="data-code">{{ defaultPath || "桌面\\MES试验数据" }}</span>
-          </p>
         </div>
       </form>
 
@@ -68,17 +63,9 @@
         @close="settingsSuccess = ''"
       />
 
-      <div class="data-archive-guide" aria-label="自动归档目录结构">
-        <div class="data-guide-item">
-          <span>普通试验</span>
-          <code>任务编号 / 试验名称 / 日期 起止时间 / 样品编号.pdf</code>
-        </div>
-        <div class="data-guide-item">
-          <span>轴向试验</span>
-          <code>任务编号 / 试验名称 / X+轴向 / 日期 起止时间 / 样品编号.pdf</code>
-        </div>
-      </div>
     </section>
+
+    <BackupSettings />
 
     <section class="card data-tasks-card" aria-labelledby="data-tasks-title">
       <div class="data-section-heading data-tasks-heading">
@@ -347,6 +334,7 @@ defineOptions({
 });
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
+import BackupSettings from "./BackupSettings.vue";
 import { formatAxisLabel, formatExperimentStatus, formatExportRange } from "./model";
 import { useDataPage } from "./useDataPage";
 
@@ -354,7 +342,6 @@ const {
   browseDirectory,
   copyExperimentUrl,
   copyTaskUrl,
-  defaultPath,
   directorySelecting,
   exportsError,
   exportsLoading,

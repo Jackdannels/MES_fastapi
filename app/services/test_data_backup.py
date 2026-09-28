@@ -210,8 +210,10 @@ def main() -> None:
     from app.core.config import settings
     from app.core.storage_backend import get_storage_backend
     from app.services.test_data_repository import get_test_data_repository
+    from app.services.test_data_backup_settings import read_backup_path
 
-    if not settings.TEST_DATA_BACKUP_PATH.strip():
+    destination = read_backup_path(settings)
+    if not destination.strip():
         return
     discovery_error = None
     try:
@@ -221,7 +223,7 @@ def main() -> None:
         records = []
         discovery_error = exc
         logger.warning("Cannot discover new reports: %s", exc)
-    result = backup_once(records, destination=Path(settings.TEST_DATA_BACKUP_PATH),
+    result = backup_once(records, destination=Path(destination),
                          state_path=Path(settings.TEST_DATA_BACKUP_STATE_PATH),
                          batch_size=settings.TEST_DATA_BACKUP_BATCH_SIZE,
                          retry_seconds=settings.TEST_DATA_BACKUP_INTERVAL_SECONDS)

@@ -1,14 +1,17 @@
 import { LAB_CODE_BY_NAME } from "@/lib/labs";
 import { formatBusinessDateTime } from "@/lib/dateTime";
+import { buildDeviceRows } from "@/modules/devices/model";
 
-const numberText = (value, unit) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)} ${unit}` : "—";
+const text = (value) => String(value ?? "").trim();
+const isNumber = (value) => value != null && typeof value !== "boolean" && text(value) !== "" && Number.isFinite(Number(value));
+const numberText = (value, unit) => isNumber(value) ? `${Number(value).toFixed(1)} ${unit}` : "—";
 const stateText = { online: "在线", offline: "失联", delayed: "数据延迟", recovering: "恢复确认中", unknown: "状态未知", missing: "未采集" };
+const deviceLabels = { test_device: "试验设备", carrier_device: "搬运设备" };
 
-export function buildTelemetryRow(name, source, monitorStatus = "online") {
+export function buildTelemetryRow(name, source, monitorStatus = "online", device, now) {
   const labCode = LAB_CODE_BY_NAME[name];
   const host = monitorStatus !== "online" ? "unknown" : source?.connection_status || "missing";
   const allUnknown = ["unknown", "offline", "missing"].includes(host);
-  const alarms = host === "online" && Array.isArray(source?.alarms) ? source.alarms : [];
   const groupState = (key) => {
     const group = source?.[key];
     if (key === "carrier_device" && (labCode === "LAB_HOT_HUMID_2" || group?.configured === false)) return "not_configured";
@@ -18,6 +21,43 @@ export function buildTelemetryRow(name, source, monitorStatus = "online") {
     if (key === "environment") return group ? "online" : "unknown";
     return group?.online === false ? "offline" : group ? "online" : "unknown";
   };
+  const alarmGroup = (alarm) => text(alarm.metric).split(".")[0]
+    || Object.keys(deviceLabels).find((key) => text(alarm.code).startsWith(`${key.toUpperCase()}_`)) || "";
+  const alarms = (Array.isArray(source?.alarms) ? source.alarms : [])
+    .filter((alarm) => host === "online" && (!alarmGroup(alarm) || groupState(alarmGroup(alarm)) === "online"))
+    .map((alarm) => ({ ...alarm }));
+  // Zero is a real reading, not a substitute for missing or stale telemetry.
+  Object.entries(deviceLabels).forEach(([key, label]) => {
+    const voltage = source?.[key]?.voltage_v;
+    if (groupState(key) !== "online" || !isNumber(voltage) || Number(voltage) !== 0) return;
+    const code = `${key.toUpperCase()}_VOLTAGE_LOW`;
+    const alarm = alarms.find((item) => item.code === code || item.metric === `${key}.voltage_v`);
+    if (alarm) alarm.message = `${label}无电压`;
+    else alarms.push({ code, metric: `${key}.voltage_v`, message: `${label}无电压` });
+  });
+  const faults = [];
+  const addFault = (alarm, pending) => {
+    const code = text(alarm.code);
+    const group = alarmGroup(alarm);
+    if (!code || (group && groupState(group) === "not_configured")) return;
+    if (faults.some((fault) => fault.code === code && fault.group === group)) return;
+    faults.push({ code, group, label: deviceLabels[group] || "设备", pending });
+  };
+  alarms.forEach((alarm) => addFault(alarm, false));
+  Object.entries(deviceLabels).forEach(([key, label]) => {
+    const code = text(source?.[key]?.alarm_code);
+    if (!code || groupState(key) === "not_configured") return;
+    const alarm = { code, metric: `${key}.alarm_code`, message: `${label}故障` };
+    const pending = groupState(key) !== "online";
+    addFault(alarm, pending);
+    if (!pending && !alarms.some((item) => item.code === code && alarmGroup(item) === key)) alarms.push(alarm);
+  });
+  // A failed HTTP/MQTT link can leave the previous snapshot in place in the UI.
+  (Array.isArray(source?.alarms) ? source.alarms : []).forEach((alarm) => {
+    const group = alarmGroup(alarm);
+    if (host !== "online" || (group && groupState(group) !== "online")) addFault(alarm, true);
+  });
+  (Array.isArray(source?.last_alarms) ? source.last_alarms : []).forEach((alarm) => addFault(alarm, true));
   const definitions = [
     ["室温", "environment", "temperature_c", "°C", "room"],
     ["湿度", "environment", "humidity_rh", "%RH", "humidity"],
@@ -32,9 +72,10 @@ export function buildTelemetryRow(name, source, monitorStatus = "online") {
     const last = numberText(group.last_values ? group.last_values[field] : group[field], unit);
     const unavailable = state === "not_configured";
     const live = state === "online";
+    const noVoltage = live && field === "voltage_v" && isNumber(group[field]) && Number(group[field]) === 0;
     return { label, metric, state, unavailable,
       value: unavailable ? (field === "voltage_v" ? "无搬运设备" : "—") : live ? numberText(group[field], unit) : state === "delayed" ? last : "—",
-      hint: unavailable || live ? "" : `${state === "delayed" ? "旧值" : stateText[state] || "未知"} · 最后值 ${last}`,
+      hint: noVoltage ? `${deviceLabels[key]}无电压` : unavailable || live ? "" : `${state === "delayed" ? "旧值" : stateText[state] || "未知"} · 最后值 ${last}`,
       alarm: live && alarms.some((alarm) => alarm.metric ? alarm.metric === `${key}.${field}` : (field === "temperature_c" ? Number(group[field]) > 60 : field === "voltage_v" && group[field] != null && Number(group[field]) < 100)),
     };
   });
@@ -49,9 +90,20 @@ export function buildTelemetryRow(name, source, monitorStatus = "online") {
   else if (host === "recovering") { status = "恢复确认中"; tone = "delayed"; notice = "收到新数据 · 等待连续两次有效采集"; }
   else if (alarms.length) { status = "严重告警"; tone = "alarm"; notice = [...alarms.map((a) => a.message), ...issues].join("；"); }
   else if (issues.length) { status = issues[0].replace(/ \d+ 秒$/, ""); tone = "delayed"; notice = issues.join("；"); }
-  const previousAlarm = Array.isArray(source?.last_alarms) && source.last_alarms.length ? "；断线前告警待确认" : "";
+  const previousAlarm = faults.some((fault) => fault.pending) ? "；断线前告警待确认" : "";
   notice += previousAlarm;
-  return { name, status, tone, notice, metrics,
+  // Reuse the device ledger's current maintenance-window rules, including planned/expired repair.
+  const deviceStatus = device ? buildDeviceRows([device], [], now)[0]?.status : "";
+  const maintenance = ["维修", "保养"].includes(deviceStatus) ? `${deviceStatus}中` : "";
+  if (maintenance) {
+    const note = text(device.maintenance_note ?? device.maintenanceNote);
+    notice = [`试验设备${maintenance}${note ? `：${note}` : ""}`, notice].filter(Boolean).join("；");
+    if (host === "online") {
+      status = status === "在线" ? maintenance : `${maintenance} · ${status}`;
+      if (tone === "online") tone = "delayed";
+    }
+  }
+  return { name, status, tone, notice, metrics, faults, maintenance,
     hostOffline: host === "offline", deviceOffline: host === "online" ? ["test_device", "carrier_device"].filter((key) => groupState(key) === "offline").length : 0,
     delayed: host === "delayed" || host === "recovering", alarm: alarms.length > 0,
     footer: `${allUnknown ? "最后有效数据" : "最近采集"} ${formatBusinessDateTime(source?.observed_at, { includeSeconds: true }) || "—"}（北京时间）`,

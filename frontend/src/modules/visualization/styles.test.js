@@ -20,6 +20,12 @@ const readVisualizationSource = () => [visualizationPagePath, ...visualizationSc
   .join("\n");
 
 describe("visualization styles", () => {
+  test("screen seven reserves fault-code space and wraps long codes without displacing all metrics", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/modules/visualization/telemetryScreen.css"), "utf8");
+    expect(source).toMatch(/\.visual-board\.visual-lab-status-board \.visual-lab-status-card\s*{[^}]*grid-template-rows:34px auto minmax\(0,1fr\) 24px/);
+    expect(source).toMatch(/\.visual-telemetry-faults\s*{[^}]*max-height:3.9em;[^}]*overflow:auto;/);
+    expect(source).toMatch(/\.visual-telemetry-faults li\s*{[^}]*overflow-wrap:anywhere;/);
+  });
   test("inferred process steps use green while retaining their distinct semantic class", () => {
     const source = readFileSync(visualizationStylesPath, "utf8");
     expect(source.match(/\.visual-flow-step\.is-inferred\s*\{([^}]+)\}/)?.[1]).toContain("var(--status-success-text)");

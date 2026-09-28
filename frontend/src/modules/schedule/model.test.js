@@ -977,6 +977,22 @@ describe("schedulePageModel", () => {
     ]);
   });
 
+  test("buildManualTaskOptions carries priority for labels without reordering or guessing missing priorities", () => {
+    const tasks = ["中", " 高 ", "低", undefined].map((priority, index) => ({
+      code: `TASK-${index}`,
+      status: STATUS_WAITING,
+      priority,
+      tray_codes: [`TASK-${index}-TP-001`],
+    }));
+    const options = buildManualTaskOptions({ tasks, experiments: [], samples: [], schedules: [], experimentTrays: [] });
+    expect(options.map(({ code, label, priority }) => ({ code, label, priority }))).toEqual([
+      { code: "TASK-0", label: "TASK-0", priority: "中" },
+      { code: "TASK-1", label: "TASK-1", priority: "高" },
+      { code: "TASK-2", label: "TASK-2", priority: "低" },
+      { code: "TASK-3", label: "TASK-3", priority: "" },
+    ]);
+  });
+
   test("buildManualTaskOptions only keeps unpacking tasks that already have a saved tray plan", () => {
     const options = buildManualTaskOptions({
       activeTab: "unpacking",

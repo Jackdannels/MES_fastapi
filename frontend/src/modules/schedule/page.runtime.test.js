@@ -243,6 +243,40 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.find("#conflict-table").exists()).toBe(false);
   });
 
+  test("selects a lower-priority task through scheme B rows without changing form eligibility", async () => {
+    setStorage(TASKS_KEY, [
+      { code: "TASK-M", priority: "中", status: STATUS_WAITING, test_type: "UNKNOWN", tray_codes: ["TASK-M-TP-001"] },
+      { code: "TASK-H", priority: "高", status: STATUS_WAITING, test_type: "UNKNOWN", tray_codes: ["TASK-H-TP-001"] },
+      { code: "TASK-L", priority: "低", status: STATUS_WAITING, test_type: "UNKNOWN", tray_codes: ["TASK-L-TP-001"] },
+      { code: "TASK-NO-TRAY", priority: "高", status: STATUS_WAITING },
+    ]);
+    setStorage(DEVICES_KEY, [{ code: PRIMARY_LAB, name: PRIMARY_LAB }]);
+    const wrapper = mount(SchedulePage);
+    await settle(wrapper);
+    const trigger = wrapper.get('#schedule-task-code');
+    await trigger.trigger("click");
+    const rows = wrapper.findAll('[role="option"]');
+    expect(rows.map((row) => row.get('.schedule-task-select__code').text())).toEqual([
+      "请选择已接收任务", "TASK-M", "TASK-H", "TASK-L",
+    ]);
+    expect(rows[3].classes()).toContain("priority-row-low");
+    await rows[3].trigger("click");
+    await settle(wrapper);
+    expect(wrapper.get('select[name="task_code"]').element.value).toBe("TASK-L");
+    expect(trigger.text()).toContain("低优先级");
+    expect(wrapper.get('.schedule-task-select__hint').text()).toContain("2 项更高优先级");
+    const lab = wrapper.get('select[name="device"]');
+    await lab.setValue(PRIMARY_LAB);
+    expect(lab.element.value).toBe(PRIMARY_LAB);
+    const reset = wrapper.get('.form-actions').findAll('button').find((button) => button.text() === "重置");
+    await reset.trigger("click");
+    await settle(wrapper);
+    expect(trigger.text()).toContain("请选择已接收任务");
+    expect(wrapper.find('.schedule-task-select__hint').exists()).toBe(false);
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+    wrapper.unmount();
+  });
+
   test("labels the manual schedule reset action as reset", async () => {
     const wrapper = mount(SchedulePage);
     await settle(wrapper);

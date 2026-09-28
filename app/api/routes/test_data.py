@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import ipaddress
 import html
+from pathlib import Path, PureWindowsPath
 from typing import Any
 from urllib.parse import urlsplit
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from app.core.config import settings
+from app.api.auth_session import require_auth_session
+from app.services.test_data_backup_probe import check_backup_directory
+from app.services.test_data_backup_settings import save_backup_path
 from app.core.storage_backend import get_storage_backend
 from app.services.test_data_access import (
     create_experiment_share,
@@ -30,6 +34,7 @@ from app.services.test_data_reports import (
     read_test_data_settings,
     retry_failed_exports,
     update_test_data_settings,
+    default_save_path,
 )
 
 
@@ -39,6 +44,61 @@ router = APIRouter(prefix="/api/test-data", tags=["test-data"])
 @router.get("/backup-status")
 def get_backup_status(request: Request) -> dict[str, Any]:
     return request.app.state.test_data_backup_runtime.status()
+
+
+class BackupPathRequest(BaseModel):
+    backupPath: str = Field(default="", max_length=2048)
+
+
+def _require_backup_manager(request: Request) -> None:
+    if require_auth_session(request).get("module") != "central":
+        raise HTTPException(403, "仅中控登录用户可设置或检测服务器备份目录")
+
+
+def _backup_local_roots() -> list[str]:
+    # Do not use read_test_data_settings: merely reading that API writes a probe.
+    from app.services.test_data_repository import get_test_data_repository
+    storage = get_storage_backend()
+    rows = storage.read("mes.test_data_settings") or []
+    current = rows[0].get("savePath") if rows else None
+    roots = {str(current or default_save_path())}
+    for record in get_test_data_repository(storage).list_exports(status="success"):
+        source = Path(str(record.get("filePath") or ""))
+        relative = PureWindowsPath(str(record.get("relativePath") or ""))
+        if source.is_absolute() and relative.parts and len(source.parents) >= len(relative.parts):
+            roots.add(str(source.parents[len(relative.parts) - 1]))
+    return sorted(roots)
+
+
+@router.post("/backup-check")
+def check_backup_path(payload: BackupPathRequest, request: Request) -> dict[str, Any]:
+    _require_backup_manager(request)
+    return check_backup_directory(payload.backupPath.strip(), _backup_local_roots())
+
+
+@router.put("/backup-settings", response_model=None)
+def put_backup_settings(payload: BackupPathRequest, request: Request):
+    _require_backup_manager(request)
+    probe = check_backup_directory(payload.backupPath.strip(), _backup_local_roots())
+    if not probe["ok"]:
+        return JSONResponse(status_code=400, content={"detail": probe["detail"], "probe": probe})
+    runtime = request.app.state.test_data_backup_runtime
+    try:
+        save_backup_path(runtime.settings, probe["path"])
+    except (OSError, ValueError) as exc:
+        raise HTTPException(503, f"无法保存本机备份配置，原配置未切换：{exc}") from exc
+    return {**runtime.status(), "probe": probe}
+
+
+@router.post("/backup-select-directory")
+def select_backup_directory(payload: BackupPathRequest, request: Request) -> dict[str, Any]:
+    _require_backup_manager(request)
+    _require_loopback(request)
+    try:
+        selected = select_test_data_directory(payload.backupPath.strip(), title="选择 MES 试验数据备份目录")
+        return {"backupPath": selected["savePath"], "cancelled": selected["cancelled"]}
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.get("/completions/{token}", response_class=HTMLResponse)

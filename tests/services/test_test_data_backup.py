@@ -198,7 +198,10 @@ def test_runtime_shutdown_kills_active_worker_and_disabled_creates_none(monkeypa
     async def scenario():
         disabled = runtime_module.TestDataBackupRuntime(Settings(_env_file=None, TEST_DATA_BACKUP_PATH=""))
         disabled.start()
-        assert disabled.task is None
+        assert disabled.task is not None  # Poll local settings so UI can enable without a restart.
+        await asyncio.sleep(0)
+        assert disabled.process is None
+        await disabled.stop()
         runtime = runtime_module.TestDataBackupRuntime(Settings(_env_file=None, TEST_DATA_BACKUP_PATH=str(tmp_path)))
         runtime.start()
         original_task = runtime.task
