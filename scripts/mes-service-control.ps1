@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet("Status", "Start", "Stop", "Restart")]
     [string]$Action = "Status",
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),

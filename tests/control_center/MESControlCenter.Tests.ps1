@@ -41,6 +41,30 @@ Describe "MES control center integration" {
         $source | Should Match 'ValidateLayout\(\)'
     }
 
+    It "includes native script errors when no structured result is returned" {
+        $source | Should Match 'RedirectStandardError = true'
+        $source | Should Match 'Task<string> stderrTask = process\.StandardError\.ReadToEndAsync\(\);\s*process\.WaitForExit\(\);'
+        $source | Should Match 'stderrTask\.GetAwaiter\(\)\.GetResult\(\)\.Trim\(\)'
+        $source | Should Match 'if \(stderr\.Length > 0\) message \+= Environment\.NewLine \+ stderr;'
+    }
+
+    It "preserves structured results and diagnoses failures in the compiled Windows client" {
+        $executable = Join-Path $TestDrive "MESControlCenter.exe"
+        & $buildPath -ProjectRoot $projectRoot -OutputPath $executable -IconPath (Join-Path $TestDrive "control-center.ico") -NoAdminManifest
+        $runtimeTest = Join-Path $PSScriptRoot "Test-ControlCenterRuntime.ps1"
+        $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$runtimeTest`" -Executable `"$executable`" -TestDirectory `"$TestDrive`""
+        $stderrFile = Join-Path $TestDrive "runtime.stderr.log"
+        $process = Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardError $stderrFile -RedirectStandardOutput (Join-Path $TestDrive "runtime.stdout.log")
+        # A filled stderr pipe must never hang the control center.
+        if (-not $process.WaitForExit(30000)) {
+            $process.Kill()
+            throw "Control-center runtime regression timed out."
+        }
+        $process.WaitForExit()
+        (Get-Content -LiteralPath $stderrFile -Raw) | Should BeNullOrEmpty
+        $process.ExitCode | Should Be 0
+    }
+
     It "exposes v2.3 and four independently visible service states" {
         $source | Should Match 'AssemblyVersion\("2\.3\.0\.0"\)'
         $source | Should Match 'MES 控制中心 v2\.3'

@@ -2,6 +2,28 @@ $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $controller = Join-Path $projectRoot "scripts\mes-service-control.ps1"
 
 Describe "MES service controller" {
+    It "returns structured results for every action through Windows PowerShell 5.1" {
+        # Match the desktop executable's -File boundary, not the test runner's
+        # UTF-8 decoding (PowerShell 7 can hide missing-BOM regressions).
+        foreach ($action in @("Status", "Start", "Stop", "Restart")) {
+            $resultFile = Join-Path $TestDrive "windows-powershell-$action.json"
+            $stderrFile = Join-Path $TestDrive "windows-powershell-$action.stderr.log"
+            $stdoutFile = Join-Path $TestDrive "windows-powershell-$action.stdout.log"
+            $stateFile = Join-Path $TestDrive "missing-state.json"
+            $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$controller`" -Action $action -ProjectRoot `"$projectRoot`" -StateFile `"$stateFile`" -ResultFile `"$resultFile`" -IgnorePortListeners -DryRun"
+            $process = Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $arguments -WindowStyle Hidden -Wait -PassThru -RedirectStandardError $stderrFile -RedirectStandardOutput $stdoutFile
+
+            $process.ExitCode | Should Be 0
+            (Get-Content -LiteralPath $stderrFile -Raw) | Should BeNullOrEmpty
+            $result = Get-Content -LiteralPath $resultFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            $expectedStatus = @{ Status = "stopped"; Start = "started"; Stop = "not_running"; Restart = "started" }
+            $result.status | Should Be $expectedStatus[$action]
+            $expectedMessage = @{ Status = "MES系统未启动"; Start = "MES系统已启动"; Stop = "未检测到开启的MES系统，无需关闭"; Restart = "MES系统已启动" }
+            $result.message | Should Be $expectedMessage[$action]
+            Test-Path -LiteralPath $stateFile | Should Be $false
+        }
+    }
+
     It "detects Windows Terminal before choosing development terminal hosts" {
         $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
 

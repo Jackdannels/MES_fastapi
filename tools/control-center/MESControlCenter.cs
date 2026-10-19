@@ -975,14 +975,23 @@ namespace MESControlCenter
                     Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + controlScript + "\" -Action " + action + " -ResultFile \"" + resultFile + "\"",
                     WorkingDirectory = Program.ProjectRoot,
                     UseShellExecute = false,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    RedirectStandardError = true
                 };
                 using (Process process = Process.Start(info))
                 {
                     if (process == null) throw new InvalidOperationException("无法启动 MES 控制脚本。");
+                    // Drain while running so a long parser error cannot fill the pipe.
+                    Task<string> stderrTask = process.StandardError.ReadToEndAsync();
                     process.WaitForExit();
                     string result = File.Exists(resultFile) ? File.ReadAllText(resultFile) : "";
-                    if (!HasResultValue(result, "status")) throw new InvalidOperationException("MES 控制脚本未返回执行结果，退出码：" + process.ExitCode + "。");
+                    string stderr = stderrTask.GetAwaiter().GetResult().Trim();
+                    if (!HasResultValue(result, "status"))
+                    {
+                        string message = "MES 控制脚本未返回执行结果，退出码：" + process.ExitCode + "。";
+                        if (stderr.Length > 0) message += Environment.NewLine + stderr;
+                        throw new InvalidOperationException(message);
+                    }
                     return result;
                 }
             }
