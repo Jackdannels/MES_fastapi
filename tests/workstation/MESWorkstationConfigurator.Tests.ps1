@@ -1,15 +1,15 @@
-$projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
+﻿$projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
 $sourcePath = Join-Path $projectRoot "scripts\client\MESWorkstationConfigurator.cs"
 $discoverySourcePath = Join-Path $projectRoot "scripts\client\MESServerDiscovery.cs"
 $buildScript = Join-Path $projectRoot "scripts\build_workstation_configurator.ps1"
 
 Describe "MES workstation configurator v2.3" {
     It "discovers the current MES IP and safely migrates the temporary DNS default" {
-        $source = Get-Content -Raw -LiteralPath $sourcePath
-        $discoverySource = Get-Content -Raw -LiteralPath $discoverySourcePath
+        $source = Get-Content -Raw -Encoding UTF8 -LiteralPath $sourcePath
+        $discoverySource = Get-Content -Raw -Encoding UTF8 -LiteralPath $discoverySourcePath
 
         $source | Should Match 'Version = "v2\.3"'
-        $source | Should Match 'DefaultServerUrl = "http://192\.168\.110\.15:5173"'
+        $source | Should Match 'DefaultServerUrl = MESDesktopSettings.ServerUrl\("http://192\.168\.110\.15:5173"\)'
         $source | Should Match 'LegacyDefaultServerUrls'
         $source | Should Match 'MigrateLegacyServerUrl'
         $source | Should Match 'config\.RegisteredServerUrl = DefaultServerUrl'
@@ -23,7 +23,7 @@ Describe "MES workstation configurator v2.3" {
     }
 
     It "uses dedicated Edge and browser-page health for automatic recovery" {
-        $source = Get-Content -Raw -LiteralPath $sourcePath
+        $source = Get-Content -Raw -Encoding UTF8 -LiteralPath $sourcePath
 
         $source | Should Match 'Version = "v2\.3"'
         $source | Should Match 'IsDedicatedEdgeRunning'
@@ -35,7 +35,7 @@ Describe "MES workstation configurator v2.3" {
     }
 
     It "stabilizes the Windows desktop and repeatedly activates only the dedicated Edge window" {
-        $source = Get-Content -Raw -LiteralPath $sourcePath
+        $source = Get-Content -Raw -Encoding UTF8 -LiteralPath $sourcePath
 
         $source | Should Match 'StartupDesktopSettleMilliseconds = 8000'
         $source | Should Match 'FocusRetryDelaysMilliseconds = new int\[\] \{ 500, 1500, 3000 \}'
@@ -48,7 +48,7 @@ Describe "MES workstation configurator v2.3" {
     }
 
     It "uses stable English laboratory codes in generated workstation URLs" {
-        $source = Get-Content -Raw -LiteralPath $sourcePath
+        $source = Get-Content -Raw -Encoding UTF8 -LiteralPath $sourcePath
 
         $source | Should Match 'Laboratory\("冲击二室", "LAB_IMPACT_2"\)'
         $source | Should Match 'Laboratory\("高低温湿热二室", "LAB_HOT_HUMID_2"\)'

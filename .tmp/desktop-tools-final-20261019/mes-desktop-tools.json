@@ -1,0 +1,9 @@
+﻿{
+    "deploymentDirectory":  "../release-20261019-r1",
+    "environmentFile":  ".tmp/portable.env",
+    "mode":  "demo",
+    "serverUrl":  "http://127.0.0.1:15173",
+    "apiUrl":  "http://127.0.0.1:18000",
+    "limsUrl":  "http://127.0.0.1:18900",
+    "upperComputerUrl":  "http://127.0.0.1:18899"
+}

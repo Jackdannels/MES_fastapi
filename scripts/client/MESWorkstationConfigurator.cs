@@ -60,6 +60,39 @@ namespace MESWorkstationConfigurator
         }
     }
 
+    internal sealed class RegistrationLoginForm : Form
+    {
+        internal readonly TextBox Username = new TextBox();
+        internal readonly TextBox Password = new TextBox();
+
+        internal RegistrationLoginForm(string serverUrl)
+        {
+            Text = "注册固定工作台：管理员认证";
+            ClientSize = new Size(470, 220);
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            StartPosition = FormStartPosition.CenterScreen;
+            Font = new Font("Microsoft YaHei UI", 10F);
+            Controls.Add(new Label { Text = "请输入迁移后 MES 的管理员账号和密码。\n" + serverUrl,
+                Location = new Point(20, 18), Size = new Size(430, 48) });
+            Controls.Add(new Label { Text = "管理员", Location = new Point(20, 82), AutoSize = true });
+            Controls.Add(new Label { Text = "密码", Location = new Point(20, 124), AutoSize = true });
+            Username.Text = "admin";
+            Username.SetBounds(105, 78, 340, 30);
+            Password.SetBounds(105, 120, 340, 30);
+            Password.UseSystemPasswordChar = true;
+            Controls.Add(Username);
+            Controls.Add(Password);
+            Button confirm = new Button { Text = "注册", DialogResult = DialogResult.OK, Location = new Point(265, 173), Size = new Size(85, 32) };
+            Button cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new Point(360, 173), Size = new Size(85, 32) };
+            Controls.Add(confirm);
+            Controls.Add(cancel);
+            AcceptButton = confirm;
+            CancelButton = cancel;
+        }
+    }
+
     internal enum WorkstationRecoveryReason
     {
         None,
@@ -138,7 +171,7 @@ namespace MESWorkstationConfigurator
         internal const int AutomaticRestartPauseMilliseconds = 5 * 60 * 1000;
         internal static readonly int[] FocusRetryDelaysMilliseconds = new int[] { 500, 1500, 3000 };
         internal const int WorkstationZoomPercent = 100;
-        internal const string DefaultServerUrl = "http://192.168.110.15:5173";
+        internal static readonly string DefaultServerUrl = MESDesktopSettings.ServerUrl("http://192.168.110.15:5173");
         internal static readonly string[] LegacyDefaultServerUrls = new string[]
         {
             "http://mes-server:5173",
@@ -482,12 +515,24 @@ namespace MESWorkstationConfigurator
             bool laboratory = station.Key.StartsWith("laboratory:", StringComparison.Ordinal);
             string module = laboratory ? "laboratory" : station.Key;
             string labName = laboratory ? station.Key.Substring("laboratory:".Length) : String.Empty;
+            string username = "admin";
+            string password = "123";
+            if (MESDesktopSettings.IsDocker)
+            {
+                using (RegistrationLoginForm login = new RegistrationLoginForm(normalizedServerUrl))
+                {
+                    if (login.ShowDialog() != DialogResult.OK) throw new OperationCanceledException("已取消固定终端注册。");
+                    username = login.Username.Text.Trim();
+                    password = login.Password.Text;
+                    if (username.Length == 0 || password.Length == 0) throw new InvalidOperationException("请输入 MES 管理员账号和密码。");
+                }
+            }
             Dictionary<string, object> response = PostJson(
                 normalizedServerUrl + "/auth/terminal/register",
                 new Dictionary<string, object>
                 {
-                    { "username", "admin" },
-                    { "password", "123" },
+                    { "username", username },
+                    { "password", password },
                     { "terminal_id", config.TerminalId },
                     { "terminal_name", Environment.MachineName + " - " + station.Label },
                     { "module", module },

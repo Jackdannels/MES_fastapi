@@ -1,0 +1,7 @@
+services:
+  api:
+    environment:
+      LIMS_HTTP_CALLBACK_URL: http://lims-simulator:8900/api/mes/events
+      LIMS_HEALTH_URL: http://lims-simulator:8900/api/state
+      LIMS_COMMUNICATION_URL: http://lims-simulator:8900/api/mes/communication
+      LIMS_DATA_PUBLIC_BASE_URL: ${MES_PUBLIC_URL:-http://127.0.0.1:15173}

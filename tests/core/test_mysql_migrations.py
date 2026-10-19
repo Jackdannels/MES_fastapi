@@ -241,6 +241,45 @@ def test_v011_replaces_legacy_lab_master_data_with_the_canonical_set() -> None:
     assert "equipment_code IN ('EQ-IM-001', 'EQ-VB-001', 'EQ-SS-001')" in migration_sql
 
 
+@pytest.mark.parametrize("legacy_exists", [False, True])
+def test_v011_cold_start_skips_only_absent_optional_legacy_tables(monkeypatch, legacy_exists):
+    class Cursor:
+        def __init__(self):
+            self.updates = []
+            self.checked = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def execute(self, sql, params=None):
+            if sql.startswith("SELECT COUNT(*) FROM information_schema.tables"):
+                self.checked.append(params[1])
+            else:
+                self.updates.append(sql)
+
+        def fetchone(self):
+            return (int(legacy_exists),)
+
+    cursor = Cursor()
+    connection = _MigrationConnection(cursor)
+    monkeypatch.setattr(init_mysql_storage, "_connect_mysql", lambda **_kwargs: connection)
+    monkeypatch.setattr(init_mysql_storage, "_render_sql_template", lambda _path: (
+        "-- optional old runs\nUPDATE exec_test_run SET equipment_id = NULL;\n"
+        "UPDATE ctrl_device_command_log SET equipment_id = NULL;\n"
+        "UPDATE biz_tray_trace SET equipment_id = NULL;\n"
+        "UPDATE biz_tray SET current_equipment_id = NULL;"
+    ))
+    path = init_mysql_storage.SQL_DIR / "V011__canonicalize_laboratory_master_data.sql"
+    init_mysql_storage.apply_sql_file(path)
+    assert cursor.checked == ["exec_test_run", "ctrl_device_command_log", "biz_tray_trace"]
+    assert len(cursor.updates) == (4 if legacy_exists else 1)
+    assert cursor.updates[-1].startswith("UPDATE biz_tray")
+    assert connection.commits == 1
+
+
 def test_migration_stops_when_database_lock_cannot_be_acquired(monkeypatch) -> None:
     cursor = _MigrationCursor({}, lock_result=0)
     connection = _MigrationConnection(cursor)

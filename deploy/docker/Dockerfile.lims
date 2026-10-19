@@ -1,0 +1,13 @@
+ARG PYTHON_IMAGE=python:3.12-slim-bookworm
+FROM ${PYTHON_IMAGE}
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONUTF8=1 TZ=Asia/Shanghai
+WORKDIR /app
+RUN groupadd --system --gid 10001 simulator \
+    && useradd --system --uid 10001 --gid simulator --create-home simulator \
+    && mkdir -p /data/lims && chown -R simulator:simulator /data/lims
+COPY tools/lims_simulator/requirements.txt /tmp/requirements.txt
+RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt
+COPY --chown=simulator:simulator tools/lims_simulator /app/tools/lims_simulator
+USER simulator
+EXPOSE 8900
+CMD ["python", "-m", "uvicorn", "tools.lims_simulator.app:app", "--host", "0.0.0.0", "--port", "8900", "--no-proxy-headers"]

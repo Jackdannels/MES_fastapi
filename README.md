@@ -366,6 +366,10 @@ python scripts\init_mysql_storage.py --seed-demo
 
 Docker 隔离打包、启动、验证与清理说明见 `docs/docker-deployment.md`；验收栈固定使用独立端口、独立卷和 `mes_packaging_test`，不得指向当前 `mes_single_branch`。
 
+包含 LIMS、上位机两个模拟器的单机跨 PC 迁移见 [单机离线迁移手册](docs/portable-deployment.md)。使用 `scripts/deploy/Mes-Portable.ps1` 构建三个应用包，并通过 `scripts/deploy/portable_data.py` 单独备份、恢复当前业务数据。
+
+已迁移 Docker 环境的控制中心、工作台设置、终端管理三个 Windows 程序见 [桌面程序补充安装](docs/desktop-tools-docker.md)，使用 `scripts/build_desktop_tools.ps1` 单独构建，不需要重新构建应用镜像。
+
 真实 MySQL 集成验收默认跳过，只允许对名称满足 `mes_phase1_<name>_test` 的临时数据库执行，且删除确认值必须与数据库名完全一致：
 
 ```powershell

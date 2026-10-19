@@ -113,10 +113,10 @@ $temporaryControlSource = Join-Path ([System.IO.Path]::GetTempPath()) ("MESContr
 $temporaryTerminalSource = Join-Path ([System.IO.Path]::GetTempPath()) ("MESTerminalClient-" + [Guid]::NewGuid().ToString("N") + ".cs")
 $temporaryManifest = Join-Path ([System.IO.Path]::GetTempPath()) ("MESControlCenter-" + [Guid]::NewGuid().ToString("N") + ".manifest")
 $escapedProjectRoot = $projectRootPath.Replace('"', '""')
-(Get-Content -LiteralPath $controlCenterSource -Raw).Replace("__PROJECT_ROOT__", $escapedProjectRoot) |
+(Get-Content -Encoding UTF8 -LiteralPath $controlCenterSource -Raw).Replace("__PROJECT_ROOT__", $escapedProjectRoot) |
     Set-Content -LiteralPath $temporaryControlSource -Encoding UTF8
 
-$terminalText = Get-Content -LiteralPath $terminalSource -Raw
+$terminalText = Get-Content -Encoding UTF8 -LiteralPath $terminalSource -Raw
 $terminalText = [regex]::Replace($terminalText, '(?m)^\[assembly:.*\]\s*\r?\n?', '')
 $programStart = $terminalText.LastIndexOf("    internal static class Program")
 if ($programStart -lt 0) { throw "Cannot locate terminal-manager Program class for source composition." }

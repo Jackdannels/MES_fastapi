@@ -7,6 +7,10 @@
 .vscode
 .worktrees
 .venv
+.runtime
+**/*.sqlite3
+**/*.sqlite3-*
+tools/lims_simulator/data
 .env
 .env.*
 !.env.example

@@ -307,9 +307,9 @@ namespace MESTerminalManager
             AddHeaderField(header, "MES 地址", serverText, 22, 78, 310);
             AddHeaderField(header, "管理员", usernameText, 360, 78, 150);
             AddHeaderField(header, "密码", passwordText, 538, 78, 150);
-            serverText.Text = MESServerDiscovery.Discover("http://192.168.110.15:5173");
+            serverText.Text = MESServerDiscovery.Discover(MESDesktopSettings.ServerUrl("http://192.168.110.15:5173"));
             usernameText.Text = "admin";
-            passwordText.Text = "123";
+            passwordText.Text = MESDesktopSettings.IsDocker ? "" : "123";
             passwordText.UseSystemPasswordChar = true;
 
             ConfigureButton(connectButton, "连接", false);

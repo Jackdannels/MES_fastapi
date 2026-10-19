@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MES 上位机模拟器</title>
+    <link rel="stylesheet" href="/static/styles.css?v=v2.7-link-state-1" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>MES 上位机模拟器</h1>
+          <p>用于验证 MES 与试验间上位机 MQTT 接口收发。</p>
+        </div>
+        <div class="header-meta">
+          <span id="versionBadge" class="version-badge" aria-label="当前模拟器版本">v2.0</span>
+          <div id="statusBadge" class="status-badge">未连接</div>
+        </div>
+      </header>
+
+      <nav class="workspace-tabs" aria-label="模拟器界面">
+        <button id="telemetryTab" class="workspace-tab is-active" type="button" aria-selected="true" aria-controls="telemetryPage">状态遥测</button>
+        <button id="workflowTab" class="workspace-tab" type="button" aria-selected="false" aria-controls="workflowPage">实验流程</button>
+      </nav>
+
+      <section class="panel config-panel">
+        <div class="panel-title">
+          <h2>连接配置</h2>
+          <span>Topic 前缀默认 mes/v1</span>
+        </div>
+        <div class="form-grid">
+          <label>
+            MQTT Host
+            <input id="host" value="127.0.0.1" />
+          </label>
+          <label>
+            MQTT Port
+            <input id="port" type="number" value="1883" />
+          </label>
+          <label>
+            Topic Prefix
+            <input id="topicPrefix" value="mes/v1" />
+          </label>
+          <label class="lab-code-field">
+            试验间 lab_code
+            <select id="labCode"></select>
+            <span id="labCodeHint" class="field-note">LAB_SALT 对应盐雾试验室</span>
+          </label>
+          <label>
+            Username
+            <input id="username" value="guest" />
+          </label>
+          <label>
+            Password
+            <input id="password" type="password" value="guest" />
+          </label>
+          <label class="auto-mode-field">
+            自动模式
+            <input id="autoMode" type="checkbox" hidden />
+            <button id="modeSwitch" class="mode-switch" type="button" role="switch" aria-checked="false">
+              <span class="mode-switch-thumb"></span>
+              <span class="mode-option mode-option-manual">手动</span>
+              <span class="mode-option mode-option-auto">自动</span>
+            </button>
+            <span id="autoModeHint" class="field-note">手动模式仅订阅当前试验间</span>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="connectBtn" class="primary">连接并订阅</button>
+          <button id="disconnectBtn">断开</button>
+        </div>
+      </section>
+
+      <section id="telemetryPage" class="workspace-page" aria-labelledby="telemetryTab">
+        <section class="panel telemetry-panel">
+          <div class="panel-title telemetry-title">
+            <div>
+              <span class="section-kicker">REALTIME TELEMETRY</span>
+              <h2>试验间状态遥测</h2>
+              <span>通过 MQTT QoS 1 每 1 秒向 MES 发送 11 个试验间完整快照</span>
+            </div>
+            <div class="telemetry-summary" aria-label="遥测运行摘要">
+              <div><span>正在采集</span><strong id="telemetryActiveCount">0 / 11</strong></div>
+              <div><span>自动发送</span><strong>1 秒</strong></div>
+              <div><span>故障注入</span><strong id="telemetryFaultCountdown">10 轮后</strong></div>
+            </div>
+          </div>
+          <div id="telemetryGrid" class="telemetry-grid" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <div id="workflowPage" class="workspace-page" aria-labelledby="workflowTab" hidden>
+      <section class="grid">
+        <section class="panel">
+          <div class="panel-title">
+            <h2>接收 MES 命令</h2>
+            <span>自动模式订阅 labs/+/commands/#</span>
+          </div>
+          <div class="message-cards">
+            <article>
+              <h3>安装夹具</h3>
+              <code>fixture-install</code>
+              <pre id="lastFixtureInstall">暂无消息</pre>
+            </article>
+            <article>
+              <h3>准备就绪</h3>
+              <code>experiment-ready</code>
+              <pre id="lastExperimentReady">暂无消息</pre>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">
+            <h2>发送上位机事件</h2>
+            <span>时间为空时自动填北京时间</span>
+          </div>
+          <div class="event-form">
+            <label>
+              成功标识
+              <input id="success_id" value="OK" />
+            </label>
+            <label>
+              时间
+              <input id="eventTime" placeholder="YYYY-MM-DD HH:mm:ss" />
+            </label>
+            <label>
+              结果包 JSON
+              <textarea id="result_package" rows="7">{
+  "conclusion": "PASS",
+  "summary": "实验结果正常",
+  "files": []
+}</textarea>
+            </label>
+          </div>
+          <div class="button-grid">
+            <button data-event="fixture-ready">夹具安装完成</button>
+            <button data-event="experiment-started">实验开始</button>
+            <button data-event="experiment-ended">实验结束</button>
+            <button data-event="experiment-result">发送结果</button>
+          </div>
+        </section>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">
+          <div class="log-title-group">
+            <h2>通信日志</h2>
+            <span id="logSummary" class="log-summary" aria-live="polite">0 / 0 条</span>
+          </div>
+          <div class="log-actions">
+            <button id="logUpdateNotice" class="log-update-button" type="button" hidden>有新日志，点击加载</button>
+            <button id="copyLogsBtn" type="button">复制全部</button>
+            <button id="pauseLogsBtn" type="button" aria-pressed="false">暂停自动刷新</button>
+            <button id="refreshBtn" type="button">刷新</button>
+          </div>
+        </div>
+        <div id="logs" class="logs"></div>
+        <button id="showMoreLogsBtn" class="show-more-logs" type="button" hidden>显示更多</button>
+      </section>
+      </div>
+    </main>
+
+    <div id="noticeDialog" class="notice-dialog" hidden>
+      <div class="notice-card" role="dialog" aria-modal="true" aria-labelledby="noticeTitle">
+        <h2 id="noticeTitle">订阅成功</h2>
+        <p id="noticeMessage"></p>
+        <button id="noticeOkBtn" class="primary" type="button">确定</button>
+      </div>
+    </div>
+
+    <script src="/static/app.js?v=v2.7-link-state-1"></script>
+  </body>
+</html>

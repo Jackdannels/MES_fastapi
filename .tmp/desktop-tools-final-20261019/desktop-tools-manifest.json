@@ -1,0 +1,43 @@
+﻿{
+    "format":  "mes-docker-desktop-tools",
+    "format_version":  1,
+    "version":  "2026.10.19-r1",
+    "platform":  "windows-dotnet-framework",
+    "files":  [
+                  {
+                      "path":  "Configure-DesktopTools.ps1",
+                      "bytes":  3121,
+                      "sha256":  "05bf57bbf4d3f3d1f72df755a3cc5931b9cd3c71f379a469140a837c985f7ce2"
+                  },
+                  {
+                      "path":  "mes-desktop-tools.json",
+                      "bytes":  311,
+                      "sha256":  "e66ac9c9a6ffcd2f1318456544c4c04ab08bf818ded6d924c3f6041d7a5f4a84"
+                  },
+                  {
+                      "path":  "MES工作台设置_Docker版.exe",
+                      "bytes":  82944,
+                      "sha256":  "c842dce243dbdd094d2d621f4756042525de7ead14ab769cde1e35cac091e42a"
+                  },
+                  {
+                      "path":  "MES控制中心_Docker版.exe",
+                      "bytes":  89088,
+                      "sha256":  "74bb7cd9de85ca3780e51b39321620b19d956c70aa4239d9123cb18ea2a30271"
+                  },
+                  {
+                      "path":  "MES终端管理_Docker版.exe",
+                      "bytes":  81408,
+                      "sha256":  "0eaf813fc47b1411ac4eac15972cbd95de6c3c7c8760a4d182b5f9d00efd80ce"
+                  },
+                  {
+                      "path":  "使用说明.md",
+                      "bytes":  3823,
+                      "sha256":  "c89c5df2d544cf12fc4529398da10f3a2b86c40796bfee093594d162dc536a34"
+                  },
+                  {
+                      "path":  "scripts/docker-service-control.ps1",
+                      "bytes":  4168,
+                      "sha256":  "f3bb49140d24e31fa6466655a74a16c5ffe25002247328197853b0e17427de50"
+                  }
+              ]
+}

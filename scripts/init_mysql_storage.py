@@ -168,6 +168,19 @@ def apply_sql_file(path: Path) -> None:
     with _connect_mysql(database=None) as connection:
         with connection.cursor() as cursor:
             for statement in statements:
+                # V011 also cleans optional tables from pre-baseline deployments.
+                # Preserve the released SQL/checksum while allowing a fresh V001
+                # database, which never contained these obsolete tables, to boot.
+                if path.name == "V011__canonicalize_laboratory_master_data.sql":
+                    executable = re.sub(r"(?m)^\s*--[^\n]*", "", statement).lstrip()
+                    legacy = re.match(r"UPDATE\s+(exec_test_run|ctrl_device_command_log|biz_tray_trace)\b", executable, re.IGNORECASE)
+                    if legacy:
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = %s AND table_name = %s",
+                            (settings.MYSQL_DATABASE, legacy.group(1)),
+                        )
+                        if not cursor.fetchone()[0]:
+                            continue
                 cursor.execute(statement)
         connection.commit()
 

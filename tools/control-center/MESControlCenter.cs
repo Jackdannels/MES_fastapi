@@ -343,10 +343,10 @@ namespace MESControlCenter
             actionBar.Controls.AddRange(new Control[] { stop, restart, startServiceButton });
 
             Panel lines = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
-            serviceUpperComputerIndicator = AddServiceLine(lines, "上位机服务", ":8899");
-            serviceLimsIndicator = AddServiceLine(lines, "LIMS 模拟器", ":8900");
-            serviceFrontendIndicator = AddServiceLine(lines, "前端服务", ":5173");
-            serviceBackendIndicator = AddServiceLine(lines, "后端服务", ":8000");
+            serviceUpperComputerIndicator = AddServiceLine(lines, "上位机服务", MESDesktopSettings.PortLabel("upperComputerUrl", "http://127.0.0.1:8899"));
+            serviceLimsIndicator = AddServiceLine(lines, "LIMS 模拟器", MESDesktopSettings.PortLabel("limsUrl", "http://127.0.0.1:8900"));
+            serviceFrontendIndicator = AddServiceLine(lines, "前端服务", MESDesktopSettings.PortLabel("serverUrl", "http://127.0.0.1:5173"));
+            serviceBackendIndicator = AddServiceLine(lines, "后端服务", MESDesktopSettings.PortLabel("apiUrl", "http://127.0.0.1:8000"));
             card.Controls.Add(lines);
             card.Controls.Add(actionBar);
             card.Controls.Add(head);
@@ -387,9 +387,9 @@ namespace MESControlCenter
         {
             Panel page = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Visible = false };
             Panel connection = new Panel { Dock = DockStyle.Top, Height = 98, BackColor = Theme.Surface, Padding = new Padding(16) };
-            serverText = AddInput(connection, "MES 地址", MESServerDiscovery.Discover("http://192.168.110.15:5173"), 16, 22, 300, false);
+            serverText = AddInput(connection, "MES 地址", MESServerDiscovery.Discover(MESDesktopSettings.ServerUrl("http://192.168.110.15:5173")), 16, 22, 300, false);
             usernameText = AddInput(connection, "管理员", "admin", 332, 22, 138, false);
-            passwordText = AddInput(connection, "密码", "123", 486, 22, 138, true);
+            passwordText = AddInput(connection, "密码", MESDesktopSettings.IsDocker ? "" : "123", 486, 22, 138, true);
             connectButton = CreateButton("连接", Theme.AccentStrong, Color.FromArgb(4, 27, 23), 96);
             connectButton.Location = new Point(642, 36);
             connectButton.Click += async delegate { await ConnectAndRefresh(true); };
@@ -538,10 +538,10 @@ namespace MESControlCenter
             serviceStateLabel.ForeColor = Theme.Muted;
             try
             {
-                Task<bool> backendTask = Task.Run(delegate { return TestJsonServiceReady("http://127.0.0.1:8000/health/ready", "status", "ready", false); });
-                Task<bool> frontendTask = Task.Run(delegate { return TestHttpReady("http://127.0.0.1:5173/"); });
-                Task<bool> limsTask = Task.Run(delegate { return TestJsonServiceReady("http://127.0.0.1:8900/api/state", "connected", "true", false); });
-                Task<bool> upperComputerTask = Task.Run(delegate { return TestJsonServiceReady("http://127.0.0.1:8899/api/state", "connected", "true", true); });
+                Task<bool> backendTask = Task.Run(delegate { return TestJsonServiceReady(MESDesktopSettings.Get("apiUrl", "http://127.0.0.1:8000") + "/health/ready", "status", "ready", false); });
+                Task<bool> frontendTask = Task.Run(delegate { return TestHttpReady(MESDesktopSettings.ServerUrl("http://127.0.0.1:5173") + "/"); });
+                Task<bool> limsTask = Task.Run(delegate { return TestJsonServiceReady(MESDesktopSettings.Get("limsUrl", "http://127.0.0.1:8900") + "/api/state", "connected", "true", false); });
+                Task<bool> upperComputerTask = Task.Run(delegate { return TestJsonServiceReady(MESDesktopSettings.Get("upperComputerUrl", "http://127.0.0.1:8899") + "/api/state", "connected", "true", true); });
                 await Task.WhenAll(backendTask, frontendTask, limsTask, upperComputerTask);
 
                 ServiceHealthSnapshot health = new ServiceHealthSnapshot
@@ -668,7 +668,9 @@ namespace MESControlCenter
             if (action == "Start" && systemRunning) return;
             if (action == "Stop")
             {
-                ShowModal("确认关闭 MES 系统", "关闭操作将终止后端、前端、LIMS 模拟器、上位机服务及其专属窗口。是否继续？", true, delegate { ExecuteServiceAction(action); }, false);
+                ShowModal("确认关闭 MES 系统", MESDesktopSettings.IsDocker
+                    ? "关闭操作将停止当前 Docker 部署的全部服务，并保留业务数据卷。是否继续？"
+                    : "关闭操作将终止后端、前端、LIMS 模拟器、上位机服务及其专属窗口。是否继续？", true, delegate { ExecuteServiceAction(action); }, false);
             }
             else if (action == "Restart")
             {
@@ -973,7 +975,7 @@ namespace MESControlCenter
                 {
                     FileName = "powershell.exe",
                     Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + controlScript + "\" -Action " + action + " -ResultFile \"" + resultFile + "\"",
-                    WorkingDirectory = Program.ProjectRoot,
+                    WorkingDirectory = Program.RuntimeRoot,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     RedirectStandardError = true
@@ -1041,11 +1043,12 @@ namespace MESControlCenter
     internal static class Program
     {
         internal const string ProjectRoot = @"__PROJECT_ROOT__";
+        internal static readonly string RuntimeRoot = MESDesktopSettings.ControlRoot(ProjectRoot);
 
         [STAThread]
         private static int Main(string[] args)
         {
-            string scriptPath = Path.Combine(ProjectRoot, "scripts", "mes-service-control.ps1");
+            string scriptPath = Path.Combine(RuntimeRoot, "scripts", MESDesktopSettings.IsDocker ? "docker-service-control.ps1" : "mes-service-control.ps1");
             if (args.Length > 0 && String.Equals(args[0], "--self-test", StringComparison.OrdinalIgnoreCase))
             {
                 try

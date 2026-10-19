@@ -10,6 +10,40 @@ using System.Web.Script.Serialization;
 
 namespace MESNetwork
 {
+    internal static class MESDesktopSettings
+    {
+        private static readonly string BaseDirectory = Path.GetDirectoryName(typeof(MESDesktopSettings).Assembly.Location);
+        private static readonly Dictionary<string, object> Values = Load();
+
+        private static Dictionary<string, object> Load()
+        {
+            string path = Path.Combine(BaseDirectory, "mes-desktop-tools.json");
+            if (!File.Exists(path)) return new Dictionary<string, object>();
+            return new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(path))
+                ?? new Dictionary<string, object>();
+        }
+
+        internal static string Get(string key, string fallback)
+        {
+            object value;
+            return Values.TryGetValue(key, out value) && !String.IsNullOrWhiteSpace(Convert.ToString(value))
+                ? Convert.ToString(value).Trim().TrimEnd('/') : fallback;
+        }
+
+        internal static string ServerUrl(string fallback) { return Get("serverUrl", fallback); }
+        internal static string PortLabel(string key, string fallback)
+        {
+            return ":" + new Uri(Get(key, fallback)).Port;
+        }
+
+        internal static bool IsDocker
+        {
+            get { return File.Exists(Path.Combine(BaseDirectory, "scripts", "docker-service-control.ps1")); }
+        }
+
+        internal static string ControlRoot(string fallback) { return IsDocker ? BaseDirectory : fallback; }
+    }
+
     internal static class MESServerDiscovery
     {
         internal const string ServiceMarker = "MES_FASTAPI";
@@ -25,7 +59,7 @@ namespace MESNetwork
             List<string> matches = new List<string>();
             object matchesLock = new object();
             Parallel.ForEach(
-                BuildLocalSubnetCandidateUrls(),
+                BuildLocalSubnetCandidateUrls(new Uri(fallback).Port),
                 new ParallelOptions { MaxDegreeOfParallelism = MaxParallelProbes },
                 candidate =>
                 {
@@ -55,10 +89,20 @@ namespace MESNetwork
             if (SelectUniqueDiscoveredUrl(fallback, new string[0]) != fallback) return false;
             if (SelectUniqueDiscoveredUrl(fallback, new[] { "http://192.168.110.19:5173/" }) != "http://192.168.110.19:5173") return false;
             if (SelectUniqueDiscoveredUrl(fallback, new[] { "http://192.168.110.19:5173", "http://192.168.110.20:5173" }) != fallback) return false;
+            if (NormalizeBaseUrl("http://192.0.2.1:15173/") != "http://192.0.2.1:15173") return false;
+            Dictionary<string, object> payload = new Dictionary<string, object>
+            {
+                { "service", ServiceMarker }, { "frontendPort", 5173 }
+            };
+            // Reverse proxies can publish another port; the reachable MES marker
+            // identifies the server, while frontendPort remains a legacy hint.
+            if (!IsValidDiscoveryPayload(payload)) return false;
+            payload["service"] = "OTHER_SERVICE";
+            if (IsValidDiscoveryPayload(payload)) return false;
             return true;
         }
 
-        private static IEnumerable<string> BuildLocalSubnetCandidateUrls()
+        private static IEnumerable<string> BuildLocalSubnetCandidateUrls(int frontendPort)
         {
             HashSet<string> candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (NetworkInterface adapter in NetworkInterface.GetAllNetworkInterfaces())
@@ -72,7 +116,7 @@ namespace MESNetwork
                     if (bytes[0] == 169 && bytes[1] == 254) continue;
                     for (int host = 1; host < 255; host++)
                     {
-                        candidates.Add("http://" + bytes[0] + "." + bytes[1] + "." + bytes[2] + "." + host + ":" + FrontendPort);
+                        candidates.Add("http://" + bytes[0] + "." + bytes[1] + "." + bytes[2] + "." + host + ":" + frontendPort);
                     }
                 }
             }
@@ -96,17 +140,23 @@ namespace MESNetwork
                 {
                     Dictionary<string, object> payload = new JavaScriptSerializer()
                         .Deserialize<Dictionary<string, object>>(reader.ReadToEnd());
-                    return payload != null
-                        && payload.ContainsKey("service")
-                        && String.Equals(Convert.ToString(payload["service"]), ServiceMarker, StringComparison.Ordinal)
-                        && payload.ContainsKey("frontendPort")
-                        && Convert.ToInt32(payload["frontendPort"]) == FrontendPort;
+                    return IsValidDiscoveryPayload(payload);
                 }
             }
             catch
             {
                 return false;
             }
+        }
+
+        private static bool IsValidDiscoveryPayload(Dictionary<string, object> payload)
+        {
+            int advertisedPort;
+            return payload != null && payload.ContainsKey("service")
+                && String.Equals(Convert.ToString(payload["service"]), ServiceMarker, StringComparison.Ordinal)
+                && payload.ContainsKey("frontendPort")
+                && Int32.TryParse(Convert.ToString(payload["frontendPort"]), out advertisedPort)
+                && advertisedPort > 0 && advertisedPort <= 65535;
         }
 
         private static string NormalizeBaseUrl(string value)

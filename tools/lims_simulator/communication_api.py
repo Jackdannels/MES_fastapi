@@ -67,7 +67,12 @@ def local_operator(request):
     except ValueError:
         local = False
     origin = request.headers.get("origin")
-    if not local or (origin and urlsplit(origin).netloc != request.url.netloc):
+    same_origin = origin == f"{request.url.scheme}://{request.url.netloc}"
+    # Opt-in for loopback-published Docker ports. Require an exact browser Origin;
+    # forwarded IP headers never grant operator access. Native mode stays local.
+    allowed = {value.strip() for value in os.environ.get("LIMS_OPERATOR_ORIGINS", "").split(",") if value.strip()}
+    docker_operator = bool(origin and same_origin and origin in allowed)
+    if (not local and not docker_operator) or (origin and not same_origin):
         raise HTTPException(403, "通讯保障操作仅允许本机同源页面")
 
 

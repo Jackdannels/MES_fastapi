@@ -9,6 +9,7 @@ artifacts/performance/
 artifacts/p0-runtime/
 artifacts/db-backups/
 artifacts/releases/**/mes-images.tar
+artifacts/portable/
 
 frontend/node_modules/
 frontend/.vite/
@@ -18,6 +19,7 @@ app/static/dist/
 .superpowers/
 .tmp/*.env
 .tmp/*.yml
+.tmp/portable*
 .tmp/*password*.txt
 .tmp/backup-*/
 .tmp/production-secrets/

@@ -1,14 +1,14 @@
-$projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
+﻿$projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
 
 Describe "MES control center integration" {
     $sourcePath = Join-Path $projectRoot "tools\control-center\MESControlCenter.cs"
     $buildPath = Join-Path $projectRoot "scripts\build_control_center.ps1"
     $terminalSourcePath = Join-Path $projectRoot "scripts\client\MESTerminalManager.cs"
     $terminalBuildPath = Join-Path $projectRoot "scripts\build_terminal_manager.ps1"
-    $source = Get-Content -LiteralPath $sourcePath -Raw
-    $build = Get-Content -LiteralPath $buildPath -Raw
-    $terminalSource = Get-Content -LiteralPath $terminalSourcePath -Raw
-    $terminalBuild = Get-Content -LiteralPath $terminalBuildPath -Raw
+    $source = Get-Content -Encoding UTF8 -LiteralPath $sourcePath -Raw
+    $build = Get-Content -Encoding UTF8 -LiteralPath $buildPath -Raw
+    $terminalSource = Get-Content -Encoding UTF8 -LiteralPath $terminalSourcePath -Raw
+    $terminalBuild = Get-Content -Encoding UTF8 -LiteralPath $terminalBuildPath -Raw
 
     It "combines service control and the existing terminal client in one form" {
         $source | Should Match 'internal sealed class ControlCenterForm : Form'
@@ -55,13 +55,15 @@ Describe "MES control center integration" {
         $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$runtimeTest`" -Executable `"$executable`" -TestDirectory `"$TestDrive`""
         $stderrFile = Join-Path $TestDrive "runtime.stderr.log"
         $process = Start-Process -FilePath "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -ArgumentList $arguments -WindowStyle Hidden -PassThru -RedirectStandardError $stderrFile -RedirectStandardOutput (Join-Path $TestDrive "runtime.stdout.log")
+        $processHandle = $process.Handle
         # A filled stderr pipe must never hang the control center.
         if (-not $process.WaitForExit(30000)) {
             $process.Kill()
             throw "Control-center runtime regression timed out."
         }
         $process.WaitForExit()
-        (Get-Content -LiteralPath $stderrFile -Raw) | Should BeNullOrEmpty
+        $process.Refresh()
+        (Get-Content -Encoding UTF8 -LiteralPath $stderrFile -Raw) | Should BeNullOrEmpty
         $process.ExitCode | Should Be 0
     }
 
@@ -69,27 +71,27 @@ Describe "MES control center integration" {
         $source | Should Match 'AssemblyVersion\("2\.3\.0\.0"\)'
         $source | Should Match 'MES 控制中心 v2\.3'
         $build | Should Match 'MES控制中心_v2\.3\.exe'
-        $source | Should Match 'AddServiceLine\(lines, "后端服务", ":8000"\)'
-        $source | Should Match 'AddServiceLine\(lines, "前端服务", ":5173"\)'
-        $source | Should Match 'AddServiceLine\(lines, "LIMS 模拟器", ":8900"\)'
-        $source | Should Match 'AddServiceLine\(lines, "上位机服务", ":8899"\)'
+        $source | Should Match 'AddServiceLine\(lines, "后端服务", MESDesktopSettings.PortLabel\("apiUrl"'
+        $source | Should Match 'AddServiceLine\(lines, "前端服务", MESDesktopSettings.PortLabel\("serverUrl"'
+        $source | Should Match 'AddServiceLine\(lines, "LIMS 模拟器", MESDesktopSettings.PortLabel\("limsUrl"'
+        $source | Should Match 'AddServiceLine\(lines, "上位机服务", MESDesktopSettings.PortLabel\("upperComputerUrl"'
         $source | Should Match 'indicator\.Status\.Text = ready \? "运行" : "未运行"'
         $source | Should Match 'indicator\.Dot\.BackColor = ready \? Theme\.Accent : Theme\.Danger'
     }
 
     It "auto-discovers the current MES IP in both management clients" {
-        $source | Should Match 'MESServerDiscovery\.Discover\("http://192\.168\.110\.15:5173"\)'
+        $source | Should Match 'MESServerDiscovery\.Discover\(MESDesktopSettings.ServerUrl\("http://192\.168\.110\.15:5173"\)\)'
         $terminalSource | Should Match 'AssemblyVersion\("1\.3\.0\.0"\)'
         $terminalSource | Should Match 'MES 终端管理 v1\.3'
-        $terminalSource | Should Match 'MESServerDiscovery\.Discover\("http://192\.168\.110\.15:5173"\)'
+        $terminalSource | Should Match 'MESServerDiscovery\.Discover\(MESDesktopSettings.ServerUrl\("http://192\.168\.110\.15:5173"\)\)'
         $terminalBuild | Should Match 'MES终端管理_v1\.3\.exe'
     }
 
     It "uses real health contracts and reports partial readiness" {
-        $source | Should Match 'http://127\.0\.0\.1:8000/health/ready'
-        $source | Should Match 'http://127\.0\.0\.1:5173/'
-        $source | Should Match 'http://127\.0\.0\.1:8900/api/state'
-        $source | Should Match 'http://127\.0\.0\.1:8899/api/state'
+        $source | Should Match 'MESDesktopSettings.Get\("apiUrl", "http://127\.0\.0\.1:8000"\) \+ "/health/ready"'
+        $source | Should Match 'MESDesktopSettings.ServerUrl\("http://127\.0\.0\.1:5173"\) \+ "/"'
+        $source | Should Match 'MESDesktopSettings.Get\("limsUrl", "http://127\.0\.0\.1:8900"\) \+ "/api/state"'
+        $source | Should Match 'MESDesktopSettings.Get\("upperComputerUrl", "http://127\.0\.0\.1:8899"\) \+ "/api/state"'
         $source | Should Match '"connected", "true"'
         $source | Should Match 'requireAutoMode'
         $source | Should Match '部分服务异常'

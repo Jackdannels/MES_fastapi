@@ -10,8 +10,8 @@ WORKDIR /app
 
 RUN groupadd --system --gid 10001 mes \
     && useradd --system --uid 10001 --gid mes --create-home --home-dir /home/mes mes \
-    && mkdir -p /data/reports \
-    && chown -R mes:mes /app /data/reports
+    && mkdir -p /data/reports /data/runtime \
+    && chown -R mes:mes /app /data/reports /data/runtime
 
 COPY requirements-prod.txt /tmp/requirements-prod.txt
 RUN python -m pip install --no-cache-dir --upgrade pip \
@@ -27,6 +27,9 @@ COPY --chown=mes:mes scripts/sql/V005__terminal_collation_alignment.sql /app/scr
 COPY --chown=mes:mes scripts/sql/V006__long_running_query_indexes.sql /app/scripts/sql/V006__long_running_query_indexes.sql
 COPY --chown=mes:mes scripts/sql/V007__bounded_event_retention_indexes.sql /app/scripts/sql/V007__bounded_event_retention_indexes.sql
 COPY --chown=mes:mes scripts/sql/V008__fixture_install_schedule_identity.sql /app/scripts/sql/V008__fixture_install_schedule_identity.sql
+COPY --chown=mes:mes scripts/sql/V009__salt_spray_experiment_pause.sql /app/scripts/sql/V009__salt_spray_experiment_pause.sql
+COPY --chown=mes:mes scripts/sql/V010__repair_salt_spray_lab_identity.sql /app/scripts/sql/V010__repair_salt_spray_lab_identity.sql
+COPY --chown=mes:mes scripts/sql/V011__canonicalize_laboratory_master_data.sql /app/scripts/sql/V011__canonicalize_laboratory_master_data.sql
 
 USER mes
 
