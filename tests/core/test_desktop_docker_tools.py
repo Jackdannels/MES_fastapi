@@ -76,12 +76,18 @@ def test_failed_stop_does_not_proceed_to_start(deployment, tmp_path):
     assert json.loads(result_file.read_text(encoding="utf-8"))["status"] == "error"
 
 
-def test_compiled_workstation_registration_uses_entered_docker_credentials(tmp_path):
+@pytest.mark.parametrize("deployment_mode", ["docker", "windows-service"])
+def test_compiled_workstation_registration_uses_entered_docker_credentials(tmp_path, deployment_mode):
     output = tmp_path / "desktop-tools"
     build = subprocess.run([PS, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                             str(ROOT / "scripts/build_desktop_tools.ps1"), "-OutputDirectory", str(output)],
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
     assert build.returncode == 0, build.stdout + build.stderr
+    if deployment_mode == "windows-service":
+        configuration = output / "mes-desktop-tools.json"
+        values = json.loads(configuration.read_text(encoding="utf-8-sig"))
+        values["deploymentMode"] = deployment_mode
+        configuration.write_text(json.dumps(values), encoding="utf-8")
     requests = []
 
     class Handler(BaseHTTPRequestHandler):

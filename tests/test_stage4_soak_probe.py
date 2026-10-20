@@ -115,6 +115,7 @@ def test_soak_probe_script_can_be_invoked_directly_from_repository_root():
         cwd=SCRIPT_PATH.parents[1],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=10,
         check=False,
     )

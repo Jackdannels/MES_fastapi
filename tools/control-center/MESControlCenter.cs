@@ -389,7 +389,7 @@ namespace MESControlCenter
             Panel connection = new Panel { Dock = DockStyle.Top, Height = 98, BackColor = Theme.Surface, Padding = new Padding(16) };
             serverText = AddInput(connection, "MES 地址", MESServerDiscovery.Discover(MESDesktopSettings.ServerUrl("http://192.168.110.15:5173")), 16, 22, 300, false);
             usernameText = AddInput(connection, "管理员", "admin", 332, 22, 138, false);
-            passwordText = AddInput(connection, "密码", MESDesktopSettings.IsDocker ? "" : "123", 486, 22, 138, true);
+            passwordText = AddInput(connection, "密码", MESDesktopSettings.RequiresAdministratorLogin ? "" : "123", 486, 22, 138, true);
             connectButton = CreateButton("连接", Theme.AccentStrong, Color.FromArgb(4, 27, 23), 96);
             connectButton.Location = new Point(642, 36);
             connectButton.Click += async delegate { await ConnectAndRefresh(true); };
@@ -540,8 +540,8 @@ namespace MESControlCenter
             {
                 Task<bool> backendTask = Task.Run(delegate { return TestJsonServiceReady(MESDesktopSettings.Get("apiUrl", "http://127.0.0.1:8000") + "/health/ready", "status", "ready", false); });
                 Task<bool> frontendTask = Task.Run(delegate { return TestHttpReady(MESDesktopSettings.ServerUrl("http://127.0.0.1:5173") + "/"); });
-                Task<bool> limsTask = Task.Run(delegate { return TestJsonServiceReady(MESDesktopSettings.Get("limsUrl", "http://127.0.0.1:8900") + "/api/state", "connected", "true", false); });
-                Task<bool> upperComputerTask = Task.Run(delegate { return TestJsonServiceReady(MESDesktopSettings.Get("upperComputerUrl", "http://127.0.0.1:8899") + "/api/state", "connected", "true", true); });
+                Task<bool> limsTask = Task.Run(delegate { return !MESDesktopSettings.SimulatorsEnabled || TestJsonServiceReady(MESDesktopSettings.Get("limsUrl", "http://127.0.0.1:8900") + "/api/state", "connected", "true", false); });
+                Task<bool> upperComputerTask = Task.Run(delegate { return !MESDesktopSettings.SimulatorsEnabled || TestJsonServiceReady(MESDesktopSettings.Get("upperComputerUrl", "http://127.0.0.1:8899") + "/api/state", "connected", "true", true); });
                 await Task.WhenAll(backendTask, frontendTask, limsTask, upperComputerTask);
 
                 ServiceHealthSnapshot health = new ServiceHealthSnapshot
@@ -555,6 +555,11 @@ namespace MESControlCenter
                 ApplyServiceIndicator(serviceFrontendIndicator, health.Frontend);
                 ApplyServiceIndicator(serviceLimsIndicator, health.Lims);
                 ApplyServiceIndicator(serviceUpperComputerIndicator, health.UpperComputer);
+                if (!MESDesktopSettings.SimulatorsEnabled)
+                {
+                    serviceLimsIndicator.Status.Text = "未启用";
+                    serviceUpperComputerIndicator.Status.Text = "未启用";
+                }
                 systemRunning = health.HealthyCount == 4;
 
                 if (systemRunning)
@@ -668,7 +673,8 @@ namespace MESControlCenter
             if (action == "Start" && systemRunning) return;
             if (action == "Stop")
             {
-                ShowModal("确认关闭 MES 系统", MESDesktopSettings.IsDocker
+                ShowModal("确认关闭 MES 系统", MESDesktopSettings.IsNative
+                    ? "关闭操作将停止本机 MES 原生服务，并保留数据库、报告和模拟器数据。是否继续？" : MESDesktopSettings.IsDocker
                     ? "关闭操作将停止当前 Docker 部署的全部服务，并保留业务数据卷。是否继续？"
                     : "关闭操作将终止后端、前端、LIMS 模拟器、上位机服务及其专属窗口。是否继续？", true, delegate { ExecuteServiceAction(action); }, false);
             }
@@ -1048,7 +1054,7 @@ namespace MESControlCenter
         [STAThread]
         private static int Main(string[] args)
         {
-            string scriptPath = Path.Combine(RuntimeRoot, "scripts", MESDesktopSettings.IsDocker ? "docker-service-control.ps1" : "mes-service-control.ps1");
+            string scriptPath = Path.Combine(RuntimeRoot, "scripts", MESDesktopSettings.IsNative ? "native-service-control.ps1" : MESDesktopSettings.IsDocker ? "docker-service-control.ps1" : "mes-service-control.ps1");
             if (args.Length > 0 && String.Equals(args[0], "--self-test", StringComparison.OrdinalIgnoreCase))
             {
                 try

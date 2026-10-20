@@ -517,7 +517,7 @@ namespace MESWorkstationConfigurator
             string labName = laboratory ? station.Key.Substring("laboratory:".Length) : String.Empty;
             string username = "admin";
             string password = "123";
-            if (MESDesktopSettings.IsDocker)
+            if (MESDesktopSettings.RequiresAdministratorLogin)
             {
                 using (RegistrationLoginForm login = new RegistrationLoginForm(normalizedServerUrl))
                 {

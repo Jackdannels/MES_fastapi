@@ -41,7 +41,17 @@ namespace MESNetwork
             get { return File.Exists(Path.Combine(BaseDirectory, "scripts", "docker-service-control.ps1")); }
         }
 
-        internal static string ControlRoot(string fallback) { return IsDocker ? BaseDirectory : fallback; }
+        internal static bool IsNative
+        {
+            get { return String.Equals(Get("deploymentMode", ""), "windows-service", StringComparison.OrdinalIgnoreCase); }
+        }
+
+        internal static bool RequiresAdministratorLogin { get { return IsNative || IsDocker; } }
+        internal static bool SimulatorsEnabled
+        {
+            get { return !IsNative || !String.Equals(Get("simulatorsEnabled", "true"), "false", StringComparison.OrdinalIgnoreCase); }
+        }
+        internal static string ControlRoot(string fallback) { return IsNative || IsDocker ? BaseDirectory : fallback; }
     }
 
     internal static class MESServerDiscovery

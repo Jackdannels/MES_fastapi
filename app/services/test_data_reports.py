@@ -370,6 +370,7 @@ def _font_name() -> str:
         if _REGISTERED_FONT:
             return _REGISTERED_FONT
         candidates = (
+            Path(os.environ["MES_REPORT_FONT"]) if os.environ.get("MES_REPORT_FONT") else Path("__no_configured_report_font__"),
             Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "msyh.ttc",
             Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "simhei.ttf",
             Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts" / "simsun.ttc",

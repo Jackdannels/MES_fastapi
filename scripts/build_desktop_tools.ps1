@@ -1,7 +1,8 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)] [string]$OutputDirectory,
-    [string]$ServerUrl = 'http://127.0.0.1:15173'
+    [string]$ServerUrl = 'http://127.0.0.1:15173',
+    [switch]$Native
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -37,14 +38,20 @@ try {
     $terminalClient = Join-Path $temporary 'TerminalClient.cs'
     Write-Utf8 $terminalClient ($client.Substring(0,$program) + "}`n")
     $launcherIcon = Join-Path $project 'assets/mes-launcher.ico'
-    Compile 'MES工作台设置_Docker版.exe' @($workstation,$discovery) $launcherIcon @('/reference:System.Management.dll','/reference:System.Xml.dll')
-    Compile 'MES终端管理_Docker版.exe' @($terminal,$discovery) $launcherIcon
-    Compile 'MES控制中心_Docker版.exe' @($control,$terminalClient,$discovery) (Join-Path $project 'assets/mes-control-center.ico')
-    Copy-Item -LiteralPath (Join-Path $project 'scripts/client/docker-service-control.ps1') -Destination (Join-Path $output 'scripts/docker-service-control.ps1')
-    Copy-Item -LiteralPath (Join-Path $project 'scripts/client/Configure-DesktopTools.ps1') -Destination (Join-Path $output 'Configure-DesktopTools.ps1')
-    Copy-Item -LiteralPath (Join-Path $project 'docs/desktop-tools-docker.md') -Destination (Join-Path $output '使用说明.md')
+    $suffix=if($Native) { '原生版' } else { 'Docker版' }
+    Compile ('MES工作台设置_'+$suffix+'.exe') @($workstation,$discovery) $launcherIcon @('/reference:System.Management.dll','/reference:System.Xml.dll')
+    Compile ('MES终端管理_'+$suffix+'.exe') @($terminal,$discovery) $launcherIcon
+    Compile ('MES控制中心_'+$suffix+'.exe') @($control,$terminalClient,$discovery) (Join-Path $project 'assets/mes-control-center.ico')
+    if($Native) {
+        Copy-Item -LiteralPath (Join-Path $project 'scripts/client/native-service-control.ps1') -Destination (Join-Path $output 'scripts/native-service-control.ps1')
+    } else {
+        Copy-Item -LiteralPath (Join-Path $project 'scripts/client/docker-service-control.ps1') -Destination (Join-Path $output 'scripts/docker-service-control.ps1')
+        Copy-Item -LiteralPath (Join-Path $project 'scripts/client/Configure-DesktopTools.ps1') -Destination (Join-Path $output 'Configure-DesktopTools.ps1')
+        Copy-Item -LiteralPath (Join-Path $project 'docs/desktop-tools-docker.md') -Destination (Join-Path $output '使用说明.md')
+    }
     $config = [ordered]@{deploymentDirectory='../release-20261019-r1'; environmentFile='.tmp/portable.env'; mode='demo';
         serverUrl=$ServerUrl.TrimEnd('/'); apiUrl='http://127.0.0.1:18000'; limsUrl='http://127.0.0.1:18900'; upperComputerUrl='http://127.0.0.1:18899'}
+    if($Native) { $config.deploymentMode='windows-service' }
     Write-Utf8 (Join-Path $output 'mes-desktop-tools.json') ($config | ConvertTo-Json)
     $files = @(foreach($file in Get-ChildItem -LiteralPath $output -File -Recurse) {
         $stream = [IO.File]::OpenRead($file.FullName)
@@ -56,7 +63,7 @@ try {
     $manifest = [ordered]@{format='mes-docker-desktop-tools'; format_version=1; version='2026.10.19-r1';
         platform='windows-dotnet-framework'; files=$files}
     Write-Utf8 (Join-Path $output 'desktop-tools-manifest.json') ($manifest | ConvertTo-Json -Depth 6)
-    Write-Output "Three Docker desktop tools built: $output"
+    Write-Output "Three Windows desktop tools built: $output"
 } finally {
     if (Test-Path -LiteralPath $temporary) {
         $resolved = (Resolve-Path -LiteralPath $temporary).Path

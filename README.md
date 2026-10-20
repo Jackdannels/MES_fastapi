@@ -1,5 +1,7 @@
 # MES FastAPI
 
+Windows 原生离线安装包（含两个模拟器与三个桌面程序）见 [原生离线安装与迁移](docs/native-offline-deployment.md)。该运行方式使用包内 Windows 组件，不依赖 Docker；安装向导支持从本机 Docker 自动导出、校验并恢复最新数据。
+
 试验数据保留本地并备份到局域网共享目录：见 [服务器备份配置与验收](docs/test-data-server-backup.md)。
 
 本项目是一个基于 `FastAPI + Vue 3 + Vite` 的 MES 示例系统。
