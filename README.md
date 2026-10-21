@@ -6,7 +6,9 @@ Windows 原生离线安装包（含两个模拟器与三个桌面程序）见 [�
 
 本项目是一个基于 `FastAPI + Vue 3 + Vite` 的 MES 示例系统。
 
-开发工具版本：MES 启动器 `v1.2`、固定工作台设置 `v2.3`、MES 控制中心 `v2.3`、终端管理 `v1.3`、上位机模拟器 `v2.7`、LIMS 模拟器 `v1.1`。各模拟器通过后端版本常量和状态接口向页面提供版本号。
+开发工具版本：MES 启动器 `v1.2`、固定工作台设置 `v2.3`、MES 控制中心 `v2.7`、终端管理 `v1.3`、上位机模拟器 `v2.7`、LIMS 模拟器 `v1.1`。各模拟器通过后端版本常量和状态接口向页面提供版本号。
+
+控制中心 v2.7 新增关闭系统时同步关闭 MES、LIMS 网页窗口，重启后重新打开；使用与升级说明见 [控制中心 v2.7](docs/control-center-v2.7.md)。
 
 当前默认运行方式：
 
@@ -64,6 +66,8 @@ start-dev.bat
 脚本会统一启动并跟踪三个服务，关闭或重启 MES 时也会同步关闭或重启 LIMS 模拟器。
 服务准备完成后会打开 MES 页面和 LIMS 模拟器页面。
 通过桌面启动器运行时，MES 后端和前端使用可见终端窗口输出日志；LIMS 模拟器继续在后台隐藏运行。
+
+本机控制脚本通过 Windows 原生监听表一次读取四项服务的端口和所属进程，避免 NetTCPIP CIM 查询在大量连接时延迟关闭。启动、关闭、重启的分阶段耗时保存在 `%LOCALAPPDATA%\MesFastApiLauncher\logs\service-*.json`。项目的 `scripts/MesTcpListeners.cs` 需与 `mes-service-control.ps1` 一同保留。
 正式前端会先构建到临时目录，成功后再原子替换 `frontend/dist`。单次构建超过 30 秒会终止并重试一次；如果两次构建均失败但存在上一次成功产物，则继续使用该产物启动 5173，避免构建异常导致前端整体离线。
 
 ### 3. 手动启动后端
@@ -293,7 +297,9 @@ Restart-Service RabbitMQ
 
 ### 实验室 MQTT 接口协议
 
-当前 MQTT 精确匹配以 `lab_code` 和 `run_no` 为核心。完整接口定义见：
+当前 MQTT 精确匹配以 `lab_code` 和 `run_no` 为核心。
+
+排程编号和排程快照只在 MES 内部保留，MQTT 报文不传输。夹具完成事件原样回传 `fixture_install_id`，实验运行事件原样回传 `run_no`。完整接口定义见：
 
 ```text
 MES与上位机MQTT接口定义V2.0.md

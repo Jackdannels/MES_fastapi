@@ -4,6 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+New-Item -ItemType Directory -Path $TestDirectory -Force | Out-Null
 $fixture = Join-Path $TestDirectory "fake-controller.ps1"
 @'
 param([string]$Action, [string]$ResultFile)
@@ -20,6 +21,12 @@ switch ($Action) {
     "Restart" {
         '{"status":"error","message":"structured-error"}' | Set-Content -LiteralPath $ResultFile -Encoding UTF8
         exit 1
+    }
+    "Inherited" {
+        # Deliberately retain the controller's stderr handle after it exits.
+        $child=Start-Process powershell.exe -ArgumentList '-NoProfile -Command "Start-Sleep -Seconds 20"' -NoNewWindow -PassThru
+        [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'inherited-child.pid'),[string]$child.Id)
+        '{"status":"restarted","message":"completed-with-background-child"}' | Set-Content -LiteralPath $ResultFile -Encoding UTF8
     }
 }
 '@ | Set-Content -LiteralPath $fixture -Encoding UTF8
@@ -44,7 +51,14 @@ try {
         if ($action -eq "Start" -and -not $failure.Message.Contains("native-failure-marker:")) { throw "Native stderr was lost." }
         if ($action -eq "Stop" -and -not $failure.Message.Contains("1")) { throw "Fallback lost the exit code." }
     }
-    Write-Output "Control-center runtime checks passed (structured success/error, long stderr, silent exit)."
+    $clock=[Diagnostics.Stopwatch]::StartNew()
+    $result=$runControl.Invoke($form,@('Inherited')) | ConvertFrom-Json
+    if ($result.status -ne 'restarted' -or $clock.Elapsed.TotalSeconds -gt 4) { throw 'Service result blocked on a background child stderr pipe' }
+    $inheritedChild=[int][IO.File]::ReadAllText((Join-Path $TestDirectory 'inherited-child.pid'))
+    if (-not (Get-Process -Id $inheritedChild -ErrorAction SilentlyContinue)) { throw 'Background-child regression did not preserve the child' }
+    Write-Output "Control-center runtime checks passed (structured result/error, long stderr, silent exit, inherited pipe)."
 } finally {
+    $childFile=Join-Path $TestDirectory 'inherited-child.pid'
+    if (Test-Path -LiteralPath $childFile) { Stop-Process -Id ([int][IO.File]::ReadAllText($childFile)) -Force -ErrorAction SilentlyContinue }
     $form.Dispose()
 }

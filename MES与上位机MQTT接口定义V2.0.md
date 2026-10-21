@@ -4,6 +4,8 @@
 
 协议：MQTT
 
+MQTT 报文不传输排程编号（`schedule_id` / `schedule_no`）或排程快照。排程关联由 MES 内部保存；夹具确认通过 `fixture_install_id` 关联，运行事件通过 `run_no` 关联。
+
 ## 7号屏状态遥测扩展
 
 上位机每 1 秒为每个试验间发送一条完整状态快照，QoS 为 1：

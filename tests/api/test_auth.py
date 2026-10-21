@@ -228,7 +228,9 @@ def test_session_returns_user_from_cookie(client):
     assert response.json()["last_seen_at"]
     assert response.json()["expires_at"] is None
     assert response.headers["cache-control"] == "no-store"
-    assert response.headers["vary"] == "Cookie"
+    # CORS middleware may also add Origin (including Starlette 1.x). Cookie
+    # must remain in Vary so authenticated responses cannot share a cache key.
+    assert "cookie" in {part.strip().lower() for part in response.headers["vary"].split(",")}
 
 
 def test_logout_clears_session_cookie(client):

@@ -3,8 +3,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Management;
 using System.Net;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -16,11 +20,213 @@ using MESNetwork;
 [assembly: AssemblyDescription("MES 服务控制与固定工作台终端管理")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Control Center")]
-[assembly: AssemblyVersion("2.3.0.0")]
-[assembly: AssemblyFileVersion("2.3.0.0")]
+[assembly: AssemblyVersion("2.7.0.0")]
+[assembly: AssemblyFileVersion("2.7.0.0")]
 
 namespace MESControlCenter
 {
+    // A separate Chromium profile keeps MES windows out of the user's browser
+    // process. Persist the process identity so reopening the center can close it.
+    internal sealed class MESBrowserSession
+    {
+        private readonly string directory;
+        private readonly string executable;
+        private readonly object sessionLock = new object();
+        private delegate bool EnumWindowCallback(IntPtr window, IntPtr parameter);
+        [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowCallback callback, IntPtr parameter);
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+        [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+        [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr CommandLineToArgvW(string command, out int count);
+        [DllImport("kernel32.dll")] private static extern IntPtr LocalFree(IntPtr memory);
+
+        internal MESBrowserSession(string owner, string browserExecutable)
+        {
+            string key;
+            using (SHA256 hash = SHA256.Create())
+                key = BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(Path.GetFullPath(owner).TrimEnd('\\').ToUpperInvariant()))).Replace("-", "");
+            directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MesFastApiLauncher", "Browsers", key);
+            executable = browserExecutable;
+        }
+
+        private string StatePath { get { return Path.Combine(directory, "browser.json"); } }
+
+        private Process ReadProcess()
+        {
+            Process process = null;
+            try
+            {
+                if (!File.Exists(StatePath)) return null;
+                Dictionary<string, object> state = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(StatePath));
+                process = Process.GetProcessById(Convert.ToInt32(state["pid"]));
+                if (!process.HasExited && process.StartTime.ToUniversalTime().Ticks.ToString() == Convert.ToString(state["started"])
+                    && String.Equals(process.MainModule.FileName, Convert.ToString(state["executable"]), StringComparison.OrdinalIgnoreCase)) return process;
+            }
+            catch (Exception) { } // Missing/stale/inaccessible identity never authorizes closing a process.
+            if (process != null) process.Dispose();
+            return null;
+        }
+
+        private static string FindBrowser()
+        {
+            // Prefer the default browser when it supports an isolated profile.
+            using (Microsoft.Win32.RegistryKey choice = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice"))
+            {
+                string id = choice == null ? "" : Convert.ToString(choice.GetValue("ProgId"));
+                using (Microsoft.Win32.RegistryKey command = Microsoft.Win32.Registry.ClassesRoot.OpenSubKey(id + @"\shell\open\command"))
+                {
+                    Match match = Regex.Match(command == null ? "" : Convert.ToString(command.GetValue(null)), "^\\\"([^\\\"]+)\\\"");
+                    if (match.Success && File.Exists(match.Groups[1].Value)
+                        && Regex.IsMatch(Path.GetFileName(match.Groups[1].Value), @"^(msedge|chrome)\.exe$", RegexOptions.IgnoreCase)) return match.Groups[1].Value;
+                }
+            }
+            foreach (string root in new[] { Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) })
+                foreach (string relative in new[] { @"Microsoft\Edge\Application\msedge.exe", @"Google\Chrome\Application\chrome.exe" })
+                {
+                    string path = Path.Combine(root, relative);
+                    if (File.Exists(path)) return path;
+                }
+            throw new InvalidOperationException("未找到 Edge 或 Chrome，请手动访问 MES 地址。");
+        }
+
+        private static string ProfileFromCommand(string command)
+        {
+            if (String.IsNullOrEmpty(command)) return null;
+            int count;
+            IntPtr arguments = CommandLineToArgvW(command, out count);
+            if (arguments == IntPtr.Zero) return null;
+            try
+            {
+                string profile = null;
+                for (int i = 1; i < count; i++)
+                {
+                    string argument = Marshal.PtrToStringUni(Marshal.ReadIntPtr(arguments, i * IntPtr.Size));
+                    if (argument.StartsWith("--type=", StringComparison.OrdinalIgnoreCase)) return null;
+                    if (argument.StartsWith("--user-data-dir=", StringComparison.OrdinalIgnoreCase)) profile = argument.Substring(16);
+                }
+                return profile;
+            }
+            finally { LocalFree(arguments); }
+        }
+
+        private Process FindProfileProcess(string browserPath)
+        {
+            string profile = Path.Combine(directory, "Profile");
+            string name = Path.GetFileName(browserPath).Replace("'", "''");
+            using (ManagementObjectSearcher search = new ManagementObjectSearcher("SELECT ProcessId, CommandLine, ExecutablePath FROM Win32_Process WHERE Name='" + name + "'"))
+            {
+                search.Options.Timeout = TimeSpan.FromSeconds(2);
+                using (ManagementObjectCollection processes = search.Get())
+                foreach (ManagementObject item in processes)
+                using (item)
+                {
+                    string value = ProfileFromCommand(Convert.ToString(item["CommandLine"]));
+                    if (!String.Equals(value, profile, StringComparison.OrdinalIgnoreCase)
+                        || !String.Equals(Convert.ToString(item["ExecutablePath"]), browserPath, StringComparison.OrdinalIgnoreCase)) continue;
+                    try
+                    {
+                        Process process = Process.GetProcessById(Convert.ToInt32(item["ProcessId"]));
+                        if (!process.HasExited && Windows(process.Id).Count > 0) return process;
+                        process.Dispose();
+                    }
+                    catch (ArgumentException) { } // Process exited during enumeration.
+                }
+            }
+            return null;
+        }
+
+        internal void Open(string[] urls)
+        {
+            if (urls == null || urls.Length == 0) return;
+            StringBuilder arguments = new StringBuilder();
+            foreach (string url in urls)
+            {
+                Uri uri;
+                if (!Uri.TryCreate(url, UriKind.Absolute, out uri) || (uri.Scheme != "http" && uri.Scheme != "https") || uri.UserInfo.Length > 0)
+                    throw new InvalidOperationException("MES 页面地址不是有效的 HTTP(S) 地址。");
+                arguments.Append(" \"").Append(uri.AbsoluteUri.Replace("\"", "%22")).Append("\"");
+            }
+            lock (sessionLock)
+            {
+                Directory.CreateDirectory(directory);
+                using (Process existing = ReadProcess())
+                {
+                    string browserPath = existing == null ? (executable ?? FindBrowser()) : existing.MainModule.FileName;
+                    using (Process launched = Process.Start(new ProcessStartInfo
+                    {
+                        FileName = browserPath,
+                        Arguments = "--user-data-dir=\"" + Path.Combine(directory, "Profile") + "\" --no-first-run --no-default-browser-check --new-window" + arguments,
+                        UseShellExecute = true
+                    }))
+                    {
+                        if (existing == null && launched != null)
+                        {
+                            try { launched.WaitForInputIdle(3000); }
+                            catch (InvalidOperationException) { } // Browser launcher handed off to another process.
+                        }
+                        // Edge/Chrome can relaunch to change elevation. Identify
+                        // that root by its exact private profile, never by name alone.
+                        Process resolved = null;
+                        try
+                        {
+                            Process owner = existing != null && !existing.HasExited ? existing : launched;
+                            if (owner == null || owner.HasExited || Windows(owner.Id).Count == 0)
+                            {
+                                Stopwatch clock = Stopwatch.StartNew();
+                                do
+                                {
+                                    resolved = FindProfileProcess(Path.GetFullPath(browserPath));
+                                    if (resolved != null) break;
+                                    System.Threading.Thread.Sleep(100);
+                                } while (clock.ElapsedMilliseconds < 5000);
+                                owner = resolved;
+                            }
+                            if (owner == null || owner.HasExited) throw new InvalidOperationException("MES 浏览器窗口未能启动，请手动访问 MES 地址。");
+                            File.WriteAllText(StatePath, new JavaScriptSerializer().Serialize(new Dictionary<string, object>
+                            {
+                                { "pid", owner.Id }, { "started", owner.StartTime.ToUniversalTime().Ticks.ToString() }, { "executable", Path.GetFullPath(browserPath) }
+                            }));
+                        }
+                        finally { if (resolved != null) resolved.Dispose(); }
+                    }
+                }
+            }
+        }
+
+        private static List<IntPtr> Windows(int processId)
+        {
+            List<IntPtr> windows = new List<IntPtr>();
+            EnumWindows(delegate(IntPtr window, IntPtr parameter)
+            {
+                uint owner;
+                GetWindowThreadProcessId(window, out owner);
+                if (owner == processId && IsWindowVisible(window)) windows.Add(window);
+                return true;
+            }, IntPtr.Zero);
+            return windows;
+        }
+
+        internal void Close()
+        {
+            lock (sessionLock)
+            using (Process process = ReadProcess())
+            {
+                if (process == null) return;
+                foreach (IntPtr window in Windows(process.Id)) PostMessage(window, 0x0010, IntPtr.Zero, IntPtr.Zero);
+                Stopwatch clock = Stopwatch.StartNew();
+                while (!process.HasExited && Windows(process.Id).Count > 0 && clock.ElapsedMilliseconds < 3000)
+                    System.Threading.Thread.Sleep(50);
+                if (!process.HasExited && Windows(process.Id).Count > 0)
+                    throw new InvalidOperationException("MES 浏览器窗口仍在等待关闭，请检查页面提示。");
+                // Let a browser shutting down after its final window finish
+                // before Restart sends it a new-window request.
+                if (!process.HasExited) process.WaitForExit(1000);
+                // Chromium can keep background tasks after its final window closes.
+                // Keep the verified identity for the next open; never force-kill it.
+            }
+        }
+    }
+
     internal sealed class ServiceIndicator
     {
         internal Label Dot;
@@ -113,19 +319,63 @@ namespace MESControlCenter
         }
     }
 
+    internal sealed class ServiceProgressBar : Control
+    {
+        private int value;
+        public int Value
+        {
+            get { return value; }
+            set { this.value = Math.Max(0, Math.Min(100, value)); AccessibleDescription = this.value + "%"; Invalidate(); }
+        }
+
+        internal ServiceProgressBar()
+        {
+            DoubleBuffered = true;
+            AccessibleRole = AccessibleRole.ProgressBar;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.Clear(Theme.SurfaceStrong);
+            using (SolidBrush fill = new SolidBrush(Theme.Accent))
+                e.Graphics.FillRectangle(fill, 0, 0, (int)Math.Round(Width * value / 100.0), Height);
+            using (Pen border = new Pen(Theme.BorderStrong))
+                e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+        }
+    }
+
     internal sealed class ControlCenterForm : Form
     {
         private readonly string controlScript;
+        private MESBrowserSession browserSession;
         private readonly TerminalManagerClient terminalClient = new TerminalManagerClient();
         private readonly Timer refreshTimer = new Timer();
         private readonly Timer serviceStatusTimer = new Timer();
+        private readonly Timer serviceProgressTimer = new Timer();
+        private readonly Stopwatch serviceProgressClock = new Stopwatch();
+        private readonly bool automaticRefresh;
         private readonly List<Button> serviceButtons = new List<Button>();
         private readonly List<Button> terminalButtons = new List<Button>();
 
         private Panel dashboardPage;
         private Panel terminalPage;
+        private Panel aboutPage;
         private Button dashboardNav;
         private Button terminalNav;
+        private Button aboutNav;
+        private Label aboutBinding;
+        private Label aboutGuidance;
+        private TextBox aboutLocalUrl;
+        private DataGridView aboutGrid;
+        private Button aboutRefreshButton;
+        private Button aboutCopyButton;
+        private Button aboutOpenButton;
+        private bool aboutBusy;
+        private bool aboutLoaded;
+        private LinkLabel lanAddressLink;
+        private Label lanAddressStatus;
+        private string selectedLanUrl = "";
         private Label pageTitle;
         private Label pageDescription;
         private Label systemStatusLabel;
@@ -158,6 +408,12 @@ namespace MESControlCenter
         private Button modalCancelButton;
         private Button modalConfirmButton;
         private Action modalConfirmAction;
+        private Panel serviceProgressOverlay;
+        private ServiceProgressBar serviceProgressBar;
+        private Label serviceProgressTitle;
+        private Label serviceProgressPercent;
+        private string progressAction;
+        private int serviceGeneration;
 
         private List<TerminalRow> rows = new List<TerminalRow>();
         private bool terminalConnected;
@@ -169,7 +425,9 @@ namespace MESControlCenter
         internal ControlCenterForm(string scriptPath, bool autoStart)
         {
             controlScript = scriptPath;
-            Text = "MES 控制中心 v2.3";
+            browserSession = new MESBrowserSession(Program.RuntimeRoot, null);
+            automaticRefresh = autoStart;
+            Text = "MES 控制中心 v2.7";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(1160, 700);
             ClientSize = new Size(1420, 820);
@@ -180,16 +438,20 @@ namespace MESControlCenter
 
             BuildShell();
             BuildModal();
+            BuildServiceProgress();
             refreshTimer.Interval = 5000;
-            refreshTimer.Tick += async delegate { await RefreshTerminals(false); };
+            refreshTimer.Tick += async delegate { if (!serviceBusy) await RefreshTerminals(false); };
             serviceStatusTimer.Interval = 5000;
-            serviceStatusTimer.Tick += async delegate { await RefreshServiceStatus(false); };
-            FormClosed += delegate { refreshTimer.Stop(); serviceStatusTimer.Stop(); };
+            serviceStatusTimer.Tick += async delegate { if (!serviceBusy) await RefreshServiceStatus(false); };
+            serviceProgressTimer.Interval = 160;
+            serviceProgressTimer.Tick += delegate { UpdateServiceProgress(); };
+            FormClosed += delegate { refreshTimer.Dispose(); serviceStatusTimer.Dispose(); serviceProgressTimer.Dispose(); };
             if (autoStart)
             {
                 Shown += async delegate
                 {
                     await RefreshServiceStatus(false);
+                    if (!aboutLoaded) await RefreshAboutInfo();
                     serviceStatusTimer.Start();
                     await ConnectAndRefresh(false);
                 };
@@ -216,7 +478,7 @@ namespace MESControlCenter
             Panel brand = new Panel { Dock = DockStyle.Top, Height = 70 };
             BrandIcon brandIcon = new BrandIcon { Location = new Point(6, 2) };
             Label brandTitle = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), Location = new Point(58, 6), Text = "MES 控制中心" };
-            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font("Segoe UI", 8F), Location = new Point(59, 31), Text = "CONTROL CENTER  v2.3" };
+            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font("Segoe UI", 8F), Location = new Point(59, 31), Text = "CONTROL CENTER  v2.7" };
             brand.Controls.AddRange(new Control[] { brandIcon, brandTitle, brandVersion });
             sidebar.Controls.Add(brand);
 
@@ -231,6 +493,9 @@ namespace MESControlCenter
             Button connectionNav = CreateNavigationButton("连接设置", 232);
             connectionNav.Click += delegate { ShowPage(false); serverText.Focus(); };
             sidebar.Controls.Add(connectionNav);
+            aboutNav = CreateNavigationButton("关于与访问地址", 280);
+            aboutNav.Click += async delegate { ShowAboutPage(); await RefreshAboutInfo(); };
+            sidebar.Controls.Add(aboutNav);
 
             Panel nodeSummary = new Panel { Dock = DockStyle.Bottom, Height = 82, BackColor = Theme.Surface };
             nodeSummary.Padding = new Padding(13);
@@ -269,6 +534,8 @@ namespace MESControlCenter
 
             dashboardPage = BuildDashboardPage();
             terminalPage = BuildTerminalPage();
+            aboutPage = BuildAboutPage();
+            pageHost.Controls.Add(aboutPage);
             pageHost.Controls.Add(terminalPage);
             pageHost.Controls.Add(dashboardPage);
             ShowPage(true);
@@ -318,6 +585,28 @@ namespace MESControlCenter
             tableCard.Controls.Add(dashboardGrid);
             tableCard.Controls.Add(tableHead);
             layout.Controls.Add(tableCard, 0, 1);
+            Panel accessBar = new Panel { Dock = DockStyle.Top, Height = 76, BackColor = Theme.Surface };
+            Label accessTitle = new Label { AutoSize = true, Location = new Point(16, 10), ForeColor = Theme.Muted, Text = "MES 局域网访问地址" };
+            lanAddressLink = new LinkLabel { AutoSize = false, Location = new Point(16, 33), Size = new Size(560, 28), LinkColor = Theme.Accent, ActiveLinkColor = Theme.AccentStrong, VisitedLinkColor = Theme.Accent, Font = new Font("Consolas", 12F, FontStyle.Bold), Text = "正在检测主机地址……", AccessibleName = "MES 局域网访问地址" };
+            lanAddressLink.LinkClicked += async delegate { ShowAboutPage(); await RefreshAboutInfo(); };
+            lanAddressStatus = new Label { AutoSize = false, Location = new Point(600, 36), Size = new Size(250, 24), ForeColor = Theme.Muted, Text = "等待服务就绪" };
+            Button copyAddress = CreateButton("复制地址", Theme.AccentSoft, Theme.Accent, 108);
+            copyAddress.Anchor = AnchorStyles.Right | AnchorStyles.Top;
+            copyAddress.Location = new Point(900, 18);
+            copyAddress.Click += delegate
+            {
+                if (selectedLanUrl.Length == 0) return;
+                try { Clipboard.SetText(selectedLanUrl); footerStatusLabel.Text = "已复制：" + selectedLanUrl + "；请从工作站验证访问"; }
+                catch (Exception exception) { ShowModal("复制失败", exception.Message, false, null, true); }
+            };
+            accessBar.Resize += delegate
+            {
+                copyAddress.Left = accessBar.ClientSize.Width - copyAddress.Width - 16;
+                lanAddressStatus.Left = Math.Min(600, copyAddress.Left - 250);
+                lanAddressLink.Width = Math.Max(300, lanAddressStatus.Left - 25);
+            };
+            accessBar.Controls.AddRange(new Control[] { accessTitle, lanAddressLink, lanAddressStatus, copyAddress });
+            page.Controls.Add(accessBar);
             return page;
         }
 
@@ -387,7 +676,7 @@ namespace MESControlCenter
         {
             Panel page = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Visible = false };
             Panel connection = new Panel { Dock = DockStyle.Top, Height = 98, BackColor = Theme.Surface, Padding = new Padding(16) };
-            serverText = AddInput(connection, "MES 地址", MESServerDiscovery.Discover(MESDesktopSettings.ServerUrl("http://192.168.110.15:5173")), 16, 22, 300, false);
+            serverText = AddInput(connection, "MES 地址", MESAccessInfo.InitialServerUrl(), 16, 22, 300, false);
             usernameText = AddInput(connection, "管理员", "admin", 332, 22, 138, false);
             passwordText = AddInput(connection, "密码", MESDesktopSettings.RequiresAdministratorLogin ? "" : "123", 486, 22, 138, true);
             connectButton = CreateButton("连接", Theme.AccentStrong, Color.FromArgb(4, 27, 23), 96);
@@ -509,8 +798,154 @@ namespace MESControlCenter
             return button;
         }
 
+        private Panel BuildAboutPage()
+        {
+            Panel page = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Visible = false };
+            Panel header = new Panel { Dock = DockStyle.Top, Height = 144, BackColor = Theme.Surface };
+            string mode = MESDesktopSettings.IsNative ? "Windows 原生服务" : MESDesktopSettings.IsDocker ? "Docker 容器" : "本机开发服务";
+            Label title = new Label { AutoSize = true, Text = "MES 控制中心  v2.7", ForeColor = Theme.Text, Font = new Font(Font, FontStyle.Bold), Location = new Point(18, 16) };
+            Label deployment = new Label { AutoSize = true, Text = "部署方式：" + mode + "    ·    Web、API、LIMS 与上位机服务管理", ForeColor = Theme.Muted, Location = new Point(18, 43) };
+            Label local = new Label { AutoSize = true, Text = "本机访问", ForeColor = Theme.Muted, Location = new Point(18, 78) };
+            aboutLocalUrl = new TextBox { ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, BackColor = Theme.SurfaceStrong, ForeColor = Theme.Accent, Location = new Point(90, 74), Size = new Size(320, 28), Font = new Font("Consolas", 10F), AccessibleName = "MES 本机访问地址" };
+            aboutBinding = new Label { AutoSize = false, Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top, Location = new Point(18, 111), Size = new Size(900, 25), ForeColor = Theme.Muted, Text = "点击刷新读取当前监听状态" };
+            header.Controls.AddRange(new Control[] { title, deployment, local, aboutLocalUrl, aboutBinding });
+            header.Resize += delegate { aboutBinding.Width = header.ClientSize.Width - 36; };
+
+            Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = 174, BackColor = Theme.Surface };
+            aboutGuidance = new Label { AutoSize = false, Location = new Point(18, 14), Size = new Size(900, 86), ForeColor = Theme.Muted, Text = "请在 MES 主机运行本程序。局域网地址不使用容器 IP 或 127.0.0.1。" };
+            aboutRefreshButton = CreateButton("刷新地址", Theme.AccentSoft, Theme.Accent, 112);
+            aboutCopyButton = CreateButton("复制选中地址", Theme.AccentStrong, Color.FromArgb(4, 27, 23), 140);
+            aboutOpenButton = CreateButton("浏览器打开", Theme.SurfaceStrong, Theme.Text, 126);
+            aboutRefreshButton.Location = new Point(18, 114);
+            aboutCopyButton.Location = new Point(142, 114);
+            aboutOpenButton.Location = new Point(294, 114);
+            aboutRefreshButton.Click += async delegate { await RefreshAboutInfo(); };
+            aboutCopyButton.Click += delegate { UseSelectedAddress(false); };
+            aboutOpenButton.Click += delegate { UseSelectedAddress(true); };
+            bottom.Controls.AddRange(new Control[] { aboutGuidance, aboutRefreshButton, aboutCopyButton, aboutOpenButton });
+            bottom.Resize += delegate { aboutGuidance.Width = bottom.ClientSize.Width - 36; };
+
+            Panel addressCard = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface, Padding = new Padding(0, 12, 0, 12) };
+            Label caption = new Label { Dock = DockStyle.Top, Height = 34, Padding = new Padding(18, 4, 0, 0), Text = "主机局域网地址 · 有线 / Wi-Fi", ForeColor = Theme.Text, Font = new Font(Font, FontStyle.Bold) };
+            aboutGrid = CreateTerminalGrid(false);
+            aboutGrid.Columns.Clear();
+            AddColumn(aboutGrid, "网卡", "Adapter", 140);
+            AddColumn(aboutGrid, "主机 IPv4", "Address", 150);
+            AddColumn(aboutGrid, "MES 地址", "Url", 310);
+            AddColumn(aboutGrid, "访问状态", "Status", 280);
+            aboutGrid.Columns["Status"].AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill;
+            aboutGrid.Columns["Status"].MinimumWidth = 240;
+            aboutGrid.SelectionChanged += delegate { UpdateAboutActions(); };
+            addressCard.Controls.Add(aboutGrid);
+            addressCard.Controls.Add(caption);
+            page.Controls.Add(addressCard);
+            page.Controls.Add(bottom);
+            page.Controls.Add(header);
+            UpdateAboutActions();
+            return page;
+        }
+
+        private void ShowAboutPage()
+        {
+            dashboardPage.Visible = false;
+            terminalPage.Visible = false;
+            aboutPage.Visible = true;
+            aboutPage.BringToFront();
+            dashboardNav.BackColor = terminalNav.BackColor = Theme.Sidebar;
+            dashboardNav.ForeColor = terminalNav.ForeColor = Theme.Muted;
+            aboutNav.BackColor = Theme.AccentSoft;
+            aboutNav.ForeColor = Theme.Accent;
+            pageTitle.Text = "关于与访问地址";
+            pageDescription.Text = "版本、Web 监听状态及工作站访问地址";
+        }
+
+        private async Task RefreshAboutInfo()
+        {
+            if (aboutBusy) return;
+            aboutBusy = true;
+            aboutRefreshButton.Enabled = false;
+            aboutBinding.Text = "正在读取 Web 监听与主机网卡……";
+            try
+            {
+                MesAccessReport report = await Task.Run(delegate
+                {
+                    Dictionary<string, object> info = null;
+                    string error = "";
+                    if (MESDesktopSettings.IsDocker)
+                    {
+                        try
+                        {
+                            info = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(RunControl("NetworkInfo"));
+                            if (info.ContainsKey("status") && Convert.ToString(info["status"]) == "error")
+                                error = Convert.ToString(info["message"]);
+                        }
+                        catch (Exception exception) { error = exception.Message; }
+                    }
+                    MesAccessReport result = MESAccessInfo.Build(MESDesktopSettings.ServerUrl("http://127.0.0.1:5173"),
+                        MESDesktopSettings.IsDocker, info, MESAccessInfo.Interfaces(),
+                        delegate(string url) { return TestJsonServiceReady(url + "/api/system/discovery", "service", MESServerDiscovery.ServiceMarker, false); });
+                    if (error.Length > 0) result.Guidance = "无法核对 Docker 监听，以下地址仅为候选。" + error;
+                    return result;
+                });
+                if (!IsDisposed) ApplyAboutReport(report);
+            }
+            catch (Exception exception) { if (!IsDisposed) aboutBinding.Text = "读取地址失败：" + exception.Message; }
+            finally
+            {
+                aboutBusy = false;
+                if (!IsDisposed) aboutRefreshButton.Enabled = true;
+            }
+        }
+
+        private void ApplyAboutReport(MesAccessReport report)
+        {
+            aboutLoaded = true;
+            aboutLocalUrl.Text = report.LocalUrl;
+            aboutBinding.Text = report.BindingSummary;
+            aboutGuidance.Text = report.Guidance;
+            aboutGrid.DataSource = report.Rows;
+            MesAccessRow primary = report.Rows.Find(delegate(MesAccessRow row) { return row.Verified; });
+            if (primary == null && report.Rows.Count > 0) primary = report.Rows[0];
+            selectedLanUrl = primary != null ? primary.Url : "";
+            lanAddressLink.Text = primary != null ? primary.Url : "未检测到有线 / Wi-Fi 地址";
+            lanAddressStatus.Text = primary != null ? primary.Status : "连接局域网后按 F5 刷新";
+            lanAddressStatus.ForeColor = primary != null && primary.Verified ? Theme.Accent : Theme.Warning;
+            UpdateAboutActions();
+        }
+
+        private MesAccessRow SelectedAddress()
+        {
+            return aboutGrid.SelectedRows.Count > 0 ? aboutGrid.SelectedRows[0].DataBoundItem as MesAccessRow : null;
+        }
+
+        private void UpdateAboutActions()
+        {
+            if (aboutCopyButton == null || aboutOpenButton == null || aboutGrid == null) return;
+            MesAccessRow row = SelectedAddress();
+            aboutCopyButton.Enabled = row != null;
+            aboutCopyButton.Text = row != null && !row.Verified ? "复制候选地址" : "复制选中地址";
+            aboutOpenButton.Enabled = row != null && row.Verified;
+        }
+
+        private void UseSelectedAddress(bool open)
+        {
+            MesAccessRow row = SelectedAddress();
+            if (row == null || (open && !row.Verified)) return;
+            try
+            {
+                if (open) browserSession.Open(new[] { row.Url });
+                else Clipboard.SetText(row.Url);
+                footerStatusLabel.Text = (open ? "已打开：" : "已复制：") + row.Url
+                    + (row.Verified ? "；请从另一台工作站验证访问" : "；此候选地址尚未开放或验证");
+            }
+            catch (Exception exception) { ShowModal("地址操作失败", exception.Message, false, null, true); }
+        }
+
         private void ShowPage(bool dashboard)
         {
+            aboutPage.Visible = false;
+            aboutNav.BackColor = Theme.Sidebar;
+            aboutNav.ForeColor = Theme.Muted;
             dashboardPage.Visible = dashboard;
             terminalPage.Visible = !dashboard;
             dashboardPage.BringToFront();
@@ -525,7 +960,10 @@ namespace MESControlCenter
 
         private async void RefreshAll()
         {
+            if (serviceBusy) return;
+            if (aboutPage.Visible) { await RefreshAboutInfo(); return; }
             await RefreshServiceStatus(true);
+            await RefreshAboutInfo();
             if (terminalConnected) await RefreshTerminals(true);
             else await ConnectAndRefresh(false);
         }
@@ -533,7 +971,9 @@ namespace MESControlCenter
         private async Task RefreshServiceStatus(bool showErrors)
         {
             if (serviceStatusBusy) return;
+            if (serviceBusy) return;
             serviceStatusBusy = true;
+            int generation = serviceGeneration;
             serviceStateLabel.Text = "正在检测";
             serviceStateLabel.ForeColor = Theme.Muted;
             try
@@ -543,6 +983,7 @@ namespace MESControlCenter
                 Task<bool> limsTask = Task.Run(delegate { return !MESDesktopSettings.SimulatorsEnabled || TestJsonServiceReady(MESDesktopSettings.Get("limsUrl", "http://127.0.0.1:8900") + "/api/state", "connected", "true", false); });
                 Task<bool> upperComputerTask = Task.Run(delegate { return !MESDesktopSettings.SimulatorsEnabled || TestJsonServiceReady(MESDesktopSettings.Get("upperComputerUrl", "http://127.0.0.1:8899") + "/api/state", "connected", "true", true); });
                 await Task.WhenAll(backendTask, frontendTask, limsTask, upperComputerTask);
+                if (IsDisposed || generation != serviceGeneration) return;
 
                 ServiceHealthSnapshot health = new ServiceHealthSnapshot
                 {
@@ -560,6 +1001,7 @@ namespace MESControlCenter
                     serviceLimsIndicator.Status.Text = "未启用";
                     serviceUpperComputerIndicator.Status.Text = "未启用";
                 }
+                bool wasRunning = systemRunning;
                 systemRunning = health.HealthyCount == 4;
 
                 if (systemRunning)
@@ -592,6 +1034,7 @@ namespace MESControlCenter
                     footerStatusLabel.Text = "未就绪服务：" + String.Join("、", unavailable.ToArray());
                 }
                 UpdateServiceActionState();
+                if (wasRunning != systemRunning) await RefreshAboutInfo();
             }
             catch (Exception exception)
             {
@@ -673,10 +1116,11 @@ namespace MESControlCenter
             if (action == "Start" && systemRunning) return;
             if (action == "Stop")
             {
-                ShowModal("确认关闭 MES 系统", MESDesktopSettings.IsNative
+                ShowModal("确认关闭 MES 系统", (MESDesktopSettings.IsNative
                     ? "关闭操作将停止本机 MES 原生服务，并保留数据库、报告和模拟器数据。是否继续？" : MESDesktopSettings.IsDocker
                     ? "关闭操作将停止当前 Docker 部署的全部服务，并保留业务数据卷。是否继续？"
-                    : "关闭操作将终止后端、前端、LIMS 模拟器、上位机服务及其专属窗口。是否继续？", true, delegate { ExecuteServiceAction(action); }, false);
+                    : "关闭操作将终止后端、前端、LIMS 模拟器、上位机服务及其专属窗口。")
+                    + "同时关闭由控制中心打开的 MES 与 LIMS 浏览器窗口。是否继续？", true, delegate { ExecuteServiceAction(action); }, false);
             }
             else if (action == "Restart")
             {
@@ -687,39 +1131,71 @@ namespace MESControlCenter
 
         private async void ExecuteServiceAction(string action)
         {
+            await RunServiceOperation(action);
+        }
+
+        private async Task RunServiceOperation(string action)
+        {
             if (serviceBusy) return;
             serviceBusy = true;
+            serviceGeneration++;
+            int generation = serviceGeneration;
+            refreshTimer.Stop();
+            serviceStatusTimer.Stop();
             SetServiceButtonsEnabled(false);
             footerStatusLabel.Text = "正在" + ActionLabel(action) + " MES 系统，请稍候……";
+            BeginServiceProgress(action);
             try
             {
                 string result = await Task.Run(delegate { return RunControl(action); });
+                if (IsDisposed) return;
                 string status = ReadResultValue(result, "status");
                 string message = ReadResultValue(result, "message");
-                footerStatusLabel.Text = message;
-                if (status == "error") ShowModal("操作失败", message, false, null, true);
-                else if (status == "already_running") ShowModal("MES 系统已开启", "MES 系统已经运行，无需再次启动。", false, null, false);
-                else if (status == "not_running") ShowModal("系统未运行", "未检测到运行中的 MES 系统，无需关闭。", false, null, false);
-                else ShowModal(ActionLabel(action) + "完成", message, false, null, false);
-                await RefreshServiceStatus(false);
-                if (action != "Stop") await ConnectAndRefresh(false);
-                else
+                bool success = status == "started" || status == "restarted" || status == "stopped"
+                    || status == "already_running" || status == "not_running";
+                if (success)
                 {
-                    terminalConnected = false;
-                    refreshTimer.Stop();
-                    UpdateTerminalActionState();
+                    systemRunning = status != "stopped" && status != "not_running";
+                    if (!systemRunning)
+                    {
+                        terminalConnected = false;
+                        UpdateTerminalActionState();
+                    }
+                    await CompleteServiceProgress();
                 }
+                else HideServiceProgress();
+                if (IsDisposed) return;
+                footerStatusLabel.Text = message;
+                if (!success) ShowModal("操作失败", message, false, null, true);
             }
             catch (Exception exception)
             {
-                footerStatusLabel.Text = "操作失败：" + exception.Message;
-                ShowModal("操作失败", exception.Message, false, null, true);
+                if (!IsDisposed)
+                {
+                    HideServiceProgress();
+                    footerStatusLabel.Text = "操作失败：" + exception.Message;
+                    ShowModal("操作失败", exception.Message, false, null, true);
+                }
             }
             finally
             {
                 serviceBusy = false;
-                UpdateServiceActionState();
-                ResetWaitCursor();
+                if (!IsDisposed)
+                {
+                    HideServiceProgress();
+                    UpdateServiceActionState();
+                    ResetWaitCursor();
+                    if (automaticRefresh) serviceStatusTimer.Start();
+                    if (automaticRefresh && terminalConnected) refreshTimer.Start();
+                }
+            }
+            // Release action buttons before optional network/terminal refreshes.
+            if (automaticRefresh && !IsDisposed && generation == serviceGeneration)
+            {
+                await RefreshServiceStatus(false);
+                if (IsDisposed || generation != serviceGeneration) return;
+                await RefreshAboutInfo();
+                if (!IsDisposed && generation == serviceGeneration && action != "Stop") await ConnectAndRefresh(false);
             }
         }
 
@@ -926,6 +1402,75 @@ namespace MESControlCenter
             if (terminalGrid != null) terminalGrid.Cursor = Cursors.Default;
         }
 
+        private void BuildServiceProgress()
+        {
+            serviceProgressOverlay = new Panel { Bounds = ClientRectangle, Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right, BackColor = Theme.Background, Visible = false, AccessibleName = "MES 服务操作进度" };
+            Panel border = new Panel { Size = new Size(560, 220), BackColor = Theme.BorderStrong };
+            Panel card = new Panel { Location = new Point(1, 1), Size = new Size(558, 218), BackColor = Theme.Surface };
+            serviceProgressTitle = new Label { Location = new Point(28, 25), Size = new Size(500, 34), ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 15F, FontStyle.Bold) };
+            Label note = new Label { Location = new Point(30, 67), Size = new Size(430, 26), ForeColor = Theme.Muted, Text = "预计进度 · 正在等待服务执行结果" };
+            serviceProgressPercent = new Label { Location = new Point(442, 100), Size = new Size(84, 30), TextAlign = ContentAlignment.MiddleRight, ForeColor = Theme.Accent, Font = new Font("Segoe UI", 14F, FontStyle.Bold), Text = "0%" };
+            serviceProgressBar = new ServiceProgressBar { Location = new Point(30, 139), Size = new Size(496, 18), AccessibleName = "预计完成进度" };
+            Label finish = new Label { Location = new Point(30, 176), Size = new Size(496, 24), ForeColor = Theme.Subtle, Text = "实际完成后到达 100%，此窗口自动消失。" };
+            card.Controls.AddRange(new Control[] { serviceProgressTitle, note, serviceProgressPercent, serviceProgressBar, finish });
+            border.Controls.Add(card);
+            serviceProgressOverlay.Controls.Add(border);
+            serviceProgressOverlay.Resize += delegate
+            {
+                border.Left = (serviceProgressOverlay.ClientSize.Width - border.Width) / 2;
+                border.Top = (serviceProgressOverlay.ClientSize.Height - border.Height) / 2;
+            };
+            Controls.Add(serviceProgressOverlay);
+        }
+
+        private void BeginServiceProgress(string action)
+        {
+            progressAction = action;
+            serviceProgressTitle.Text = "正在" + ActionLabel(action) + " MES 系统";
+            serviceProgressBar.Value = 0;
+            serviceProgressPercent.Text = "0%";
+            serviceProgressClock.Restart();
+            serviceProgressOverlay.Bounds = ClientRectangle;
+            serviceProgressOverlay.Visible = true;
+            serviceProgressOverlay.BringToFront();
+            Control card = serviceProgressOverlay.Controls[0];
+            card.Left = (serviceProgressOverlay.ClientSize.Width - card.Width) / 2;
+            card.Top = (serviceProgressOverlay.ClientSize.Height - card.Height) / 2;
+            serviceProgressTimer.Start();
+        }
+
+        private static int EstimatedProgress(string action, double elapsedSeconds)
+        {
+            double expected = action == "Stop" ? 5 : action == "Start" ? 20 : 25;
+            return Math.Min(95, 5 + (int)Math.Round(90 * (1 - Math.Exp(-3 * Math.Max(0, elapsedSeconds) / expected))));
+        }
+
+        private void UpdateServiceProgress()
+        {
+            int value = EstimatedProgress(progressAction, serviceProgressClock.Elapsed.TotalSeconds);
+            serviceProgressBar.Value = value;
+            serviceProgressPercent.Text = value + "%";
+        }
+
+        private async Task CompleteServiceProgress()
+        {
+            serviceProgressTimer.Stop();
+            serviceProgressBar.Value = 100;
+            serviceProgressPercent.Text = "100%";
+            serviceProgressTitle.Text = "MES 系统" + ActionLabel(progressAction) + "完成";
+            // Paint the completed state, then dismiss it without a second OK dialog.
+            serviceProgressOverlay.Refresh();
+            await Task.Delay(650);
+            if (!IsDisposed) HideServiceProgress();
+        }
+
+        private void HideServiceProgress()
+        {
+            serviceProgressTimer.Stop();
+            serviceProgressClock.Stop();
+            serviceProgressOverlay.Visible = false;
+        }
+
         private void BuildModal()
         {
             modalOverlay = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(7, 14, 19), Visible = false };
@@ -974,13 +1519,16 @@ namespace MESControlCenter
 
         private string RunControl(string action)
         {
+            string scriptName = Path.GetFileName(controlScript);
+            bool manageBrowser = scriptName == "mes-service-control.ps1" || scriptName == "docker-service-control.ps1" || scriptName == "native-service-control.ps1";
+            bool suppressOpen = manageBrowser && scriptName != "native-service-control.ps1" && (action == "Start" || action == "Restart");
             string resultFile = Path.Combine(Path.GetTempPath(), "mes-control-center-result-" + Guid.NewGuid().ToString("N") + ".json");
             try
             {
                 ProcessStartInfo info = new ProcessStartInfo
                 {
                     FileName = "powershell.exe",
-                    Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + controlScript + "\" -Action " + action + " -ResultFile \"" + resultFile + "\"",
+                    Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + controlScript + "\" -Action " + action + " -ResultFile \"" + resultFile + "\"" + (suppressOpen ? " -NoOpen" : ""),
                     WorkingDirectory = Program.RuntimeRoot,
                     UseShellExecute = false,
                     CreateNoWindow = true,
@@ -989,16 +1537,40 @@ namespace MESControlCenter
                 using (Process process = Process.Start(info))
                 {
                     if (process == null) throw new InvalidOperationException("无法启动 MES 控制脚本。");
-                    // Drain while running so a long parser error cannot fill the pipe.
-                    Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+                    // Descendants may inherit stderr and keep the pipe open after
+                    // the controller exits. Drain concurrently, but do not await
+                    // pipe EOF as the service operation's completion condition.
+                    StringBuilder diagnostics = new StringBuilder();
+                    object diagnosticsLock = new object();
+                    Task stderrTask = DrainDiagnostics(process.StandardError, diagnostics, diagnosticsLock);
                     process.WaitForExit();
                     string result = File.Exists(resultFile) ? File.ReadAllText(resultFile) : "";
-                    string stderr = stderrTask.GetAwaiter().GetResult().Trim();
+                    stderrTask.Wait(200);
+                    string stderr;
+                    lock (diagnosticsLock) { stderr = diagnostics.ToString().Trim(); }
                     if (!HasResultValue(result, "status"))
                     {
                         string message = "MES 控制脚本未返回执行结果，退出码：" + process.ExitCode + "。";
                         if (stderr.Length > 0) message += Environment.NewLine + stderr;
                         throw new InvalidOperationException(message);
+                    }
+                    string status = ReadResultValue(result, "status");
+                    if (manageBrowser && (status == "started" || status == "restarted" || status == "already_running" || status == "stopped" || status == "not_running" || status == "success"))
+                    {
+                        Dictionary<string, object> payload = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(result);
+                        try
+                        {
+                            if (action == "Stop" || action == "Restart") browserSession.Close();
+                            object pages;
+                            if ((action == "Start" || action == "Restart") && payload.TryGetValue("pageUrls", out pages))
+                            {
+                                List<string> urls = new List<string>();
+                                foreach (object page in (System.Collections.IEnumerable)pages) urls.Add(Convert.ToString(page));
+                                browserSession.Open(urls.ToArray());
+                            }
+                        }
+                        catch (Exception exception) { payload["message"] = Convert.ToString(payload["message"]) + "；浏览器：" + exception.Message; }
+                        result = new JavaScriptSerializer().Serialize(payload);
                     }
                     return result;
                 }
@@ -1007,6 +1579,29 @@ namespace MESControlCenter
             {
                 if (File.Exists(resultFile)) File.Delete(resultFile);
             }
+        }
+
+        private static Task DrainDiagnostics(StreamReader reader, StringBuilder text, object textLock)
+        {
+            return Task.Run(delegate
+            {
+                try
+                {
+                    char[] chunk = new char[4096];
+                    int count;
+                    while ((count = reader.Read(chunk, 0, chunk.Length)) > 0)
+                    {
+                        lock (textLock)
+                        {
+                            // Retain useful failure details without growing forever.
+                            int remaining = 131072 - text.Length;
+                            if (remaining > 0) text.Append(chunk, 0, Math.Min(count, remaining));
+                        }
+                    }
+                }
+                catch (IOException) { }
+                catch (ObjectDisposedException) { }
+            });
         }
 
         private static bool HasResultValue(string result, string name)
@@ -1023,7 +1618,7 @@ namespace MESControlCenter
         internal bool ValidateLayout()
         {
             PerformLayout();
-            return dashboardPage != null && terminalPage != null && dashboardGrid != null && terminalGrid != null
+            return dashboardPage != null && terminalPage != null && aboutPage != null && aboutGrid != null && dashboardGrid != null && terminalGrid != null
                 && IsValidServiceIndicator(serviceBackendIndicator)
                 && IsValidServiceIndicator(serviceFrontendIndicator)
                 && IsValidServiceIndicator(serviceLimsIndicator)
@@ -1044,6 +1639,43 @@ namespace MESControlCenter
         {
             ShowPage(false);
         }
+
+        internal void ShowAboutPageForPreview()
+        {
+            ShowAboutPage();
+            ApplyAboutReport(MESAccessInfo.Build(MESDesktopSettings.ServerUrl("http://127.0.0.1:5173"),
+                MESDesktopSettings.IsDocker, null, MESAccessInfo.Interfaces(), delegate { return false; }));
+        }
+
+        internal void ShowDashboardPageForPreview()
+        {
+            ShowAboutPageForPreview();
+            ShowPage(true);
+        }
+
+        internal void ShowProgressForPreview(string action)
+        {
+            ShowDashboardPageForPreview();
+            BeginServiceProgress(action);
+            serviceProgressTimer.Stop();
+            serviceProgressBar.Value = 63;
+            serviceProgressPercent.Text = "63%";
+        }
+
+        internal void DrawProgressPreview(Bitmap bitmap)
+        {
+            if (!serviceProgressOverlay.Visible) return;
+            // DrawToBitmap can paint overlapping siblings in reverse order.
+            Panel overlay = serviceProgressOverlay;
+            using (Bitmap progress = new Bitmap(overlay.Width, overlay.Height))
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                overlay.DrawToBitmap(progress, new Rectangle(Point.Empty, overlay.Size));
+                Point origin = overlay.PointToScreen(Point.Empty);
+                origin.Offset(-Left, -Top);
+                graphics.DrawImageUnscaled(progress, origin);
+            }
+        }
     }
 
     internal static class Program
@@ -1061,6 +1693,7 @@ namespace MESControlCenter
                 {
                     TerminalManagerClient.NormalizeServerUrl("http://192.168.110.15:5173");
                     if (!MESServerDiscovery.RunSelfTest()) return 5;
+                    if (!MESAccessInfo.RunSelfTest()) return 6;
                     if (!File.Exists(scriptPath)) return 4;
                     using (ControlCenterForm form = new ControlCenterForm(scriptPath, false)) return form.ValidateLayout() ? 0 : 3;
                 }
@@ -1081,8 +1714,13 @@ namespace MESControlCenter
                         form.Show();
                         Application.DoEvents();
                         if (args.Length > 2 && String.Equals(args[2], "terminal", StringComparison.OrdinalIgnoreCase)) form.ShowTerminalPageForPreview();
+                        if (args.Length > 2 && String.Equals(args[2], "about", StringComparison.OrdinalIgnoreCase)) form.ShowAboutPageForPreview();
+                        if (args.Length <= 2 || String.Equals(args[2], "dashboard", StringComparison.OrdinalIgnoreCase)) form.ShowDashboardPageForPreview();
+                        if (args.Length > 2 && args[2].StartsWith("progress-", StringComparison.OrdinalIgnoreCase)) form.ShowProgressForPreview(args[2].Substring(9));
                         form.PerformLayout();
+                        Application.DoEvents();
                         form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
+                        form.DrawProgressPreview(bitmap);
                         bitmap.Save(args[1], System.Drawing.Imaging.ImageFormat.Png);
                         form.Hide();
                     }

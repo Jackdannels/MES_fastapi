@@ -43,8 +43,9 @@ Describe "MES control center integration" {
 
     It "includes native script errors when no structured result is returned" {
         $source | Should Match 'RedirectStandardError = true'
-        $source | Should Match 'Task<string> stderrTask = process\.StandardError\.ReadToEndAsync\(\);\s*process\.WaitForExit\(\);'
-        $source | Should Match 'stderrTask\.GetAwaiter\(\)\.GetResult\(\)\.Trim\(\)'
+        $source | Should Match 'DrainDiagnostics\(process.StandardError'
+        $source | Should Match 'stderrTask.Wait\(200\)'
+        $source | Should Not Match 'stderrTask.GetAwaiter\(\).GetResult\(\)'
         $source | Should Match 'if \(stderr\.Length > 0\) message \+= Environment\.NewLine \+ stderr;'
     }
 
@@ -67,10 +68,25 @@ Describe "MES control center integration" {
         $process.ExitCode | Should Be 0
     }
 
-    It "exposes v2.3 and four independently visible service states" {
-        $source | Should Match 'AssemblyVersion\("2\.3\.0\.0"\)'
-        $source | Should Match 'MES 控制中心 v2\.3'
-        $build | Should Match 'MES控制中心_v2\.3\.exe'
+    It "auto-dismisses central progress and restores actions after success and failure" {
+        $executable=Join-Path $TestDrive 'MESControlCenter.exe'
+        $script=Join-Path $PSScriptRoot 'Test-ControlCenterProgress.ps1'
+        & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File $script -Executable $executable -TestDirectory (Join-Path $TestDrive 'progress')
+        $LASTEXITCODE | Should Be 0
+    }
+
+    It "closes persisted MES browser windows on Stop and replaces them on Restart without closing other windows" {
+        $script=Join-Path $PSScriptRoot 'Test-ControlCenterBrowser.ps1'
+        & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File $script -Executable (Join-Path $TestDrive 'MESControlCenter.exe') -TestDirectory (Join-Path $TestDrive 'browser')
+        $LASTEXITCODE | Should Be 0
+    }
+
+    It "exposes v2.7 and four independently visible service states" {
+        $source | Should Match 'AssemblyVersion\("2\.7\.0\.0"\)'
+        $source | Should Match 'AssemblyFileVersion\("2\.7\.0\.0"\)'
+        $source | Should Match 'MES 控制中心 v2\.7'
+        $source | Should Match 'CONTROL CENTER  v2\.7'
+        $build | Should Match 'MES控制中心_v2\.7\.exe'
         $source | Should Match 'AddServiceLine\(lines, "后端服务", MESDesktopSettings.PortLabel\("apiUrl"'
         $source | Should Match 'AddServiceLine\(lines, "前端服务", MESDesktopSettings.PortLabel\("serverUrl"'
         $source | Should Match 'AddServiceLine\(lines, "LIMS 模拟器", MESDesktopSettings.PortLabel\("limsUrl"'
@@ -80,7 +96,7 @@ Describe "MES control center integration" {
     }
 
     It "auto-discovers the current MES IP in both management clients" {
-        $source | Should Match 'MESServerDiscovery\.Discover\(MESDesktopSettings.ServerUrl\("http://192\.168\.110\.15:5173"\)\)'
+        $source | Should Match 'MESAccessInfo\.InitialServerUrl\(\)'
         $terminalSource | Should Match 'AssemblyVersion\("1\.3\.0\.0"\)'
         $terminalSource | Should Match 'MES 终端管理 v1\.3'
         $terminalSource | Should Match 'MESServerDiscovery\.Discover\(MESDesktopSettings.ServerUrl\("http://192\.168\.110\.15:5173"\)\)'
@@ -101,7 +117,8 @@ Describe "MES control center integration" {
     It "refreshes after service actions and releases the wait cursor" {
         $source | Should Not Match 'if \(serviceBusy\) return;\s*try\s*\{\s*Task<bool> backendTask'
         $source | Should Match 'if \(serviceStatusBusy\) return;'
-        $source | Should Match 'serviceBusy = false;\s*UpdateServiceActionState\(\);\s*ResetWaitCursor\(\);'
+        $source | Should Match 'serviceBusy = false;'
+        $source | Should Match 'HideServiceProgress\(\);\s*UpdateServiceActionState\(\);\s*ResetWaitCursor\(\);'
     }
 
     It "disables repeat start and keeps the terminal overview cursor responsive" {

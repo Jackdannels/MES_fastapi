@@ -20,13 +20,17 @@ from pydantic import AliasChoices, BaseModel, Field
 BASE_DIR = Path(__file__).resolve().parent
 BEIJING_TZ = timezone(timedelta(hours=8))
 MAX_LOGS = 500
-SIMULATOR_VERSION = "2.7"
+SIMULATOR_VERSION = "2.8"
 AUTO_REPLY_DELAY_SECONDS = 0.1
 TELEMETRY_INTERVAL_SECONDS = 1
 FAULT_EVERY_CYCLES = 10
 FAULT_HOLD_CYCLES = 3
 TEMPERATURE_HIGH_C = 60.0
 VOLTAGE_LOW_V = 100.0
+MES_ONLY_COMMAND_FIELDS = frozenset({
+    "schedule_id", "scheduleId", "schedule_no", "scheduleNo",
+    "schedule_snapshot", "scheduleSnapshot",
+})
 LABORATORIES = (
     ("LAB_IMPACT_1", "冲击一室", True),
     ("LAB_IMPACT_2", "冲击二室", True),
@@ -48,6 +52,10 @@ def beijing_now_text() -> str:
 
 def normalize_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def without_schedule_context(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if key not in MES_ONLY_COMMAND_FIELDS}
 
 
 def normalize_prefix(value: str) -> str:
@@ -85,7 +93,6 @@ class FixtureReadyRequest(BaseModel):
 class EventRequest(BaseModel):
     event_time: str = ""
     run_no: str = Field(default="", validation_alias=AliasChoices("run_no", "runNo"))
-    schedule_id: str = Field(default="", validation_alias=AliasChoices("schedule_id", "scheduleId", "schedule_no", "scheduleNo"))
     axis_codes: list[str] = Field(default_factory=list, validation_alias=AliasChoices("axis_codes", "axisCodes"))
     axis_batch_no: str = Field(default="", validation_alias=AliasChoices("axis_batch_no", "axisBatchNo"))
     current_axis_code: str = Field(default="", validation_alias=AliasChoices("current_axis_code", "currentAxisCode", "axis_code", "axisCode"))
@@ -481,6 +488,8 @@ class MqttSimulator:
             payload = json.loads(text)
         except json.JSONDecodeError:
             payload = {"raw": text}
+        if isinstance(payload, dict):
+            payload = without_schedule_context(payload)
         topic = str(msg.topic)
         command = topic.rstrip("/").split("/")[-1]
         with self._lock:
@@ -500,10 +509,6 @@ class MqttSimulator:
                         ("experimentCode", "experiment_code"),
                         ("run_no", "run_no"),
                         ("runNo", "run_no"),
-                        ("schedule_id", "schedule_id"),
-                        ("scheduleId", "schedule_id"),
-                        ("schedule_no", "schedule_id"),
-                        ("scheduleNo", "schedule_id"),
                         ("axis_batch_no", "axis_batch_no"),
                         ("axisBatchNo", "axis_batch_no"),
                         ("current_axis_code", "current_axis_code"),
@@ -689,18 +694,20 @@ class MqttSimulator:
         return {
             key: value
             for key, value in context.items()
-            if (bool(value) if isinstance(value, list) else bool(normalize_text(value)))
+            if key not in MES_ONLY_COMMAND_FIELDS
+            and (bool(value) if isinstance(value, list) else bool(normalize_text(value)))
         }
 
     def _event_request_context(self, request: EventRequest) -> dict[str, Any]:
         return {
-            "schedule_id": request.schedule_id,
             "axis_codes": request.axis_codes,
             "axis_batch_no": request.axis_batch_no,
             "current_axis_code": request.current_axis_code,
         }
 
     def _maybe_auto_reply(self, command: str, topic: str, payload: Any) -> None:
+        if isinstance(payload, dict):
+            payload = without_schedule_context(payload)
         with self._lock:
             auto_mode = self._config.auto_mode
         if not auto_mode:
@@ -776,6 +783,7 @@ class MqttSimulator:
             )
 
     def publish(self, event_name: str, payload: dict[str, Any], lab_code: str | None = None) -> dict[str, Any]:
+        payload = without_schedule_context(payload)
         with self._lock:
             client = self._client
             config = self._config

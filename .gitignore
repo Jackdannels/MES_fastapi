@@ -20,8 +20,11 @@ app/static/dist/
 .tmp/*.env
 .tmp/*.yml
 .tmp/portable*
+.tmp/mes-portable-performance.conf
 .tmp/native*
 .tmp/desktop-tools-*
+.tmp/control-center-*
+.tmp/finalize-control-center-v24.py
 .tmp/*password*.txt
 .tmp/backup-*/
 .tmp/production-secrets/

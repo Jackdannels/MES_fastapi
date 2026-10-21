@@ -8,6 +8,8 @@
 
 MES 使用原 `commands/experiment-end-request`，新增 `end_mode=device_fault_cancel`，包含 `task_code`、`experiment_code`、`lab_code`、`run_no`、`cancel_reason`、`cancel_request_id`。
 
+原排程编号及排程快照仅保存在 MES 内部，用于取消确认及报告归档，不发送给上位机。
+
 上位机安全停止当前运行后，向 `events/experiment-ended` 原样返回 `end_mode`、`cancel_request_id`、`run_no` 和实验室标识。不能用普通结束回执代替故障取消确认。高低温湿热二室仍仅安装/夹具就绪为本地例外，取消确认使用 MQTT。
 
 未收到确认时保留运行和样品位置，设备不可开始新试验。发布失败可重试；已有待确认请求时返回原请求标识，不重复下发。故障取消请求不因普通控制命令超时而自动转为完成。

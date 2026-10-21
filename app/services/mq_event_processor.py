@@ -852,7 +852,9 @@ class MySQLMqEventRepository:
                     command_payload = json.loads(payload_json) if isinstance(payload_json, str) else payload_json if isinstance(payload_json, dict) else {}
                 except json.JSONDecodeError:
                     command_payload = {}
-                command_schedule_no = first_text(preferred_payload, "schedule_id", "scheduleId", "schedule_no", "scheduleNo") or first_text(
+                # Schedule identity is MES-owned; an upper-computer event must
+                # not select or override it.
+                command_schedule_no = first_text(
                     command_payload,
                     "schedule_id",
                     "scheduleId",

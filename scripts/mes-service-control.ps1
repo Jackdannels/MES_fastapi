@@ -4,6 +4,7 @@
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$StateFile = (Join-Path $env:LOCALAPPDATA "MesFastApiLauncher\mes-service-state.json"),
     [string]$ResultFile = "",
+    [switch]$NoOpen,
     [switch]$IgnorePortListeners,
     [switch]$DryRun
 )
@@ -13,16 +14,36 @@ $backendPort = 8000
 $frontendPort = 5173
 $limsSimulatorPort = 8900
 $upperComputerSimulatorPort = 8899
+$script:operationStages = New-Object 'System.Collections.Generic.List[object]'
+$script:operationClock = [Diagnostics.Stopwatch]::StartNew()
+
+function Save-OperationStage([string]$Name, [Diagnostics.Stopwatch]$Clock) {
+    $script:operationStages.Add([pscustomobject]@{stage=$Name;milliseconds=[Math]::Round($Clock.Elapsed.TotalMilliseconds, 1)})
+    $Clock.Restart()
+}
 
 function Write-Result([string]$Status, [string]$Message, $Health = $null) {
     $payload = [ordered]@{ status = $Status; message = $Message }
+    $payload.elapsedSeconds = [Math]::Round($script:operationClock.Elapsed.TotalSeconds, 2)
+    $payload.stages = @($script:operationStages.ToArray())
+    if ($Action -in @('Start', 'Restart') -and $Status -in @('started', 'already_running') -and -not $DryRun) {
+        $payload.pageUrls = @(Get-MesPageUrls (Read-State))
+    }
     if ($null -ne $Health) {
         $payload.backend = [bool]$Health.backend
         $payload.frontend = [bool]$Health.frontend
         $payload.lims = [bool]$Health.lims
         $payload.upperComputer = [bool]$Health.upperComputer
     }
-    $json = [pscustomobject]$payload | ConvertTo-Json -Compress
+    $json = [pscustomobject]$payload | ConvertTo-Json -Depth 5 -Compress
+    if ($Action -in @('Stop','Start','Restart') -and -not $DryRun) {
+        try {
+            $logDirectory = Join-Path (Split-Path -Parent $StateFile) 'logs'
+            New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
+            $timingLog = Join-Path $logDirectory ('service-' + $Action.ToLowerInvariant() + '-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.json')
+            [IO.File]::WriteAllText($timingLog, $json, (New-Object Text.UTF8Encoding($false)))
+        } catch { } # Diagnostics must not turn a completed operation into failure.
+    }
     if ($ResultFile) {
         $resultDirectory = Split-Path -Parent $ResultFile
         if ($resultDirectory) { New-Item -ItemType Directory -Force -Path $resultDirectory | Out-Null }
@@ -36,17 +57,19 @@ function Read-State {
     try { return Get-Content -LiteralPath $StateFile -Raw | ConvertFrom-Json } catch { return $null }
 }
 
+function Get-MesListenerOwners([int[]]$Ports = @($backendPort, $frontendPort, $limsSimulatorPort, $upperComputerSimulatorPort)) {
+    if (-not ('MESProcessControl.TcpListeners' -as [type])) {
+        Add-Type -Path (Join-Path $PSScriptRoot 'MesTcpListeners.cs')
+    }
+    return @([MESProcessControl.TcpListeners]::Read($Ports))
+}
+
 function Get-ListenerPids([int]$Port) {
-    @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique)
+    @(Get-MesListenerOwners @($Port) | Select-Object -ExpandProperty ProcessId -Unique)
 }
 
 function Get-MesListenerPids {
-    @(
-        @(Get-ListenerPids $backendPort)
-        @(Get-ListenerPids $frontendPort)
-        @(Get-ListenerPids $limsSimulatorPort)
-        @(Get-ListenerPids $upperComputerSimulatorPort)
-    ) | Where-Object { $_ } | Select-Object -Unique
+    @(Get-MesListenerOwners | Select-Object -ExpandProperty ProcessId -Unique) | Where-Object { $_ }
 }
 
 function Test-ProcessAlive($ProcessId) {
@@ -57,7 +80,7 @@ function Test-MesRunning {
     $state = Read-State
     $tracked = @($state.backendCommandPid, $state.frontendCommandPid, $state.limsSimulatorCommandPid) | Where-Object { Test-ProcessAlive $_ }
     if ($IgnorePortListeners) { return [bool]($tracked.Count -gt 0) }
-    return [bool]($tracked.Count -gt 0 -or (Get-ListenerPids $backendPort).Count -gt 0 -or (Get-ListenerPids $frontendPort).Count -gt 0 -or (Get-ListenerPids $limsSimulatorPort).Count -gt 0 -or (Get-ListenerPids $upperComputerSimulatorPort).Count -gt 0)
+    return [bool]($tracked.Count -gt 0 -or @(Get-MesListenerPids).Count -gt 0)
 }
 
 function Test-MesHttpReady([string]$Url) {
@@ -101,13 +124,17 @@ function Get-MesServiceHealth {
     }
 }
 
-function Open-MesPages($State) {
+function Get-MesPageUrls($State) {
     $frontendUrl = $State.frontendLocalUrl
     if (-not $frontendUrl) { $frontendUrl = "http://127.0.0.1:$frontendPort/" }
     $limsSimulatorUrl = $State.limsSimulatorUrl
     if (-not $limsSimulatorUrl) { $limsSimulatorUrl = "http://127.0.0.1:$limsSimulatorPort/" }
-    Start-Process $frontendUrl
-    Start-Process $limsSimulatorUrl
+    return @($frontendUrl, $limsSimulatorUrl)
+}
+
+function Open-MesPages($State) {
+    if ($NoOpen) { return }
+    foreach ($url in @(Get-MesPageUrls $State)) { Start-Process $url }
 }
 
 function Stop-ProcessTree($ProcessId) {
@@ -216,8 +243,10 @@ function Wait-MesPortsReleased([int]$TimeoutSeconds = 10) {
 }
 
 function Stop-MesSystem {
+    $stageClock = [Diagnostics.Stopwatch]::StartNew()
     if (-not (Test-MesRunning)) { return @{ status = "not_running"; message = "未检测到开启的MES系统，无需关闭" } }
     if ($DryRun) { return @{ status = "stopped"; message = "MES系统已关闭" } }
+    Save-OperationStage 'stop.detect' $stageClock
 
     $state = Read-State
     $processMap = Get-ProcessMap
@@ -227,21 +256,26 @@ function Stop-MesSystem {
         @(Get-MesCommandPids $processMap $state.launcherSessionId)
         @(Get-ParentCommandPids $processMap $listenerPids)
     ) | Where-Object { $_ } | Select-Object -Unique
+    Save-OperationStage 'stop.identify-processes' $stageClock
     Stop-TrackedMesProcess $state.browserPid
     # Stop the command roots first. Waiting for ports while their parents are
     # still alive lets wrappers/reloaders retain or recreate the listeners.
     $commandPids | ForEach-Object { Stop-TrackedMesProcess $_ }
+    Save-OperationStage 'stop.command-trees' $stageClock
     if (-not $IgnorePortListeners) {
         Wait-MesPortsReleased
     }
+    Save-OperationStage 'stop.release-ports' $stageClock
     if (-not (Wait-ProcessesExited $commandPids)) {
         $commandPids | ForEach-Object { Stop-TrackedMesProcess $_ }
     }
     if (Test-Path -LiteralPath $StateFile) { Remove-Item -LiteralPath $StateFile -Force }
+    Save-OperationStage 'stop.confirm-exit' $stageClock
     return @{ status = "stopped"; message = "MES系统已关闭" }
 }
 
 function Start-MesSystem {
+    $stageClock = [Diagnostics.Stopwatch]::StartNew()
     if (Test-MesRunning) {
         $runningBackendReady = Test-MesHttpReady "http://127.0.0.1:$backendPort/health/ready"
         $runningFrontendReady = Test-MesHttpReady "http://127.0.0.1:$frontendPort/"
@@ -255,6 +289,7 @@ function Start-MesSystem {
         $null = Stop-MesSystem
     }
     if ($DryRun) { return @{ status = "started"; message = "MES系统已启动" } }
+    Save-OperationStage 'start.detect' $stageClock
 
     $startScript = Join-Path $ProjectRoot "start-dev.ps1"
     if (-not (Test-Path -LiteralPath $startScript)) { throw "未找到启动脚本: $startScript" }
@@ -269,6 +304,7 @@ function Start-MesSystem {
         -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput $bootstrapStdout -RedirectStandardError $bootstrapStderr
     $startProcess.WaitForExit()
+    Save-OperationStage 'start.bootstrap' $stageClock
     $startExitCode = $startProcess.ExitCode
     $startDetail = ""
     if ($startExitCode -ne 0) {
@@ -304,8 +340,10 @@ function Start-MesSystem {
         if ($startDetail) { throw "启动脚本执行异常且服务未准备完成: $startDetail" }
         throw "后端、前端、LIMS模拟器及上位机服务未能在90秒内准备完成"
     }
+    Save-OperationStage 'start.wait-ready' $stageClock
 
     Open-MesPages (Read-State)
+    Save-OperationStage 'start.open-pages' $stageClock
     return @{ status = "started"; message = "MES系统已启动" }
 }
 

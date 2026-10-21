@@ -2,7 +2,7 @@
 
 这是一个独立的上位机模拟器，用于验证 MES 与试验间上位机 MQTT 接口。
 
-当前版本：`v2.7`。版本号由 `app.py` 中的 `SIMULATOR_VERSION` 统一管理，并通过状态接口显示到页面标题区。
+当前版本：`v2.8`。版本号由 `app.py` 中的 `SIMULATOR_VERSION` 统一管理，并通过状态接口显示到页面标题区。
 
 ## 启动
 
@@ -46,10 +46,11 @@ http://127.0.0.1:8899
   - 收到 `experiment-end-request` 后立即回传一次 `experiment-ended`
   - 不自动发送 `experiment-result`
 - 发送 V2.0 snake_case payload：
-  - `fixture-ready`: `lab_code`, `success_id`, `fixture_ready_at`
+  - `fixture-ready`: `lab_code`, `fixture_install_id`, `success_id`, `fixture_ready_at`
   - `experiment-started`: `lab_code`, `run_no`, `started_at`；轴向实验还会携带 `sub_experiment_code`、`current_axis_code`
   - `experiment-ended`: `lab_code`, `run_no`, `ended_at`；轴向实验还会携带 `sub_experiment_code`、`axis_code`，存在下一轴向时携带 `next_axis_code`
   - `experiment-result`: `lab_code`, `run_no`, `result_at`, `result_package`
+- MQTT 报文不传输排程编号或排程快照。排程关联由 MES 内部保存，模拟器不缓存或回传 `schedule_id`、`schedule_no` 及其驼峰字段。
 - 收到 MES 下发的 `experiment-ready` 后会缓存 `run_no`、`sub_experiment_code` 和 `current_axis_code`。同一运行批次重新下发准备就绪并切换轴向时，会用新轴向更新缓存，延迟回传的 `experiment-started` 会携带本次准备指令对应的运行批次、子实验和当前轴向。
 - 每次 `experiment-ready` 的自动回传上下文会独立快照；即使短时间内连续收到不同轴向的准备指令，各自延迟发送的 `experiment-started` 也不会串用后一个轴向。
 - 轴向 `experiment-end-request` 会按请求中的 `axis_code` 结束当前轴向，并在存在后续轴向时原样回传 `next_axis_code`；同一运行批次可逐轴结束且每个轴向只回传一次。

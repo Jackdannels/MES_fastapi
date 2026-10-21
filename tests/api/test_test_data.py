@@ -216,6 +216,7 @@ def test_host_file_operations_reject_non_loopback_clients():
     assert exc_info.value.status_code == 403
 
 
+@pytest.mark.skipif(not hasattr(test_data_access.os, "startfile"), reason="Opening a host folder is a Windows-only feature")
 def test_open_folder_api_only_opens_resolved_task_and_experiment_folders(client, tmp_path, monkeypatch):
     storage = _task_data_storage(tmp_path)
     opened = []

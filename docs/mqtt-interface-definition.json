@@ -1,10 +1,11 @@
 {
   "name": "MES与上位机MQTT接口定义",
-  "version": "2.5",
+  "version": "2.6",
   "encoding": "UTF-8",
   "payloadFormat": "JSON",
   "timeFormat": "北京时间 YYYY-MM-DD HH:mm:ss",
   "topicPrefix": "mes/v1",
+  "scheduleContext": "排程编号和排程快照仅保存在 MES 内部，MQTT 报文不传输；上位机按 fixture_install_id 和 run_no 回传对应事件",
   "laboratoryInterfaceExceptions": {
     "LAB_HOT_HUMID_2": {
       "hostless": ["INSTALL_FIXTURE", "FIXTURE_READY"],

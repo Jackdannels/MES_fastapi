@@ -1,4 +1,4 @@
-$projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+﻿$projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $controller = Join-Path $projectRoot "scripts\mes-service-control.ps1"
 
 Describe "MES service controller" {
@@ -48,7 +48,7 @@ Describe "MES service controller" {
         $controllerSource | Should Match '\$limsSimulatorPort = 8900'
         $controllerSource | Should Match '\$state\.limsSimulatorCommandPid'
         $controllerSource | Should Match 'http://127\.0\.0\.1:\$limsSimulatorPort/api/state'
-        $controllerSource | Should Match 'Start-Process \$limsSimulatorUrl'
+        $controllerSource | Should Match 'return @\(\$frontendUrl, \$limsSimulatorUrl\)'
         $controllerSource | Should Match 'function Open-MesPages'
         $controllerSource | Should Match '\$runningBackendReady -and \$runningFrontendReady -and \$runningLimsReady'
         $controllerSource | Should Match '\$null = Stop-MesSystem'
@@ -62,7 +62,7 @@ Describe "MES service controller" {
         $controllerSource | Should Match 'function Test-UpperComputerReady'
         $controllerSource | Should Match 'http://127\.0\.0\.1:\$upperComputerSimulatorPort/api/state'
         $controllerSource | Should Match '\[bool\]\$state\.connected -and \[bool\]\$autoMode'
-        $controllerSource | Should Match 'Get-ListenerPids \$upperComputerSimulatorPort'
+        $controllerSource | Should Match 'Get-MesListenerOwners'
         $controllerSource | Should Match '\$runningUpperComputerReady'
         $controllerSource | Should Match '\$upperComputerReady'
         $controllerSource | Should Match '@\(\$backendPort, \$frontendPort, \$limsSimulatorPort, \$upperComputerSimulatorPort\)'
@@ -96,7 +96,7 @@ Describe "MES service controller" {
     }
 
     It "builds production frontend with bounded publish retries and last-good fallback" {
-        $buildSource = Get-Content -LiteralPath (Join-Path $projectRoot "frontend\scripts\build-production.mjs") -Raw
+        $buildSource = Get-Content -Encoding UTF8 -LiteralPath (Join-Path $projectRoot "frontend\scripts\build-production.mjs") -Raw
 
         $buildSource | Should Match 'MES_FRONTEND_BUILD_TIMEOUT_MS \|\| 30_000'
         $buildSource | Should Match 'const maxAttempts = 2'
@@ -185,6 +185,12 @@ Describe "MES service controller" {
         $controllerSource | Should Match '(?s)function Wait-MesPortsReleased.*?do \{.*?\$listenerPids = @\(Get-MesListenerPids\).*?\$listenerPids \| ForEach-Object \{ Stop-ProcessTree \$_ \}.*?while \(\(Get-Date\) -lt \$deadline\)'
         $controllerSource | Should Match '(?s)function Stop-MesSystem.*?\$commandPids \| ForEach-Object \{ Stop-TrackedMesProcess \$_ \}.*?Wait-MesPortsReleased'
         $controllerSource | Should Match 'MES服务端口未能在\$\{TimeoutSeconds\}秒内释放: \$detail'
+    }
+
+    It "reads native IPv4/IPv6 listener owners and closes only an isolated fixture" {
+        $runtime = Join-Path $PSScriptRoot 'Test-FastServiceShutdown.ps1'
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $runtime -ProjectRoot $projectRoot -TestDirectory (Join-Path $TestDrive 'fast-shutdown')
+        $LASTEXITCODE | Should Be 0
     }
 
     It "keeps launcher actions asynchronous while a command is running" {
@@ -279,5 +285,23 @@ Describe "MES service controller" {
 
         $result.status | Should Be "started"
         Test-Path (Join-Path $TestDrive "state.json") | Should Be $false
+    }
+
+    It "returns the same page URLs while allowing the control center to own browser launch" {
+        $null = . $controller -Action Status -StateFile (Join-Path $TestDrive 'browser-state.json') -IgnorePortListeners -NoOpen
+        Mock Start-Process { throw 'NoOpen must not launch a default browser' }
+        $state = [pscustomobject]@{frontendLocalUrl='http://127.0.0.1:25173/';limsSimulatorUrl='http://127.0.0.1:28900/'}
+        $urls = @(Get-MesPageUrls $state)
+        $urls.Count | Should Be 2
+        $urls[0] | Should Be 'http://127.0.0.1:25173/'
+        $urls[1] | Should Be 'http://127.0.0.1:28900/'
+        Open-MesPages $state
+        Assert-MockCalled Start-Process -Times 0 -Exactly
+        $state | ConvertTo-Json | Set-Content -LiteralPath $StateFile -Encoding UTF8
+        $Action = 'Start'
+        $result = Write-Result 'started' 'ready' | ConvertFrom-Json
+        $result.pageUrls.Count | Should Be 2
+        $result.pageUrls[0] | Should Be $urls[0]
+        $result.pageUrls[1] | Should Be $urls[1]
     }
 }

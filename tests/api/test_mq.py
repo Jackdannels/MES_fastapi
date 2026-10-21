@@ -4103,7 +4103,8 @@ def test_mysql_find_current_context_uses_ready_schedule_id_to_disambiguate_axis_
     }
 
 
-def test_mysql_find_current_context_prefers_event_schedule_id_over_command_context(monkeypatch):
+@pytest.mark.parametrize("event_schedule_field", ["schedule_id", "scheduleId", "schedule_no", "scheduleNo"])
+def test_mysql_find_current_context_uses_mes_schedule_and_ignores_event_schedule(monkeypatch, event_schedule_field):
     class TupleCursor:
         description = None
 
@@ -4145,7 +4146,7 @@ def test_mysql_find_current_context_prefers_event_schedule_id_over_command_conte
         def fetchall(self):
             columns = [column[0] for column in (self.description or [])]
             if columns == ["task_no", "experiment_no", "payload_json"]:
-                return [("SYLU-2026-06-021", "SYLU-2026-06-021-A", "{}")]
+                return [("SYLU-2026-06-021", "SYLU-2026-06-021-A", '{"schedule_id":"schedule-impact-axis-x-minus"}')]
             if columns == ["tray_no", "sample_no", "location_desc", "current_lab_id"]:
                 return [("TP-AXIS-001", "SP-AXIS-001", "冲击二室", 5)]
             if columns == [
@@ -4213,11 +4214,12 @@ def test_mysql_find_current_context_prefers_event_schedule_id_over_command_conte
     context = MySQLMqEventRepository().find_current_context_by_lab(
         "LAB_IMPACT_2",
         ["实验准备就绪"],
-        {"schedule_id": "schedule-impact-axis-x-minus"},
+        {event_schedule_field: "schedule-impact-axis-x-plus"},
     )
 
     assert "s.schedule_no = %s" in connection.cursor_obj.schedule_query_sql
     assert context["schedule_no"] == "schedule-impact-axis-x-minus"
+    assert "schedule-impact-axis-x-plus" not in connection.cursor_obj.schedule_query_params
 
 
 def test_mysql_find_current_context_allows_axis_schedule_when_status_is_stale_completed_without_run_tray_evidence(monkeypatch):

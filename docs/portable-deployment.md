@@ -2,6 +2,8 @@
 
 三个应用包共用一套 Docker Compose：主系统包包含 API、Web、MySQL 和启用 MQTT 的 RabbitMQ；LIMS 和上位机模拟器各一个包。目标 PC 需要 Docker Desktop 的 Linux 引擎、PowerShell，以及与镜像一致的 x86-64 架构；无需安装 Python、Node 或本机 MySQL。
 
+2026.10.21-r1 桌面交付目录额外提供双击部署入口，完成镜像加载、当前源机数据快照恢复、服务检查以及三个桌面快捷方式生成，见 [双击离线部署](portable-one-click.md)。独立 release 目录仍可使用下方命令。
+
 ## 1. 源码机构建
 
 从项目根目录运行。初始化生成随机密码，不读取或覆盖项目根 `.env`。
@@ -11,7 +13,7 @@
 .\scripts\deploy\Mes-Portable.ps1 -Action Build
 ```
 
-独立配置默认位于 `.tmp/portable.env`。原生服务的 8000、5173、8899、8900、3306、1883 端口与容器默认端口隔离。修改服务端口时同步修改 `MES_PUBLIC_URL`、`MES_FRONTEND_ORIGINS`。默认网页仅供本机访问；其他工作站需要访问时，将 `MES_BIND_ADDRESS` 改为服务端网卡地址，公开 URL 和 Origins 改为目标 PC 的实际地址。两个模拟器始终只发布到本机回环地址。
+独立配置默认位于 `.tmp/portable.env`。原生服务的 8000、5173、8899、8900、3306、1883 端口与容器默认端口隔离。默认 `MES_NETWORK_MODE=auto`，Start 自动检测物理局域网 IPv4，将 Web 监听设置为 `0.0.0.0`，同步更新 `MES_PUBLIC_URL`、`MES_FRONTEND_ORIGINS` 并备份原环境文件。管理员运行可自动配置专用网络、本地子网的 Web 防火墙规则。需要手动域名或网关配置时设置 `MES_NETWORK_MODE=manual`。两个模拟器始终只发布到本机回环地址。
 
 ```powershell
 .\scripts\deploy\Mes-Portable.ps1 -Action Start

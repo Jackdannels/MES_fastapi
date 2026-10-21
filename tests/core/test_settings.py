@@ -140,6 +140,7 @@ def test_settings_keep_runtime_and_migration_mysql_credentials_separate() -> Non
 
 def test_settings_load_docker_secret_files(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("SESSION_SECRET_KEY", raising=False)
+    monkeypatch.delenv("MYSQL_PASSWORD", raising=False)
     (tmp_path / "MYSQL_PASSWORD").write_text("api-secret-from-file", encoding="utf-8")
     (tmp_path / "SESSION_SECRET_KEY").write_text("session-secret-from-file", encoding="utf-8")
 

@@ -14,10 +14,22 @@ Set-StrictMode -Version Latest
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 if (-not $EnvFile) { $EnvFile = Join-Path $root '.tmp/portable.env' }
 $EnvFile = [IO.Path]::GetFullPath($EnvFile)
+. (Join-Path $PSScriptRoot 'Mes-PortableHost.ps1')
+$pathHashAlgorithm = [Security.Cryptography.SHA256]::Create()
+try { $pathHash = -join ($pathHashAlgorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($EnvFile.ToLowerInvariant())) | ForEach-Object { $_.ToString('x2') }) }
+finally { $pathHashAlgorithm.Dispose() }
+$startupOverride = Join-Path $root ('.tmp/portable-startup-' + $pathHash.Substring(0,12) + '.yml')
 
 function Invoke-Docker([string[]]$Arguments) {
-    & docker @Arguments
-    if ($LASTEXITCODE -ne 0) { throw "Docker command failed: $($Arguments[0]) (exit $LASTEXITCODE)" }
+    # Docker writes ordinary build/load progress to stderr. Windows PowerShell
+    # can turn redirected native stderr into terminating errors under Stop.
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & docker @Arguments
+        $exitCode = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousPreference }
+    if ($exitCode -ne 0) { throw "Docker command failed: $($Arguments[0]) (exit $exitCode)" }
 }
 function Write-Utf8([string]$Path, [string]$Value) {
     [IO.File]::WriteAllText($Path, $Value, (New-Object Text.UTF8Encoding($false)))
@@ -33,6 +45,7 @@ function Get-ComposeArguments {
     if ($Mode -eq 'demo') {
         $arguments += @('-f',(Join-Path $root 'compose.portable.simulators.yml'),'--profile','simulators')
     }
+    if (Test-Path -LiteralPath $startupOverride) { $arguments += @('-f',$startupOverride) }
     return $arguments
 }
 function Read-Compose {
@@ -135,6 +148,19 @@ try {
     }
     if (-not (Test-Path -LiteralPath $EnvFile)) { throw 'Run Initialize first, or supply -EnvFile' }
     if ($Action -in @('Build','Export')) { $Mode = 'demo' }
+    if ($Action -eq 'Start') {
+        $startClock = [Diagnostics.Stopwatch]::StartNew()
+        Wait-MesDockerEngine
+        Write-Host ('Docker engine ready after {0:N1}s' -f $startClock.Elapsed.TotalSeconds)
+        $network = Update-MesPortableNetwork $EnvFile -ConfigureFirewall
+        Write-Host ('MES access address: ' + $network.PublicUrl)
+        $composeVersion = (& docker compose version --short) -join ''
+        $engineVersion = (& docker version --format '{{.Server.Version}}') -join ''
+        $composeMatch = [regex]::Match($composeVersion, '\d+\.\d+\.\d+')
+        $engineMatch = [regex]::Match($engineVersion, '\d+\.\d+(?:\.\d+)?')
+        $fastChecks = $composeMatch.Success -and $engineMatch.Success -and ([version]$composeMatch.Value -ge [version]'2.20.2') -and ([version]$engineMatch.Value -ge [version]'25.0')
+        Write-MesStartupOverride $startupOverride $fastChecks
+    }
     $compose = Get-ComposeArguments
     Invoke-Docker ($compose + @('config','--quiet'))
     switch ($Action) {
@@ -149,8 +175,9 @@ try {
         }
         'Start' {
             Invoke-Docker ($compose + @('up','-d','--no-build','--pull','never','--wait','--wait-timeout','240'))
+            Write-Host ('MES services ready after {0:N1}s; URL: {1}' -f $startClock.Elapsed.TotalSeconds, $network.PublicUrl)
         }
-        'Stop' { Invoke-Docker ($compose + @('down')) }
+        'Stop' { Invoke-Docker ($compose + @('stop')) }
         'Status' { Invoke-Docker ($compose + @('ps','-a')) }
         'Export' {
             if (-not $OutputDirectory) { throw 'Export requires -OutputDirectory' }
@@ -187,7 +214,7 @@ try {
                 $packages += [ordered]@{name=$name; archive=$archive; images=@($images)}
             }
             $deploymentFiles = @('compose.portable.yml','compose.portable.simulators.yml','deploy/.env.portable.example',
-                'deploy/mysql/init-users.sh','scripts/deploy/Mes-Portable.ps1','scripts/deploy/portable_data.py','docs/portable-deployment.md')
+                'deploy/mysql/init-users.sh','scripts/deploy/Mes-Portable.ps1','scripts/deploy/Mes-PortableHost.ps1','scripts/deploy/portable_data.py','docs/portable-deployment.md','docs/portable-one-click.md')
             foreach ($relative in $deploymentFiles) {
                 $target = Join-Path $temporary $relative
                 New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null

@@ -1,13 +1,63 @@
 import json
 import logging
 import threading
+from copy import deepcopy
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.core.performance import PerformanceMiddleware
 from app.services import mq_publisher
+
+
+@pytest.mark.parametrize("command", [
+    "INSTALL_FIXTURE", "READY", "END_REQUEST",
+    "PAUSE_REQUEST", "RESUME_REQUEST", "STOP_REQUEST",
+])
+def test_commands_exclude_schedule_context_from_mqtt_but_preserve_mes_binding(monkeypatch, command):
+    calls = []
+    payload = {
+        "task_code": "TASK-1", "lab_code": "LAB_SALT", "experiment_code": "EXP-1",
+        "run_no": "RUN-1", "fixture_install_id": "FIXTURE-1", "pause_no": "PAUSE-1",
+        "tray_codes": ["TP-1"], "sub_experiment_code": "EXP-1-AXIS",
+        "current_axis_code": "x+", "end_mode": "device_fault_cancel",
+        "cancel_request_id": "CANCEL-1",
+        "schedule_id": "SCH-1", "scheduleId": "SCH-1",
+        "schedule_no": "SCH-1", "scheduleNo": "SCH-1",
+        "schedule_snapshot": {"id": "SCH-1", "device": "盐雾试验室"},
+        "scheduleSnapshot": {"id": "SCH-1"},
+    }
+    original = deepcopy(payload)
+
+    def record(_command, _topic, context, result):
+        calls.append(("record", deepcopy(context), result["process_status"]))
+        return 91
+
+    class FakePublisher:
+        def publish_json(self, topic, upper_payload):
+            calls.append(("publish", json.loads(json.dumps(upper_payload))))
+            return {"published": True, "reason": "", "topic": topic}
+
+    monkeypatch.setattr(mq_publisher, "record_laboratory_command", record)
+    monkeypatch.setattr(mq_publisher, "start_mqtt_publisher", lambda _settings: FakePublisher())
+    monkeypatch.setattr(mq_publisher, "update_laboratory_command_publish_result",
+                        lambda log_id, result: calls.append(("update", log_id, result["published"])))
+
+    result = mq_publisher.publish_laboratory_command(command, payload, Settings(MQTT_ENABLED=True))
+
+    assert result["published"] is True
+    assert calls[0] == ("record", original, "SENDING")
+    assert calls[1] == ("publish", {
+        "task_code": "TASK-1", "lab_code": "LAB_SALT", "experiment_code": "EXP-1",
+        "run_no": "RUN-1", "fixture_install_id": "FIXTURE-1", "pause_no": "PAUSE-1",
+        "tray_codes": ["TP-1"], "sub_experiment_code": "EXP-1-AXIS",
+        "current_axis_code": "x+", "end_mode": "device_fault_cancel",
+        "cancel_request_id": "CANCEL-1",
+    })
+    assert calls[2] == ("update", 91, True)
+    assert payload == original
 
 
 def test_persistent_publisher_retries_once_after_automatic_reconnect(monkeypatch):

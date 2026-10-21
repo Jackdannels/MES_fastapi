@@ -1,0 +1,15 @@
+﻿Stop exit=0
+ Container mes-controlfix-20261021-upper-simulator-1 Stopping 
+ Container mes-controlfix-20261021-web-1 Stopping 
+ Container mes-controlfix-20261021-lims-simulator-1 Stopping 
+ Container mes-controlfix-20261021-web-1 Stopped 
+ Container mes-controlfix-20261021-api-1 Stopping 
+ Container mes-controlfix-20261021-upper-simulator-1 Stopped 
+ Container mes-controlfix-20261021-lims-simulator-1 Stopped 
+ Container mes-controlfix-20261021-api-1 Stopped 
+ Container mes-controlfix-20261021-migrate-1 Stopping 
+ Container mes-controlfix-20261021-rabbitmq-1 Stopping 
+ Container mes-controlfix-20261021-migrate-1 Stopped 
+ Container mes-controlfix-20261021-mysql-1 Stopping 
+ Container mes-controlfix-20261021-mysql-1 Stopped 
+ Container mes-controlfix-20261021-rabbitmq-1 Stopped 

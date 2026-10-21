@@ -21,6 +21,10 @@ COMMAND_TOPICS = {
     "RESUME_REQUEST": "experiment-resume-request",
     "STOP_REQUEST": "experiment-stop-request",
 }
+MES_ONLY_COMMAND_FIELDS = frozenset({
+    "schedule_id", "scheduleId", "schedule_no", "scheduleNo",
+    "schedule_snapshot", "scheduleSnapshot",
+})
 BEIJING_TZ = timezone(timedelta(hours=8))
 logger = logging.getLogger("mes.mqtt.publisher")
 
@@ -251,6 +255,9 @@ def build_laboratory_topic(command: str, lab_code: str, app_settings: Settings =
 
 def publish_laboratory_command(command: str, payload: dict[str, Any], app_settings: Settings = settings) -> dict[str, Any]:
     topic = build_laboratory_topic(command, str(payload.get("lab_code") or ""), app_settings)
+    # Keep schedule context in the MES log for run binding and cancellation
+    # reports. It is not part of the upper-computer MQTT contract.
+    upper_payload = {key: value for key, value in payload.items() if key not in MES_ONLY_COMMAND_FIELDS}
     message_log_id = record_laboratory_command(
         command,
         topic,
@@ -258,7 +265,7 @@ def publish_laboratory_command(command: str, payload: dict[str, Any], app_settin
         {"published": False, "reason": "", "process_status": "SENDING"},
     )
     try:
-        result = publish_mqtt_json(topic, payload, app_settings)
+        result = publish_mqtt_json(topic, upper_payload, app_settings)
     except Exception as exc:
         update_laboratory_command_publish_result(
             message_log_id,

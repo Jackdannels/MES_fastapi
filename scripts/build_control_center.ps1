@@ -1,6 +1,6 @@
-param(
+﻿param(
     [string]$ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path,
-    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.3.exe"),
+    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.7.exe"),
     [string]$IconPath = (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path "assets\mes-control-center.ico"),
     [switch]$NoAdminManifest
 )
@@ -141,11 +141,11 @@ try {
     $arguments = @(
         "/nologo", "/target:winexe", "/platform:anycpu", "/optimize+",
         "/reference:System.Windows.Forms.dll", "/reference:System.Drawing.dll",
-        "/reference:System.Web.Extensions.dll", "/win32icon:$IconPath",
+        "/reference:System.Web.Extensions.dll", "/reference:System.Management.dll", "/win32icon:$IconPath",
         "/out:$OutputPath"
     )
     if (-not $NoAdminManifest) { $arguments += "/win32manifest:$temporaryManifest" }
-    $arguments += @($temporaryControlSource, $temporaryTerminalSource, $discoverySource)
+    $arguments += @($temporaryControlSource, $temporaryTerminalSource, $discoverySource, (Join-Path $projectRootPath 'tools/control-center/MESAccessInfo.cs'))
     & $csc $arguments
     if ($LASTEXITCODE -ne 0) { throw "MES control center compilation failed with exit code $LASTEXITCODE." }
 }

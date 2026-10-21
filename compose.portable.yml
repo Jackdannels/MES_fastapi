@@ -170,7 +170,7 @@ services:
     restart: unless-stopped
     logging: *json-logging
     ports:
-      - "${MES_BIND_ADDRESS:-127.0.0.1}:${MES_WEB_PORT:-15173}:8080"
+      - "${MES_BIND_ADDRESS:-0.0.0.0}:${MES_WEB_PORT:-15173}:8080"
     depends_on:
       api:
         condition: service_healthy

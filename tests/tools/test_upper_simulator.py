@@ -49,6 +49,73 @@ def build_auto_simulator(monkeypatch):
     return simulator, published
 
 
+@pytest.mark.parametrize(("command", "event"), [
+    ("fixture-install", "fixture-ready"),
+    ("experiment-ready", "experiment-started"),
+    ("experiment-end-request", "experiment-ended"),
+    ("experiment-pause-request", "experiment-paused"),
+    ("experiment-resume-request", "experiment-resumed"),
+    ("experiment-stop-request", "experiment-stopped"),
+])
+def test_auto_replies_do_not_cache_or_echo_schedule_context(monkeypatch, command, event):
+    simulator, published = build_auto_simulator(monkeypatch)
+    payload = {
+        "lab_code": "LAB_SALT", "run_no": "RUN-1", "fixture_install_id": "FIXTURE-1",
+        "pause_no": "PAUSE-1", "schedule_id": "SCH-1", "scheduleId": "SCH-1",
+        "schedule_no": "SCH-1", "scheduleNo": "SCH-1",
+        "schedule_snapshot": {"id": "SCH-1"}, "scheduleSnapshot": {"id": "SCH-1"},
+    }
+
+    simulator._on_message(None, None, FakeMessage(f"mes/v1/labs/LAB_SALT/commands/{command}", payload))
+    FakeTimer.created[-1].callback()
+
+    event_name, reply, lab_code = published[-1]
+    assert (event_name, lab_code) == (event, "LAB_SALT")
+    assert reply["run_no"] == "RUN-1"
+    assert reply["fixture_install_id"] == "FIXTURE-1"
+    assert all(not key.lower().startswith("schedule") for key in reply)
+    assert all(not key.lower().startswith("schedule") for key in simulator._lab_contexts["LAB_SALT"])
+
+
+@pytest.mark.parametrize("function_name", [
+    "publish_fixture_ready", "publish_experiment_started",
+    "publish_experiment_ended", "publish_experiment_result",
+])
+def test_manual_events_publish_without_schedule_fields_from_old_context(monkeypatch, function_name):
+    sent = []
+
+    class PublishResult:
+        rc = 0
+
+        def wait_for_publish(self, timeout=None):
+            pass
+
+    class FakeClient:
+        def publish(self, topic, payload, qos=0, retain=False):
+            sent.append((topic, simulator_app.json.loads(payload)))
+            return PublishResult()
+
+    simulator = simulator_app.MqttSimulator()
+    simulator._client = FakeClient()
+    simulator._connected = True
+    simulator._lab_contexts["LAB_SALT"] = {
+        "run_no": "RUN-1", "fixture_install_id": "FIXTURE-1",
+        "schedule_id": "SCH-OLD", "schedule_snapshot": {"id": "SCH-OLD"},
+    }
+    monkeypatch.setattr(simulator_app, "simulator", simulator)
+    request = (simulator_app.FixtureReadyRequest() if function_name == "publish_fixture_ready"
+               else simulator_app.EventRequest(run_no="RUN-1"))
+
+    result = getattr(simulator_app, function_name)(request)
+
+    assert result["ok"] is True
+    assert len(sent) == 1
+    assert sent[0][1]["run_no"] == "RUN-1"
+    assert sent[0][1]["fixture_install_id"] == "FIXTURE-1"
+    assert all(not key.lower().startswith("schedule") for key in sent[0][1])
+    assert result["payload"] == sent[0][1]
+
+
 def test_auto_mode_does_not_send_experiment_ended_after_started(monkeypatch):
     simulator, published = build_auto_simulator(monkeypatch)
 
