@@ -1281,7 +1281,8 @@ def test_interface_mode_endpoint_does_not_reconnect_upper_computer_when_mqtt_mod
     assert calls == [("start", True), ("upper", "mes/v1")]
 
 
-def test_upper_computer_auto_connect_opens_visible_auto_mode_page(monkeypatch):
+@pytest.mark.parametrize("open_browser", [True, False])
+def test_upper_computer_auto_connect_opens_page_only_when_browser_is_not_managed(monkeypatch, open_browser):
     from app.services import upper_computer_simulator
 
     opened_urls = []
@@ -1307,11 +1308,14 @@ def test_upper_computer_auto_connect_opens_visible_auto_mode_page(monkeypatch):
         Settings(
             MQTT_ENABLED=True,
             UPPER_COMPUTER_SIMULATOR_AUTO_ENABLE=True,
+            UPPER_COMPUTER_SIMULATOR_OPEN_BROWSER=open_browser,
             UPPER_COMPUTER_SIMULATOR_URL="http://127.0.0.1:8899",
         ),
     )
 
-    assert opened_urls == ["http://127.0.0.1:8899/?auto=1"]
+    assert opened_urls == (["http://127.0.0.1:8899/?auto=1"] if open_browser else [])
+    assert status["connected"] is True
+    assert status["auto_mode"] is True
     assert status["page_url"] == "http://127.0.0.1:8899/?auto=1"
 
 

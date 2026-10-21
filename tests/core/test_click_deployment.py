@@ -27,7 +27,7 @@ def make_delivery(tmp_path):
     (delivery/'desktop-tools').mkdir()
     shutil.copy2(ROOT/'deploy/portable/Deploy-MES.ps1',delivery/'Deploy-MES.ps1')
     manifest=builder.finalize(delivery,'test')
-    assert manifest['controlCenterVersion'] == '2.7.0'
+    assert manifest['controlCenterVersion'] == '2.7.2'
     return delivery,release,manifest
 
 
@@ -76,5 +76,5 @@ def test_install_state_guards_and_automatic_shortcuts_are_present():
     assert "$state.phase -eq 'restoring'" in source
     assert 'one-click installer will not overwrite' in source
     assert "'-Action',$Step,'-EnvFile',$environment" in source
-    assert "'MES控制中心_v2.7_Docker版'" in source
+    assert "'MES控制中心_v2.7.2_Docker版'" in source
     assert 'MES工作台设置_Docker版' in source and 'MES终端管理_Docker版' in source

@@ -48,7 +48,7 @@ Describe "MES service controller" {
         $controllerSource | Should Match '\$limsSimulatorPort = 8900'
         $controllerSource | Should Match '\$state\.limsSimulatorCommandPid'
         $controllerSource | Should Match 'http://127\.0\.0\.1:\$limsSimulatorPort/api/state'
-        $controllerSource | Should Match 'return @\(\$frontendUrl, \$limsSimulatorUrl\)'
+        $controllerSource | Should Match 'return @\(\$frontendUrl, \$limsSimulatorUrl, \$upperComputerSimulatorUrl\)'
         $controllerSource | Should Match 'function Open-MesPages'
         $controllerSource | Should Match '\$runningBackendReady -and \$runningFrontendReady -and \$runningLimsReady'
         $controllerSource | Should Match '\$null = Stop-MesSystem'
@@ -91,7 +91,7 @@ Describe "MES service controller" {
 
         $startScript | Should Match '(?s)if \(\$Production\) \{.*?\$backendConsoleCommand = ".*?title MES Backend.*?\$frontendConsoleCommand = "title MES Frontend.*?Start-Process -FilePath \$env:ComSpec -ArgumentList "/d", "/k", \$backendConsoleCommand.*?Start-Process -FilePath \$env:ComSpec -ArgumentList "/d", "/k", \$frontendConsoleCommand.*?Start-Process -FilePath \$condaPython.*?"-m", "uvicorn", "app:app"'
         $startScript | Should Match '(?s)\$limsSimulatorProcess = Start-Process -FilePath \$condaPython.*?-WindowStyle Hidden.*?lims\.stderr\.log'
-        $startScript | Should Match 'npm run build:production && npm run serve:public'
+        $startScript | Should Match 'npm run build:production && \$BackendWaitCommand && npm run serve:public'
         $startScript | Should Not Match 'Unable to identify MES backend/frontend/LIMS terminal command processes'
     }
 
@@ -287,21 +287,33 @@ Describe "MES service controller" {
         Test-Path (Join-Path $TestDrive "state.json") | Should Be $false
     }
 
-    It "returns the same page URLs while allowing the control center to own browser launch" {
+    It "returns all three configured page URLs while allowing the control center to own browser launch" {
         $null = . $controller -Action Status -StateFile (Join-Path $TestDrive 'browser-state.json') -IgnorePortListeners -NoOpen
         Mock Start-Process { throw 'NoOpen must not launch a default browser' }
-        $state = [pscustomobject]@{frontendLocalUrl='http://127.0.0.1:25173/';limsSimulatorUrl='http://127.0.0.1:28900/'}
+        $state = [pscustomobject]@{frontendLocalUrl='http://127.0.0.1:25173/';limsSimulatorUrl='http://127.0.0.1:28900/';upperComputerSimulatorUrl='http://127.0.0.1:28899/'}
         $urls = @(Get-MesPageUrls $state)
-        $urls.Count | Should Be 2
+        $urls.Count | Should Be 3
         $urls[0] | Should Be 'http://127.0.0.1:25173/'
         $urls[1] | Should Be 'http://127.0.0.1:28900/'
+        $urls[2] | Should Be 'http://127.0.0.1:28899/'
         Open-MesPages $state
         Assert-MockCalled Start-Process -Times 0 -Exactly
         $state | ConvertTo-Json | Set-Content -LiteralPath $StateFile -Encoding UTF8
         $Action = 'Start'
         $result = Write-Result 'started' 'ready' | ConvertFrom-Json
-        $result.pageUrls.Count | Should Be 2
+        $result.pageUrls.Count | Should Be 3
         $result.pageUrls[0] | Should Be $urls[0]
         $result.pageUrls[1] | Should Be $urls[1]
+        $result.pageUrls[2] | Should Be $urls[2]
+        $defaults = @(Get-MesPageUrls ([pscustomobject]@{}))
+        $defaults.Count | Should Be 3
+        $defaults[2] | Should Be 'http://127.0.0.1:8899/'
+    }
+
+    It "suppresses the separate upper-computer browser only when the launcher owns page opening" {
+        $startScript = Get-Content -Encoding UTF8 -LiteralPath (Join-Path $projectRoot 'start-dev.ps1') -Raw
+        $startScript | Should Match '\$upperComputerBrowserPrefix = if \(\$DisableAutoOpenBrowser\) \{ ''set "UPPER_COMPUTER_SIMULATOR_OPEN_BROWSER=false" && '' \} else \{ '''' \}'
+        $startScript | Should Match '\$backendCommand = \$upperComputerBrowserPrefix \+ \$backendCommand'
+        $startScript | Should Match '\$backendConsoleCommand = .*?\$\{upperComputerBrowserPrefix\}'
     }
 }

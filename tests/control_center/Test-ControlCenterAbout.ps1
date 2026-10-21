@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Web.Extensions
 $assembly = [Reflection.Assembly]::LoadFrom($Executable)
-if ($assembly.GetName().Version.ToString() -ne '2.7.0.0' -or [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable).FileVersion -ne '2.7.0.0') { throw 'Control center assembly/file version is not 2.7.0.0' }
+if ($assembly.GetName().Version.ToString() -ne '2.7.2.0' -or [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable).FileVersion -ne '2.7.2.0') { throw 'Control center assembly/file version is not 2.7.2.0' }
 $static = [Reflection.BindingFlags]'Static,NonPublic'
 $fields = [Reflection.BindingFlags]'Instance,NonPublic,Public'
 $type = $assembly.GetType('MESControlCenter.MESAccessInfo', $true)
@@ -57,6 +57,6 @@ $form = $formType.GetConstructor($fields, $null, [Type[]]@([string],[bool]), $nu
 try {
     $null = $formType.GetMethod('ApplyAboutReport', $fields).Invoke($form, @($report))
     $banner = $formType.GetField('lanAddressLink', $fields).GetValue($form)
-    if ($banner.Text -ne 'http://192.168.110.15:32173' -or -not $form.Text.Contains('v2.7')) { throw 'Homepage LAN address or v2.7 title missing' }
+    if ($banner.Text -ne 'http://192.168.110.15:32173' -or -not $form.Text.Contains('v2.7.2')) { throw 'Homepage LAN address or v2.7.2 title missing' }
 } finally { $form.Dispose() }
 Write-Output 'About runtime checks passed: loopback, wildcard, specific NIC, custom port, offline Docker, candidate status and configured startup URL.'

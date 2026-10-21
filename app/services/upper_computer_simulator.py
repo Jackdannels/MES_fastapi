@@ -205,7 +205,8 @@ def ensure_upper_computer_simulator_auto_mode(
         raise RuntimeError("模拟上位机已启动但 MQTT 未连接")
     config = state.get("config") if isinstance(state.get("config"), dict) else {}
     page_url = _auto_mode_page_url(app_settings)
-    open_simulator_page_once(page_url, force=started)
+    if app_settings.UPPER_COMPUTER_SIMULATOR_OPEN_BROWSER:
+        open_simulator_page_once(page_url, force=started)
     return {
         "enabled": True,
         "started": started,

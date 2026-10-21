@@ -45,7 +45,7 @@ if ($Action -eq 'Stop' -and (Test-Path (Join-Path $PSScriptRoot 'fail-stop'))) {
     exit 1
 }
 $status = if($Action -eq 'Stop'){'stopped'}elseif($Action -eq 'Restart'){'restarted'}else{'started'}
-@{status=$status;message='ok';pageUrls=@('http://127.0.0.1:25173/','http://127.0.0.1:28900/')} | ConvertTo-Json -Compress | Set-Content -LiteralPath $ResultFile -Encoding UTF8
+@{status=$status;message='ok';pageUrls=@('http://127.0.0.1:25173/','http://127.0.0.1:28900/','http://127.0.0.1:28899/')} | ConvertTo-Json -Compress | Set-Content -LiteralPath $ResultFile -Encoding UTF8
 '@ | Set-Content -LiteralPath $controller -Encoding UTF8
 Add-Type -AssemblyName System.Windows.Forms
 $assembly=[Reflection.Assembly]::LoadFrom($Executable)
@@ -80,13 +80,13 @@ try {
     if($result.status -ne 'started' -or $result.message -ne 'ok'){throw ('Start failed to launch the managed browser: '+($result | ConvertTo-Json -Compress))}
     $first=State
     $children.Add([int]$first.pid)
-    Wait-Windows $first.pid 2
+    Wait-Windows $first.pid 3
     if([int][IO.File]::ReadAllText((Join-Path $sessionDirectory 'Profile/launcher.pid')) -eq $first.pid){throw 'Browser handoff did not track the actual window owner'}
 
     New-Item -ItemType File -Path (Join-Path $TestDirectory 'fail-stop') | Out-Null
     $result=$run.Invoke($form,@('Stop')) | ConvertFrom-Json
     if($result.status -ne 'error'){throw 'Failure fixture did not fail'}
-    Wait-Windows $first.pid 2
+    Wait-Windows $first.pid 3
     Remove-Item -LiteralPath (Join-Path $TestDirectory 'fail-stop')
 
     $result=$run.Invoke($form,@('Restart')) | ConvertFrom-Json
@@ -94,7 +94,7 @@ try {
     Wait-Windows $first.pid 0
     $second=State
     $children.Add([int]$second.pid)
-    Wait-Windows $second.pid 2
+    Wait-Windows $second.pid 3
 
     # Reloading the session models closing and reopening the control center.
     $session=$sessionConstructor.Invoke([object[]]@([string]$TestDirectory,[string]$browser))
@@ -111,7 +111,7 @@ try {
     '{broken' | Set-Content -LiteralPath $statePath
     $sessionType.GetMethod('Close',$flags).Invoke($session,@())
     Wait-Windows $other.Id 1
-    Write-Output 'Browser regression passed: Start, failed Stop, Restart, persisted Stop, two MES pages, unrelated windows, stale identity and corrupt state.'
+    Write-Output 'Browser regression passed: Start, failed Stop, Restart, persisted Stop, three MES/LIMS/upper-computer pages, unrelated windows, stale identity and corrupt state.'
 } finally {
     foreach($child in $children){Stop-Process -Id $child -Force -ErrorAction SilentlyContinue}
     foreach($process in Get-Process -Name browser -ErrorAction SilentlyContinue) {

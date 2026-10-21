@@ -54,6 +54,8 @@ try {
         serverUrl=$ServerUrl.TrimEnd('/'); apiUrl='http://127.0.0.1:18000'; limsUrl='http://127.0.0.1:18900'; upperComputerUrl='http://127.0.0.1:18899'}
     if($Native) { $config.deploymentMode='windows-service' }
     Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-v2.7.md') -Destination (Join-Path $output 'control-center-v2.7.md')
+    Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-v2.7.1.md') -Destination (Join-Path $output 'control-center-v2.7.1.md')
+    Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-v2.7.2.md') -Destination (Join-Path $output 'control-center-v2.7.2.md')
     Write-Utf8 (Join-Path $output 'mes-desktop-tools.json') ($config | ConvertTo-Json)
     $files = @(foreach($file in Get-ChildItem -LiteralPath $output -File -Recurse) {
         $stream = [IO.File]::OpenRead($file.FullName)
@@ -62,7 +64,7 @@ try {
         finally { $stream.Dispose(); $algorithm.Dispose() }
         [ordered]@{path=$file.FullName.Substring($output.Length+1).Replace('\','/'); bytes=$file.Length; sha256=$hash}
     })
-    $manifest = [ordered]@{format='mes-docker-desktop-tools'; format_version=1; version='2026.10.21-r4'; controlCenterVersion='2.7.0';
+    $manifest = [ordered]@{format='mes-docker-desktop-tools'; format_version=1; version='2026.10.21-r6'; controlCenterVersion='2.7.2';
         platform='windows-dotnet-framework'; files=$files}
     Write-Utf8 (Join-Path $output 'desktop-tools-manifest.json') ($manifest | ConvertTo-Json -Depth 6)
     Write-Output "Three Windows desktop tools built: $output"

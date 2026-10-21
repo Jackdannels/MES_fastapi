@@ -81,12 +81,12 @@ Describe "MES control center integration" {
         $LASTEXITCODE | Should Be 0
     }
 
-    It "exposes v2.7 and four independently visible service states" {
-        $source | Should Match 'AssemblyVersion\("2\.7\.0\.0"\)'
-        $source | Should Match 'AssemblyFileVersion\("2\.7\.0\.0"\)'
-        $source | Should Match 'MES 控制中心 v2\.7'
-        $source | Should Match 'CONTROL CENTER  v2\.7'
-        $build | Should Match 'MES控制中心_v2\.7\.exe'
+    It "exposes v2.7.2 and four independently visible service states" {
+        $source | Should Match 'AssemblyVersion\("2\.7\.2\.0"\)'
+        $source | Should Match 'AssemblyFileVersion\("2\.7\.2\.0"\)'
+        $source | Should Match 'MES 控制中心 v2\.7\.2'
+        $source | Should Match 'CONTROL CENTER  v2\.7\.2'
+        $build | Should Match 'MES控制中心_v2\.7\.2\.exe'
         $source | Should Match 'AddServiceLine\(lines, "后端服务", MESDesktopSettings.PortLabel\("apiUrl"'
         $source | Should Match 'AddServiceLine\(lines, "前端服务", MESDesktopSettings.PortLabel\("serverUrl"'
         $source | Should Match 'AddServiceLine\(lines, "LIMS 模拟器", MESDesktopSettings.PortLabel\("limsUrl"'

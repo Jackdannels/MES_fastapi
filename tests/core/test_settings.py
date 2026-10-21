@@ -1,6 +1,13 @@
 from app.core.config import Settings
 
 
+def test_upper_computer_browser_open_can_be_delegated_to_control_center(monkeypatch):
+    monkeypatch.delenv("UPPER_COMPUTER_SIMULATOR_OPEN_BROWSER", raising=False)
+    assert Settings(_env_file=None).UPPER_COMPUTER_SIMULATOR_OPEN_BROWSER is True
+    monkeypatch.setenv("UPPER_COMPUTER_SIMULATOR_OPEN_BROWSER", "false")
+    assert Settings(_env_file=None).UPPER_COMPUTER_SIMULATOR_OPEN_BROWSER is False
+
+
 def test_settings_default_to_debug_disabled_without_environment_overrides(monkeypatch):
     monkeypatch.delenv("DEBUG", raising=False)
 

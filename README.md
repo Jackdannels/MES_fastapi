@@ -6,9 +6,9 @@ Windows 原生离线安装包（含两个模拟器与三个桌面程序）见 [�
 
 本项目是一个基于 `FastAPI + Vue 3 + Vite` 的 MES 示例系统。
 
-开发工具版本：MES 启动器 `v1.2`、固定工作台设置 `v2.3`、MES 控制中心 `v2.7`、终端管理 `v1.3`、上位机模拟器 `v2.7`、LIMS 模拟器 `v1.1`。各模拟器通过后端版本常量和状态接口向页面提供版本号。
+开发工具版本：MES 启动器 `v1.2`、固定工作台设置 `v2.3`、MES 控制中心 `v2.7.2`、终端管理 `v1.3`、上位机模拟器 `v2.7`、LIMS 模拟器 `v1.1`。各模拟器通过后端版本常量和状态接口向页面提供版本号。
 
-控制中心 v2.7 新增关闭系统时同步关闭 MES、LIMS 网页窗口，重启后重新打开；使用与升级说明见 [控制中心 v2.7](docs/control-center-v2.7.md)。
+控制中心 v2.7.2 优化本机启动等待，在启动时统一打开 MES、LIMS、上位机模拟器三个网页，关闭系统时同步关闭，重启后重新打开；使用与升级说明见 [控制中心 v2.7.2](docs/control-center-v2.7.2.md)。
 
 当前默认运行方式：
 
@@ -67,7 +67,7 @@ start-dev.bat
 服务准备完成后会打开 MES 页面和 LIMS 模拟器页面。
 通过桌面启动器运行时，MES 后端和前端使用可见终端窗口输出日志；LIMS 模拟器继续在后台隐藏运行。
 
-本机控制脚本通过 Windows 原生监听表一次读取四项服务的端口和所属进程，避免 NetTCPIP CIM 查询在大量连接时延迟关闭。启动、关闭、重启的分阶段耗时保存在 `%LOCALAPPDATA%\MesFastApiLauncher\logs\service-*.json`。项目的 `scripts/MesTcpListeners.cs` 需与 `mes-service-control.ps1` 一同保留。
+本机控制脚本通过 Windows 原生监听表一次读取四项服务的端口和所属进程，避免 NetTCPIP CIM 查询在大量连接时延迟关闭。四项服务的 HTTP 就绪检查并行执行，前端构建与后端启动重叠，服务仍在构建成功和后端就绪后才对外提供。启动、关闭、重启的分阶段耗时保存在 `%LOCALAPPDATA%\MesFastApiLauncher\logs\service-*.json`。项目的 `scripts/MesTcpListeners.cs`、`scripts/MesHttpProbes.cs` 需与 `mes-service-control.ps1` 一同保留。
 正式前端会先构建到临时目录，成功后再原子替换 `frontend/dist`。单次构建超过 30 秒会终止并重试一次；如果两次构建均失败但存在上一次成功产物，则继续使用该产物启动 5173，避免构建异常导致前端整体离线。
 
 ### 3. 手动启动后端

@@ -83,31 +83,31 @@ function Test-MesRunning {
     return [bool]($tracked.Count -gt 0 -or @(Get-MesListenerPids).Count -gt 0)
 }
 
-function Test-MesHttpReady([string]$Url) {
+function Test-MesHttpReady([string]$Url, $Response = $null) {
     try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 2
-        return $response.StatusCode -ge 200 -and $response.StatusCode -lt 300
+        if ($null -eq $Response) { $Response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 2 }
+        return $Response.StatusCode -ge 200 -and $Response.StatusCode -lt 300
     } catch {
         return $false
     }
 }
 
-function Test-LimsRabbitReady {
+function Test-LimsRabbitReady($Response = $null) {
     try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$limsSimulatorPort/api/state" -TimeoutSec 2
-        if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) { return $false }
-        $state = $response.Content | ConvertFrom-Json
+        if ($null -eq $Response) { $Response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$limsSimulatorPort/api/state" -TimeoutSec 2 }
+        if ($Response.StatusCode -lt 200 -or $Response.StatusCode -ge 300) { return $false }
+        $state = $Response.Content | ConvertFrom-Json
         return [bool]$state.connected
     } catch {
         return $false
     }
 }
 
-function Test-UpperComputerReady {
+function Test-UpperComputerReady($Response = $null) {
     try {
-        $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$upperComputerSimulatorPort/api/state" -TimeoutSec 2
-        if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) { return $false }
-        $state = $response.Content | ConvertFrom-Json
+        if ($null -eq $Response) { $Response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$upperComputerSimulatorPort/api/state" -TimeoutSec 2 }
+        if ($Response.StatusCode -lt 200 -or $Response.StatusCode -ge 300) { return $false }
+        $state = $Response.Content | ConvertFrom-Json
         $autoMode = if ($null -ne $state.config.auto_mode) { $state.config.auto_mode } else { $state.config.autoMode }
         return [bool]$state.connected -and [bool]$autoMode
     } catch {
@@ -115,12 +115,18 @@ function Test-UpperComputerReady {
     }
 }
 
-function Get-MesServiceHealth {
+function Get-MesServiceHealth([int]$TimeoutMilliseconds = 2000) {
+    if (-not ('MESProcessControl.HttpProbes' -as [type])) {
+        Add-Type -Path (Join-Path $PSScriptRoot 'MesHttpProbes.cs')
+    }
+    $urls = @("http://127.0.0.1:$backendPort/health/ready", "http://127.0.0.1:$frontendPort/",
+        "http://127.0.0.1:$limsSimulatorPort/api/state", "http://127.0.0.1:$upperComputerSimulatorPort/api/state")
+    $responses = [MESProcessControl.HttpProbes]::Read([string[]]$urls, $TimeoutMilliseconds)
     return [pscustomobject]@{
-        backend = Test-MesHttpReady "http://127.0.0.1:$backendPort/health/ready"
-        frontend = Test-MesHttpReady "http://127.0.0.1:$frontendPort/"
-        lims = Test-LimsRabbitReady
-        upperComputer = Test-UpperComputerReady
+        backend = Test-MesHttpReady $urls[0] -Response $responses[0]
+        frontend = Test-MesHttpReady $urls[1] -Response $responses[1]
+        lims = Test-LimsRabbitReady -Response $responses[2]
+        upperComputer = Test-UpperComputerReady -Response $responses[3]
     }
 }
 
@@ -129,7 +135,9 @@ function Get-MesPageUrls($State) {
     if (-not $frontendUrl) { $frontendUrl = "http://127.0.0.1:$frontendPort/" }
     $limsSimulatorUrl = $State.limsSimulatorUrl
     if (-not $limsSimulatorUrl) { $limsSimulatorUrl = "http://127.0.0.1:$limsSimulatorPort/" }
-    return @($frontendUrl, $limsSimulatorUrl)
+    $upperComputerSimulatorUrl = $State.upperComputerSimulatorUrl
+    if (-not $upperComputerSimulatorUrl) { $upperComputerSimulatorUrl = "http://127.0.0.1:$upperComputerSimulatorPort/" }
+    return @($frontendUrl, $limsSimulatorUrl, $upperComputerSimulatorUrl)
 }
 
 function Open-MesPages($State) {
@@ -277,13 +285,14 @@ function Stop-MesSystem {
 function Start-MesSystem {
     $stageClock = [Diagnostics.Stopwatch]::StartNew()
     if (Test-MesRunning) {
-        $runningBackendReady = Test-MesHttpReady "http://127.0.0.1:$backendPort/health/ready"
-        $runningFrontendReady = Test-MesHttpReady "http://127.0.0.1:$frontendPort/"
-        $runningLimsReady = Test-LimsRabbitReady
-        $runningUpperComputerReady = Test-UpperComputerReady
+        $runningHealth = Get-MesServiceHealth
+        $runningBackendReady = $runningHealth.backend
+        $runningFrontendReady = $runningHealth.frontend
+        $runningLimsReady = $runningHealth.lims
+        $runningUpperComputerReady = $runningHealth.upperComputer
         if ($runningBackendReady -and $runningFrontendReady -and $runningLimsReady -and $runningUpperComputerReady) {
             Open-MesPages (Read-State)
-            return @{ status = "already_running"; message = "MES系统已经运行，已打开MES与LIMS模拟器页面" }
+            return @{ status = "already_running"; message = "MES系统已经运行，已打开MES、LIMS及上位机模拟器页面" }
         }
         # 旧版本服务或异常中断可能只留下部分端口。先统一回收，再按完整服务组重启。
         $null = Stop-MesSystem
@@ -320,19 +329,17 @@ function Start-MesSystem {
     }
     if (-not (Test-Path -LiteralPath $StateFile)) { throw "启动脚本未写入服务状态文件" }
 
-    $backendReadyUrl = "http://127.0.0.1:$backendPort/health/ready"
-    $frontendReadyUrl = "http://127.0.0.1:$frontendPort/"
-    $limsSimulatorReadyUrl = "http://127.0.0.1:$limsSimulatorPort/api/state"
     $deadline = (Get-Date).AddSeconds(90)
     $backendReady = $false
     $frontendReady = $false
     $limsSimulatorReady = $false
     $upperComputerReady = $false
     do {
-        $backendReady = Test-MesHttpReady $backendReadyUrl
-        $frontendReady = Test-MesHttpReady $frontendReadyUrl
-        $limsSimulatorReady = Test-LimsRabbitReady
-        $upperComputerReady = Test-UpperComputerReady
+        $health = Get-MesServiceHealth
+        $backendReady = $health.backend
+        $frontendReady = $health.frontend
+        $limsSimulatorReady = $health.lims
+        $upperComputerReady = $health.upperComputer
         if ($backendReady -and $frontendReady -and $limsSimulatorReady -and $upperComputerReady) { break }
         Start-Sleep -Milliseconds 500
     } while ((Get-Date) -lt $deadline)

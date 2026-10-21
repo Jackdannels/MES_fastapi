@@ -1,6 +1,6 @@
 ﻿param(
     [string]$ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path,
-    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.7.exe"),
+    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.7.2.exe"),
     [string]$IconPath = (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path "assets\mes-control-center.ico"),
     [switch]$NoAdminManifest
 )
@@ -101,7 +101,8 @@ $controlCenterSource = Join-Path $projectRootPath "tools\control-center\MESContr
 $terminalSource = Join-Path $projectRootPath "scripts\client\MESTerminalManager.cs"
 $discoverySource = Join-Path $projectRootPath "scripts\client\MESServerDiscovery.cs"
 $controlScript = Join-Path $projectRootPath "scripts\mes-service-control.ps1"
-foreach ($requiredPath in @($controlCenterSource, $terminalSource, $discoverySource, $controlScript)) {
+foreach ($requiredPath in @($controlCenterSource, $terminalSource, $discoverySource, $controlScript,
+    (Join-Path $projectRootPath 'scripts/MesHttpProbes.cs'), (Join-Path $projectRootPath 'scripts/MesTcpListeners.cs'))) {
     if (-not (Test-Path -LiteralPath $requiredPath)) { throw "Cannot find required control-center input: $requiredPath" }
 }
 

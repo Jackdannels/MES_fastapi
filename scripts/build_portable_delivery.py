@@ -23,7 +23,7 @@ def finalize(root,version):
         entries.append(dict(path=path.relative_to(root).as_posix(),bytes=path.stat().st_size,sha256=digest(path)))
     manifest=dict(format='mes-portable-click-deployment',format_version=1,version=version,
         created_at_utc=datetime.now(timezone.utc).isoformat(),releaseDirectory='release-'+version,
-        backupDirectory='data-backup-'+version,desktopDirectory='desktop-tools',controlCenterVersion='2.7.0',files=entries)
+        backupDirectory='data-backup-'+version,desktopDirectory='desktop-tools',controlCenterVersion='2.7.2',files=entries)
     (root/'delivery-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
     (root/'SHA256SUMS.txt').write_text(''.join(entry['sha256']+'  '+entry['path']+'\n' for entry in entries),encoding='utf-8')
     return manifest

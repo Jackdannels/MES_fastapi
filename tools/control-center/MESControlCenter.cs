@@ -20,8 +20,8 @@ using MESNetwork;
 [assembly: AssemblyDescription("MES 服务控制与固定工作台终端管理")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Control Center")]
-[assembly: AssemblyVersion("2.7.0.0")]
-[assembly: AssemblyFileVersion("2.7.0.0")]
+[assembly: AssemblyVersion("2.7.2.0")]
+[assembly: AssemblyFileVersion("2.7.2.0")]
 
 namespace MESControlCenter
 {
@@ -427,7 +427,7 @@ namespace MESControlCenter
             controlScript = scriptPath;
             browserSession = new MESBrowserSession(Program.RuntimeRoot, null);
             automaticRefresh = autoStart;
-            Text = "MES 控制中心 v2.7";
+            Text = "MES 控制中心 v2.7.2";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(1160, 700);
             ClientSize = new Size(1420, 820);
@@ -478,7 +478,7 @@ namespace MESControlCenter
             Panel brand = new Panel { Dock = DockStyle.Top, Height = 70 };
             BrandIcon brandIcon = new BrandIcon { Location = new Point(6, 2) };
             Label brandTitle = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), Location = new Point(58, 6), Text = "MES 控制中心" };
-            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font("Segoe UI", 8F), Location = new Point(59, 31), Text = "CONTROL CENTER  v2.7" };
+            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font("Segoe UI", 8F), Location = new Point(59, 31), Text = "CONTROL CENTER  v2.7.2" };
             brand.Controls.AddRange(new Control[] { brandIcon, brandTitle, brandVersion });
             sidebar.Controls.Add(brand);
 
@@ -803,7 +803,7 @@ namespace MESControlCenter
             Panel page = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Visible = false };
             Panel header = new Panel { Dock = DockStyle.Top, Height = 144, BackColor = Theme.Surface };
             string mode = MESDesktopSettings.IsNative ? "Windows 原生服务" : MESDesktopSettings.IsDocker ? "Docker 容器" : "本机开发服务";
-            Label title = new Label { AutoSize = true, Text = "MES 控制中心  v2.7", ForeColor = Theme.Text, Font = new Font(Font, FontStyle.Bold), Location = new Point(18, 16) };
+            Label title = new Label { AutoSize = true, Text = "MES 控制中心  v2.7.2", ForeColor = Theme.Text, Font = new Font(Font, FontStyle.Bold), Location = new Point(18, 16) };
             Label deployment = new Label { AutoSize = true, Text = "部署方式：" + mode + "    ·    Web、API、LIMS 与上位机服务管理", ForeColor = Theme.Muted, Location = new Point(18, 43) };
             Label local = new Label { AutoSize = true, Text = "本机访问", ForeColor = Theme.Muted, Location = new Point(18, 78) };
             aboutLocalUrl = new TextBox { ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, BackColor = Theme.SurfaceStrong, ForeColor = Theme.Accent, Location = new Point(90, 74), Size = new Size(320, 28), Font = new Font("Consolas", 10F), AccessibleName = "MES 本机访问地址" };
@@ -1120,7 +1120,7 @@ namespace MESControlCenter
                     ? "关闭操作将停止本机 MES 原生服务，并保留数据库、报告和模拟器数据。是否继续？" : MESDesktopSettings.IsDocker
                     ? "关闭操作将停止当前 Docker 部署的全部服务，并保留业务数据卷。是否继续？"
                     : "关闭操作将终止后端、前端、LIMS 模拟器、上位机服务及其专属窗口。")
-                    + "同时关闭由控制中心打开的 MES 与 LIMS 浏览器窗口。是否继续？", true, delegate { ExecuteServiceAction(action); }, false);
+                    + "同时关闭由控制中心打开的 MES、LIMS 与上位机模拟器浏览器窗口。是否继续？", true, delegate { ExecuteServiceAction(action); }, false);
             }
             else if (action == "Restart")
             {

@@ -40,7 +40,7 @@ function Get-MesDockerPageUrls {
         $server=$publicUrl.Groups[1].Value.Trim().Trim('"', "'")
     }
     $urls=@($server)
-    if($mode -eq 'demo'){$urls += [string]$config.limsUrl}
+    if($mode -eq 'demo'){$urls += [string]$config.limsUrl; $urls += [string]$config.upperComputerUrl}
     return @($urls | Select-Object -Unique)
 }
 function Open-MesDockerPages {

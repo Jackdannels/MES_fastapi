@@ -78,7 +78,42 @@ function Resolve-CondaPython([string]$CondaBatPath, [string]$EnvironmentName) {
     return $null
 }
 
+function Get-LocalIpv4Interfaces {
+    $interfaces = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($adapter in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+        if ($adapter.OperationalStatus -ne [System.Net.NetworkInformation.OperationalStatus]::Up) { continue }
+        try { $properties = $adapter.GetIPProperties() } catch { return @() }
+        $description = $adapter.Name + ' ' + $adapter.Description
+        $physical = $adapter.NetworkInterfaceType -in @([System.Net.NetworkInformation.NetworkInterfaceType]::Ethernet,
+            [System.Net.NetworkInformation.NetworkInterfaceType]::Wireless80211) -and
+            $description -notmatch 'vEthernet|WSL|Docker|Hyper-V|VirtualBox|VMware|Loopback|Tunnel|TAP|Virtual Ethernet|VPN|WireGuard|Tailscale|ZeroTier'
+        $vpn = $adapter.NetworkInterfaceType -eq [System.Net.NetworkInformation.NetworkInterfaceType]::Tunnel -or
+            $description -match 'VPN|Tunnel|TAP|WireGuard|Tailscale|ZeroTier'
+        $gateway = @($properties.GatewayAddresses | Where-Object {
+            $_.Address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and $_.Address.ToString() -ne '0.0.0.0'
+        }).Count -gt 0
+        foreach ($unicast in $properties.UnicastAddresses) {
+            $address = $unicast.Address
+            if ($address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork -or
+                [System.Net.IPAddress]::IsLoopback($address) -or $address.ToString() -like '169.254.*') { continue }
+            $interfaces.Add([pscustomobject]@{Address=$address.ToString();HasGateway=$gateway;IsPhysical=$physical;HasVpnRoutes=$vpn})
+        }
+    }
+    return $interfaces.ToArray()
+}
+
+function Select-SingleLanIpv4([object[]]$Interfaces) {
+    if (@($Interfaces | Where-Object { $_.HasVpnRoutes }).Count) { return $null }
+    $gateways = @($Interfaces | Where-Object { $_.HasGateway })
+    if ($gateways.Count -eq 1 -and $gateways[0].IsPhysical) { return $gateways[0].Address }
+    return $null
+}
+
 function Resolve-PrimaryLanIpv4 {
+    try {
+        $single = Select-SingleLanIpv4 @(Get-LocalIpv4Interfaces)
+        if ($single) { return $single }
+    } catch { } # Ambiguous/unavailable metadata keeps the existing route lookup.
     try {
         $defaultRoute = Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction Stop |
             Sort-Object RouteMetric, InterfaceMetric |
@@ -150,6 +185,9 @@ if ($condaBat) {
     $limsSimulatorCommand = "echo Unable to find conda.bat. LIMS simulator was not started."
 }
 
+$upperComputerBrowserPrefix = if ($DisableAutoOpenBrowser) { 'set "UPPER_COMPUTER_SIMULATOR_OPEN_BROWSER=false" && ' } else { '' }
+$backendCommand = $upperComputerBrowserPrefix + $backendCommand
+
 $frontendWaitScript = @"
 `$deadline = (Get-Date).AddSeconds($FrontendWaitTimeoutSeconds)
 Write-Host "Waiting for backend: $backendReadyUrl"
@@ -169,12 +207,14 @@ exit 1
 "@
 
 $encodedFrontendWait = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($frontendWaitScript))
-$frontendRunCommand = if ($Production) {
-    "npm run build:production && npm run serve:public -- --host $FrontendHost --port $FrontendPort"
-} else {
-    "npm run dev -- --host $FrontendHost --port $FrontendPort"
+function Get-FrontendRunCommand([bool]$BuildProduction, [string]$BackendWaitCommand, [string]$ListenHost, [int]$ListenPort) {
+    if ($BuildProduction) {
+        return "npm run build:production && $BackendWaitCommand && npm run serve:public -- --host $ListenHost --port $ListenPort"
+    }
+    return "$BackendWaitCommand && npm run dev -- --host $ListenHost --port $ListenPort"
 }
-$frontendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"FRONTEND_PUBLIC_URL=$frontendNetworkUrl`" && powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedFrontendWait && cd /d `"$FrontendRoot`" && $frontendRunCommand"
+$frontendRunCommand = Get-FrontendRunCommand -BuildProduction ([bool]$Production) -BackendWaitCommand "powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedFrontendWait" -ListenHost $FrontendHost -ListenPort $FrontendPort
+$frontendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"FRONTEND_PUBLIC_URL=$frontendNetworkUrl`" && cd /d `"$FrontendRoot`" && $frontendRunCommand"
 $terminalCommandSwitch = if ($Production) { "/c" } else { "/k" }
 $backendTerminalCommand = if ($Production) { "$backendCommand & exit /b 0" } else { $backendCommand }
 $frontendTerminalCommand = if ($Production) { "$frontendCommand & exit /b 0" } else { $frontendCommand }
@@ -256,7 +296,7 @@ if ($Production) {
         $env:LIMS_HEALTH_URL = $limsSimulatorReadyUrl
         $env:LIMS_MES_BASE_URL = "http://127.0.0.1:$BackendPort"
         $env:LIMS_DATA_PUBLIC_BASE_URL = $limsDataPublicBaseUrl
-        $backendConsoleCommand = "chcp 65001 >nul && title MES Backend && set `"PYTHONUTF8=1`" && set `"PYTHONIOENCODING=utf-8`" && `"$condaPython`" scripts\run_local.py --host $BackendHost --port $BackendPort"
+        $backendConsoleCommand = "chcp 65001 >nul && title MES Backend && set `"PYTHONUTF8=1`" && set `"PYTHONIOENCODING=utf-8`" && ${upperComputerBrowserPrefix}`"$condaPython`" scripts\run_local.py --host $BackendHost --port $BackendPort"
         $frontendConsoleCommand = "title MES Frontend && $frontendCommand"
         $backendProcess = Start-Process -FilePath $env:ComSpec -ArgumentList "/d", "/k", $backendConsoleCommand `
             -WorkingDirectory $ProjectRoot -PassThru

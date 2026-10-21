@@ -75,7 +75,7 @@ function Install-DesktopTools {
     [IO.Directory]::CreateDirectory($desktop)|Out-Null
     $shell=New-Object -ComObject WScript.Shell
     foreach($tool in @(
-        @{File='MES控制中心_Docker版.exe';Name='MES控制中心_v2.7_Docker版'},
+        @{File='MES控制中心_Docker版.exe';Name='MES控制中心_v2.7.2_Docker版'},
         @{File='MES工作台设置_Docker版.exe';Name='MES工作台设置_Docker版'},
         @{File='MES终端管理_Docker版.exe';Name='MES终端管理_Docker版'})) {
         $executable=Join-Path $destination $tool.File
