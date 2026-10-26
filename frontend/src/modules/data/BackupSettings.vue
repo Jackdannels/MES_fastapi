@@ -2,7 +2,7 @@
   <section class="card data-settings-card backup-settings" aria-labelledby="backup-settings-title">
     <div class="data-section-heading">
       <div>
-        <h3 id="backup-settings-title">试验数据备份设置</h3>
+        <h3 id="backup-settings-title" v-app-icon="{ name: 'archive' }">试验数据备份设置</h3>
       </div>
       <span class="data-path-status" role="status">{{ loading ? "读取中…" : status.enabled ? "备份已启用" : "备份未启用" }}</span>
     </div>
@@ -24,13 +24,13 @@
           :aria-invalid="probe?.ok === false"
           :disabled="busy"
         />
-        <button class="action-btn secondary" type="button" :disabled="busy" data-testid="backup-browse" @click="browse">
+        <button v-app-icon="{ name: 'folder', placement: 'button' }" class="action-btn secondary" type="button" :disabled="busy" data-testid="backup-browse" @click="browse">
           {{ action === 'browsing' ? '选择中…' : '浏览' }}
         </button>
-        <button class="action-btn secondary" type="button" :disabled="busy || !draft.trim()" data-testid="backup-check" @click="perform('checking')">
+        <button v-app-icon="{ name: 'shield', placement: 'button' }" class="action-btn secondary" type="button" :disabled="busy || !draft.trim()" data-testid="backup-check" @click="perform('checking')">
           {{ action === 'checking' ? '检测中…' : '检测路径与权限' }}
         </button>
-        <button class="action-btn" type="submit" :disabled="busy || !draft.trim()" data-testid="backup-save">
+        <button v-app-icon="{ name: 'save', placement: 'button' }" class="action-btn" type="submit" :disabled="busy || !draft.trim()" data-testid="backup-save">
           {{ action === 'saving' ? '检测并保存中…' : '保存并启用' }}
         </button>
       </div>
@@ -52,18 +52,35 @@
     </div>
 
     <div class="backup-summary">
-      <span v-if="status.counts">已备份 {{ status.counts.synced || 0 }} · 待备份 {{ status.counts.pending || 0 }} · 失败 {{ status.counts.failed || 0 }}</span>
+      <div v-if="status.counts" class="backup-metrics" aria-label="备份统计">
+        <span class="backup-metric">已备份 <strong>{{ status.counts.synced || 0 }}</strong></span>
+        <span class="backup-metric">待备份 <strong>{{ status.counts.pending || 0 }}</strong></span>
+        <span class="backup-metric" :class="{ 'is-failed': Number(status.counts.failed) > 0 }" data-testid="backup-failed-count">
+          失败 <strong>{{ status.counts.failed || 0 }}</strong>
+        </span>
+      </div>
       <span v-if="status.running">后台正在备份</span>
-      <button class="action-btn secondary" type="button" :disabled="busy" data-testid="backup-refresh" @click="load(false)">刷新状态</button>
+      <button v-app-icon="{ name: 'refresh', placement: 'button' }" class="action-btn secondary" type="button" :disabled="busy" data-testid="backup-refresh" @click="load(false)">刷新状态</button>
     </div>
-    <p v-if="status.lastError" class="backup-error" role="alert">后台提示：{{ status.lastError }}</p>
-    <p v-if="status.failures?.length" class="backup-error">最近备份失败：{{ status.failures[0].error }}</p>
+    <section v-if="backupErrorDetails.length" class="backup-error-summary" aria-label="最近备份异常">
+      <strong>{{ backupErrorSummary.title }}</strong>
+      <p>{{ backupErrorSummary.hint }}</p>
+      <details data-testid="backup-error-details">
+        <summary>查看原始错误与完整路径</summary>
+        <div v-for="entry in backupErrorDetails" :key="entry.label">
+          <span>{{ entry.label }}</span>
+          <pre>{{ entry.detail }}</pre>
+        </div>
+      </details>
+    </section>
   </section>
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 import { computed, onMounted, ref, watch } from "vue";
 import { checkBackupPath, readBackupStatus, saveBackupPath, selectBackupDirectory } from "@/lib/testDataBackupApi";
+import { describeBackupError } from "./backupErrorPresentation";
 
 const draft = ref("");
 const status = ref({ enabled: false, destination: "" });
@@ -74,6 +91,13 @@ const message = ref("");
 const probe = ref(null);
 const busy = computed(() => loading.value || Boolean(action.value));
 const dirty = computed(() => draft.value.trim() !== status.value.destination);
+const backupErrorDetails = computed(() => [
+  { label: "后台提示", detail: status.value.lastError },
+  { label: "最近备份失败", detail: status.value.failures?.[0]?.error },
+].filter((entry) => entry.detail));
+const backupErrorSummary = computed(() => describeBackupError(
+  status.value.failures?.[0]?.error || status.value.lastError,
+));
 watch(draft, () => { probe.value = null; error.value = ""; message.value = ""; }, { flush: "sync" });
 
 async function load(initial) {
@@ -151,6 +175,17 @@ onMounted(() => { void load(true); });
 .backup-checks { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
 .backup-summary { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .backup-summary button { margin-left: auto; }
+.backup-metrics { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; font-size: 14px; }
+.backup-metric { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface-alternate); }
+.backup-metric strong { font-size: 20px; font-family: var(--font-code); }
+.backup-metric.is-failed { color: var(--status-danger-text); background: var(--status-danger-bg); border-color: var(--status-danger-border); }
+.backup-error-summary { min-width: 0; padding: 13px 16px; border-left: 3px solid var(--status-danger-border); border-radius: var(--radius-control); background: var(--status-danger-bg); font-size: 14px; }
+.backup-error-summary > strong { color: var(--status-danger-text); }
+.backup-error-summary p { margin: 5px 0; color: var(--muted); }
+.backup-error-summary details { margin-top: 7px; color: var(--muted); font-size: 12px; }
+.backup-error-summary summary { cursor: pointer; }
+.backup-error-summary summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.backup-error-summary pre { margin: 6px 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-code); }
 @media (max-width: 600px) {
   .backup-controls input { flex-basis: 100%; }
   .backup-controls button { flex: 1 1 auto; }

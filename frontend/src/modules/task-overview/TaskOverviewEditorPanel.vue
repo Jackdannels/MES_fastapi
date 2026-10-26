@@ -79,6 +79,7 @@
         v-for="(experiment, index) in normalizedExperiments"
         :key="experiment.experimentCode || `experiment-${index}`"
         class="task-overview-editor-experiment-row"
+        :class="{ 'is-readonly': readonly }"
       >
         <label class="task-overview-editor-field">
           <span>实验编号</span>
@@ -88,7 +89,8 @@
           <span>实验名称</span>
           <input
             :value="experiment.experimentName"
-            :title="`experiment-name-${index}`"
+            :data-testid="`experiment-name-${index}`"
+            :title="experiment.experimentName"
             class="search-input"
             :readonly="readonly"
             type="text"
@@ -100,7 +102,8 @@
           <input
             v-if="readonly"
             :value="experiment.requiredDevice"
-            :title="`experiment-type-${index}`"
+            :data-testid="`experiment-type-${index}`"
+            :title="experiment.requiredDevice"
             class="search-input"
             readonly
             type="text"
@@ -108,7 +111,8 @@
           <select
             v-else
             :value="experiment.requiredDevice"
-            :title="`experiment-type-${index}`"
+            :data-testid="`experiment-type-${index}`"
+            :title="experiment.requiredDevice"
             class="search-input"
             @change="updateExperiment(index, { requiredDevice: $event.target.value })"
           >

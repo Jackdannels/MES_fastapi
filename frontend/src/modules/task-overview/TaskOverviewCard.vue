@@ -16,6 +16,7 @@
         <div class="task-overview-headline">
           <div class="task-overview-title">{{ row.taskCode }}</div>
           <button
+            v-app-icon="{ name: editing ? '' : 'eye', placement: 'button' }"
             class="action-btn secondary task-overview-edit-btn"
             type="button"
             @click.stop="emit('open-edit', row)"
@@ -26,10 +27,6 @@
         </div>
         <div v-if="selected" class="task-overview-card-hint">
           双击进入详情模式，所有信息只读
-        </div>
-        <div class="task-overview-readonly-meta">
-          <span>任务编号</span>
-          <strong>{{ row.taskCode || "-" }}</strong>
         </div>
         <TaskOverviewSummaryTable :format-tray-count="formatTrayCount" :format-tray-summary="formatTraySummary" :row="row" />
       </div>
@@ -52,6 +49,7 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 import TaskOverviewEditorPanel from "./TaskOverviewEditorPanel.vue";
 import TaskOverviewSummaryTable from "./TaskOverviewSummaryTable.vue";
 

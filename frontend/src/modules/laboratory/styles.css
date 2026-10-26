@@ -659,6 +659,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   width: 100%;
   min-height: 132px;
   padding: 14px;
@@ -674,6 +675,10 @@
   text-align: center;
   cursor: pointer;
   transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease, color 180ms ease;
+}
+
+.laboratory-action-item > span {
+  min-width: 0;
 }
 
 .laboratory-action-item:not(:disabled):hover {
@@ -2008,4 +2013,109 @@
     padding-inline: 24px;
     font-size: 18px;
   }
+}
+
+/* Light-only paint overrides keep the existing laboratory geometry and dark palette. */
+:root[data-theme="light"] .laboratory-control-card .laboratory-action-item {
+  color: var(--accent);
+  background: var(--surface-emphasis);
+  border-color: var(--border);
+}
+
+:root[data-theme="light"] .laboratory-control-card .laboratory-action-item:not(:disabled):hover,
+:root[data-theme="light"] .laboratory-control-card .laboratory-action-item:not(:disabled):active {
+  color: var(--accent);
+  background: var(--status-info-bg);
+  border-color: var(--border-strong);
+}
+
+:root[data-theme="light"] .page-header--laboratory .action-btn.laboratory-reset-button:not(:disabled) {
+  color: var(--status-danger-text) !important;
+  background: var(--status-danger-bg) !important;
+  border-color: var(--status-danger-border) !important;
+}
+
+:root[data-theme="light"] .laboratory-attendance-modal-current {
+  background: var(--surface-subtle);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] {
+  --app-feedback-close-bg: var(--surface-subtle);
+  --app-feedback-success-bg: var(--status-success-bg);
+  --app-feedback-success-border: var(--status-success-border);
+  --app-feedback-success-color: var(--status-success-text);
+  --app-feedback-error-bg: var(--status-danger-bg);
+  --app-feedback-error-border: var(--status-danger-border);
+  --app-feedback-error-color: var(--status-danger-text);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .modal-backdrop {
+  background: var(--scrim);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .modal-content {
+  background: var(--surface-dialog);
+  box-shadow: var(--shadow);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-head,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-checklist-item,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-scan input {
+  color: var(--text);
+  background: var(--surface-subtle);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .modal-header strong,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-head h4,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-checklist-item span {
+  color: var(--text);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-checklist-item strong,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-scan .form-field > span,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-scan input::placeholder {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .modal-close,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .pill,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-scan .action-btn,
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .form-actions .action-btn {
+  color: var(--accent);
+  background: var(--status-info-bg);
+  border-color: var(--status-info-border);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .form-actions .action-btn:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-disabled);
+  border-color: var(--border);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .form-actions .laboratory-compare-complete-button:not(:disabled) {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+:root[data-theme="light"] [data-testid="laboratory-compare-modal"] .laboratory-compare-feedback .app-feedback__body > div {
+  color: inherit;
+}
+
+:root[data-theme="light"] .laboratory-tray-chip,
+:root[data-theme="light"] .laboratory-inline-link {
+  color: var(--status-info-text);
+  background: var(--status-info-bg);
+  border-color: var(--status-info-border);
+}
+
+:root[data-theme="light"] .laboratory-reset-modal .modal-header strong {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .laboratory-reset-warning-panel,
+:root[data-theme="light"] .laboratory-reset-warning-panel strong {
+  color: var(--status-danger-text);
+  background: var(--status-danger-bg);
+  border-color: var(--status-danger-border);
 }

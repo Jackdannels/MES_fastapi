@@ -20,23 +20,24 @@
 
   <div class="devices-resource-layout">
   <section class="card section devices-registry-card">
-    <h3>设备列表</h3>
+    <h3 v-app-icon="{ name: 'cpu' }">设备列表</h3>
     <div class="toolbar">
       <input v-model="query" class="search-input" placeholder="筛选设备/状态/位置" />
-      <button class="action-btn secondary" data-testid="open-device-drawer" type="button" @click="openDeviceDrawer()">
+      <button v-app-icon="{ name: 'history', placement: 'button' }" class="action-btn secondary" data-testid="open-device-drawer" type="button" @click="openDeviceDrawer()">
         维保记录
       </button>
     </div>
     <div class="devices-resource-table-scroll" tabindex="0" aria-label="设备列表，可横向滚动">
     <table class="table" id="device-table">
+      <colgroup><col class="devices-sequence-column" /><col span="7" /><col class="devices-action-column" /></colgroup>
       <thead>
         <tr>
           <th class="devices-sequence-column">序号</th>
-          <th data-sort :data-sort-dir="sortKey === 'code' ? sortDirection : ''" @click="toggleSort('code')">设备编号</th>
-          <th data-sort :data-sort-dir="sortKey === 'name' ? sortDirection : ''" @click="toggleSort('name')">设备名称</th>
-          <th data-sort :data-sort-dir="sortKey === 'type' ? sortDirection : ''" @click="toggleSort('type')">试验类型</th>
-          <th data-sort :data-sort-dir="sortKey === 'status' ? sortDirection : ''" @click="toggleSort('status')">状态</th>
-          <th data-sort :data-sort-dir="sortKey === 'location' ? sortDirection : ''" @click="toggleSort('location')">位置</th>
+          <th data-sort :data-sort-dir="sortKey === 'code' ? sortDirection : ''" :aria-sort="sortKey === 'code' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'"><button class="table-sort-button" type="button" @click="toggleSort('code')">设备编号</button></th>
+          <th data-sort :data-sort-dir="sortKey === 'name' ? sortDirection : ''" :aria-sort="sortKey === 'name' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'"><button class="table-sort-button" type="button" @click="toggleSort('name')">设备名称</button></th>
+          <th data-sort :data-sort-dir="sortKey === 'type' ? sortDirection : ''" :aria-sort="sortKey === 'type' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'"><button class="table-sort-button" type="button" @click="toggleSort('type')">试验类型</button></th>
+          <th data-sort :data-sort-dir="sortKey === 'status' ? sortDirection : ''" :aria-sort="sortKey === 'status' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'"><button class="table-sort-button" type="button" @click="toggleSort('status')">状态</button></th>
+          <th data-sort :data-sort-dir="sortKey === 'location' ? sortDirection : ''" :aria-sort="sortKey === 'location' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'"><button class="table-sort-button" type="button" @click="toggleSort('location')">位置</button></th>
           <th>下次维保</th>
           <th>维保计划结束时间</th>
           <th>操作</th>
@@ -83,17 +84,17 @@
   <AppModal :open="editDeviceOpen" title="编辑设备" @close="closeEditDevice">
     <div class="form-grid">
       <div class="form-field">
-        <label>设备编号</label>
-        <input v-model="deviceForm.code" type="text" readonly />
+        <label for="edit-device-code">设备编号 <span class="devices-readonly-label">只读</span></label>
+        <input id="edit-device-code" v-model="deviceForm.code" class="devices-readonly-value" type="text" readonly />
       </div>
       <div class="form-field">
-        <label>设备名称</label>
-        <input v-model="deviceForm.name" type="text" placeholder="设备名称" />
+        <label for="edit-device-name">设备名称</label>
+        <input id="edit-device-name" v-model="deviceForm.name" type="text" placeholder="设备名称" />
       </div>
       <div class="form-field device-status-form-field">
-        <label class="device-status-label">设备当前状态</label>
+        <span id="edit-device-status-label" class="device-status-label">设备当前状态</span>
         <div class="device-status-field" data-testid="device-status-field">
-          <div :class="['device-status-display', editDeviceStatusClass]" data-testid="device-edit-status" role="status">
+          <div :class="['device-status-display', editDeviceStatusClass]" data-testid="device-edit-status" role="status" aria-labelledby="edit-device-status-label">
             {{ deviceForm.status }}
           </div>
           <button
@@ -117,16 +118,16 @@
   <AppModal :open="maintenancePlanOpen" title="维保计划" @close="closeMaintenancePlan">
     <div class="form-grid">
       <div class="form-field">
-        <label>设备编号</label>
-        <input :value="selectedDevice.code" type="text" readonly />
+        <label for="maintenance-device-code">设备编号 <span class="devices-readonly-label">只读</span></label>
+        <input id="maintenance-device-code" :value="selectedDevice.code" class="devices-readonly-value" type="text" readonly />
       </div>
       <div class="form-field">
-        <label>设备名称</label>
-        <input :value="selectedDevice.name" type="text" readonly />
+        <label for="maintenance-device-name">设备名称 <span class="devices-readonly-label">只读</span></label>
+        <input id="maintenance-device-name" :value="selectedDevice.name" class="devices-readonly-value" type="text" readonly />
       </div>
       <div class="form-field">
-        <label>维保类型</label>
-        <select v-model="maintenancePlanForm.type" name="maintenance_type">
+        <label for="maintenance-type">维保类型</label>
+        <select id="maintenance-type" v-model="maintenancePlanForm.type" name="maintenance_type">
           <option>计划维修</option>
           <option>维修</option>
           <option>计划保养</option>
@@ -134,8 +135,10 @@
         </select>
       </div>
       <div class="form-field">
-        <label>开始时间</label>
+        <label id="maintenance-start-label" for="maintenance-start">开始时间</label>
         <PickerOnlyInput
+          id="maintenance-start"
+          aria-labelledby="maintenance-start-label"
           v-model="maintenancePlanForm.startAt"
           :disabled="!maintenancePlanIsPlanned"
           :min="maintenancePlanStartMin || undefined"
@@ -145,8 +148,10 @@
         />
       </div>
       <div class="form-field">
-        <label>结束时间</label>
+        <label id="maintenance-end-label" for="maintenance-end">结束时间</label>
         <PickerOnlyInput
+          id="maintenance-end"
+          aria-labelledby="maintenance-end-label"
           v-model="maintenancePlanForm.endAt"
           :disabled="!maintenancePlanIsPlanned"
           :min="maintenancePlanEndMin || undefined"
@@ -156,8 +161,8 @@
         />
       </div>
       <div class="form-field" style="grid-column: 1 / -1;">
-        <label>备注</label>
-        <textarea v-model="maintenancePlanForm.note" placeholder="维保说明"></textarea>
+        <label for="maintenance-note">备注</label>
+        <textarea id="maintenance-note" v-model="maintenancePlanForm.note" placeholder="维保说明"></textarea>
       </div>
       <div v-if="maintenancePlanWarning" class="form-alert" data-testid="maintenance-plan-warning">
         {{ maintenancePlanWarning }}
@@ -257,6 +262,7 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "DevicesPage",
 });

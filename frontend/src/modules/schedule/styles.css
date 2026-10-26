@@ -497,9 +497,10 @@
   border-color: rgba(244, 63, 94, 0.5);
 }
 
-/* 甘特图外层负责横向滚动和圆角容器裁切。 */
+/* 长表在容器内滚动，始终保留日期、时段与实验室参照。 */
 .gantt-wrap {
-  overflow-x: auto;
+  overflow: auto;
+  max-height: min(70vh, 760px);
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   background: var(--bg-card-raised);
@@ -507,10 +508,16 @@
   box-shadow: var(--shadow);
 }
 
+.gantt-wrap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .gantt {
   width: 100%;
   min-width: 680px;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 12px;
 }
 
@@ -525,11 +532,32 @@
 }
 
 .gantt thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 12px;
+  line-height: 24px;
   background: var(--bg-panel-strong);
   color: var(--text);
   font-weight: 900;
   font-size: 16px;
   font-family: "Microsoft YaHei", "微软雅黑", "Segoe UI", "Tahoma", sans-serif;
+}
+
+.gantt thead tr:first-child th {
+  height: 52px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.gantt thead tr:nth-child(2) th {
+  top: 52px;
+  height: 50px;
+  box-sizing: border-box;
+}
+
+.gantt thead th.gantt-sticky {
+  z-index: 4;
 }
 
 .gantt-day-heading {
@@ -565,18 +593,21 @@
   outline: none;
 }
 
-.gantt-window-nav:disabled {
-  border-color: rgba(148, 163, 184, 0.24);
-  background: rgba(241, 245, 249, 0.62);
-  color: rgba(100, 116, 139, 0.42);
-  cursor: not-allowed;
-  box-shadow: none;
+:root:not([data-theme="light"]) .gantt-window-nav:hover:not(:disabled),
+:root:not([data-theme="light"]) .gantt-window-nav:focus-visible {
+  border-color: var(--accent);
+  background: rgba(var(--industrial-accent-rgb), 0.2);
+  color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--industrial-accent-rgb), 0.12);
 }
 
+.gantt-window-nav:disabled,
 .gantt-window-nav:disabled:hover {
-  border-color: rgba(148, 163, 184, 0.24);
-  background: rgba(241, 245, 249, 0.62);
-  color: rgba(100, 116, 139, 0.42);
+  border-color: var(--border);
+  background: var(--surface-disabled);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .gantt-window-nav--home {
@@ -999,6 +1030,10 @@
 
 .gantt tbody tr:hover td {
   background: rgba(var(--industrial-accent-rgb), 0.08);
+}
+
+.gantt tbody tr:hover td.gantt-sticky {
+  background: var(--bg-panel-strong);
 }
 
 .gantt tbody tr:hover td .gantt-slot {

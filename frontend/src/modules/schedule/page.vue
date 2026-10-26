@@ -12,7 +12,7 @@
   </Teleport>
 
   <section class="card section">
-    <h3>{{ uiText.manualTitle }}</h3>
+    <h3 v-app-icon="{ name: 'calendar' }">{{ uiText.manualTitle }}</h3>
     <form @submit.prevent="submitSchedule">
       <div class="form-grid">
         <div class="form-field">
@@ -169,7 +169,7 @@
   </section>
 
   <section class="card section">
-    <h3>{{ uiText.ganttTitle }}</h3>
+    <h3 v-app-icon="{ name: 'calendar' }">{{ uiText.ganttTitle }}</h3>
     <div v-if="taskScheduledOverlays.length" class="schedule-task-overlays" data-testid="schedule-task-overlays">
       <div class="schedule-task-overlays__title">{{ uiText.currentTaskScheduledTitle }}</div>
       <div class="schedule-task-overlays__list">
@@ -191,7 +191,7 @@
         </article>
       </div>
     </div>
-    <div class="gantt-wrap">
+    <div class="gantt-wrap" tabindex="0" role="region" aria-label="设备排程甘特图，可滚动查看日期和实验室">
       <table class="gantt" id="gantt-table">
         <thead>
           <tr>
@@ -374,7 +374,7 @@
   </section>
 
   <section class="card section">
-    <h3>{{ uiText.scheduleList }}</h3>
+    <h3 v-app-icon="{ name: 'clipboard' }">{{ uiText.scheduleList }}</h3>
     <div class="toolbar">
       <input v-model="scheduleSearch" class="search-input" :placeholder="uiText.scheduleSearchPlaceholder" />
       <AppPagination
@@ -455,11 +455,11 @@
         <input :value="selectedTaskDetail.name" type="text" readonly />
       </div>
       <div class="form-field">
-        <label>{{ uiText.experimentCode }}</label>
+        <label>实验编号</label>
         <input :value="selectedTaskDetail.experimentCode" type="text" readonly />
       </div>
       <div class="form-field">
-        <label>{{ uiText.experimentLabel }}</label>
+        <label>当前实验类型</label>
         <input :value="selectedTaskDetail.experimentLabel" type="text" readonly />
       </div>
       <div class="form-field">
@@ -467,7 +467,7 @@
         <input :value="selectedTaskDetail.axisLabel" type="text" readonly />
       </div>
       <div class="form-field">
-        <label>{{ uiText.testType }}</label>
+        <label>任务试验内容</label>
         <input :value="selectedTaskDetail.testType" type="text" readonly />
       </div>
       <div class="form-field">
@@ -741,6 +741,7 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "SchedulePage",
 });
@@ -798,7 +799,7 @@ const uiText = {
   morningSlot: "上午（08:00-12:00）",
   nextSchedule: "下一次排程提示",
   nextScheduleHint: "基于设备空闲与样品到样",
-  noAcceptedTask: "暂无已接收任务",
+  noAcceptedTask: "暂无可排程任务",
   noDevices: "暂无设备",
   nextGanttWindow: "后三天",
   nextLabSchedule: "跳转到该实验室下一个实验",

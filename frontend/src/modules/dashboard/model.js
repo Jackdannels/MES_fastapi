@@ -160,6 +160,9 @@ const formatElapsedDuration = (elapsedMs) => {
 // 总览卡片与表格共用一套状态到样式类的映射。
 const statusClass = (value) => {
   const normalized = normalizeText(value);
+  if (normalized === STATUS_WAITING) {
+    return "status waiting";
+  }
   if (isRunningStatus(normalized)) {
     return "status running";
   }

@@ -50,6 +50,14 @@ const mountCard = (props = {}) =>
   });
 
 describe("TaskOverviewCard", () => {
+  test("shows the task code once in the collapsed card while keeping detail access", async () => {
+    const wrapper = mountCard();
+
+    expect(wrapper.text().split(baseRow.taskCode)).toHaveLength(2);
+    await wrapper.get(".task-overview-edit-btn").trigger("click");
+    expect(wrapper.emitted("open-edit")).toEqual([[baseRow]]);
+  });
+
   test("keeps single-click selection and uses double-click readonly detail guidance", async () => {
     const wrapper = mountCard({ selected: true });
 

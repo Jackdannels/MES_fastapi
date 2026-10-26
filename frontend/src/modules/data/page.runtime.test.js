@@ -24,14 +24,15 @@ const tasksTotal = ref(0);
 const toggleTaskExpansionMock = vi.fn((taskCode) => {
   expandedTaskCode.value = expandedTaskCode.value === taskCode ? "" : taskCode;
 });
-const handleTaskClickMock = vi.fn((taskCode) => {
-  if (expandedTaskCode.value === taskCode) {
-    expandedTaskCode.value = "";
+const handleTaskClickMock = vi.fn((taskCode, event) => {
+  if (!(event?.detail > 1)) {
+    toggleTaskExpansionMock(taskCode);
   }
 });
 
 vi.mock("./useDataPage", () => ({
   useDataPage: () => ({
+    activePath: ref("C:\\Users\\tester\\Desktop\\MES试验数据"),
     browseDirectory: browseDirectoryMock,
     copyExperimentUrl: copyExperimentUrlMock,
     copyTaskUrl: copyTaskUrlMock,
@@ -44,7 +45,6 @@ vi.mock("./useDataPage", () => ({
     failedExports,
     goToTaskPage: vi.fn(),
     handleTaskClick: handleTaskClickMock,
-    handleTaskDoubleClick: toggleTaskExpansionMock,
     isOpeningExperiment: () => false,
     isOpeningTask: () => false,
     isRetrying: () => false,
@@ -55,6 +55,7 @@ vi.mock("./useDataPage", () => ({
     openTaskFolder: openTaskFolderMock,
     pathStatusClass: computed(() => ({ "is-writable": true })),
     pathStatusLabel: ref("目录可写"),
+    pathIsDirty: computed(() => savePath.value.trim() !== "C:\\Users\\tester\\Desktop\\MES试验数据"),
     retryAllFailed: retryAllFailedMock,
     retryFailed: retryFailedMock,
     retryingAll: ref(false),
@@ -101,6 +102,8 @@ describe("DataPage runtime", () => {
     expect(wrapper.get('[data-testid="data-task-query"]').classes()).toContain("search-input");
     expect(wrapper.get('[data-testid="data-save-path"]').element.value).toBe("C:\\Users\\tester\\Desktop\\MES试验数据");
     expect(wrapper.get('[data-testid="data-path-status"]').text()).toContain("目录可写");
+    expect(wrapper.get('[data-testid="data-save-path"]').attributes("aria-describedby")).toBe("data-path-context");
+    expect(wrapper.get('[data-testid="data-path-context"]').text()).toContain("当前生效路径");
     expect(wrapper.text()).not.toContain("采集监控");
     expect(wrapper.text()).not.toContain("数据校验与报告");
 
@@ -111,7 +114,15 @@ describe("DataPage runtime", () => {
     expect(browseDirectoryMock).toHaveBeenCalledTimes(1);
   });
 
-  test("keeps task actions visible while experiment details require a double-click", async () => {
+  test("explains that editing a save address does not change the active directory", async () => {
+    const wrapper = mount(DataPage);
+    await wrapper.get('[data-testid="data-save-path"]').setValue("F:\\Draft");
+    expect(wrapper.get('[data-testid="data-path-context"]').text()).toContain("尚未保存");
+    expect(wrapper.get('[data-testid="data-path-context"]').text()).toContain("C:\\Users\\tester\\Desktop\\MES试验数据");
+    expect(saveSettingsMock).not.toHaveBeenCalled();
+  });
+
+  test("shows an explicit detail toggle with single-click, double-click-safe, and keyboard activation", async () => {
     taskOutputs.value = [{
       taskCode: "TASK-001",
       totalExperimentCount: 4,
@@ -137,7 +148,15 @@ describe("DataPage runtime", () => {
     const wrapper = mount(DataPage);
 
     const toggle = wrapper.get('[data-testid="data-task-toggle-TASK-001"]');
+    const activate = async (detail, type = "click") => {
+      toggle.element.dispatchEvent(new MouseEvent(type, { bubbles: true, detail }));
+      await wrapper.vm.$nextTick();
+    };
+    expect(toggle.element.tagName).toBe("BUTTON");
     expect(toggle.attributes("aria-expanded")).toBe("false");
+    expect(toggle.attributes("aria-label")).toContain("查看试验数据详情");
+    expect(toggle.get(".data-task-toggle__chevron").text()).toBe("▸");
+    expect(toggle.get(".data-task-toggle__label").text()).toBe("查看详情");
     expect(wrapper.text()).not.toContain("试验完成 2/4");
     expect(wrapper.text()).not.toContain("振动试验");
     expect(wrapper.find('[data-testid="data-open-TASK-001-VIBRATION"]').exists()).toBe(false);
@@ -149,23 +168,33 @@ describe("DataPage runtime", () => {
     expect(openTaskFolderMock).toHaveBeenCalledWith("TASK-001");
     expect(copyTaskUrlMock).toHaveBeenCalledWith("TASK-001");
 
-    await toggle.trigger("click");
-    expect(wrapper.text()).not.toContain("试验完成 2/4");
-
-    await toggle.trigger("dblclick");
+    await activate(1);
     expect(toggleTaskExpansionMock).toHaveBeenCalledWith("TASK-001");
     expect(toggle.attributes("aria-expanded")).toBe("true");
+    expect(toggle.get(".data-task-toggle__chevron").text()).toBe("▾");
+    expect(toggle.get(".data-task-toggle__label").text()).toBe("收起详情");
     expect(wrapper.text()).toContain("试验完成 2/4");
     expect(wrapper.text()).toContain("50%");
     expect(wrapper.text()).toContain("8 成功");
     expect(wrapper.text()).toContain("振动试验");
 
-    await toggle.trigger("click");
-    expect(handleTaskClickMock).toHaveBeenCalledWith("TASK-001");
+    // Complete the native double-click sequence: its second click and dblclick
+    // must not reverse the already-applied first activation.
+    await activate(2);
+    await activate(2, "dblclick");
+    expect(toggle.attributes("aria-expanded")).toBe("true");
+
+    await activate(1);
+    expect(handleTaskClickMock).toHaveBeenLastCalledWith("TASK-001", expect.objectContaining({ detail: 1 }));
     expect(toggle.attributes("aria-expanded")).toBe("false");
     expect(wrapper.text()).not.toContain("振动试验");
 
-    await toggle.trigger("dblclick");
+    await toggle.trigger("keydown", { key: "Enter" });
+    expect(toggle.attributes("aria-expanded")).toBe("true");
+    await toggle.trigger("keydown", { key: " " });
+    expect(toggle.attributes("aria-expanded")).toBe("false");
+    await activate(0);
+    expect(toggle.attributes("aria-expanded")).toBe("true");
 
     await wrapper.get('[data-testid="data-open-TASK-001-VIBRATION"]').trigger("click");
     await wrapper.get('[data-testid="data-url-TASK-001-VIBRATION"]').trigger("click");

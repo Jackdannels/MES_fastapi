@@ -84,6 +84,9 @@ function useDashboardPage() {
   const rawStreams = ref([]);
   const rawTasks = ref([]);
   const loadError = ref("");
+  const hasLoaded = ref(false);
+  const isLoading = ref(true);
+  let pendingLoads = 0;
   let dashboardTimer = null;
   let modelReferenceNow = alignToSecond(now.value);
   const deviceTimeWindowRevision = ref(0);
@@ -163,6 +166,8 @@ function useDashboardPage() {
   };
 
   const loadDashboard = async (changedKeys) => {
+    pendingLoads += 1;
+    isLoading.value = true;
     try {
       const refreshKeys = normalizeDashboardRefreshKeys(changedKeys);
       const refreshKeySet = new Set(refreshKeys);
@@ -186,6 +191,7 @@ function useDashboardPage() {
       applyRequestedSnapshotArray(STORAGE_KEYS.samples, rawSamples);
       applyRequestedSnapshotArray(STORAGE_KEYS.streams, rawStreams);
       applyRequestedSnapshotArray(STORAGE_KEYS.tasks, rawTasks);
+      if (refreshKeys.length === DASHBOARD_SNAPSHOT_KEYS.length) hasLoaded.value = true;
       loadError.value = "";
       // 数据量变化后若当前页已越界，则自动回退到最后一页。
       if (currentPage.value > pageCount.value) {
@@ -194,6 +200,9 @@ function useDashboardPage() {
     } catch (error) {
       const detail = error instanceof Error ? String(error.message || "").trim() : "";
       loadError.value = detail ? `总览数据加载失败，请稍后重试，${detail}` : "总览数据加载失败，请稍后重试";
+    } finally {
+      pendingLoads -= 1;
+      isLoading.value = pendingLoads > 0;
     }
   };
 
@@ -234,6 +243,8 @@ function useDashboardPage() {
   return {
     currentPage,
     deviceItems: computed(() => viewModel.value.deviceItems),
+    hasLoaded,
+    isInitialLoading: computed(() => !hasLoaded.value && isLoading.value),
     loadError,
     pageCount,
     pagedTaskRows,

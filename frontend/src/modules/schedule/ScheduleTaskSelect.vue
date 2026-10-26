@@ -17,7 +17,7 @@
         :aria-expanded="open"
         :aria-controls="`${id}-listbox`"
         :aria-activedescendant="open ? `${id}-option-${activeIndex}` : undefined"
-        :aria-describedby="hint ? `${id}-hint` : undefined"
+        :aria-describedby="hint ? `${id}-hint` : (!options.length ? `${id}-empty-hint` : undefined)"
         :disabled="!options.length"
         @click="toggle"
         @keydown="onKeydown"
@@ -52,6 +52,7 @@
         </ul>
       </div>
     </div>
+    <p v-if="!options.length" :id="`${id}-empty-hint`" class="schedule-task-select__empty-hint">请确认任务已受理、样品与托盘已分配，且仍有待排实验。</p>
     <p v-if="hint" :id="`${id}-hint`" class="schedule-task-select__hint" role="status">{{ hint }}</p>
   </div>
 </template>
@@ -64,7 +65,7 @@ const props = defineProps({
   modelValue: { type: String, default: "" },
   options: { type: Array, default: () => [] },
   placeholder: { type: String, default: "请选择已接收任务" },
-  emptyLabel: { type: String, default: "暂无已接收任务" },
+  emptyLabel: { type: String, default: "暂无可排程任务" },
 });
 const emit = defineEmits(["update:modelValue"]);
 const root = ref(null);
@@ -253,5 +254,6 @@ onBeforeUnmount(() => document.removeEventListener("pointerdown", onOutsidePoint
 }
 .schedule-task-select__check { width: 12px; flex: none; color: var(--accent); }
 .schedule-task-select__hint { margin: 7px 0 0; color: var(--priority-medium-text); font-size: 12px; line-height: 1.6; }
+.schedule-task-select__empty-hint { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 @media (max-width: 640px) { .schedule-task-select__trigger { min-height: 44px; } }
 </style>

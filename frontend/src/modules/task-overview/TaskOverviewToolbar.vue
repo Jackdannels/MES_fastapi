@@ -55,7 +55,7 @@
       </div>
     </div>
 
-    <div class="task-overview-actions">
+    <div class="task-overview-actions" :class="{ 'has-custom-range': timeFilter === 'custom' }">
       <input
         :value="keywordInput"
         class="search-input task-overview-search-input"
@@ -109,7 +109,7 @@
         <option value="">全部任务</option>
         <option v-for="taskCode in trayTaskOptions" :key="taskCode" :value="taskCode">{{ taskCode }}</option>
       </select>
-      <button class="action-btn secondary" type="button" @click="emit('refresh')">刷新数据</button>
+      <button v-app-icon="{ name: 'refresh', placement: 'button' }" class="action-btn secondary" type="button" @click="emit('refresh')">刷新数据</button>
       <div v-if="viewMode === 'task'" class="task-overview-toolbar-pagination">
         <AppPagination :current-page="currentTaskPage" :page-count="taskPageCount" @change="emit('change-task-page', $event)" />
       </div>
@@ -118,6 +118,7 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 import { computed, ref, watch } from "vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";

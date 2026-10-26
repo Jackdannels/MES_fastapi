@@ -9,19 +9,19 @@
   </section>
 
   <section class="card section system-roles-card">
-    <h3>人员信息维护</h3>
+    <h3 v-app-icon="{ name: 'users' }">人员信息维护</h3>
     <div class="toolbar">
-      <input v-model="query" class="search-input" placeholder="筛选员工/账号/角色" />
-      <button class="action-btn" data-testid="open-employee-modal" type="button" @click="openEmployeeModal">新增员工账号</button>
+      <input ref="employeeSearchInput" v-model="query" class="search-input" placeholder="筛选员工/账号/角色" />
+      <button v-app-icon="{ name: 'users', placement: 'button' }" class="action-btn" data-testid="open-employee-modal" type="button" @click="openEmployeeModal">新增员工账号</button>
     </div>
-    <div class="system-paginated-table-stage">
+    <div class="system-paginated-table-stage" :class="{ 'system-paginated-table-stage--empty': !visibleEmployeeRows.length }">
       <table class="table" id="employee-table">
         <thead>
           <tr>
             <th>序号</th>
-            <th data-sort :data-sort-dir="sortKey === 'employeeName' ? sortDirection : ''" @click="toggleSort('employeeName')">员工</th>
-            <th data-sort :data-sort-dir="sortKey === 'username' ? sortDirection : ''" @click="toggleSort('username')">账号</th>
-            <th data-sort :data-sort-dir="sortKey === 'roleName' ? sortDirection : ''" @click="toggleSort('roleName')">角色</th>
+            <th data-sort :data-sort-dir="sortKey === 'employeeName' ? sortDirection : ''" :aria-sort="sortKey === 'employeeName' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'"><button class="table-sort-button" type="button" @click="toggleSort('employeeName')">员工</button></th>
+            <th data-sort :data-sort-dir="sortKey === 'username' ? sortDirection : ''" :aria-sort="sortKey === 'username' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'"><button class="table-sort-button" type="button" @click="toggleSort('username')">账号</button></th>
+            <th data-sort :data-sort-dir="sortKey === 'roleName' ? sortDirection : ''" :aria-sort="sortKey === 'roleName' ? (sortDirection === 'asc' ? 'ascending' : 'descending') : 'none'"><button class="table-sort-button" type="button" @click="toggleSort('roleName')">角色</button></th>
             <th>状态</th>
             <th>操作</th>
           </tr>
@@ -47,6 +47,11 @@
         </tbody>
       </table>
     </div>
+    <div v-if="!visibleEmployeeRows.length" class="system-empty-state" data-testid="employee-empty-state" role="status">
+      <strong>{{ query.trim() ? "没有匹配的员工" : "暂无员工账号" }}</strong>
+      <p>{{ query.trim() ? `未找到与“${query.trim()}”匹配的姓名、账号或角色，请更换关键词。` : "新增员工账号后，可在这里查看和维护人员信息。" }}</p>
+      <button v-if="query.trim()" class="action-btn secondary" data-testid="employee-clear-query" type="button" @click="clearEmployeeQuery">清除筛选</button>
+    </div>
     <div class="system-pagination-footer">
       <span class="system-pagination-range" data-testid="employee-pagination-range">
         显示第 <strong>{{ employeePageRange.start }}–{{ employeePageRange.end }}</strong> 条，共 <strong>{{ employeePageRange.total }}</strong> 条
@@ -63,7 +68,7 @@
   <section class="card section system-worktime-card">
     <div class="system-worktime-heading">
       <h3>人员工作时间一览表</h3>
-      <button class="action-btn" data-testid="open-employee-operation-logs" type="button" @click="openEmployeeOperationLogs">员工工作日志</button>
+      <button v-app-icon="{ name: 'history', placement: 'button' }" class="action-btn" data-testid="open-employee-operation-logs" type="button" @click="openEmployeeOperationLogs">员工工作日志</button>
     </div>
     <div class="system-paginated-table-stage">
       <table class="table" id="employee-worktime-table">
@@ -146,7 +151,9 @@
   </AppModal>
 
   <AppModal :open="employeeDrawerOpen" title="员工账号详情" content-class="system-employee-edit-modal" @close="closeEmployeeDrawer">
-    <fieldset class="form-grid system-employee-fields" :disabled="adminActionSubmitting">
+    <fieldset class="system-employee-fields system-employee-sections" :disabled="adminActionSubmitting">
+      <fieldset class="form-grid system-employee-section">
+        <legend>员工资料</legend>
       <div class="form-field">
         <label for="edit-employee-name">员工姓名</label>
         <input id="edit-employee-name" v-model="editEmployeeFields.employeeName" data-testid="edit-employee-name" type="text" placeholder="张三" />
@@ -161,6 +168,10 @@
           <option v-for="role in employeeRoleOptions" :key="role" :value="role">{{ role }}</option>
         </select>
       </div>
+      </fieldset>
+      <fieldset class="form-grid system-employee-section">
+        <legend>管理员身份验证</legend>
+        <p class="helper system-employee-section-note">保存修改、重置密码和删除账号均需管理员验证。</p>
       <div class="form-field">
         <label for="employee-admin-username">管理员账号</label>
         <input id="employee-admin-username" v-model="adminActionFields.adminUsername" data-testid="admin-username-input" type="text" placeholder="admin" />
@@ -169,10 +180,15 @@
         <label for="employee-admin-password">管理员密码</label>
         <input id="employee-admin-password" v-model="adminActionFields.adminPassword" data-testid="admin-password-input" type="password" placeholder="请输入管理员密码" autocomplete="off" />
       </div>
+      </fieldset>
+      <fieldset class="form-grid system-employee-section">
+        <legend>密码重置</legend>
       <div class="form-field">
-        <label for="employee-new-password">新密码</label>
-        <input id="employee-new-password" v-model="adminActionFields.newPassword" data-testid="reset-password-input" type="password" placeholder="用于重置员工密码" autocomplete="new-password" />
+        <label for="employee-new-password">新密码（仅重置时填写）</label>
+        <input id="employee-new-password" v-model="adminActionFields.newPassword" data-testid="reset-password-input" type="password" placeholder="用于重置员工密码" autocomplete="new-password" aria-describedby="employee-password-reset-note" />
       </div>
+        <p id="employee-password-reset-note" class="helper system-employee-section-note">填写后点击“重置密码”；“保存修改”只保存上方员工资料。</p>
+      </fieldset>
     </fieldset>
     <AppFeedback
       v-if="adminActionError"
@@ -263,29 +279,29 @@
   </AppModal>
 
   <AppModal :open="employeeOperationLogsOpen" content-class="system-operation-log-modal" data-testid="employee-operation-logs-modal" title="员工工作日志" @close="closeEmployeeOperationLogs">
-    <div class="form-grid">
-      <div class="form-field"><label>管理员账号</label><input v-model="operationLogFilters.adminUsername" data-testid="operation-log-admin-username" type="text" placeholder="admin" /></div>
-      <div class="form-field"><label>管理员密码</label><input v-model="operationLogFilters.adminPassword" data-testid="operation-log-admin-password" type="password" placeholder="请输入管理员密码" /></div>
-      <div class="form-field"><label>日期</label><PickerOnlyInput v-model="operationLogFilters.date" display-slash-date data-testid="operation-log-date" type="date" /></div>
+    <fieldset class="form-grid system-employee-fields" :disabled="operationLogSubmitting">
+      <div class="form-field"><label for="operation-log-admin-username">管理员账号</label><input id="operation-log-admin-username" v-model="operationLogFilters.adminUsername" data-testid="operation-log-admin-username" type="text" placeholder="admin" /></div>
+      <div class="form-field"><label for="operation-log-admin-password">管理员密码</label><input id="operation-log-admin-password" v-model="operationLogFilters.adminPassword" data-testid="operation-log-admin-password" type="password" placeholder="请输入管理员密码" autocomplete="off" /></div>
+      <div class="form-field"><label id="operation-log-date-label" for="operation-log-date">日期</label><PickerOnlyInput id="operation-log-date" v-model="operationLogFilters.date" aria-labelledby="operation-log-date-label" display-slash-date data-testid="operation-log-date" type="date" /></div>
       <div class="form-field">
-        <label>员工</label>
-        <button class="system-multi-select__trigger" data-testid="operation-log-employee" type="button" aria-haspopup="dialog" @click="openOperationLogScopeSelector('employee')">
+        <label for="operation-log-employee">员工</label>
+        <button id="operation-log-employee" class="system-multi-select__trigger" data-testid="operation-log-employee" type="button" aria-haspopup="dialog" @click="openOperationLogScopeSelector('employee')">
           {{ operationLogEmployeeLabel }}
         </button>
       </div>
       <div class="form-field">
-        <label>试验间</label>
-        <button class="system-multi-select__trigger" data-testid="operation-log-lab" type="button" aria-haspopup="dialog" @click="openOperationLogScopeSelector('lab')">
+        <label for="operation-log-lab">试验间</label>
+        <button id="operation-log-lab" class="system-multi-select__trigger" data-testid="operation-log-lab" type="button" aria-haspopup="dialog" @click="openOperationLogScopeSelector('lab')">
           {{ operationLogLabLabel }}
         </button>
       </div>
-    </div>
+    </fieldset>
     <AppFeedback v-if="operationLogError" :message="operationLogError" tone="error" @close="operationLogError = ''" />
     <div class="system-operation-log-table-wrap">
       <table class="table" data-testid="employee-operation-logs-table">
         <thead><tr><th>员工</th><th>账号</th><th>试验间</th><th>操作</th><th>任务/试验/托盘</th><th>时间</th><th>来源</th></tr></thead>
         <tbody>
-          <tr v-if="!operationLogRows.length"><td colspan="7" class="muted">请输入管理员凭据后查询</td></tr>
+          <tr v-if="!operationLogRows.length"><td colspan="7" class="muted" data-testid="operation-log-empty" role="status">{{ operationLogEmptyMessage }}</td></tr>
           <tr v-for="log in operationLogRows" :key="log.id">
             <td>{{ log.employeeName || "/" }}</td><td>{{ log.username || "/" }}</td><td>{{ log.labName || "/" }}</td><td>{{ log.action || "/" }}</td>
             <td>{{ [log.taskCode, log.experimentCode, log.trayNo].filter(Boolean).join(" / ") || "/" }}</td><td>{{ formatLocalDateTime(log.operatedAt) || "/" }}</td><td>{{ log.source || "/" }}</td>
@@ -294,7 +310,7 @@
       </table>
     </div>
     <template #footer>
-      <button class="action-btn" data-testid="query-employee-operation-logs" type="button" :disabled="operationLogSubmitting" @click="loadEmployeeOperationLogs">查询</button>
+      <button class="action-btn" data-testid="query-employee-operation-logs" type="button" :disabled="operationLogSubmitting" :aria-busy="operationLogSubmitting" @click="loadEmployeeOperationLogs">{{ operationLogSubmitting ? "查询中…" : "查询" }}</button>
     </template>
   </AppModal>
 
@@ -312,6 +328,9 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
+import { ref } from "vue";
+
 defineOptions({
   name: "SystemPage",
 });
@@ -369,6 +388,7 @@ const {
   qrSubmitting,
   qrSvg,
   operationLogError,
+  operationLogEmptyMessage,
   operationLogEmployeeLabel,
   operationLogEmployeeOptions,
   operationLogFilters,
@@ -390,4 +410,10 @@ const {
   workTimePageCount,
   workTimePageRange,
 } = useSystemPage();
+
+const employeeSearchInput = ref(null);
+const clearEmployeeQuery = () => {
+  query.value = "";
+  employeeSearchInput.value?.focus();
+};
 </script>

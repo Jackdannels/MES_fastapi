@@ -107,6 +107,8 @@ describe("TaskOverviewSummaryTable", () => {
     expect(statusChip.classes()).toContain("is-unscheduled");
     expect(statusChip.classes()).not.toContain("is-overdue");
     expect(statusChip.classes()).not.toContain("is-overdue-highlight");
+    expect(wrapper.get(".task-overview-status-chip").classes()).toContain("is-unscheduled");
+    expect(wrapper.get(".task-overview-status-chip").text()).toBe(statusChip.text());
   });
 
   test("renders the task status label when the row carries a partial-completion suffix", () => {
@@ -133,6 +135,7 @@ describe("TaskOverviewSummaryTable", () => {
     });
 
     expect(wrapper.text()).toContain("任务进行中（已完成1个实验）");
+    expect(wrapper.get(".task-overview-status-chip").classes()).not.toContain("is-unscheduled");
   });
 
   test("renders experiment tray progress labels in the experiment status column", () => {

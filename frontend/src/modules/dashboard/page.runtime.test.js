@@ -11,9 +11,37 @@ vi.mock("./useDashboardPage", () => ({
 }));
 
 describe("DashboardPage runtime", () => {
+  test("does not display zero metrics or empty-state claims before the first successful read", async () => {
+    const hasLoaded = ref(false), isInitialLoading = ref(true);
+    useDashboardPageMock.mockReturnValue({
+      currentPage: ref(1), hasLoaded, isInitialLoading,
+      deviceItems: ref([]), pageCount: ref(1), pagedTaskRows: ref([]),
+      setCurrentPage: vi.fn(), summaryCards: ref({ intakeCount: 0, alertCount: 0, alertNote: "无预警" }),
+      unscheduledExperimentItems: ref([]),
+    });
+    const wrapper = mount(DashboardPage);
+    try {
+      expect(wrapper.get("#dashboard-intake-count").text()).toBe("加载中…");
+      expect(wrapper.get("#dashboard-alert-count").text()).toBe("加载中…");
+      expect(wrapper.find("#dashboard-task-pagination").exists()).toBe(false);
+      expect(wrapper.find("#dashboard-unscheduled-empty").exists()).toBe(false);
+      expect(wrapper.text()).not.toContain("无预警");
+      isInitialLoading.value = false;
+      await wrapper.vm.$nextTick();
+      expect(wrapper.get("#dashboard-intake-count").text()).toBe("—");
+      expect(wrapper.get("#dashboard-task-body").text()).toContain("数据暂不可用");
+      hasLoaded.value = true;
+      await wrapper.vm.$nextTick();
+      expect(wrapper.get("#dashboard-intake-count").text()).toBe("0");
+      expect(wrapper.get("#dashboard-unscheduled-empty").text()).toBe("暂无未排程实验");
+    } finally { wrapper.unmount(); }
+  });
+
   test("renders dashboard KPI summaries and task rows from Vue state", () => {
     useDashboardPageMock.mockReturnValue({
       currentPage: ref(1),
+      hasLoaded: ref(true),
+      isInitialLoading: ref(false),
       deviceItems: computed(() => [
         { code: "LAB-01", status: "可用", dotClass: "timeline-dot--available" },
         { code: "LAB-02", status: "使用中", dotClass: "timeline-dot--running" },
@@ -71,6 +99,8 @@ describe("DashboardPage runtime", () => {
 
     useDashboardPageMock.mockReturnValue({
       currentPage: ref(1),
+      hasLoaded: ref(true),
+      isInitialLoading: ref(false),
       deviceItems: computed(() => [{ code: "LAB-01", status: "可用" }]),
       pageCount: computed(() => 3),
       pagedTaskRows: computed(() => [

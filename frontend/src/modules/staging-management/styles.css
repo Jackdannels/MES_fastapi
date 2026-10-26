@@ -713,3 +713,37 @@ body:has(.staging-management-page) .page-header .header-actions .action-btn {
     transition: none;
   }
 }
+
+/* The storage and appearance rooms share these light-only presentation rules. */
+:root[data-theme="light"] .zancun-inventory-column__title--current {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .zancun-console-slot__task-code.muted {
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .zancun-console-slot--placeholder,
+:root[data-theme="light"] .zancun-console-slot.is-placeholder,
+:root[data-theme="light"] .zancun-console-placeholder {
+  background: var(--bg-card-raised);
+}
+
+:root[data-theme="light"] .zancun-touch-action--stock-in,
+:root[data-theme="light"] .zancun-touch-action--stock-out {
+  border-color: var(--border-strong);
+  background: linear-gradient(135deg, rgba(var(--industrial-accent-rgb), 0.065), rgba(var(--industrial-accent-rgb), 0.025));
+  box-shadow: var(--shadow-soft);
+}
+
+:root[data-theme="light"] .zancun-touch-action__icon,
+:root[data-theme="light"] .zancun-touch-action--stock-in .zancun-touch-action__icon,
+:root[data-theme="light"] .zancun-touch-action--stock-out .zancun-touch-action__icon {
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .zancun-scan-indicator {
+  border-color: var(--border-strong);
+  background: var(--surface-inset);
+}

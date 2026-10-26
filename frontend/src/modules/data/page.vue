@@ -3,7 +3,7 @@
     <section class="card data-settings-card" aria-labelledby="data-settings-title">
       <div class="data-section-heading">
         <div>
-          <h3 id="data-settings-title">试验数据保存设置</h3>
+          <h3 id="data-settings-title" v-app-icon="{ name: 'folder' }">试验数据保存设置</h3>
         </div>
         <span class="data-path-status" :class="pathStatusClass" data-testid="data-path-status" role="status">
           <span class="data-path-status__dot" aria-hidden="true"></span>
@@ -25,8 +25,10 @@
               placeholder="请输入后端服务器上的绝对文件夹路径"
               :aria-invalid="Boolean(settingsError)"
               :disabled="settingsLoading || settingsSaving || directorySelecting"
+              aria-describedby="data-path-context"
             />
             <button
+              v-app-icon="{ name: 'folder', placement: 'button' }"
               class="action-btn secondary data-browse-button"
               data-testid="data-browse-directory"
               type="button"
@@ -36,6 +38,7 @@
               {{ directorySelecting ? "选择中…" : "浏览" }}
             </button>
             <button
+              v-app-icon="{ name: 'save', placement: 'button' }"
               class="action-btn data-save-button"
               data-testid="data-save-settings"
               type="submit"
@@ -46,6 +49,10 @@
           </div>
         </div>
       </form>
+      <p id="data-path-context" class="helper data-path-helper" data-testid="data-path-context">
+        <template v-if="pathIsDirty">此地址尚未保存，后台仍使用当前生效路径。请点击“保存并检测目录”。<br /></template>
+        当前生效路径：<span class="data-code">{{ activePath || "尚未读取" }}</span>
+      </p>
 
       <AppFeedback
         v-if="settingsError"
@@ -71,8 +78,8 @@
       <div class="data-section-heading data-tasks-heading">
         <div>
           <p class="data-eyebrow">任务数据</p>
-          <h3 id="data-tasks-title">试验数据输出进度</h3>
-          <p class="data-section-copy">默认显示任务编号及任务级操作，双击任务后可查看进度并操作单项试验。</p>
+          <h3 id="data-tasks-title" v-app-icon="{ name: 'database' }">试验数据输出进度</h3>
+          <p class="data-section-copy">单击任务查看进度及单项试验详情，任务级操作可直接使用。</p>
         </div>
         <form class="data-task-search" role="search" @submit.prevent="searchTaskOutputs">
           <input
@@ -85,7 +92,7 @@
             autocomplete="off"
             placeholder="搜索任务编号"
           />
-          <button class="action-btn secondary" data-testid="data-task-search" type="submit" :disabled="tasksLoading">
+          <button v-app-icon="{ name: 'search', placement: 'button' }" class="action-btn secondary" data-testid="data-task-search" type="submit" :disabled="tasksLoading">
             查询
           </button>
         </form>
@@ -136,16 +143,17 @@
                 class="data-task-toggle"
                 :aria-controls="`data-task-details-${task.taskCode}`"
                 :aria-expanded="isTaskExpanded(task.taskCode)"
-                :aria-label="`${task.taskCode}，${isTaskExpanded(task.taskCode) ? '单击收起' : '双击展开'}试验数据`"
+                :aria-label="`${task.taskCode}，${isTaskExpanded(task.taskCode) ? '收起' : '查看'}试验数据详情`"
                 :data-testid="`data-task-toggle-${task.taskCode}`"
-                :title="isTaskExpanded(task.taskCode) ? '单击收起试验数据' : '双击展开试验数据'"
+                :title="isTaskExpanded(task.taskCode) ? '收起试验数据详情' : '查看试验数据详情'"
                 type="button"
-                @click="handleTaskClick(task.taskCode)"
-                @dblclick="handleTaskDoubleClick(task.taskCode)"
+                @click="handleTaskClick(task.taskCode, $event)"
                 @keydown.enter.prevent="toggleTaskExpansion(task.taskCode)"
                 @keydown.space.prevent="toggleTaskExpansion(task.taskCode)"
               >
+                <span class="data-task-toggle__chevron" aria-hidden="true">{{ isTaskExpanded(task.taskCode) ? "▾" : "▸" }}</span>
                 <strong class="data-code">{{ task.taskCode }}</strong>
+                <span class="data-task-toggle__label" aria-hidden="true">{{ isTaskExpanded(task.taskCode) ? "收起详情" : "查看详情" }}</span>
               </button>
               <div class="data-task-level-actions" aria-label="任务数据操作">
                 <button
@@ -329,6 +337,7 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "DataPage",
 });
@@ -339,6 +348,7 @@ import { formatAxisLabel, formatExperimentStatus, formatExportRange } from "./mo
 import { useDataPage } from "./useDataPage";
 
 const {
+  activePath,
   browseDirectory,
   copyExperimentUrl,
   copyTaskUrl,
@@ -349,7 +359,6 @@ const {
   failedExports,
   goToTaskPage,
   handleTaskClick,
-  handleTaskDoubleClick,
   isOpeningExperiment,
   isOpeningTask,
   isRetrying,
@@ -360,6 +369,7 @@ const {
   openTaskFolder,
   pathStatusClass,
   pathStatusLabel,
+  pathIsDirty,
   retryAllFailed,
   retryFailed,
   retryingAll,

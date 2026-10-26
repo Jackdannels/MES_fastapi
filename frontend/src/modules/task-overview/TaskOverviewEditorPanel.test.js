@@ -96,6 +96,20 @@ describe("TaskOverviewEditorPanel", () => {
     expect(readonlyValues.filter((value) => value === "-")).toHaveLength(2);
   });
 
+  test("groups readonly experiment fields and exposes their actual content in hover text", () => {
+    const wrapper = mount(TaskOverviewEditorPanel, {
+      props: { ...baseProps, readonly: true },
+    });
+
+    const row = wrapper.get(".task-overview-editor-experiment-row.is-readonly");
+    expect(row.findAll(".task-overview-editor-field")).toHaveLength(3);
+    expect(row.get('[data-testid="experiment-name-0"]').attributes("title")).toBe("A实验");
+    expect(row.get('[data-testid="experiment-type-0"]').attributes("title")).toBe("冲击试验");
+    expect(row.get('[data-testid="experiment-name-0"]').element.value).toBe("A实验");
+    expect(row.get('[data-testid="experiment-type-0"]').element.value).toBe("冲击试验");
+    expect(wrapper.find('[title^="experiment-"]').exists()).toBe(false);
+  });
+
   test("renders delete confirmation and emits confirmation actions", async () => {
     const wrapper = mount(TaskOverviewEditorPanel, {
       props: {
@@ -156,8 +170,8 @@ describe("TaskOverviewEditorPanel", () => {
     expect(wrapper.text()).toContain("TASK-001-A");
     expect(wrapper.text()).toContain("实验类型");
 
-    await wrapper.find('input[title="experiment-name-0"]').setValue("预处理实验");
-    await wrapper.find('select[title="experiment-type-0"]').setValue("振动试验");
+    await wrapper.find('input[data-testid="experiment-name-0"]').setValue("预处理实验");
+    await wrapper.find('select[data-testid="experiment-type-0"]').setValue("振动试验");
     await wrapper.find('button[title="add-experiment"]').trigger("click");
     await wrapper.find('button[title="remove-experiment-0"]').trigger("click");
 

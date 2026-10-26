@@ -2,7 +2,7 @@
   <section class="card section process-control-page">
     <div class="process-control-header">
       <div>
-        <h3>试验过程管控</h3>
+        <h3 v-app-icon="{ name: 'flask' }">试验过程管控</h3>
         <div class="muted">展示各实验室当前状态，暂存间不纳入本页。</div>
       </div>
       <div class="process-control-summary">
@@ -92,6 +92,7 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 import { computed } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";

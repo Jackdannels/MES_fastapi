@@ -3,6 +3,7 @@
     <div v-if="open" class="modal-backdrop" @click="handleBackdropClose"></div>
     <div
       v-if="open"
+      ref="dialogElement"
       :class="['modal-content', contentClass]"
       role="dialog"
       aria-modal="true"
@@ -22,6 +23,9 @@
 </template>
 
 <script setup>
+import { ref, toRef } from "vue";
+import { useModalFocus } from "@/composables/useModalFocus";
+
 const props = defineProps({
   closeOnBackdrop: {
     type: Boolean,
@@ -51,6 +55,8 @@ const props = defineProps({
 
 const emit = defineEmits(["close"]);
 const titleId = `app-modal-title-${Math.random().toString(36).slice(2, 10)}`;
+const dialogElement = ref(null);
+const { isTopModal } = useModalFocus(dialogElement, toRef(props, "open"));
 
 const emitClose = () => {
   if (!props.open) {
@@ -66,10 +72,13 @@ const handleBackdropClose = () => {
   emitClose();
 };
 
-const handleEscClose = () => {
-  if (!props.closeOnEsc) {
+const handleEscClose = (event) => {
+  if (!isTopModal()) {
     return;
   }
-  emitClose();
+  event.stopPropagation();
+  if (props.closeOnEsc) {
+    emitClose();
+  }
 };
 </script>

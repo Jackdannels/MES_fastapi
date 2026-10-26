@@ -1,5 +1,5 @@
 // 负责归档目录设置、任务输出进度、目录/分享操作与失败 PDF 重试。
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 import {
   listFailedTestDataExports,
@@ -20,6 +20,9 @@ const TASKS_PAGE_SIZE = 5;
 function useDataPage() {
   const defaultPath = ref("");
   const savePath = ref("");
+  const activePath = ref("");
+  const activePathWritable = ref(null);
+  const checkedPath = ref("");
   const writable = ref(null);
   const settingsDetail = ref("");
   const settingsLoading = ref(true);
@@ -41,7 +44,6 @@ function useDataPage() {
   const shareFallbackUrl = ref("");
   const openingExperimentKeys = ref(new Set());
   const sharingExperimentKeys = ref(new Set());
-  let taskClickTimer = null;
 
   const failedExports = ref([]);
   const failedCount = ref(0);
@@ -50,23 +52,36 @@ function useDataPage() {
   const retryingKeys = ref(new Set());
   const retryingAll = ref(false);
 
+  const pathIsDirty = computed(() => savePath.value.trim() !== activePath.value);
+  const currentPathWritable = computed(() => {
+    const path = savePath.value.trim();
+    if (path === checkedPath.value && checkedPath.value) return writable.value;
+    if (path === activePath.value && activePath.value) return activePathWritable.value;
+    return null;
+  });
   const pathStatusLabel = computed(() => {
     if (settingsLoading.value || settingsSaving.value) {
       return "正在检测";
     }
-    return writable.value ? "目录可写" : "目录不可写";
+    if (currentPathWritable.value === null) return pathIsDirty.value ? "未保存 · 待检测" : "尚未检测";
+    return currentPathWritable.value ? "目录可写" : "目录不可写";
   });
   const pathStatusClass = computed(() => ({
     "is-checking": settingsLoading.value || settingsSaving.value,
-    "is-error": !settingsLoading.value && !settingsSaving.value && writable.value !== true,
-    "is-writable": !settingsLoading.value && !settingsSaving.value && writable.value === true,
+    "is-error": !settingsLoading.value && !settingsSaving.value && currentPathWritable.value === false,
+    "is-writable": !settingsLoading.value && !settingsSaving.value && currentPathWritable.value === true,
+    "is-pending": !settingsLoading.value && !settingsSaving.value && currentPathWritable.value === null,
   }));
+  watch(savePath, () => { settingsError.value = ""; settingsSuccess.value = ""; }, { flush: "sync" });
   const tasksPageCount = computed(() => Math.max(1, Math.ceil(tasksTotal.value / tasksPageSize.value)));
 
   const applySettings = (payload) => {
     const settings = normalizeTestDataSettings(payload);
     defaultPath.value = settings.defaultPath;
     savePath.value = settings.savePath || settings.defaultPath;
+    activePath.value = savePath.value;
+    checkedPath.value = savePath.value;
+    activePathWritable.value = settings.writable;
     settingsDetail.value = settings.detail;
     writable.value = settings.writable;
   };
@@ -153,7 +168,6 @@ function useDataPage() {
     settingsError.value = "";
     settingsSuccess.value = "";
     if (!nextPath) {
-      writable.value = false;
       settingsError.value = "请输入试验数据保存地址";
       return;
     }
@@ -162,6 +176,7 @@ function useDataPage() {
       applySettings(await updateTestDataSettings(nextPath));
       settingsSuccess.value = settingsDetail.value || "保存地址已更新，目录可正常写入";
     } catch (error) {
+      checkedPath.value = nextPath;
       writable.value = false;
       settingsError.value = error?.message || "保存地址检测失败";
     } finally {
@@ -207,32 +222,17 @@ function useDataPage() {
 
   const experimentKey = (taskCode, experimentCode) => `${taskCode}:${experimentCode}`;
   const taskActionKey = (taskCode) => `${taskCode}:__task__`;
-  const clearTaskClickTimer = () => {
-    if (taskClickTimer !== null) {
-      globalThis.clearTimeout(taskClickTimer);
-      taskClickTimer = null;
-    }
-  };
   const isTaskExpanded = (taskCode) => expandedTaskCode.value === String(taskCode || "").trim();
   const toggleTaskExpansion = (taskCode) => {
     const normalized = String(taskCode || "").trim();
     expandedTaskCode.value = normalized && expandedTaskCode.value !== normalized ? normalized : "";
   };
-  const handleTaskClick = (taskCode) => {
-    const normalized = String(taskCode || "").trim();
-    if (!normalized || !isTaskExpanded(normalized)) {
+  const handleTaskClick = (taskCode, event) => {
+    // A native double-click emits a second click before dblclick. Keep the
+    // first activation without reversing it on that second click.
+    if (event?.detail > 1) {
       return;
     }
-    clearTaskClickTimer();
-    taskClickTimer = globalThis.setTimeout(() => {
-      if (isTaskExpanded(normalized)) {
-        expandedTaskCode.value = "";
-      }
-      taskClickTimer = null;
-    }, 220);
-  };
-  const handleTaskDoubleClick = (taskCode) => {
-    clearTaskClickTimer();
     toggleTaskExpansion(taskCode);
   };
   const isOpeningExperiment = (taskCode, experimentCode) => openingExperimentKeys.value.has(experimentKey(taskCode, experimentCode));
@@ -349,14 +349,12 @@ function useDataPage() {
   };
 
   const searchTaskOutputs = () => {
-    clearTaskClickTimer();
     expandedTaskCode.value = "";
     return loadTaskOutputs({ page: 1, query: tasksQuery.value });
   };
   const goToTaskPage = (page) => {
     const nextPage = Math.max(1, Math.min(tasksPageCount.value, Number(page) || 1));
     if (nextPage !== tasksPage.value) {
-      clearTaskClickTimer();
       expandedTaskCode.value = "";
       return loadTaskOutputs({ page: nextPage, query: tasksQuery.value });
     }
@@ -366,9 +364,9 @@ function useDataPage() {
   onMounted(() => {
     void Promise.all([loadSettings(), loadFailedExports(), loadTaskOutputs()]);
   });
-  onBeforeUnmount(clearTaskClickTimer);
 
   return {
+    activePath,
     browseDirectory,
     copyExperimentUrl,
     copyTaskUrl,
@@ -381,7 +379,6 @@ function useDataPage() {
     failedExports,
     goToTaskPage,
     handleTaskClick,
-    handleTaskDoubleClick,
     isOpeningExperiment,
     isRetrying,
     isSharingExperiment,
@@ -395,6 +392,7 @@ function useDataPage() {
     openTaskFolder,
     pathStatusClass,
     pathStatusLabel,
+    pathIsDirty,
     retryAllFailed,
     retryFailed,
     retryingAll,

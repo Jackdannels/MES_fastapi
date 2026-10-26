@@ -3,7 +3,7 @@
     <section class="visualization-toolbar" aria-label="可视化编排状态">
       <div class="visualization-heading">
         <div class="visualization-eyebrow">可视化管理</div>
-        <h3>八屏可视化编排</h3>
+        <h3 v-app-icon="{ name: 'dashboard', boundary: '.visualization-toolbar' }">八屏可视化编排</h3>
         <div class="visualization-sync">2026-05-22 14:00 中控同步</div>
       </div>
       <div class="visualization-toolbar-actions">
@@ -12,6 +12,7 @@
           实时监控
         </div>
         <button
+          v-app-icon="{ name: 'dashboard', placement: 'button' }"
           class="action-btn visual-preview-button"
           data-testid="visual-combined-preview-open"
           type="button"
@@ -242,6 +243,7 @@ defineOptions({
 });
 
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { vAppIcon } from "@/directives/appIcon";
 import { useStorageSnapshot } from "@/composables/useStorageSnapshot";
 import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefresh";
 import { useResourceInventory } from "@/composables/useResourceInventory";

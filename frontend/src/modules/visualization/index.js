@@ -1,5 +1,6 @@
 // 注册可视化管理模块的路由、样式和模块标识。
 import "./styles.css";
+import "./lightTheme.css";
 
 // 模块注册中心会读取该路由对象来生成导航和路由表。
 export const route = {

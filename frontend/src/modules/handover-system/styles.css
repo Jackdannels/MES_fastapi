@@ -395,6 +395,14 @@
   font-weight: 700;
 }
 
+:root[data-theme="light"] .transfer-table__name strong {
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .transfer-table__name .muted {
+  color: var(--status-success-text);
+}
+
 .transfer-table__codes,
 .sample-tray-samples,
 .transfer-modal__list {
@@ -602,6 +610,12 @@
   color: var(--muted);
 }
 
+.transfer-tray-limit-toolbar__label {
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 .transfer-tray-limit-stepper {
   display: inline-flex;
   align-items: center;
@@ -637,9 +651,9 @@
   justify-content: center;
   min-height: 34px;
   padding: 0 12px;
-  border: 1px solid rgba(56, 189, 248, 0.4);
-  background: rgba(224, 242, 254, 0.8);
-  color: #0369a1;
+  border: 1px solid var(--status-info-border);
+  background: var(--status-info-bg);
+  color: var(--status-info-text);
 }
 
 .transfer-tray-list {
@@ -1226,6 +1240,85 @@
   gap: 10px;
 }
 
+/* Handover-only light surfaces; pre-allocation and the dark terminal stay intact. */
+:root[data-theme="light"] .transfer-area-screen.is-handover {
+  background:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    radial-gradient(circle at 18% 8%, rgba(var(--industrial-accent-rgb), 0.035), transparent 34%),
+    var(--bg-deep);
+  background-size: 28px 28px, 28px 28px, auto, auto;
+}
+
+:root[data-theme="light"] .is-handover .transfer-table__row:hover {
+  background: var(--surface-alternate);
+}
+
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-modal,
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-card,
+:root[data-theme="light"] .is-handover .transfer-schedule-reset-modal {
+  border-color: var(--border-strong);
+  background: var(--surface-dialog);
+  box-shadow: var(--shadow);
+}
+
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-modal .transfer-modal__head,
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-modal .transfer-modal__actions,
+:root[data-theme="light"] .is-handover .transfer-schedule-reset-modal__head,
+:root[data-theme="light"] .is-handover .transfer-schedule-reset-modal__actions {
+  border-color: var(--border);
+  background: var(--surface-dialog);
+}
+
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-summary,
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-meta div,
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-detail,
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-samples,
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-code,
+:root[data-theme="light"] .is-handover .transfer-dispatch-summary-card__stat,
+:root[data-theme="light"] .is-handover .transfer-schedule-reset-modal__meta {
+  border-color: var(--border);
+  background: var(--surface-inset);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-card::before {
+  background: var(--accent);
+}
+
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-card__top strong {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .is-handover .transfer-barcode-preview-count {
+  border-color: var(--status-info-border);
+  background: var(--status-info-bg);
+  color: var(--status-info-text);
+}
+
+:root[data-theme="light"] .is-handover .transfer-storage-progress {
+  border-color: var(--status-info-border);
+  background: var(--status-info-bg);
+}
+
+:root[data-theme="light"] .is-handover .transfer-storage-progress__text {
+  color: var(--status-info-text);
+}
+
+:root[data-theme="light"] .is-handover .transfer-storage-progress__bar {
+  accent-color: var(--accent);
+}
+
+:root[data-theme="light"] .is-handover .transfer-schedule-reset-backdrop {
+  background: var(--scrim);
+}
+
+:root[data-theme="light"] .is-handover .transfer-schedule-reset-modal__mark {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
+}
+
 @media (max-height: 900px) {
   .transfer-table__head {
     min-height: 64px;
@@ -1346,5 +1439,73 @@
 
   .transfer-barcode-preview-card__top {
     flex-direction: column;
+  }
+}
+
+/* Compact the embedded list only when the central workspace is constrained. */
+@media (max-width: 1759px), (max-height: 900px) {
+  .transfer-area-screen.is-embedded .transfer-overview-shell {
+    height: auto;
+    min-height: 0;
+    grid-template-rows: auto auto auto auto;
+  }
+
+  .transfer-area-screen.is-embedded .transfer-table {
+    grid-template-rows: 48px auto;
+    align-self: start;
+  }
+
+  .transfer-area-screen.is-embedded .transfer-table__head {
+    min-height: 48px;
+  }
+
+  .transfer-area-screen.is-embedded .transfer-table__body {
+    grid-template-rows: none;
+    grid-auto-rows: auto;
+    gap: 0;
+    padding: 0;
+  }
+
+  .transfer-area-screen.is-embedded .transfer-table__row {
+    padding-block: 12px;
+  }
+
+  .transfer-area-screen.is-embedded .transfer-table__codes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+    grid-auto-rows: minmax(28px, auto);
+    max-height: none;
+    gap: 5px;
+  }
+
+  .transfer-area-screen.is-embedded .transfer-sample-code-chip {
+    min-height: 28px;
+    padding: 4px 8px;
+    font-size: 13px;
+  }
+
+  .transfer-area-screen.is-embedded .transfer-table__main,
+  .transfer-area-screen.is-embedded .transfer-table__name strong {
+    font-size: 16px;
+  }
+}
+
+@media (min-width: 1281px) and (max-width: 1759px), (min-width: 1281px) and (max-height: 900px) {
+  .transfer-area-screen.is-embedded .transfer-table__head,
+  .transfer-area-screen.is-embedded .transfer-table__row {
+    grid-template-columns: 46px 210px minmax(190px, 1fr) minmax(0, 2fr) 66px;
+    gap: 12px;
+  }
+}
+
+@media (max-width: 1280px) {
+  .transfer-area-screen.is-embedded .transfer-table {
+    grid-template-rows: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .transfer-area-screen.is-embedded .transfer-table__codes {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

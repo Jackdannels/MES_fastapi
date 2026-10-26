@@ -3,7 +3,7 @@
     <div class="history-task-layout">
       <aside class="card history-task-list" data-testid="history-task-list">
         <div class="history-task-list__head">
-          <h3>历史任务数据</h3>
+          <h3 v-app-icon="{ name: 'history' }">历史任务数据</h3>
           <span class="muted">含收回托盘任务 {{ historyTotalCount }}</span>
         </div>
         <div class="history-task-controls">
@@ -220,6 +220,7 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "TaskHistoryPage",
 });

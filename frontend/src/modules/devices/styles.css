@@ -50,6 +50,22 @@
   width: 54px;
 }
 
+.devices-page .devices-action-column { width: 180px; }
+
+.form-field input.devices-readonly-value {
+  background: var(--surface-alternate);
+  border-style: dashed;
+  color: var(--text);
+  user-select: text;
+}
+
+.devices-readonly-label {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .devices-page .form-actions {
   flex-wrap: wrap;
 }
@@ -57,7 +73,7 @@
 .devices-action-cell {
   align-items: center;
   display: inline-flex;
-  gap: 18px;
+  gap: 12px;
   justify-content: center;
   min-width: 132px;
   white-space: nowrap;
@@ -69,8 +85,8 @@
   min-width: 32px;
 }
 
-.devices-action-link + .devices-action-link {
-  margin-left: 18px;
+#device-table .devices-action-link + .devices-action-link {
+  margin-left: 0;
 }
 
 .devices-action-link--maintenance {
@@ -96,6 +112,9 @@
 .device-status-form-field .device-status-label {
   display: block;
   margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.12em;
 }
 
 .device-status-field .action-btn {

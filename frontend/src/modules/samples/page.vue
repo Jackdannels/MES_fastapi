@@ -2,6 +2,7 @@
   <section class="samples-wide-head section" data-testid="samples-page-tabs">
     <div class="samples-module-cards">
     <button
+      v-app-icon="{ name: 'flask', placement: 'button' }"
       class="samples-module-card is-content-centered"
       :class="{ active: activePageTab === 'management' }"
       data-testid="samples-page-tab-management"
@@ -13,6 +14,7 @@
       </span>
     </button>
     <button
+      v-app-icon="{ name: 'box', placement: 'button' }"
       class="samples-module-card is-content-centered"
       :class="{ active: activePageTab === 'trays' }"
       data-testid="samples-page-tab-trays"
@@ -35,6 +37,7 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "SamplesPage",
 });

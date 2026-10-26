@@ -1,4 +1,5 @@
 import { h, onMounted, onUnmounted, ref } from "vue";
+import { withVisualIcon } from "./visualIcons";
 
 const scheduleStateLabel = (state) => {
   const normalized = String(state || "").trim();
@@ -108,10 +109,10 @@ export const LabScheduleScreen = {
         : [];
       return h("div", { class: ["visual-board", "visual-schedule-board", props.compact ? "is-compact" : ""] }, [
         h("div", { class: "visual-board-top" }, [
-          h("div", { class: "visual-board-title-group" }, [
+          withVisualIcon(h("div", { class: "visual-board-title-group" }, [
             h("div", { class: "visual-board-kicker" }, "SCHEDULE MATRIX"),
             h("div", { class: "visual-board-title" }, props.screen?.name || "三日实验室排期屏"),
-          ]),
+          ]), "calendar", props.compact, { boundary: ".visual-board-top", textTarget: ".visual-board-title" }),
           h("div", { class: "visual-schedule-head-actions" }, [
             props.interactive && !props.compact
               ? h("div", { class: "visual-schedule-nav", "aria-label": "切换排期日期窗口" }, [
@@ -152,10 +153,10 @@ export const LabScheduleScreen = {
         ]),
         h("div", { class: "visual-schedule-main" }, [
           h("div", { class: "visual-board-metrics visual-schedule-metrics" }, [
-            h("div", [h("span", "三日排程"), h("strong", view.summary?.total ?? 0)]),
-            h("div", [h("span", "进行中"), h("strong", view.summary?.running ?? 0)]),
-            h("div", [h("span", "冲突"), h("strong", view.summary?.conflicts ?? 0)]),
-            props.compact ? null : h("div", [h("span", "空闲实验室"), h("strong", view.summary?.idleLabs ?? 0)]),
+            h("div", [withVisualIcon(h("span", "三日排程"), "calendar", props.compact, { boundary: ".visual-board-metrics > div" }), h("strong", view.summary?.total ?? 0)]),
+            h("div", [withVisualIcon(h("span", "进行中"), "play", props.compact, { boundary: ".visual-board-metrics > div" }), h("strong", view.summary?.running ?? 0)]),
+            h("div", [withVisualIcon(h("span", "冲突"), "alert", props.compact, { boundary: ".visual-board-metrics > div" }), h("strong", view.summary?.conflicts ?? 0)]),
+            props.compact ? null : h("div", [withVisualIcon(h("span", "空闲实验室"), "clock", false, { boundary: ".visual-board-metrics > div" }), h("strong", view.summary?.idleLabs ?? 0)]),
           ]),
           h("div", { class: "visual-schedule-grid", style: { "--visual-schedule-row-count": String(Math.max(rows.length, 1)) } }, [
             h("div", { class: "visual-schedule-grid-head visual-schedule-lab-head" }, "实验室"),

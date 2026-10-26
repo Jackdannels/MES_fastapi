@@ -20,6 +20,55 @@ const buildSamplesFlow = (overrides = {}) => ({
 });
 
 describe("TrayManagementPanel", () => {
+  test("selects another tray with a native button and exposes its selected state", async () => {
+    const wrapper = mount(TrayManagementPanel, {
+      props: { samplesFlow: buildSamplesFlow({
+        rawTasks: [{ code: "T1", status: "待排程" }, { code: "T2", status: "已完成" }],
+        trayRows: ["T1", "T2"].map((taskCode) => ({ taskCode, trayCode: `${taskCode}-TP`, sampleCount: 1, sampleCodes: ["SP"] })),
+      }) },
+    });
+    try {
+      const buttons = wrapper.findAll(".tray-select-button");
+      expect(buttons[1].element.tagName).toBe("BUTTON");
+      expect(buttons[0].attributes("aria-pressed")).toBe("true");
+      await buttons[1].trigger("click");
+      expect(buttons[0].attributes("aria-pressed")).toBe("false");
+      expect(buttons[1].attributes("aria-pressed")).toBe("true");
+      expect(wrapper.get('[data-testid="samples-task-flow-status"]').text()).toBe("已完成");
+    } finally { wrapper.unmount(); }
+  });
+
+  test("close and Escape return focus to the sample trigger, outside clicks keep their own focus", async () => {
+    const wrapper = mount(TrayManagementPanel, {
+      attachTo: document.body,
+      props: { samplesFlow: buildSamplesFlow({ trayRows: [{ taskCode: "T", trayCode: "TP", sampleCount: 6, sampleCodes: ["1", "2", "3", "4", "5", "6"] }] }) },
+    });
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    try {
+      const trigger = wrapper.get(".tray-sample-line.is-ellipsis");
+      await trigger.trigger("click");
+      const close = wrapper.get(".tray-sample-popover-close");
+      close.element.focus();
+      await close.trigger("click");
+      expect(wrapper.find(".tray-sample-popover").exists()).toBe(false);
+      expect(document.activeElement).toBe(trigger.element);
+      await trigger.trigger("click");
+      wrapper.get(".tray-sample-popover-close").element.focus();
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await wrapper.vm.$nextTick();
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find(".tray-sample-popover").exists()).toBe(false);
+      expect(document.activeElement).toBe(trigger.element);
+      await trigger.trigger("click");
+      outside.focus();
+      outside.click();
+      await wrapper.vm.$nextTick();
+      expect(wrapper.find(".tray-sample-popover").exists()).toBe(false);
+      expect(document.activeElement).toBe(outside);
+    } finally { wrapper.unmount(); outside.remove(); }
+  });
+
   test("shows the exact arrival room and uses green history for a canceled experiment", () => {
     const taskCode = "T-ARRIVAL", trayCode = "T-ARRIVAL-TP-001";
     const samplesFlow = buildSamplesFlow({

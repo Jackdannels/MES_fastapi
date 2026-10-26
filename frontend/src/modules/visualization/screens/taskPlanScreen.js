@@ -1,5 +1,6 @@
 import { h, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { resolveTaskColor } from "@/modules/schedule/scheduleLifecycleModel";
+import { withVisualIcon } from "./visualIcons";
 
 const taskPlanRowKey = (entry, index) => `${entry.taskCode || "task"}::${entry.experimentCode || entry.experimentType || index}`;
 const renderTaskPlanTrayCell = (entry, isClone = false) => {
@@ -135,18 +136,18 @@ export const TodayTaskPlanScreen = {
 
       return h("div", { ref: taskPlanRoot, class: ["visual-board", "visual-task-plan-board", props.compact ? "is-compact" : ""] }, [
         h("div", { class: "visual-board-top" }, [
-          h("div", { class: "visual-board-title-group" }, [
+          withVisualIcon(h("div", { class: "visual-board-title-group" }, [
             h("div", { class: "visual-board-kicker" }, "TODAY PLAN"),
             h("div", { class: "visual-board-title" }, props.screen?.name || "今日任务计划总览屏"),
-          ]),
+          ]), "clipboard", props.compact, { boundary: ".visual-board-top", textTarget: ".visual-board-title" }),
           h("div", { class: ["visual-board-live", "tone-live"] }, "真实数据"),
         ]),
         h("div", { class: "visual-task-plan-main" }, [
           h("div", { class: "visual-board-metrics visual-task-plan-metrics" }, [
-            h("div", [h("span", "今日任务"), h("strong", tasks.length)]),
-            h("div", [h("span", "实验数量"), h("strong", summary.experiments)]),
-            h("div", [h("span", "已分配托盘"), h("strong", summary.assigned)]),
-            props.compact ? null : h("div", [h("span", "样品总数"), h("strong", `${summary.samples}件`)]),
+            h("div", [withVisualIcon(h("span", "今日任务"), "clipboard", props.compact, { boundary: ".visual-board-metrics > div" }), h("strong", tasks.length)]),
+            h("div", [withVisualIcon(h("span", "实验数量"), "flask", props.compact, { boundary: ".visual-board-metrics > div" }), h("strong", summary.experiments)]),
+            h("div", [withVisualIcon(h("span", "已分配托盘"), "box", props.compact, { boundary: ".visual-board-metrics > div" }), h("strong", summary.assigned)]),
+            props.compact ? null : h("div", [withVisualIcon(h("span", "样品总数"), "layers", false, { boundary: ".visual-board-metrics > div" }), h("strong", `${summary.samples}件`)]),
           ]),
           props.compact
             ? h("div", { class: "visual-task-plan-compact-list" }, visibleTasks.length
@@ -161,7 +162,7 @@ export const TodayTaskPlanScreen = {
             : h("div", { class: "visual-task-plan-single" }, [
               h("section", { class: "visual-task-plan-variant is-table is-focused" }, [
                 h("div", { class: "visual-task-plan-variant-head" }, [
-                  h("strong", "今日计划"),
+                  withVisualIcon(h("strong", "今日计划"), "clipboard", false, { boundary: ".visual-task-plan-variant-head" }),
                   h("span", shouldLoopTaskRows.value ? `${view.date || "实时快照"} · 任务循环播放` : view.date || "实时快照"),
                 ]),
                 h("div", { class: ["visual-task-plan-table", taskRows.length ? "" : "is-empty"] }, [

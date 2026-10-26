@@ -108,6 +108,31 @@
   color: var(--accent);
 }
 
+.table th[data-sort]:has(.table-sort-button)::after {
+  content: none;
+}
+
+.table-sort-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.table-sort-button::after { content: "↕"; color: var(--muted); font-size: 16px; }
+th[data-sort-dir="asc"] > .table-sort-button::after { content: "▴"; color: var(--accent); }
+th[data-sort-dir="desc"] > .table-sort-button::after { content: "▾"; color: var(--accent); }
+.table-sort-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .form-grid {
   display: grid;
   gap: 14px;
@@ -307,6 +332,17 @@ input[type="datetime-local"] {
 
 .picker-only-input input:disabled {
   cursor: not-allowed;
+  background: var(--surface-disabled);
+  border-color: var(--border);
+  color: var(--text-disabled);
+}
+
+.picker-only-input.is-disabled .picker-only-input__hint {
+  color: var(--text-disabled);
+}
+
+.picker-only-input.is-disabled .picker-only-input__indicator {
+  opacity: 0.35;
 }
 
 .picker-only-input__indicator {
@@ -629,6 +665,12 @@ input[type="datetime-local"] {
   box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.42);
 }
 
+:root[data-theme="light"] .picker-only-calendar__weekdays span:nth-child(n + 6),
+:root[data-theme="light"] .picker-only-calendar__day:nth-child(7n):not(:disabled):not(.is-muted):not(.is-selected),
+:root[data-theme="light"] .picker-only-calendar__day:nth-child(7n - 1):not(:disabled):not(.is-muted):not(.is-selected) {
+  color: var(--status-danger-text);
+}
+
 .picker-only-calendar__footer {
   display: flex;
   align-items: center;
@@ -713,12 +755,12 @@ input[type="datetime-local"] {
   font-size: 13px;
   font-family: var(--font-code);
   font-variant-numeric: tabular-nums;
-  opacity: 0.6;
+  opacity: 0.82;
   transition: color 140ms ease, font-size 140ms ease, opacity 140ms ease;
 }
 
 .picker-only-time__wheel-item[data-distance="2"] {
-  opacity: 0.28;
+  opacity: 0.68;
 }
 
 .picker-only-time__wheel-item.is-selected {
@@ -1080,7 +1122,7 @@ input[type="datetime-local"] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 36px;
+  min-height: 40px;
   padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
@@ -1106,8 +1148,9 @@ input[type="datetime-local"] {
 }
 
 .task-list-pagination > .task-list-pagination__step {
-  min-width: 36px;
-  width: 36px;
+  min-width: 44px;
+  width: 44px;
+  min-height: 40px;
   padding: 6px 0;
   font-size: 20px;
   font-weight: 800;
@@ -1120,8 +1163,8 @@ input[type="datetime-local"] {
 }
 
 .task-list-pagination__jump .app-number-input {
-  width: 56px;
-  min-height: 28px;
+  width: 58px;
+  min-height: 34px;
   background: var(--bg-panel);
 }
 
@@ -1130,8 +1173,8 @@ input[type="datetime-local"] {
 }
 
 .task-list-pagination__jump .app-number-input__field {
-  min-height: 26px;
-  padding: 4px 28px 4px 8px;
+  min-height: 32px;
+  padding: 5px 8px;
   font-size: 14px;
   font-weight: 800;
   text-align: center;
@@ -1139,10 +1182,7 @@ input[type="datetime-local"] {
 }
 
 .task-list-pagination__jump .app-number-input__controls {
-  top: 3px;
-  right: 3px;
-  bottom: 3px;
-  width: 20px;
+  display: none;
 }
 
 .task-list-pagination__jump-submit {
@@ -1192,6 +1232,28 @@ input[type="datetime-local"] {
   cursor: pointer;
 }
 
+.table .action-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: rgba(var(--industrial-accent-rgb), 0.06);
+  font-size: 14px;
+}
+
+.table .action-link:hover:not(:disabled) {
+  background: rgba(var(--industrial-accent-rgb), 0.13);
+}
+
+.table .action-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Shared modal and drawer shell */
 .modal,
 .drawer {
@@ -1218,7 +1280,7 @@ input[type="datetime-local"] {
   position: relative;
   z-index: 2;
   width: min(720px, 92vw);
-  background: var(--bg-card-raised);
+  background: var(--surface-dialog);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-panel);
   padding: 20px;
@@ -1247,6 +1309,11 @@ input[type="datetime-local"] {
   border-radius: var(--radius-control);
   font-size: 14px;
   cursor: pointer;
+}
+
+.modal-content :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 
 @media (max-width: 640px) {
@@ -1286,6 +1353,7 @@ input[type="datetime-local"] {
   font-weight: 800;
 }
 
+.status.waiting,
 .status.warn {
   background: var(--status-warning-bg);
   border-color: var(--status-warning-border);

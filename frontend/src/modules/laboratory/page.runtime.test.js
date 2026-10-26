@@ -3,6 +3,7 @@ import { nextTick, reactive } from "vue";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import LaboratoryPage from "./page.vue";
+import AppIcon from "@/components/shared/AppIcon.vue";
 import { HOST_INTERFACE_MODE_STORAGE_KEY, HOST_INTERFACE_MODES, writeHostInterfaceMode } from "@/lib/hostInterfaceMode";
 import { SNAPSHOT_UPDATED_EVENT } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -2022,6 +2023,36 @@ describe("LaboratoryPage runtime", () => {
     await nextTick();
 
     expect(mounted.get('[data-testid="laboratory-task-list-modal"]').text()).toContain("当前实验室暂无任务");
+  });
+
+  test("keeps distinct decorative icons visible on all four actions including disabled laboratory controls", async () => {
+    snapshotState = { ...createSnapshot(), [STORAGE_KEYS.schedules]: [] };
+    const mounted = await mountPage();
+    const actions = [
+      ["laboratory-view-tasks", "clipboard", false],
+      ["laboratory-compare", "compare", true],
+      ["laboratory-install", "sample-install", true],
+      ["laboratory-ready", "check-circle", true],
+    ];
+
+    for (const [testId, name, disabled] of actions) {
+      const button = mounted.get(`[data-testid="${testId}"]`);
+      const component = button.getComponent(AppIcon);
+      expect(component.props()).toMatchObject({ name, size: 22 });
+      const svg = button.get("svg.app-icon");
+      expect(svg.attributes("aria-hidden")).toBe("true");
+      expect(svg.attributes("focusable")).toBe("false");
+      expect(svg.attributes("stroke")).toBe("currentColor");
+      expect(svg.element.innerHTML.trim()).not.toBe("");
+      expect(button.get("span").text()).not.toBe("");
+      expect(button.element.disabled).toBe(disabled);
+      if (disabled) await button.trigger("click");
+    }
+
+    await nextTick();
+    expect(mounted.find('[data-testid="laboratory-compare-modal"].is-open').exists()).toBe(false);
+    expect(laboratoryOperationCalls()).toHaveLength(0);
+    expect(laboratoryMqCalls()).toHaveLength(0);
   });
 
   test("disables comparison when every scheduled tray is still before laboratory dispatch", async () => {

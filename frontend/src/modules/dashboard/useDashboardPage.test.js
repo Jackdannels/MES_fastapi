@@ -104,6 +104,33 @@ describe("useDashboardPage", () => {
     ]);
   });
 
+  test("distinguishes first loading, first failure, and retained successful data on refresh", async () => {
+    let rejectInitial;
+    mocks.loadSnapshot.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectInitial = reject; }));
+    const wrapper = mount(TestHarness);
+    try {
+      expect(wrapper.vm.isInitialLoading).toBe(true);
+      expect(wrapper.vm.hasLoaded).toBe(false);
+      rejectInitial(new Error("network"));
+      await settle(wrapper);
+      expect(wrapper.vm.isInitialLoading).toBe(false);
+      expect(wrapper.vm.hasLoaded).toBe(false);
+      expect(wrapper.vm.loadError).toContain("network");
+      window.dispatchEvent(new CustomEvent("mes:snapshot-updated"));
+      vi.advanceTimersByTime(100);
+      await settle(wrapper);
+      expect(wrapper.vm.hasLoaded).toBe(true);
+      const summary = { ...wrapper.vm.summaryCards };
+      mocks.loadSnapshot.mockRejectedValueOnce(new Error("refresh failed"));
+      window.dispatchEvent(new CustomEvent("mes:snapshot-updated"));
+      vi.advanceTimersByTime(100);
+      await settle(wrapper);
+      expect(wrapper.vm.hasLoaded).toBe(true);
+      expect(wrapper.vm.isInitialLoading).toBe(false);
+      expect(wrapper.vm.summaryCards).toEqual(summary);
+    } finally { wrapper.unmount(); }
+  });
+
   test("reloads only samples when sample state changes in another work area", async () => {
     const wrapper = mount(TestHarness);
     await settle(wrapper);

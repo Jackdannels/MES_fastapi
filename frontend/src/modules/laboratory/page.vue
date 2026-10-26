@@ -57,7 +57,8 @@
           type="button"
           @click="openTaskList"
         >
-          查看任务
+          <AppIcon name="clipboard" :size="22" />
+          <span>查看任务</span>
         </button>
 
         <button
@@ -67,7 +68,8 @@
           :disabled="(runningInteractionLocked && !resumePreparationActive) || !actionState.canCompare"
           @click="openCompare"
         >
-          比对任务
+          <AppIcon name="compare" :size="22" />
+          <span>比对任务</span>
         </button>
 
         <button
@@ -77,7 +79,8 @@
           :disabled="(runningInteractionLocked && !resumePreparationActive) || !canRequestFixtureInstall"
           @click="openInstall"
         >
-          {{ installActionLabel }}
+          <AppIcon name="sample-install" :size="22" />
+          <span>{{ installActionLabel }}</span>
         </button>
 
         <button
@@ -87,7 +90,8 @@
           :disabled="(runningInteractionLocked && !resumePreparationActive) || !canRequestReady"
           @click="openReady"
         >
-          {{ readyActionLabel }}
+          <AppIcon name="check-circle" :size="22" />
+          <span>{{ readyActionLabel }}</span>
         </button>
       </div>
 
@@ -101,7 +105,7 @@
 
       <div class="laboratory-recent-tasks">
         <div class="laboratory-recent-tasks__header">
-          <h4>最近安排任务</h4>
+          <h4 v-app-icon="{ name: 'clipboard', placement: 'title' }">最近安排任务</h4>
           <span class="muted">按托盘排程顺序执行；前序实验未完成时，后续实验不可选择。</span>
         </div>
         <div class="laboratory-recent-tasks__list">
@@ -138,7 +142,7 @@
       </div>
 
       <div class="laboratory-progress-panel">
-        <h4>流程状态</h4>
+        <h4 v-app-icon="{ name: 'activity', placement: 'title' }">流程状态</h4>
         <section class="laboratory-flow-card laboratory-flow-card--full" data-testid="laboratory-tray-flow">
           <div class="laboratory-flow-card__head laboratory-flow-card__head--stacked">
             <div>
@@ -1046,7 +1050,9 @@ defineOptions({
 });
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
+import AppIcon from "@/components/shared/AppIcon.vue";
 import AppModal from "@/components/shared/AppModal.vue";
+import { vAppIcon } from "@/directives/appIcon";
 import { normalizeTrayScanCode } from "@/lib/trayQrCode";
 import { computed, ref } from "vue";
 import { useRoute } from "vue-router";

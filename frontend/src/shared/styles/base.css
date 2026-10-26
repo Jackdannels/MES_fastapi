@@ -1,6 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=Space+Grotesk:wght@400;600&display=swap");
 
 :root {
+  color-scheme: dark;
   --bg-deep: #06090d;
   --bg-panel: #0d1218;
   --bg-panel-strong: #131a22;
@@ -17,13 +18,16 @@
   --danger: #ff6b5a;
   --success: #63e6be;
   --grid-line: rgba(99, 230, 190, 0.08);
+  --canvas-glow-opacity: 0.16;
   --radius-panel: 8px;
   --radius-control: 4px;
   --shadow: 0 20px 52px rgba(0, 0, 0, 0.46);
+  --shadow-soft: 0 4px 14px rgba(0, 0, 0, 0.18);
   --font-code: "Cascadia Mono", "Consolas", "SFMono-Regular", monospace;
   --surface-subtle: rgba(13, 18, 24, 0.84);
   --surface-alternate: rgba(19, 26, 34, 0.78);
   --surface-overlay: rgba(19, 26, 34, 0.98);
+  --surface-dialog: #131a22;
   --surface-disabled: rgba(27, 36, 47, 0.92);
   --scrim: rgba(0, 0, 0, 0.62);
   --surface-inset: rgba(13, 18, 24, 0.9);
@@ -48,7 +52,7 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg-deep: #f3f7f8;
+  --bg-deep: #f5f7f9;
   --bg-panel: #ffffff;
   --bg-panel-strong: #e9f0f1;
   --bg-card: rgba(255, 255, 255, 0.96);
@@ -63,11 +67,14 @@
   --accent-3: #c53c33;
   --danger: #c53c33;
   --success: #087f6b;
-  --grid-line: rgba(8, 127, 107, 0.07);
+  --grid-line: rgba(8, 127, 107, 0.025);
+  --canvas-glow-opacity: 0.035;
   --shadow: 0 16px 42px rgba(15, 61, 56, 0.12);
+  --shadow-soft: 0 4px 14px rgba(15, 61, 56, 0.06);
   --surface-subtle: rgba(255, 255, 255, 0.96);
   --surface-alternate: rgba(240, 246, 246, 0.98);
   --surface-overlay: rgba(255, 255, 255, 0.99);
+  --surface-dialog: #ffffff;
   --surface-disabled: rgba(221, 231, 232, 0.96);
   --scrim: rgba(15, 37, 37, 0.46);
   --surface-inset: rgba(238, 245, 245, 0.98);
@@ -90,6 +97,25 @@
   --status-complete-text: #6d28d9;
 }
 
+/* Shared blue and white surfaces; dark tokens and status meanings stay intact. */
+:root[data-theme="light"] {
+  --bg-deep: #f4f7fc;
+  --bg-panel-strong: #edf3fc;
+  --border: rgba(37, 99, 235, 0.2);
+  --border-strong: rgba(37, 99, 235, 0.42);
+  --text: #172b4d;
+  --muted: #52647d;
+  --accent: #2563eb;
+  --industrial-accent-rgb: 37, 99, 235;
+  --grid-line: rgba(37, 99, 235, 0.025);
+  --shadow: 0 16px 42px rgba(25, 57, 111, 0.1);
+  --shadow-soft: 0 4px 14px rgba(25, 57, 111, 0.06);
+  --surface-alternate: rgba(240, 245, 253, 0.98);
+  --surface-disabled: rgba(224, 232, 245, 0.96);
+  --scrim: rgba(15, 30, 55, 0.46);
+  --surface-inset: rgba(239, 244, 252, 0.98);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -103,7 +129,7 @@ body {
   background:
     linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
-    radial-gradient(circle at 18% 8%, rgba(var(--industrial-accent-rgb), 0.16), transparent 34%),
+    radial-gradient(circle at 18% 8%, rgba(var(--industrial-accent-rgb), var(--canvas-glow-opacity)), transparent 34%),
     linear-gradient(135deg, var(--bg-deep), var(--bg-deep));
   background-size: 28px 28px, 28px 28px, auto, auto;
 }
@@ -115,13 +141,18 @@ textarea {
   color-scheme: inherit;
 }
 
+:root:not([data-theme="light"]) input::placeholder,
+:root:not([data-theme="light"]) textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
 /* Modules with a purpose-specific surface retain their layout while following the global light palette. */
 :root[data-theme="light"] .tasks-external-detail input[readonly],
 :root[data-theme="light"] .tasks-external-detail textarea[readonly],
 :root[data-theme="light"] .tasks-intake-form input[name="source"][readonly],
 :root[data-theme="light"] .laboratory-attendance-status.is-empty,
 :root[data-theme="light"] .laboratory-attendance-panel,
-:root[data-theme="light"] .task-overview-summary-table thead th,
 :root[data-theme="light"] .task-overview-summary-table tbody td,
 :root[data-theme="light"] .transfer-table__row,
 :root[data-theme="light"] .transfer-table__row--placeholder,
@@ -138,13 +169,13 @@ textarea {
 }
 
 :root[data-theme="light"] .visualization-page {
-  --screen-bg: #f5fbfb;
+  --screen-bg: #f4f7fc;
   --screen-panel: rgba(255, 255, 255, 0.96);
-  --screen-panel-soft: rgba(238, 247, 246, 0.98);
-  --screen-line: rgba(8, 127, 107, 0.24);
-  --screen-line-strong: rgba(8, 127, 107, 0.5);
-  --screen-text: #143534;
-  --screen-muted: #55716e;
+  --screen-panel-soft: rgba(239, 245, 255, 0.98);
+  --screen-line: rgba(37, 99, 235, 0.24);
+  --screen-line-strong: rgba(37, 99, 235, 0.5);
+  --screen-text: #172b4d;
+  --screen-muted: #52647d;
   --screen-cyan: var(--status-info-text);
   --screen-teal: var(--accent);
   --screen-green: var(--status-success-text);

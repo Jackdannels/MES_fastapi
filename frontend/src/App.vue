@@ -2,15 +2,18 @@
   <RouterView v-if="isAuthLayout" />
   <RouterView v-else-if="isBareModule" />
 
-  <div v-else-if="isCentralModule" class="app-shell">
-    <aside class="sidebar">
-      <div class="brand">
-        七二四新火工区信息化中控管理系统
-        <span>实验室中控管理</span>
-      </div>
+  <div v-else-if="isCentralModule" class="app-shell app-shell--central">
+    <AppSidebar panel-id="central-sidebar-panel" :route-key="route.fullPath || route.path">
+      <template #brand>
+        <div class="brand">
+          七二四新火工区信息化中控管理系统
+          <span>实验室中控管理</span>
+        </div>
+      </template>
       <nav class="nav">
         <RouterLink
           v-for="navItem in centralNavigation"
+          v-app-icon="{ name: centralPageIcons[navItem.route.meta?.title], placement: 'nav' }"
           :key="navItem.route.name"
           class="nav-link"
           :class="{ active: isActive(navItem.route.name) }"
@@ -29,6 +32,7 @@
       <div class="sidebar-footer">
         <IntegrationConnectionStatus @update="integrationSnapshot = $event" />
         <button
+          v-app-icon="{ name: isLightTheme ? 'moon' : 'sun', placement: 'button' }"
           class="action-btn secondary theme-toggle theme-toggle--sidebar"
           data-testid="theme-toggle"
           type="button"
@@ -43,11 +47,11 @@
           <span class="badge">固定报告</span>
         </div>
       </div>
-    </aside>
+    </AppSidebar>
     <main class="main">
       <header class="page-header page-header--central">
         <div class="page-header__copy">
-          <h1 tabindex="-1">{{ pageTitle }}</h1>
+          <h1 v-app-icon="{ name: centralPageIcons[pageTitle], placement: 'title' }" tabindex="-1">{{ pageTitle }}</h1>
         </div>
         <div class="header-actions">
           <CriticalAlarmIndicator :status="integrationSnapshot?.lims || null" />
@@ -71,6 +75,7 @@
           </button>
           <button
             v-if="showTaskIntakeAction"
+            v-app-icon="{ name: 'plus', placement: 'button' }"
             class="action-btn"
             data-testid="open-task-intake"
             type="button"
@@ -78,10 +83,10 @@
           >
             新建任务
           </button>
-          <button class="action-btn secondary" type="button" @click="refreshPage">刷新</button>
+          <button v-app-icon="{ name: 'refresh', placement: 'button' }" class="action-btn secondary" type="button" @click="refreshPage">刷新</button>
           <span class="header-actions-before-logout"></span>
           <template v-if="!isFixedTerminal">
-            <button class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
+            <button v-app-icon="{ name: 'logout', placement: 'button' }" class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
           </template>
         </div>
       </header>
@@ -90,14 +95,17 @@
   </div>
 
   <div v-else class="app-shell">
-    <aside v-if="!isStorageRoomModule && !isLaboratoryModule" class="sidebar">
-      <div class="brand">
-        七二四新火工区信息化中控管理系统
-        <span>{{ moduleLabel }}</span>
-      </div>
+    <AppSidebar v-if="!isStorageRoomModule && !isLaboratoryModule" panel-id="module-sidebar-panel" :route-key="route.fullPath || route.path">
+      <template #brand>
+        <div class="brand">
+          七二四新火工区信息化中控管理系统
+          <span>{{ moduleLabel }}</span>
+        </div>
+      </template>
       <nav class="nav">
         <RouterLink
           v-for="navItem in moduleNavigation"
+          v-app-icon="{ name: moduleHeaderIcon, placement: 'nav' }"
           :key="navItem.route.name"
           class="nav-link"
           :class="{ active: isActive(navItem.route.name) }"
@@ -106,18 +114,19 @@
           {{ navItem.route.meta?.title }}
         </RouterLink>
       </nav>
-    </aside>
+    </AppSidebar>
     <main class="main" :class="{ 'main--laboratory': isLaboratoryModule }">
       <header class="page-header" :class="{ 'page-header--laboratory': isLaboratoryModule }">
         <div class="page-header__copy">
           <div v-if="!isLaboratoryModule" class="eyebrow">{{ moduleLabel }}</div>
-          <h1>{{ pageTitle }}</h1>
+          <h1 v-app-icon="{ name: moduleHeaderIcon, placement: 'title' }">{{ pageTitle }}</h1>
           <p v-if="!isLaboratoryModule" class="subtitle">{{ pageSubtitle }}</p>
         </div>
         <div class="header-actions">
           <span class="header-actions-before-logout"></span>
           <button
             v-if="isStorageRoomModule"
+            v-app-icon="{ name: 'alert', placement: 'button' }"
             class="action-btn tray-error-sample-trigger"
             data-testid="staging-error-sample"
             type="button"
@@ -126,7 +135,7 @@
             出错样品处理
           </button>
           <template v-if="!isFixedTerminal">
-            <button class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
+            <button v-app-icon="{ name: 'logout', placement: 'button' }" class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
           </template>
         </div>
       </header>
@@ -151,8 +160,10 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { vAppIcon } from "@/directives/appIcon";
 import { useRoute, useRouter } from "vue-router";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
+import AppSidebar from "@/components/shared/AppSidebar.vue";
 import IntegrationConnectionStatus from "@/components/shared/IntegrationConnectionStatus.vue";
 import CriticalAlarmIndicator from "@/components/shared/CriticalAlarmIndicator.vue";
 import TrayErrorSampleDialog from "@/components/shared/TrayErrorSampleDialog.vue";
@@ -168,6 +179,12 @@ import { MODULE_LABELS } from "@/lib/moduleCatalog";
 import { resolveLaboratoryDisplayName, resolveLaboratoryRouteKey } from "@/lib/labs";
 import { getNavigationModules } from "@/modules";
 import { logoutSession, readAuthSession, resolveModuleHome, switchSessionModule } from "@/auth";
+
+const centralPageIcons = Object.freeze({
+  中控总览: "dashboard", 任务受理: "clipboard", "任务/托盘总览": "layers", 样品预接驳: "box",
+  排程看板: "calendar", "样品/托盘信息": "box", 试验过程管控: "flask", 设备资源: "cpu",
+  试验数据: "database", 人员信息: "users", 历史任务数据: "history",
+});
 
 const TASK_RESET_EVENT = "mes:open-task-reset";
 const LABORATORY_SELECTED_LAB_STORAGE_KEY = "mes_laboratory_selected_lab_v1";
@@ -197,6 +214,9 @@ const currentModule = computed(() => {
   return session?.module || "central";
 });
 const moduleLabel = computed(() => MODULE_LABELS[currentModule.value] || MODULE_LABELS.central);
+const moduleHeaderIcon = computed(() => ({
+  handover: "truck", visual: "dashboard", staging: "archive", appearance: "eye", laboratory: "flask",
+})[currentModule.value]);
 const isBareModule = computed(() => currentModule.value === "handover");
 const isCentralModule = computed(() => currentModule.value === "central");
 const isStagingModule = computed(() => currentModule.value === "staging");

@@ -566,6 +566,44 @@ describe("TasksPage runtime", () => {
 
     expect(wrapper.text()).toContain("任务数据加载失败");
     expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(0);
+    expect(wrapper.get("#task-external-count").text()).toBe("未知");
+    expect(wrapper.get("#task-internal-count").text()).toBe("未知");
+    expect(wrapper.get("#task-unscheduled-count").text()).toBe("未知");
+    expect(wrapper.get('[data-testid="task-initial-state"]').text()).toContain("尚未取得任务数据");
+  });
+
+  test("shows loading placeholders before the first task response and reveals pagination only after success", async () => {
+    const { fetchMock } = installApiFetchMock({
+      tasks: Array.from({ length: 10 }, (_, index) => createTask({ id: `task-${index}`, code: `TASK-${index}` })),
+    });
+    const originalFetch = fetchMock.getMockImplementation();
+    let release;
+    const initialGate = new Promise((resolve) => { release = resolve; });
+    fetchMock.mockImplementation(async (url, options) => {
+      if (url.startsWith(`${TASKS_ENDPOINT}/page?`)) await initialGate;
+      return originalFetch(url, options);
+    });
+    const wrapper = mount(TasksPage);
+
+    try {
+      await settle(wrapper);
+      expect(wrapper.get("#task-external-count").text()).toBe("加载中…");
+      expect(wrapper.get("#task-internal-count").text()).toBe("加载中…");
+      expect(wrapper.get("#task-unscheduled-count").text()).toBe("加载中…");
+      expect(wrapper.get('[data-testid="task-initial-state"]').text()).toBe("正在加载任务清单…");
+      expect(wrapper.find("#task-table").exists()).toBe(false);
+      expect(wrapper.find(".task-list-pagination").exists()).toBe(false);
+
+      release();
+      await settle(wrapper);
+      expect(wrapper.find('[data-testid="task-initial-state"]').exists()).toBe(false);
+      expect(wrapper.findAll("#task-table tbody tr")).toHaveLength(8);
+      expect(wrapper.get("#task-external-count").text()).toBe("10");
+      expect(wrapper.find(".task-list-pagination").exists()).toBe(true);
+    } finally {
+      release();
+      wrapper.unmount();
+    }
   });
 
   test("renders task rows, filters visible tasks, and opens the centered task detail modal from API data", async () => {
@@ -942,7 +980,7 @@ describe("TasksPage runtime", () => {
     expect(wrapper.text()).not.toContain("显示前 5 个");
   });
 
-  test("updates the sort arrow direction on repeated header clicks", async () => {
+  test("exposes native sort buttons and keeps sort semantics in sync with the applied direction", async () => {
     installApiFetchMock({
       tasks: [
         createTask({ id: "task-1", code: "SYLU-2026-03-001" }),
@@ -954,18 +992,24 @@ describe("TasksPage runtime", () => {
     await settle(wrapper);
 
     const codeHeader = wrapper.get(".tasks-table__col--code");
+    const codeButton = codeHeader.get("button.table-sort-button");
 
     expect(codeHeader.attributes("data-sort-dir")).toBe("");
+    expect(codeHeader.attributes("aria-sort")).toBe("none");
+    expect(codeButton.attributes("type")).toBe("button");
+    expect(wrapper.findAll("th[data-sort] button.table-sort-button")).toHaveLength(6);
 
-    await codeHeader.trigger("click");
+    await codeButton.trigger("click");
     await settle(wrapper);
 
     expect(codeHeader.attributes("data-sort-dir")).toBe("asc");
+    expect(codeHeader.attributes("aria-sort")).toBe("ascending");
 
-    await codeHeader.trigger("click");
+    await codeButton.trigger("click");
     await settle(wrapper);
 
     expect(codeHeader.attributes("data-sort-dir")).toBe("desc");
+    expect(codeHeader.attributes("aria-sort")).toBe("descending");
   });
 
   test("sorts the sample count column numerically instead of lexically", async () => {
@@ -1260,6 +1304,53 @@ describe("TasksPage runtime", () => {
     expect(detailArrivalField.textContent).not.toContain("年 / 月 / 日");
   });
 
+  test("identifies existing intake requirements before the user submits", async () => {
+    installApiFetchMock({ tasks: [], samples: [] });
+    window.location.hash = "#task-intake-modal";
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+
+    expect(wrapper.get(".tasks-required-note").text()).toContain("为必填，其余选填");
+    for (const name of ["contact", "contact_info", "sample_count"]) {
+      const field = wrapper.get(`.tasks-intake-form input[name="${name}"]`);
+      expect(field.attributes("required")).toBeDefined();
+      expect(wrapper.get(`label[for="${field.attributes("id")}"]`).text()).toContain("*");
+    }
+    const typeButton = wrapper.get('[data-testid="task-intake-test-types-trigger"]');
+    expect(typeButton.attributes("aria-label")).toBe("试验类型（必填）");
+    expect(wrapper.get(`label[for="${typeButton.attributes("id")}"]`).text()).toContain("*");
+    expect(wrapper.get('.tasks-intake-form input[name="name"]').attributes("required")).toBeUndefined();
+  });
+
+  test.each([
+    { experimentType: "冲击试验", labels: ["X+", "X-", "Y+", "Y-", "Z+", "Z-"], canonical: DEFAULT_AXIS_CODES },
+    { experimentType: "振动试验", labels: ["X", "Y+", "Y-", "Z+", "Z-"], canonical: axisCodesForExperimentType("振动试验") },
+  ])("pairs displayed $experimentType directions without changing the saved canonical axis order", async ({ experimentType, labels, canonical }) => {
+    const { state } = installApiFetchMock({ tasks: [], samples: [] });
+    window.location.hash = "#task-intake-modal";
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
+    await wrapper.get(`[data-testid="task-intake-test-type-option-${experimentType}"]`).trigger("click");
+    await settle(wrapper);
+
+    const buttons = wrapper.findAll('[data-testid="task-intake-axis-grid"] button');
+    expect(buttons.map((button) => button.text())).toEqual(labels);
+    expect(buttons.every((button) => button.attributes("aria-pressed") === "true")).toBe(true);
+    await wrapper.get('[data-testid="task-intake-axis-confirm"]').trigger("click");
+    await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
+    await wrapper.get('input[name="contact"]').setValue("张三");
+    await wrapper.get('input[name="contact_info"]').setValue("13800001234");
+    await wrapper.get('input[name="sample_count"]').setValue("12");
+
+    expect(wrapper.get('[data-testid="task-intake-sample-preview-caption"]').text()).toBe("仅预览前 5 项 · 共 12 件样品");
+    await wrapper.get('[data-testid="task-submit"]').trigger("click");
+    await settle(wrapper);
+    expect(state.tasks).toHaveLength(1);
+    expect(state.tasks[0].axis_codes_by_test_type[experimentType]).toEqual(canonical);
+    expect(state.tasks[0].sample_count).toBe("12");
+  });
+
   test("opens the intake modal from the route hash, supports multi-select experiments, and submits a task", async () => {
     const { state } = installApiFetchMock({
       tasks: [createTask()],
@@ -1272,17 +1363,26 @@ describe("TasksPage runtime", () => {
 
     expect(wrapper.find(".modal.is-open").exists()).toBe(true);
     expect(wrapper.get('input[name="code"]').element.value).toBe(buildCurrentMonthFirstTaskCode());
+    expect(wrapper.get('label[for="task-intake-code"]').text()).toContain("系统生成");
+    expect(wrapper.get('label[for="task-intake-arrival"]').text()).toContain("系统回写");
+    expect(wrapper.get('input[name="code"]').attributes("readonly")).toBeDefined();
+    const attachment = wrapper.get('input[name="attachment"]');
+    expect(attachment.attributes("type")).toBe("text");
+    expect(attachment.attributes("placeholder")).toBe("填写报告、规范或 SOP 编号");
+    expect(wrapper.get('label[for="task-intake-attachment"]').text()).toBe("附件编号/引用");
+    expect(wrapper.get("#task-intake-attachment-help").text()).toContain("已有");
 
     await wrapper.get('[data-testid="task-intake-test-types-trigger"]').trigger("click");
     expect(wrapper.get('[data-testid="task-intake-test-types-modal"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="task-intake-test-types-summary"]').text()).toContain("请选择试验类型");
     expect(wrapper.get('[data-testid="task-intake-test-types-grid"]').classes()).toContain("tasks-intake-test-types__grid");
-    expect(wrapper.get('[data-testid="task-intake-test-types-modal"]').text()).not.toContain("已选");
+    expect(wrapper.get('[data-testid="task-intake-test-types-modal"]').text()).toContain("可多选 · 已选 0 项");
     expect(wrapper.get('[data-testid="task-intake-test-types-modal"]').text()).not.toContain("未选");
     await wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').trigger("click");
     await settle(wrapper);
     expect(wrapper.get('[data-testid="task-intake-axis-modal"]').exists()).toBe(true);
     expect(wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').classes()).not.toContain("is-selected");
+    expect(wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').attributes("aria-pressed")).toBe("false");
     expect(wrapper.get('[data-testid="task-intake-test-type-check-冲击试验"]').text()).not.toContain("✓");
     expect(wrapper.get('[data-testid="task-intake-test-types-summary"]').text()).not.toContain("冲击试验");
     for (const axisCode of DEFAULT_AXIS_CODES.filter((code) => code !== "x+")) {
@@ -1294,6 +1394,9 @@ describe("TasksPage runtime", () => {
     expect(wrapper.get('[data-testid="task-intake-test-type-check-冲击试验"]').text()).toContain("✓");
     await wrapper.get('[data-testid="task-intake-test-type-option-盐雾试验"]').trigger("click");
     expect(wrapper.get('[data-testid="task-intake-test-types-summary"]').text()).toContain("冲击试验（X+） / 盐雾试验");
+    expect(wrapper.get('[data-testid="task-intake-test-types-modal"]').text()).toContain("可多选 · 已选 2 项");
+    expect(wrapper.get('[data-testid="task-intake-test-type-option-冲击试验"]').attributes("aria-pressed")).toBe("true");
+    expect(wrapper.get('[data-testid="task-intake-test-type-option-盐雾试验"]').attributes("aria-pressed")).toBe("true");
     await wrapper.get('[data-testid="task-intake-test-types-confirm"]').trigger("click");
     await settle(wrapper);
 
@@ -1703,6 +1806,9 @@ describe("TasksPage runtime", () => {
     await wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').trigger("click");
     await wrapper.get('[data-testid="task-edit-test-type-option-霉菌试验"]').trigger("click");
     await removeEditAxisExperiment(wrapper, "冲击试验");
+    expect(wrapper.get('[data-testid="task-edit-test-types-modal"]').text()).toContain("可多选 · 已选 2 项");
+    expect(wrapper.get('[data-testid="task-edit-test-type-option-盐雾试验"]').attributes("aria-pressed")).toBe("true");
+    expect(wrapper.get('[data-testid="task-edit-test-type-option-冲击试验"]').attributes("aria-pressed")).toBe("false");
     await wrapper.get('[data-testid="task-edit-test-types-confirm"]').trigger("click");
     await settle(wrapper);
     await wrapper.get('[data-testid="task-update"]').trigger("click");
@@ -2768,6 +2874,36 @@ describe("TasksPage runtime", () => {
     expect(state.tasks.map((task) => task.code)).toContain("SYLU-2026-07-021");
     expect(wrapper.get("#task-external-count").text()).not.toContain("待确认");
     expect(wrapper.text()).toContain("SYLU-2026-07-021");
+  });
+
+  test("shows complete external experiment text and labels the limited sample preview", async () => {
+    const testType = "高低温湿热试验 / 温度冲击试验 / 盐雾试验";
+    const { state } = installApiFetchMock({
+      tasks: [],
+      externalTaskIntakes: [{
+        id: "LIMS-PREVIEW",
+        intake_id: "LIMS-PREVIEW",
+        code: "SYLUW-2026-10-013",
+        source: "外部委托",
+        sample_count: "12",
+        test_types: ["高低温湿热试验", "温度冲击试验", "盐雾试验"],
+        test_type: testType,
+        acceptance_status: "pending",
+      }],
+    });
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+    window.dispatchEvent(new CustomEvent("mes:open-external-task-intake"));
+    await settle(wrapper);
+    await wrapper.get('[data-testid="external-task-intake-detail-0"]').trigger("click");
+    await settle(wrapper);
+
+    const detail = wrapper.get('[data-testid="external-task-intake-detail"]');
+    expect(detail.get('[data-testid="external-task-test-type"]').text()).toBe(testType);
+    expect(detail.findAll(".tasks-sample-preview__list span")).toHaveLength(5);
+    expect(detail.get('[data-testid="external-task-sample-preview-caption"]').text()).toBe("仅预览前 5 项 · 共 12 件样品");
+    expect(state.tasks).toHaveLength(0);
+    expect(state.externalTaskIntakes[0].sample_count).toBe("12");
   });
 
   test("refreshes pending external tasks when the acceptance dialog is opened", async () => {

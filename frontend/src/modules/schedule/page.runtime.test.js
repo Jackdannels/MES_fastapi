@@ -1904,6 +1904,13 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.text()).toContain("任务详情");
     expect(wrapper.text()).toContain("预计完成时间");
     expect(wrapper.text()).toContain("SYLU-2026-01-001");
+    const detail = wrapper.get(".modal.is-open");
+    expect(detail.findAll("label").map((label) => label.text())).toEqual(expect.arrayContaining([
+      "实验编号", "当前实验类型", "任务试验内容",
+    ]));
+    expect(detail.findAll("label").map((label) => label.text())).not.toContain("实验标签");
+    // 上方排程选择器仍按实验类型筛选，不受详情标签修正影响。
+    expect(wrapper.get('select[name="experiment_code"]').element.previousElementSibling.textContent).toBe("实验类型");
   });
 
   test("shows delete actions in task detail and can delete then backfill the top form for re-scheduling", async () => {

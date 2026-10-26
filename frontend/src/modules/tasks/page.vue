@@ -5,8 +5,9 @@
     <div class="card">
       <div class="muted">外部委托</div>
       <div class="kpi tasks-external-kpi" id="task-external-count">
-        <span>{{ metrics.externalCount }}</span>
-        <span v-if="metrics.pendingExternalCount > 0" class="tasks-external-kpi__pending">
+        <span v-if="!hasLoaded" class="tasks-kpi-placeholder">{{ isInitialLoading ? "加载中…" : "未知" }}</span>
+        <span v-else>{{ metrics.externalCount }}</span>
+        <span v-if="hasLoaded && metrics.pendingExternalCount > 0" class="tasks-external-kpi__pending">
           （待确认：<strong>{{ metrics.pendingExternalCount }}</strong>）
         </span>
       </div>
@@ -14,18 +15,18 @@
     </div>
     <div class="card">
       <div class="muted">内部新增</div>
-      <div class="kpi" id="task-internal-count">{{ metrics.internalCount }}</div>
+      <div class="kpi" id="task-internal-count"><span v-if="!hasLoaded" class="tasks-kpi-placeholder">{{ isInitialLoading ? "加载中…" : "未知" }}</span><span v-else>{{ metrics.internalCount }}</span></div>
       <div class="muted">研发/质控</div>
     </div>
     <div class="card">
       <div class="muted">待排程</div>
-      <div class="kpi" id="task-unscheduled-count">{{ metrics.unscheduledLabel }}</div>
+      <div class="kpi" id="task-unscheduled-count"><span v-if="!hasLoaded" class="tasks-kpi-placeholder">{{ isInitialLoading ? "加载中…" : "未知" }}</span><span v-else>{{ metrics.unscheduledLabel }}</span></div>
       <div class="muted">需设备可用</div>
     </div>
   </section>
 
   <section class="card section tasks-list-card">
-    <h3>总任务清单</h3>
+    <h3 v-app-icon="{ name: 'clipboard' }">总任务清单</h3>
     <div class="toolbar">
       <input v-model="query" class="search-input" id="task-list-search" placeholder="筛选任务编号/实验摘要/样品编号" />
       <select v-model="filterTestType" class="search-input" id="task-list-filter-test-type">
@@ -37,7 +38,7 @@
         <option v-for="option in statusOptions" :key="option" :value="option">{{ option }}</option>
       </select>
       <AppPagination
-        v-if="pageCount > 1"
+        v-if="hasLoaded && pageCount > 1"
         :current-page="currentPage"
         :page-count="pageCount"
         @change="setCurrentPage"
@@ -45,16 +46,19 @@
     </div>
     <div v-if="loadError" class="form-alert" data-testid="task-load-error">{{ loadError }}</div>
     <AppFeedback :message="resetFeedback" tone="success" data-testid="task-reset-feedback" @close="resetFeedback = ''" />
-    <table class="table tasks-table" id="task-table">
+    <div v-if="!hasLoaded" class="tasks-loading-state" role="status" data-testid="task-initial-state">
+      {{ isInitialLoading ? "正在加载任务清单…" : "尚未取得任务数据，请刷新后重试" }}
+    </div>
+    <table v-else class="table tasks-table" id="task-table">
       <thead>
         <tr>
           <th class="tasks-table__col tasks-table__col--index">序号</th>
-          <th class="tasks-table__col tasks-table__col--code" data-sort :data-sort-dir="sortKey === 'code' ? sortDirection : ''" @click="toggleSort('code')">任务编号</th>
-          <th class="tasks-table__col tasks-table__col--source" data-sort :data-sort-dir="sortKey === 'source' ? sortDirection : ''" @click="toggleSort('source')">来源</th>
-          <th class="tasks-table__col tasks-table__col--sample-count" data-sort :data-sort-dir="sortKey === 'sampleCount' ? sortDirection : ''" @click="toggleSort('sampleCount')">样品</th>
-          <th class="tasks-table__col tasks-table__col--summary" data-sort :data-sort-dir="sortKey === 'testType' ? sortDirection : ''" @click="toggleSort('testType')">实验摘要</th>
-          <th class="tasks-table__col tasks-table__col--due-at" data-sort :data-sort-dir="sortKey === 'dueAt' ? sortDirection : ''" @click="toggleSort('dueAt')">期望完成</th>
-          <th class="tasks-table__col tasks-table__col--status" data-sort :data-sort-dir="sortKey === 'displayStatus' ? sortDirection : ''" @click="toggleSort('displayStatus')">状态</th>
+          <th class="tasks-table__col tasks-table__col--code" data-sort :data-sort-dir="sortKey === 'code' ? sortDirection : ''" :aria-sort="sortAria('code')" @click="toggleSort('code')"><button class="table-sort-button" type="button" @click.stop="toggleSort('code')">任务编号</button></th>
+          <th class="tasks-table__col tasks-table__col--source" data-sort :data-sort-dir="sortKey === 'source' ? sortDirection : ''" :aria-sort="sortAria('source')" @click="toggleSort('source')"><button class="table-sort-button" type="button" @click.stop="toggleSort('source')">来源</button></th>
+          <th class="tasks-table__col tasks-table__col--sample-count" data-sort :data-sort-dir="sortKey === 'sampleCount' ? sortDirection : ''" :aria-sort="sortAria('sampleCount')" @click="toggleSort('sampleCount')"><button class="table-sort-button" type="button" @click.stop="toggleSort('sampleCount')">样品</button></th>
+          <th class="tasks-table__col tasks-table__col--summary" data-sort :data-sort-dir="sortKey === 'testType' ? sortDirection : ''" :aria-sort="sortAria('testType')" @click="toggleSort('testType')"><button class="table-sort-button" type="button" @click.stop="toggleSort('testType')">实验摘要</button></th>
+          <th class="tasks-table__col tasks-table__col--due-at" data-sort :data-sort-dir="sortKey === 'dueAt' ? sortDirection : ''" :aria-sort="sortAria('dueAt')" @click="toggleSort('dueAt')"><button class="table-sort-button" type="button" @click.stop="toggleSort('dueAt')">期望完成</button></th>
+          <th class="tasks-table__col tasks-table__col--status" data-sort :data-sort-dir="sortKey === 'displayStatus' ? sortDirection : ''" :aria-sort="sortAria('displayStatus')" @click="toggleSort('displayStatus')"><button class="table-sort-button" type="button" @click.stop="toggleSort('displayStatus')">状态</button></th>
           <th class="tasks-table__col tasks-table__col--actions">操作</th>
         </tr>
       </thead>
@@ -81,6 +85,7 @@
 
   <AppModal :open="intakeModalOpen" class="tasks-intake-modal" title="新建内部任务" @close="closeIntakeModal">
     <form class="tasks-intake-form">
+      <p class="tasks-required-note">带 <span class="tasks-required-mark">*</span> 为必填，其余选填</p>
       <div class="form-grid">
         <div class="form-field">
           <label>任务来源</label>
@@ -90,21 +95,21 @@
           <label>任务名称</label>
           <input v-model="intakeForm.name" type="text" name="name" maxlength="20" placeholder="例如：来料检测-批次A" />
         </div>
-        <div class="form-field">
-          <label>任务编号</label>
-          <input v-model="intakeForm.code" type="text" name="code" placeholder="根据试验类型自动生成" readonly />
+        <div class="form-field tasks-readonly-field">
+          <label for="task-intake-code">任务编号 <span class="tasks-readonly-badge">系统生成</span></label>
+          <input id="task-intake-code" v-model="intakeForm.code" class="tasks-readonly-control" type="text" name="code" placeholder="根据试验类型自动生成" readonly />
         </div>
         <div class="form-field">
           <label>委托单位/部门</label>
           <input v-model="intakeForm.client" type="text" name="client" placeholder="客户或内部部门" />
         </div>
         <div class="form-field">
-          <label>联系人</label>
-          <input v-model="intakeForm.contact" type="text" name="contact" maxlength="15" required placeholder="姓名" />
+          <label for="task-intake-contact">联系人 <span class="tasks-required-mark" aria-hidden="true">*</span></label>
+          <input id="task-intake-contact" v-model="intakeForm.contact" type="text" name="contact" maxlength="15" required placeholder="姓名" />
         </div>
         <div class="form-field">
-          <label>联系方式</label>
-          <input v-model="intakeForm.contact_info" type="text" name="contact_info" inputmode="numeric" maxlength="15" required placeholder="请输入 1-15 位数字" @input="sanitizeIntakeContactInfo" />
+          <label for="task-intake-contact-info">联系方式 <span class="tasks-required-mark" aria-hidden="true">*</span></label>
+          <input id="task-intake-contact-info" v-model="intakeForm.contact_info" type="text" name="contact_info" inputmode="numeric" maxlength="15" required placeholder="请输入 1-15 位数字" @input="sanitizeIntakeContactInfo" />
         </div>
         <div class="form-field">
           <label>优先级</label>
@@ -115,8 +120,8 @@
           </select>
         </div>
         <div class="form-field">
-          <label>样品数量</label>
-          <AppNumberInput v-model="intakeForm.sample_count" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
+          <label for="task-intake-sample-count">样品数量 <span class="tasks-required-mark" aria-hidden="true">*</span></label>
+          <AppNumberInput id="task-intake-sample-count" v-model="intakeForm.sample_count" name="sample_count" min="1" max="99" step="1" required placeholder="例如：12" />
         </div>
         <div class="form-field tasks-sample-preview">
           <label>样品编号预览</label>
@@ -124,18 +129,23 @@
             <span v-for="code in intakeSampleCodePreview" :key="code">{{ code }}</span>
             <span v-if="intakeSampleCodePreview.length === 0" class="muted">选择试验类型并填写样品数量后生成</span>
           </div>
+          <div v-if="intakeSampleCodePreview.length" class="tasks-sample-preview__caption" data-testid="task-intake-sample-preview-caption">
+            {{ samplePreviewCaption(intakeSampleCodePreview.length, intakeForm.sample_count) }}
+          </div>
         </div>
         <div class="form-field">
           <label>样品类型</label>
           <input v-model="intakeForm.sample_type" type="text" name="sample_type" placeholder="例如：固体/液体/粉末" />
         </div>
         <div class="form-field">
-          <label>试验类型</label>
+          <label for="task-intake-test-types">试验类型 <span class="tasks-required-mark" aria-hidden="true">*</span></label>
           <div class="tasks-intake-test-types">
             <button
+              id="task-intake-test-types"
               class="search-input tasks-intake-test-types__trigger"
               data-testid="task-intake-test-types-trigger"
               type="button"
+              aria-label="试验类型（必填）"
               @click="openIntakeExperimentPicker"
             >
               <span>{{ intakeExperimentSummary || "请选择试验类型" }}</span>
@@ -146,9 +156,9 @@
           <label>期望完成时间</label>
           <PickerOnlyInput v-model="intakeForm.due_at" type="datetime-local" name="due_at" :min="intakeDueAtMin" />
         </div>
-        <div class="form-field">
-          <label>到样日期</label>
-          <PickerOnlyInput v-model="intakeForm.arrival_at" type="date" name="arrival_at" empty-hint="确认入库后自动回写" readonly />
+        <div class="form-field tasks-readonly-field">
+          <label for="task-intake-arrival">到样日期 <span class="tasks-readonly-badge">系统回写</span></label>
+          <PickerOnlyInput id="task-intake-arrival" v-model="intakeForm.arrival_at" class="tasks-readonly-control" type="date" name="arrival_at" empty-hint="确认入库后自动回写" readonly />
           <div class="helper">以样品管理确认入库时间为准，未确认前为空</div>
         </div>
         <div class="form-field">
@@ -156,9 +166,9 @@
           <input v-model="intakeForm.conditions" type="text" name="conditions" placeholder="温湿度/避光等" />
         </div>
         <div class="form-field">
-          <label>附件</label>
-          <input v-model="intakeForm.attachment" type="text" name="attachment" placeholder="上传报告或规范编号" />
-          <div class="helper">可关联委托书、规范、SOP</div>
+          <label for="task-intake-attachment">附件编号/引用</label>
+          <input id="task-intake-attachment" v-model="intakeForm.attachment" type="text" name="attachment" placeholder="填写报告、规范或 SOP 编号" aria-describedby="task-intake-attachment-help" />
+          <div id="task-intake-attachment-help" class="helper">填写已有委托书、报告、规范或 SOP 的编号或引用</div>
         </div>
         <div class="form-field" style="grid-column: 1 / -1;">
           <label>备注</label>
@@ -175,6 +185,7 @@
 
   <AppModal :open="intakeExperimentModalOpen" title="选择试验类型" @close="closeIntakeExperimentPicker">
     <div class="tasks-intake-picker-modal" data-testid="task-intake-test-types-modal">
+      <div class="tasks-intake-picker-modal__hint" aria-live="polite">可多选 · 已选 {{ intakeExperimentDraft.length }} 项</div>
       <div class="tasks-intake-picker-modal__summary" data-testid="task-intake-test-types-summary">
         {{ intakeExperimentDraftSummary || "请选择试验类型" }}
       </div>
@@ -190,6 +201,7 @@
           :class="{ 'is-selected': intakeExperimentDraft.includes(option) }"
           :data-testid="`task-intake-test-type-option-${option}`"
           type="button"
+          :aria-pressed="intakeExperimentDraft.includes(option)"
           @click="toggleIntakeExperimentType(option)"
         >
           <span class="tasks-intake-test-types__card-name">{{ option }}</span>
@@ -299,14 +311,17 @@
             <span v-for="code in selectedExternalSampleCodePreview" :key="code">{{ code }}</span>
             <span v-if="selectedExternalSampleCodePreview.length === 0" class="muted">受理后自动生成</span>
           </div>
+          <div v-if="selectedExternalSampleCodePreview.length" class="tasks-sample-preview__caption" data-testid="external-task-sample-preview-caption">
+            {{ samplePreviewCaption(selectedExternalSampleCodePreview.length, selectedExternalTaskIntake.sampleCount) }}
+          </div>
         </div>
         <div class="form-field">
           <label>样品类型</label>
           <input :value="selectedExternalTaskIntake.sampleType" type="text" readonly />
         </div>
         <div class="form-field">
-          <label>试验类型</label>
-          <input :value="selectedExternalTaskIntake.testType" type="text" readonly />
+          <label id="external-task-test-type-label">试验类型</label>
+          <div class="tasks-external-detail__text" role="textbox" aria-readonly="true" aria-labelledby="external-task-test-type-label" data-testid="external-task-test-type">{{ selectedExternalTaskIntake.testType || "-" }}</div>
         </div>
         <div class="form-field">
           <label>期望完成日期</label>
@@ -349,11 +364,12 @@
       </div>
       <div class="tasks-axis-picker__grid" data-testid="task-intake-axis-grid">
         <button
-          v-for="axisCode in axisCodesForExperimentType(intakeAxisPickerType)"
+          v-for="axisCode in axisCodesForDisplay(intakeAxisPickerType)"
           :key="axisCode"
           class="tasks-axis-picker__option"
-          :class="{ 'is-selected': intakeAxisPickerCodes.includes(axisCode) }"
+          :class="{ 'is-selected': intakeAxisPickerCodes.includes(axisCode), 'is-single-axis': axisCode.length === 1 }"
           :data-testid="`task-intake-axis-option-${axisCode}`"
+          :aria-pressed="intakeAxisPickerCodes.includes(axisCode)"
           type="button"
           @click="toggleIntakeAxisCode(axisCode)"
         >
@@ -559,6 +575,7 @@
 
   <AppModal :open="editExperimentModalOpen" title="选择试验类型" @close="closeEditExperimentPicker">
     <div class="tasks-intake-picker-modal" data-testid="task-edit-test-types-modal">
+      <div class="tasks-intake-picker-modal__hint" aria-live="polite">可多选 · 已选 {{ editExperimentDraft.length }} 项</div>
       <div class="tasks-intake-picker-modal__summary" data-testid="task-edit-test-types-summary">
         {{ editExperimentDraftSummary || "请选择试验类型" }}
       </div>
@@ -574,6 +591,7 @@
           :class="{ 'is-selected': editExperimentDraft.includes(option) }"
           :data-testid="`task-edit-test-type-option-${option}`"
           type="button"
+          :aria-pressed="editExperimentDraft.includes(option)"
           @click="toggleEditExperimentType(option)"
         >
           <span class="tasks-intake-test-types__card-name">{{ option }}</span>
@@ -607,11 +625,12 @@
       </div>
       <div class="tasks-axis-picker__grid" data-testid="task-edit-axis-grid">
         <button
-          v-for="axisCode in axisCodesForExperimentType(editAxisPickerType)"
+          v-for="axisCode in axisCodesForDisplay(editAxisPickerType)"
           :key="axisCode"
           class="tasks-axis-picker__option"
-          :class="{ 'is-selected': editAxisPickerCodes.includes(axisCode) }"
+          :class="{ 'is-selected': editAxisPickerCodes.includes(axisCode), 'is-single-axis': axisCode.length === 1 }"
           :data-testid="`task-edit-axis-option-${axisCode}`"
+          :aria-pressed="editAxisPickerCodes.includes(axisCode)"
           type="button"
           @click="toggleEditAxisCode(axisCode)"
         >
@@ -656,6 +675,7 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 import TaskAdminAuthDialog from "@/components/shared/TaskAdminAuthDialog.vue";
 defineOptions({
   name: "TasksPage",
@@ -666,6 +686,7 @@ import AppModal from "@/components/shared/AppModal.vue";
 import AppNumberInput from "@/components/shared/AppNumberInput.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
+import { normalizeTaskSampleCount } from "./model";
 import { useTasksPage } from "./useTasksPage";
 
 const {
@@ -719,6 +740,8 @@ const {
   intakeModalOpen,
   intakeSampleCodePreview,
   intakeWarning,
+  hasLoaded,
+  isInitialLoading,
   loadError,
   metrics,
   pageCount,
@@ -764,9 +787,40 @@ const {
   updateTask,
   openTaskDrawer,
 } = useTasksPage();
+
+const sortAria = (key) => sortKey.value === key
+  ? (sortDirection.value === "asc" ? "ascending" : "descending")
+  : "none";
+
+const samplePreviewCaption = (visibleCount, rawTotal) => {
+  const total = normalizeTaskSampleCount(rawTotal);
+  return total > visibleCount
+    ? `仅预览前 ${visibleCount} 项 · 共 ${total} 件样品`
+    : `共 ${total} 件样品`;
+};
+
+// 只调整按钮展示顺序，确认时仍由既有选择器保存轴向值和执行顺序。
+const axisDisplayOrder = new Map(["x", "x+", "x-", "y", "y+", "y-", "z", "z+", "z-"].map((code, index) => [code, index]));
+const axisCodesForDisplay = (experimentType) => [...axisCodesForExperimentType(experimentType)].sort(
+  (left, right) => (axisDisplayOrder.get(left) ?? 99) - (axisDisplayOrder.get(right) ?? 99),
+);
 </script>
 
 <style scoped>
+.tasks-kpi-placeholder {
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.tasks-loading-state {
+  padding: 32px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-control);
+  color: var(--muted);
+  text-align: center;
+}
+
 .tasks-intake-test-types__trigger {
   display: flex;
   align-items: center;
@@ -797,6 +851,12 @@ const {
   font-size: 16px;
   font-weight: 600;
   line-height: 1.45;
+}
+
+.tasks-intake-picker-modal__hint {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .tasks-intake-test-types__grid {
@@ -850,7 +910,7 @@ const {
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 999px;
+  border-radius: 5px;
   border: 1px solid var(--border);
   background: var(--bg-panel-strong);
   color: transparent;
@@ -893,7 +953,7 @@ const {
 
 .tasks-axis-picker__grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -906,6 +966,10 @@ const {
   font-size: 15px;
   font-weight: 700;
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.tasks-axis-picker__option.is-single-axis {
+  grid-column: 1 / -1;
 }
 
 .tasks-axis-picker__option:hover {

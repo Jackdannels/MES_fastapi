@@ -124,4 +124,36 @@ describe("BackupSettings", () => {
     expect(wrapper.get("input").element.value).toBe(newPath);
     wrapper.unmount();
   });
+
+  test("highlights failures and retains both original errors in collapsed details without triggering work", async () => {
+    const backgroundError = "[Errno 13] Permission denied: 'backup'";
+    const fileError = "[Errno 2] No such file or directory: '\\\\server\\share\\report.pdf'";
+    api.readBackupStatus.mockResolvedValue({
+      enabled: true,
+      destination: oldPath,
+      counts: { synced: 24, pending: 1, failed: 7 },
+      lastError: backgroundError,
+      failures: [{ error: fileError }],
+    });
+    const wrapper = await page();
+    const failed = wrapper.get('[data-testid="backup-failed-count"]');
+    expect(failed.classes()).toContain("is-failed");
+    expect(failed.get("strong").text()).toBe("7");
+    expect(wrapper.get(".backup-error-summary > strong").text()).toBe("备份文件或目录不存在");
+    const details = wrapper.get('[data-testid="backup-error-details"]');
+    expect(details.element.open).toBe(false);
+    expect(details.findAll("pre").map((entry) => entry.text())).toEqual([backgroundError, fileError]);
+    details.element.open = true;
+    expect(details.text()).toContain(fileError);
+    expect(api.saveBackupPath).not.toHaveBeenCalled();
+    expect(api.checkBackupPath).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  test("keeps a zero failure count neutral and omits an empty error section", async () => {
+    const wrapper = await page();
+    expect(wrapper.get('[data-testid="backup-failed-count"]').classes()).not.toContain("is-failed");
+    expect(wrapper.find(".backup-error-summary").exists()).toBe(false);
+    wrapper.unmount();
+  });
 });

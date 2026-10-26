@@ -3,6 +3,7 @@ import { formatLocalDateTime } from "@/lib/dateTime";
 import { resolveVisualFlowStepTitle, visualFlowStepClass } from "../flowStepState";
 import { findSelectedLabTask, findSelectedLabTray } from "./helpers";
 import { LiveClock } from "./liveClock";
+import { withVisualIcon } from "./visualIcons";
 
 const buildLabTaskOptions = (lab) => {
   const taskMap = new Map();
@@ -66,10 +67,10 @@ export const LabProcessScreen = {
     return () =>
       h("div", { class: ["visual-board", props.compact ? "is-compact" : "", props.interactive && !props.compact ? "is-layout-a" : ""] }, [
         h("div", { class: "visual-board-top" }, [
-          h("div", { class: "visual-board-title-group" }, [
+          withVisualIcon(h("div", { class: "visual-board-title-group" }, [
             h("div", { class: "visual-board-kicker" }, "LAB PROCESS"),
             h("div", { class: "visual-board-title" }, props.screen?.group === "secondary" ? props.screen.name : "例行试验站智能控制中心"),
-          ]),
+          ]), "activity", props.compact, { boundary: ".visual-board-top", textTarget: ".visual-board-title" }),
           h("div", { class: "visual-board-state" }, [
             h("span", { class: "visual-board-live" }, "LIVE"),
             h(LiveClock),
@@ -118,7 +119,7 @@ export const LabProcessScreen = {
                 props.interactive && !props.compact && taskOptions.length
                   ? h("div", { class: "visual-lab-switchboard" }, [
                     h("div", { class: "visual-lab-switch-group" }, [
-                      h("span", "任务切换"),
+                      withVisualIcon(h("span", "任务切换"), "clipboard", props.compact),
                       h("div", { class: "visual-lab-switch-options" }, taskOptions.map((task) =>
                         h(
                           "button",
@@ -134,7 +135,7 @@ export const LabProcessScreen = {
                     ]),
                     selectedTask?.trays?.length
                       ? h("div", { class: "visual-lab-switch-group" }, [
-                        h("span", "托盘切换"),
+                        withVisualIcon(h("span", "托盘切换"), "box", props.compact),
                         h("div", { class: "visual-lab-switch-options" }, selectedTask.trays.map((tray) =>
                           h(
                             "button",

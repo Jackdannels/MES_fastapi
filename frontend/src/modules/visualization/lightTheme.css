@@ -1,0 +1,379 @@
+/* Light-theme paint only. Geometry, typography, status logic and chart series
+   remain owned by styles.css and the screen components. */
+:root[data-theme="light"] .visualization-page .visual-board {
+  background-image:
+    linear-gradient(rgba(37, 99, 235, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.025) 1px, transparent 1px),
+    linear-gradient(135deg, var(--screen-bg), var(--screen-panel));
+}
+
+:root[data-theme="light"] .visualization-page .visual-board::after {
+  background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.28), transparent);
+}
+
+:root[data-theme="light"] .visualization-page .visual-screen-card {
+  border-color: var(--screen-line);
+  box-shadow: var(--shadow-soft);
+}
+
+:root[data-theme="light"] .visualization-page .visual-screen-card:is(:hover, :focus-visible) {
+  border-color: var(--screen-line-strong);
+  outline-color: rgba(37, 99, 235, 0.24);
+  box-shadow: var(--shadow);
+}
+
+:root[data-theme="light"] .visualization-page .visual-card-index,
+:root[data-theme="light"] .visualization-page .visual-board-live:not(.tone-live):not(.tone-sync):not(.tone-alert) {
+  color: var(--accent);
+  background: var(--surface-alternate);
+}
+
+:root[data-theme="light"] .visualization-page .visual-card-name {
+  color: var(--screen-text);
+  text-shadow: none;
+}
+
+:root[data-theme="light"] .visualization-page .visual-card-status.tone-alert,
+:root[data-theme="light"] .visualization-page .visual-board-live.tone-alert,
+:root[data-theme="light"] .visualization-page .visual-alert-strip {
+  color: var(--status-danger-text);
+  background: var(--status-danger-bg);
+  border-color: var(--status-danger-border);
+}
+
+:root[data-theme="light"] .visualization-page .visual-board .visual-board-metrics div {
+  background: var(--screen-panel);
+  border-color: var(--screen-line);
+  box-shadow: var(--shadow-soft);
+}
+
+:root[data-theme="light"] .visualization-page .visual-board-metrics strong {
+  color: var(--screen-text);
+}
+
+/* Process selection and the original done / inferred / active distinction. */
+:root[data-theme="light"] .visualization-page .visual-lab-switch-option:is(:hover, :focus-visible, .is-active),
+:root[data-theme="light"] .visualization-page .visual-lab-cycle:is(:hover, :focus-visible) {
+  color: var(--accent);
+  background: var(--surface-alternate);
+  border-color: var(--screen-line-strong);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-cycle {
+  color: var(--accent);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-state.is-upkeep {
+  color: var(--status-warning-text);
+  background: var(--status-warning-bg);
+  border-color: var(--status-warning-border);
+}
+
+:root[data-theme="light"] .visualization-page .visual-tray-flow-head strong {
+  color: var(--screen-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-tray-flow-head span {
+  color: var(--screen-muted);
+}
+
+:root[data-theme="light"] .visualization-page .visual-flow-step {
+  color: var(--screen-muted);
+}
+
+:root[data-theme="light"] .visualization-page .visual-flow-dot {
+  background: var(--surface-alternate);
+  border-color: var(--screen-line-strong);
+}
+
+:root[data-theme="light"] .visualization-page .visual-flow-step::before {
+  background-color: var(--screen-line-strong);
+  border-color: var(--screen-line-strong);
+}
+
+:root[data-theme="light"] .visualization-page .visual-flow-step:is(.is-done, .is-inferred) {
+  color: var(--status-success-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-flow-step:is(.is-done, .is-inferred) .visual-flow-dot {
+  background: var(--status-success-bg);
+  border-color: var(--status-success-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-flow-step:is(.is-done, .is-inferred)::before {
+  background-color: var(--status-success-border);
+  border-color: var(--status-success-border);
+}
+
+:root[data-theme="light"] .visualization-page .visual-flow-step.is-active {
+  color: var(--accent);
+}
+
+:root[data-theme="light"] .visualization-page .visual-board .visual-flow-step.is-active .visual-flow-dot {
+  background: var(--status-info-bg);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+:root[data-theme="light"] .visualization-page .visual-flow-step.is-pause-reset {
+  color: var(--status-warning-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-flow-step.is-pause-reset .visual-flow-dot {
+  background: var(--status-warning-bg);
+  border-color: var(--status-warning-text);
+  box-shadow: none;
+}
+
+/* Schedule surfaces keep the per-task color variable and semantic states. */
+:root[data-theme="light"] .visualization-page .visual-schedule-nav button {
+  color: var(--accent);
+  background: var(--surface-alternate);
+  border-color: var(--screen-line);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .visualization-page .visual-schedule-nav button:is(:hover, :focus-visible) {
+  background: var(--status-info-bg);
+  border-color: var(--screen-line-strong);
+}
+
+:root[data-theme="light"] .visualization-page .visual-schedule-grid-head {
+  color: var(--screen-text);
+  background: var(--surface-alternate);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-schedule-grid-head strong {
+  color: var(--screen-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-schedule-slot.is-idle .visual-schedule-idle,
+:root[data-theme="light"] .visualization-page .visual-schedule-slot-state {
+  color: var(--screen-muted);
+}
+
+:root[data-theme="light"] .visualization-page .visual-board .visual-schedule-slot:is(.is-planned, .state-busy, .state-split, .state-stacked, .state-running) {
+  background: color-mix(in srgb, var(--schedule-task-color, var(--accent)) 10%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--schedule-task-color, var(--accent)) 42%, transparent);
+}
+
+:root[data-theme="light"] .visualization-page .visual-board .visual-schedule-slot:is(.state-conflict, .is-conflict) {
+  color: var(--status-danger-text);
+  background: var(--status-danger-bg);
+  box-shadow: inset 0 0 0 1px var(--status-danger-border);
+}
+
+:root[data-theme="light"] .visualization-page .visual-board .visual-schedule-slot.state-maintenance,
+:root[data-theme="light"] .visualization-page .visual-schedule-overflow {
+  color: var(--status-warning-text);
+  background-color: var(--status-warning-bg);
+}
+
+:root[data-theme="light"] .visualization-page .visual-board .visual-schedule-slot.state-disabled {
+  background: var(--surface-disabled);
+}
+
+:root[data-theme="light"] .visualization-page .visual-schedule-status-only {
+  color: inherit;
+}
+
+:root[data-theme="light"] .visualization-page .visual-schedule-cycle-light.is-active {
+  background: var(--accent);
+  box-shadow: 0 0 5px rgba(37, 99, 235, 0.32);
+}
+
+/* Current-laboratory task matrix: match the shell without erasing state hues. */
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen {
+  --cyan: var(--accent);
+  background-image:
+    linear-gradient(rgba(37, 99, 235, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.025) 1px, transparent 1px),
+    linear-gradient(var(--screen-bg), var(--screen-bg));
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen :is(.header, .info, .tray-panel) {
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .card {
+  box-shadow: var(--shadow-soft);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen :is(.total, .scroll-hint, .badge) {
+  color: var(--screen-muted);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .card.planned .badge {
+  color: var(--accent);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .card:is(.repair, .upkeep) .badge {
+  color: var(--status-danger-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .card.maintenance .badge {
+  color: var(--status-complete-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .card.running .badge {
+  color: var(--status-success-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .card:is(.completed, .near) .badge {
+  color: var(--status-warning-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .tray-viewport.is-scrollable::before {
+  background: linear-gradient(var(--screen-panel), transparent);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .tray-viewport.is-scrollable::after {
+  background: linear-gradient(transparent, var(--screen-panel));
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .progress {
+  color: var(--accent);
+  background: var(--surface-alternate);
+  border-color: var(--screen-line);
+}
+
+/* Analysis plot categories and semantic status bars retain their source colors. */
+:root[data-theme="light"] .visualization-page .visual-analysis-panel-head,
+:root[data-theme="light"] .visualization-page .visual-analysis-calendar-wheel::after {
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-analysis-health-ring::after {
+  background: var(--screen-panel);
+  box-shadow: inset 0 0 0 1px var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-analysis-pie-center {
+  fill: var(--screen-panel);
+  stroke: var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-analysis-pie-slice {
+  stroke: var(--screen-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-analysis-pie-guide {
+  stroke: var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-analysis-status-row > div {
+  background: var(--surface-alternate);
+}
+
+:root[data-theme="light"] .visualization-page .visual-analysis-trend-bars span {
+  background: linear-gradient(180deg, var(--accent), rgba(37, 99, 235, 0.18));
+}
+
+:root[data-theme="light"] .visualization-page :is(.visual-analysis-custom-menu, .visual-analysis-picker-panel, .visual-analysis-calendar-wheel) {
+  color: var(--screen-text);
+  background: var(--surface-overlay);
+  border-color: var(--screen-line);
+  box-shadow: var(--shadow-soft);
+}
+
+:root[data-theme="light"] .visualization-page :is(.visual-analysis-picker-panel button, .visual-analysis-calendar-arrow, .visual-analysis-menu-close) {
+  color: var(--accent);
+  background: var(--surface-alternate);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-analysis-custom-row:is(:hover, :focus-within, :focus-visible, .is-active),
+:root[data-theme="light"] .visualization-page .visual-analysis-time-chip.is-active,
+:root[data-theme="light"] .visualization-page .visual-analysis-date-field:is(:hover, :focus-visible, .is-active),
+:root[data-theme="light"] .visualization-page .visual-analysis-picker-panel button:is(:hover, :focus-visible, .is-active),
+:root[data-theme="light"] .visualization-page .visual-analysis-calendar-arrow:is(:hover, :focus-visible) {
+  color: var(--accent);
+  background: var(--status-info-bg);
+  border-color: var(--screen-line-strong);
+}
+
+:root[data-theme="light"] .visualization-page .visual-analysis-calendar-arrow:disabled {
+  color: var(--text-disabled);
+  background: var(--surface-disabled);
+  border-color: var(--screen-line);
+}
+
+/* Shared telemetry preview consumers use readable blue-white surfaces while
+   preserving red alarms and the existing critical-alarm animation. */
+:root[data-theme="light"] .visualization-page .visual-board.visual-lab-status-board {
+  --status-cyan: var(--accent);
+  --status-green: var(--status-success-text);
+  --status-amber: var(--status-warning-text);
+  --status-line: var(--screen-line);
+  color: var(--screen-text);
+}
+
+:root[data-theme="light"] .visualization-page :is(.visual-lab-status-summary-item span, .visual-lab-status-card-head span, .visual-lab-status-metric span, .visual-lab-status-metric strong em, .visual-telemetry-group-name > span, .visual-telemetry-group-name b, .visual-telemetry-last-value, .visual-telemetry-footer) {
+  color: var(--screen-muted);
+}
+
+:root[data-theme="light"] .visualization-page .visual-telemetry-group {
+  background: var(--surface-alternate);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-telemetry-group-name {
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-telemetry-faults {
+  color: var(--status-danger-text);
+}
+
+:root[data-theme="light"] .visualization-page :is(.visual-lab-status-summary-item strong, .visual-lab-status-metric strong) {
+  color: var(--screen-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-status-board .visual-board-clock {
+  color: var(--screen-muted);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-status-card:is(.tone-alarm, .tone-offline, .tone-missing) {
+  background: var(--status-danger-bg);
+  border-color: var(--status-danger-border);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-status-card.tone-alarm .visual-lab-status-card-head span,
+:root[data-theme="light"] .visualization-page .visual-lab-status-board .visual-lab-status-summary-item:first-child strong,
+:root[data-theme="light"] .visualization-page .visual-lab-status-board.is-monitor-offline .visual-board-clock strong {
+  color: var(--status-danger-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-status-card.tone-delayed .visual-lab-status-alarm {
+  color: var(--status-warning-text);
+  background: var(--status-warning-bg);
+  border-color: var(--status-warning-border);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-status-card.tone-unknown .visual-lab-status-alarm {
+  color: var(--screen-muted);
+  background: var(--surface-alternate);
+  border-color: var(--screen-line);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-status-card:is(.tone-delayed, .tone-unknown) .visual-lab-status-alarm :is(b, span) {
+  color: inherit;
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-status-metric.is-alarm {
+  background: var(--status-danger-bg);
+  border-color: var(--status-danger-border);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-status-metric.is-alarm :is(span, strong, strong em) {
+  color: var(--status-danger-text);
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-status-metric:is(.is-unavailable, .is-stale) strong {
+  color: var(--screen-muted);
+}

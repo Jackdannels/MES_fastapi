@@ -20,6 +20,12 @@ const closeRunningRepairChoiceMock = vi.fn();
 const confirmRunningRepairCompleteMock = vi.fn();
 const confirmRunningRepairRescheduleMock = vi.fn();
 const closeDeviceDrawerMock = vi.fn();
+const sortKey = ref("");
+const sortDirection = ref("asc");
+const toggleSortMock = vi.fn((key) => {
+  sortDirection.value = sortKey.value === key && sortDirection.value === "asc" ? "desc" : "asc";
+  sortKey.value = key;
+});
 
 const devicesState = reactive({
   canSetDeviceAvailable: false,
@@ -123,12 +129,16 @@ vi.mock("./useDevicesPage", () => ({
     })),
     setDeviceAvailable: setDeviceAvailableMock,
     testTypeOptions: computed(() => ["液相色谱", "微生物"]),
-    toggleSort: vi.fn(),
+    sortKey,
+    sortDirection,
+    toggleSort: toggleSortMock,
   }),
 }));
 
 describe("DevicesPage runtime", () => {
   beforeEach(() => {
+    sortKey.value = "";
+    sortDirection.value = "asc";
     devicesState.canSetDeviceAvailable = false;
     devicesState.deviceDrawerOpen = false;
     devicesState.editDeviceOpen = false;
@@ -159,6 +169,38 @@ describe("DevicesPage runtime", () => {
     expect(wrapper.text()).not.toContain("下次校准");
     expect(wrapper.find('[data-testid="device-save"]').exists()).toBe(false);
     expect(wrapper.find('[data-testid="device-add"]').exists()).toBe(false);
+  });
+
+  test("exposes native sorting controls and updates the announced direction", async () => {
+    const wrapper = mount(DevicesPage);
+    const header = wrapper.get('#device-table th[data-sort]');
+    const button = header.get("button.table-sort-button");
+    expect(button.attributes("type")).toBe("button");
+    expect(header.attributes("aria-sort")).toBe("none");
+    await button.trigger("click");
+    expect(toggleSortMock).toHaveBeenCalledWith("code");
+    expect(header.attributes("aria-sort")).toBe("ascending");
+    await button.trigger("click");
+    expect(header.attributes("aria-sort")).toBe("descending");
+    expect(wrapper.findAll("#device-table .table-sort-button")).toHaveLength(5);
+    wrapper.unmount();
+  });
+
+  test("associates device labels and keeps identified read-only values copyable", async () => {
+    devicesState.editDeviceOpen = true;
+    const wrapper = mount(DevicesPage);
+    const code = wrapper.get("#edit-device-code").element;
+    expect(code.labels[0].textContent).toContain("只读");
+    expect(code.readOnly).toBe(true);
+    expect(code.disabled).toBe(false);
+    expect(wrapper.get("#edit-device-name").element.labels[0].textContent).toBe("设备名称");
+    devicesState.editDeviceOpen = false;
+    devicesState.maintenancePlanOpen = true;
+    await wrapper.vm.$nextTick();
+    for (const id of ["maintenance-device-code", "maintenance-device-name", "maintenance-type", "maintenance-start", "maintenance-end", "maintenance-note"]) {
+      expect(wrapper.get(`#${id}`).element.labels.length).toBe(1);
+    }
+    wrapper.unmount();
   });
 
   test("opens the central maintenance records modal without removed Modbus cards", async () => {

@@ -1040,6 +1040,60 @@ describe("TransferWorkbench runtime", () => {
     wrapper.unmount();
   });
 
+  test("pre-allocation detail keeps live tray contents and drag actions in the illustrated card layout", async () => {
+    const wrapper = mount(TransferWorkbench, {
+      props: { embedded: true, mode: "pre-allocation", showHeader: false },
+    });
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.classes()).toContain("is-pre-allocation");
+    expect(wrapper.get(".transfer-detail-shell__title h2").text()).toBe("任务样品分配");
+    expect(wrapper.get(".transfer-detail-task-line").text()).toContain("SYLU-2026-03-101");
+    expect(wrapper.findAll('[data-testid="transfer-task-code"]')).toHaveLength(1);
+    expect(wrapper.findAll(".transfer-tray-actions--top > button").map((button) => button.text())).toEqual([
+      "打印二维码（2）", "保存托盘", "重新分配", "全部托盘应用全部试验",
+    ]);
+    expect(wrapper.findAll(".transfer-tray-actions--top > button svg[aria-hidden='true']")).toHaveLength(4);
+    expect(wrapper.get('[data-testid="transfer-tray-limit-input"]').element.value).toBe("2");
+    expect(wrapper.get(".transfer-count-chip").text()).toBe("剩余空托盘 1");
+    const firstCard = wrapper.get('[data-testid="transfer-tray-card-0"]');
+    expect(firstCard.get(".transfer-tray-card__code").text()).toBe("SYLU-2026-03-101-TP-001");
+    expect(firstCard.get(".transfer-tray-card__number").text()).toBe("托盘 #1");
+    expect(firstCard.get(".transfer-tray-card__count").text()).toBe("二维码：未打印");
+    expect(firstCard.get(".transfer-tray-experiment-tags").text()).toBe("盐雾试验");
+    expect(firstCard.findAll(".sample-tray-sample-tag")).toHaveLength(2);
+
+    await firstCard.get(".sample-tray-sample-tag").trigger("dragstart");
+    await wrapper.get('[data-testid="transfer-tray-card-1"]').trigger("drop");
+    await settle(wrapper);
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("当前样品 1 / 2");
+    expect(wrapper.get('[data-testid="transfer-tray-card-1"]').text()).toContain("当前样品 2 / 2");
+    wrapper.unmount();
+  });
+
+  test("arrived pre-allocation cards preserve the loaded barcode and existing action locks", async () => {
+    const wrapper = mount(TransferWorkbench, {
+      props: { embedded: true, mode: "pre-allocation", showHeader: false },
+    });
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-filter-stored"]').trigger("click");
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-102"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get(".transfer-allocation-mode-hint").text()).toBe("当前任务样品已到货，相关托盘调整操作保持禁用状态。");
+    expect(wrapper.get('[data-testid="transfer-print-barcodes"]').attributes("disabled")).toBeUndefined();
+    expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-testid="transfer-tray-limit-input"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get(".transfer-use-tray-btn").attributes("disabled")).toBeDefined();
+    expect(wrapper.get(".sample-tray-remove").attributes("disabled")).toBeDefined();
+    expect(wrapper.get(".transfer-tray-card__count").text()).toContain("二维码：");
+    expect(wrapper.get(".transfer-tray-card__count").text()).not.toContain("未打印");
+    wrapper.unmount();
+  });
+
   test("asks for confirmation before resetting a scheduled task", async () => {
     const bootstrapPayload = createBootstrapPayload();
     const workspaceWithSchedules = {

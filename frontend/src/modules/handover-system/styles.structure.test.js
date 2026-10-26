@@ -30,7 +30,7 @@ describe("handover system styles", () => {
     const styleSource = readFileSync(stylesPath, "utf8");
 
     expect(componentSource).toMatch(/class="transfer-overview-shell__head"[\s\S]*v-if="showOverviewIntro"[\s\S]*class="transfer-overview-page-title"[\s\S]*class="transfer-overview-kpis/);
-    expect(componentSource).toContain('<h1 class="transfer-system-title">{{ modeConfig.headerTitle }}</h1>');
+    expect(componentSource).toMatch(/<h1\b[^>]*class="transfer-system-title"[^>]*>\s*{{ modeConfig\.headerTitle }}\s*<\/h1>/);
     expect(styleSource).toMatch(/\.transfer-system-header\s*\{[^}]*justify-content:\s*space-between/i);
     expect(styleSource).toMatch(/\.transfer-overview-shell__head\s*\{[^}]*min-height:\s*68px/i);
     expect(styleSource).toMatch(/\.transfer-overview-page-title\s*\{[^}]*font-size:\s*clamp\(28px,\s*2vw,\s*32px\)/i);

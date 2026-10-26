@@ -3,6 +3,7 @@ import { nextTick } from "vue";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import SystemPage from "./page.vue";
+import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
 
 describe("SystemPage runtime", () => {
   afterEach(() => {
@@ -81,6 +82,100 @@ describe("SystemPage runtime", () => {
     expect(wrapper.get('[data-testid="open-employee-operation-logs"]').text()).toBe("员工工作日志");
   });
 
+  test("provides native employee sorting controls with announced sort order", async () => {
+    stubAttendanceFetch();
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+    const header = wrapper.get("#employee-table th[data-sort]");
+    const sortButton = header.get("button.table-sort-button");
+    expect(header.attributes("aria-sort")).toBe("none");
+    expect(sortButton.attributes("type")).toBe("button");
+    await sortButton.trigger("click");
+    expect(header.attributes("aria-sort")).toBe("ascending");
+    await sortButton.trigger("click");
+    expect(header.attributes("aria-sort")).toBe("descending");
+    wrapper.unmount();
+  });
+
+  test("groups employee details, administrator verification and password reset without dropping controls", async () => {
+    stubAttendanceFetch();
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+    await wrapper.get('[data-testid="open-employee-drawer-0"]').trigger("click");
+    expect(wrapper.findAll(".system-employee-section legend").map((legend) => legend.text())).toEqual(["员工资料", "管理员身份验证", "密码重置"]);
+    expect(wrapper.findAll(".system-employee-section input, .system-employee-section select")).toHaveLength(6);
+    expect(wrapper.get("#employee-new-password").element.labels[0].textContent).toContain("仅重置时填写");
+    expect(wrapper.findAll(".system-employee-edit-modal .form-actions button")).toHaveLength(3);
+    wrapper.unmount();
+  });
+
+  test("distinguishes unqueried, loading, empty, failed and changed work-log filters", async () => {
+    stubAttendanceFetch();
+    const initialFetch = fetch.getMockImplementation();
+    let resolveQuery;
+    fetch.mockImplementation((input, options) => String(input).includes("/operation-logs/query")
+      ? new Promise((resolve) => { resolveQuery = resolve; })
+      : initialFetch(input, options));
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+    await wrapper.get('[data-testid="open-employee-operation-logs"]').trigger("click");
+    expect(wrapper.get('[data-testid="operation-log-empty"]').text()).toContain("尚未查询");
+    expect(wrapper.get('[data-testid="operation-log-employee"]').text()).toBe("全部员工");
+    expect(wrapper.get('[data-testid="operation-log-lab"]').text()).toBe("全部试验间");
+    for (const id of ["operation-log-admin-username", "operation-log-admin-password", "operation-log-date", "operation-log-employee", "operation-log-lab"]) {
+      expect(wrapper.get(`#${id}`).element.labels.length).toBe(1);
+    }
+    await wrapper.get('[data-testid="query-employee-operation-logs"]').trigger("click");
+    expect(wrapper.get('[data-testid="operation-log-empty"]').text()).toContain("正在查询");
+    expect(wrapper.get('[data-testid="query-employee-operation-logs"]').attributes("disabled")).toBeDefined();
+    resolveQuery({ ok: true, json: async () => [] });
+    await flushPromises(8);
+    expect(wrapper.get('[data-testid="operation-log-empty"]').text()).toContain("没有匹配");
+    await wrapper.get('[data-testid="operation-log-admin-username"]').setValue("another-admin");
+    expect(wrapper.get('[data-testid="operation-log-empty"]').text()).toContain("尚未查询");
+    await wrapper.get('[data-testid="query-employee-operation-logs"]').trigger("click");
+    resolveQuery({ ok: false, status: 401, json: async () => ({ detail: "管理员账号或密码错误" }) });
+    await flushPromises(8);
+    expect(wrapper.get('[data-testid="operation-log-empty"]').text()).toContain("查询未成功");
+    wrapper.unmount();
+  });
+
+  test("discards pending work-log responses after filters change or the dialog is reopened", async () => {
+    stubAttendanceFetch();
+    const initialFetch = fetch.getMockImplementation();
+    const queries = [];
+    fetch.mockImplementation((input, options) => String(input).includes("/operation-logs/query")
+      ? new Promise((resolve) => { queries.push(resolve); })
+      : initialFetch(input, options));
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+    await wrapper.get('[data-testid="open-employee-operation-logs"]').trigger("click");
+    await wrapper.get('[data-testid="query-employee-operation-logs"]').trigger("click");
+
+    wrapper.findComponent(PickerOnlyInput).vm.$emit("update:modelValue", "2026-07-25");
+    await nextTick();
+    expect(wrapper.get('[data-testid="operation-log-empty"]').text()).toContain("尚未查询");
+    expect(wrapper.get('[data-testid="query-employee-operation-logs"]').attributes("disabled")).toBeUndefined();
+    await wrapper.get('[data-testid="query-employee-operation-logs"]').trigger("click");
+    queries[0]({ ok: true, json: async () => [{ id: 900, action: "旧范围结果" }] });
+    await flushPromises(8);
+    expect(wrapper.get('[data-testid="operation-log-empty"]').text()).toContain("正在查询");
+    expect(wrapper.get('[data-testid="employee-operation-logs-table"]').text()).not.toContain("旧范围结果");
+    expect(wrapper.get('[data-testid="query-employee-operation-logs"]').attributes("disabled")).toBeDefined();
+    queries[1]({ ok: true, json: async () => [] });
+    await flushPromises(8);
+    expect(wrapper.get('[data-testid="operation-log-empty"]').text()).toContain("没有匹配");
+
+    await wrapper.get('[data-testid="query-employee-operation-logs"]').trigger("click");
+    await wrapper.get(".system-operation-log-modal .modal-close").trigger("click");
+    await wrapper.get('[data-testid="open-employee-operation-logs"]').trigger("click");
+    queries[2]({ ok: true, json: async () => [{ id: 901, action: "上次弹窗结果" }] });
+    await flushPromises(8);
+    expect(wrapper.get('[data-testid="operation-log-empty"]').text()).toContain("尚未查询");
+    expect(wrapper.get('[data-testid="employee-operation-logs-table"]').text()).not.toContain("上次弹窗结果");
+    wrapper.unmount();
+  });
+
   test("paginates personnel and work-time tables independently with eight fixed row slots", async () => {
     const employees = stubAttendanceFetch();
     for (let index = 2; index <= 17; index += 1) {
@@ -124,6 +219,33 @@ describe("SystemPage runtime", () => {
     expect(wrapper.get("#employee-table tbody tr:first-child td").text()).toBe("17");
   });
 
+  test("explains an unmatched employee filter and restores the first page when it is cleared", async () => {
+    const employees = stubAttendanceFetch();
+    for (let id = 2; id <= 11; id += 1) {
+      employees.push({ ...employees[0], id, employeeName: `员工${id}`, username: `employee${id}` });
+    }
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+    await wrapper.get('[data-testid="employee-pagination"] [data-page="next"]').trigger("click");
+    expect(wrapper.get('[data-testid="employee-pagination-range"]').text()).toContain("9–11");
+
+    await wrapper.get('input[placeholder="筛选员工/账号/角色"]').setValue("没有这位员工");
+    expect(wrapper.findAll("#employee-table tbody tr")).toHaveLength(0);
+    const empty = wrapper.get('[data-testid="employee-empty-state"]');
+    expect(empty.attributes("role")).toBe("status");
+    expect(empty.text()).toContain("没有匹配的员工");
+    expect(empty.text()).toContain("没有这位员工");
+    expect(wrapper.findAll("#employee-worktime-table tbody tr")).toHaveLength(8);
+
+    const focusSearch = vi.spyOn(wrapper.get('input[placeholder="筛选员工/账号/角色"]').element, "focus");
+    await wrapper.get('[data-testid="employee-clear-query"]').trigger("click");
+    expect(focusSearch).toHaveBeenCalledOnce();
+    expect(wrapper.get('input[placeholder="筛选员工/账号/角色"]').element.value).toBe("");
+    expect(wrapper.find('[data-testid="employee-empty-state"]').exists()).toBe(false);
+    expect(wrapper.get('[data-testid="employee-pagination-range"]').text()).toContain("1–8");
+    expect(wrapper.findAll("#employee-table tbody tr")).toHaveLength(8);
+  });
+
   test("provides default administrator credentials and independently confirmed work-log filters", async () => {
     stubAttendanceFetch();
     const wrapper = mount(SystemPage);
@@ -144,12 +266,12 @@ describe("SystemPage runtime", () => {
     const employeeOption = wrapper.get('[data-testid="operation-log-employee-option-1"]');
     await employeeOption.trigger("click");
     expect(employeeOption.classes()).toContain("is-selected");
-    expect(wrapper.get('[data-testid="operation-log-employee"]').text()).toContain("选择员工");
+    expect(wrapper.get('[data-testid="operation-log-employee"]').text()).toContain("全部员工");
     expect(wrapper.find('[data-testid="operation-log-scope-next"]').exists()).toBe(false);
     expect(wrapper.get('[data-testid="confirm-operation-log-scope"]').text()).toBe("确认");
     await wrapper.get('[data-testid="confirm-operation-log-scope"]').trigger("click");
     expect(wrapper.get('[data-testid="operation-log-employee"]').text()).toContain("张三");
-    expect(wrapper.get('[data-testid="operation-log-lab"]').text()).toContain("选择试验间");
+    expect(wrapper.get('[data-testid="operation-log-lab"]').text()).toContain("全部试验间");
 
     await wrapper.get('[data-testid="operation-log-lab"]').trigger("click");
     expect(wrapper.get('[data-testid="operation-log-lab-step"]').exists()).toBe(true);

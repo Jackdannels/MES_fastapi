@@ -152,7 +152,10 @@ describe("ScheduleTaskSelect priority labels", () => {
     const trigger = wrapper.get('[role="combobox"]');
     expect(trigger.attributes("aria-expanded")).toBe("false");
     expect(trigger.element.disabled).toBe(true);
-    expect(trigger.text()).toContain("暂无已接收任务");
+    expect(trigger.text()).toContain("暂无可排程任务");
+    const guidance = wrapper.get(".schedule-task-select__empty-hint");
+    expect(guidance.text()).toBe("请确认任务已受理、样品与托盘已分配，且仍有待排实验。");
+    expect(trigger.attributes("aria-describedby")).toBe(guidance.attributes("id"));
     expect(wrapper.find(".schedule-task-select__badge").exists()).toBe(false);
     expect(wrapper.find('[role="status"]').exists()).toBe(false);
     expect(wrapper.emitted("update:modelValue")).toBeUndefined();

@@ -92,6 +92,26 @@ const settle = async (wrapper) => {
   await wrapper.vm.$nextTick();
 };
 
+const deferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
+const taskPage = (tasks = [task]) => ({
+  tasks,
+  samples: [],
+  experiments: [],
+  schedules: [],
+  currentPage: 1,
+  totalPages: 1,
+  metrics: { externalCount: 0, internalCount: tasks.length, unscheduledCount: tasks.length },
+});
+
 describe("useTasksPage", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -141,6 +161,82 @@ describe("useTasksPage", () => {
     vi.useRealTimers();
     Object.values(mocks).forEach((mock) => mock.mockReset());
     routeState.hash = "";
+  });
+
+  test("distinguishes the initial pending request and failure from an empty successful page", async () => {
+    const pending = deferred();
+    mocks.readTaskPage.mockReturnValueOnce(pending.promise);
+    const wrapper = mount(TestHarness);
+
+    try {
+      expect(wrapper.vm.hasLoaded).toBe(false);
+      expect(wrapper.vm.isInitialLoading).toBe(true);
+      pending.reject(new Error("offline"));
+      await settle(wrapper);
+      expect(wrapper.vm.hasLoaded).toBe(false);
+      expect(wrapper.vm.isInitialLoading).toBe(false);
+      expect(wrapper.vm.loadError).toContain("任务数据加载失败");
+
+      mocks.readTaskPage.mockResolvedValueOnce(taskPage([]));
+      wrapper.vm.toggleSort("code");
+      await settle(wrapper);
+      expect(wrapper.vm.hasLoaded).toBe(true);
+      expect(wrapper.vm.isInitialLoading).toBe(false);
+      expect(wrapper.vm.metrics.internalCount).toBe(0);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  test("keeps the initial loading state until the latest page request settles", async () => {
+    const previous = deferred();
+    const latest = deferred();
+    mocks.readTaskPage.mockReturnValueOnce(previous.promise).mockReturnValueOnce(latest.promise);
+    const wrapper = mount(TestHarness);
+
+    try {
+      wrapper.vm.toggleSort("code");
+      await settle(wrapper);
+      previous.resolve(taskPage());
+      await settle(wrapper);
+      expect(wrapper.vm.hasLoaded).toBe(false);
+      expect(wrapper.vm.isInitialLoading).toBe(true);
+      expect(wrapper.vm.taskRows).toEqual([]);
+
+      latest.resolve(taskPage([]));
+      await settle(wrapper);
+      expect(wrapper.vm.hasLoaded).toBe(true);
+      expect(wrapper.vm.isInitialLoading).toBe(false);
+      expect(wrapper.vm.taskRows).toEqual([]);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  test("retains the last successful data while refreshing and after a refresh fails", async () => {
+    mocks.readTaskPage.mockResolvedValueOnce(taskPage());
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+    const pending = deferred();
+    mocks.readTaskPage.mockReturnValueOnce(pending.promise);
+
+    try {
+      wrapper.vm.toggleSort("code");
+      await settle(wrapper);
+      expect(wrapper.vm.hasLoaded).toBe(true);
+      expect(wrapper.vm.isInitialLoading).toBe(false);
+      expect(wrapper.vm.taskRows[0].code).toBe(task.code);
+      expect(wrapper.vm.metrics.internalCount).toBe(1);
+
+      pending.reject(new Error("offline"));
+      await settle(wrapper);
+      expect(wrapper.vm.hasLoaded).toBe(true);
+      expect(wrapper.vm.taskRows[0].code).toBe(task.code);
+      expect(wrapper.vm.metrics.internalCount).toBe(1);
+      expect(wrapper.vm.loadError).toContain("任务数据加载失败");
+    } finally {
+      wrapper.unmount();
+    }
   });
 
   test.each([

@@ -3,6 +3,10 @@
     <div v-for="item in connections" :key="item.key" class="integration-connection" :title="item.detail">
       <span>{{ item.label }}</span>
       <span :class="`integration-connection__state integration-connection__state--${item.state}`">{{ labels[item.state] || labels.unknown }}</span>
+      <details class="integration-connection__details" :data-testid="`connection-details-${item.key}`">
+        <summary :aria-label="`查看${item.label}连接详情`">查看连接详情</summary>
+        <p>{{ item.detail }}</p>
+      </details>
       <span
         v-if="item.alert"
         class="integration-connection__alert"
@@ -81,12 +85,30 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.integration-connections { display: grid; gap: 6px; font-size: 12px; }
-.integration-connection { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
-.integration-connection__state { color: var(--muted); }
-.integration-connection__state--online { color: var(--status-success-text); }
-.integration-connection__state--offline { color: var(--status-danger-text); }
-.integration-connection__state--partial { color: var(--status-warning-text); }
+.integration-connections { display: grid; gap: 10px; font-size: 13px; }
+.integration-connection { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+.integration-connection__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-alternate);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.integration-connection__state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.integration-connection__state--online { color: var(--status-success-text); background: var(--status-success-bg); border-color: var(--status-success-border); }
+.integration-connection__state--offline { color: var(--status-danger-text); background: var(--status-danger-bg); border-color: var(--status-danger-border); }
+.integration-connection__state--partial { color: var(--status-warning-text); background: var(--status-warning-bg); border-color: var(--status-warning-border); }
+.integration-connection__details { flex-basis: 100%; font-size: 12px; }
+.integration-connection__details summary { min-height: 24px; line-height: 24px; color: var(--accent); cursor: pointer; }
+.integration-connection__details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.integration-connection__details p { margin: 5px 0 0; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-alternate); color: var(--muted); line-height: 1.6; overflow-wrap: anywhere; }
 .integration-connection__alert { flex-basis: 100%; color: var(--status-danger-text); overflow-wrap: anywhere; }
 .integration-connection__alert--critical {
   position: relative;

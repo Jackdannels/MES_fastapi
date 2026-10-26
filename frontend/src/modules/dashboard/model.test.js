@@ -1,8 +1,20 @@
 import { describe, expect, test } from "vitest";
 
 import { buildDashboardViewModel } from "./model";
+import { buildTaskRows } from "@/modules/tasks/model";
 
 describe("dashboard model", () => {
+  test("uses the same waiting status presentation as task intake without changing the status", () => {
+    const tasks = [{ code: "TASK-WAITING", source: "内部新增", status: "待排程" }];
+    const now = Date.parse("2026-10-22T02:00:00.000Z");
+    const dashboard = buildDashboardViewModel({ tasks, schedules: [], devices: [], streams: [], now });
+    const intakeRows = buildTaskRows(tasks, [], [], [], now);
+
+    expect(dashboard.taskRows[0]).toMatchObject({ status: "待排程", statusClass: "status waiting" });
+    expect(dashboard.taskRows[0].statusClass).toBe(intakeRows[0].statusClass);
+    expect(tasks[0].status).toBe("待排程");
+  });
+
   test("orders task queue rows by task code ascending by default", () => {
     const viewModel = buildDashboardViewModel({
       tasks: [

@@ -4,6 +4,19 @@ import { describe, expect, test } from "vitest";
 import PickerOnlyInput from "./PickerOnlyInput.vue";
 
 describe("PickerOnlyInput", () => {
+  test("marks disabled dates for visible disabled styling and prevents the calendar from opening", async () => {
+    const wrapper = mount(PickerOnlyInput, { props: { modelValue: "", type: "datetime-local" }, attrs: { disabled: true } });
+    expect(wrapper.classes()).toContain("is-disabled");
+    expect(wrapper.get("input").element.disabled).toBe(true);
+    await wrapper.get("input").trigger("click");
+    expect(wrapper.find(".picker-only-calendar").exists()).toBe(false);
+    await wrapper.setProps({ disabled: false });
+    expect(wrapper.classes()).not.toContain("is-disabled");
+    await wrapper.get("input").trigger("click");
+    expect(wrapper.find(".picker-only-calendar").exists()).toBe(true);
+    wrapper.unmount();
+  });
+
   test("shows localized empty date hints instead of browser default date text", () => {
     const dateInput = mount(PickerOnlyInput, {
       props: {

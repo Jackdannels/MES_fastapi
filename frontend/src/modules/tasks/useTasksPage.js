@@ -98,6 +98,9 @@ function useTasksPage() {
   const rawExperimentRunTrays = ref([]);
   const masterTestTypes = ref([]);
   const loadError = ref("");
+  const hasLoaded = ref(false);
+  const taskPageLoading = ref(true);
+  const isInitialLoading = computed(() => !hasLoaded.value && taskPageLoading.value);
   const resetFeedback = ref("");
   const resetError = ref("");
   const resetting = ref(false);
@@ -829,6 +832,7 @@ function useTasksPage() {
 
   const loadTasksPage = async () => {
     const pageRequest = ++taskPageRequest;
+    taskPageLoading.value = true;
     try {
       const payload = await readTaskPage({
         page: currentPage.value,
@@ -861,6 +865,7 @@ function useTasksPage() {
         currentPage.value = responsePage;
       }
       loadError.value = "";
+      hasLoaded.value = true;
       if (taskDrawer.open.value) {
         const selectedTaskCode = normalizeText(taskDrawer.payload.value?.code || editForm.value.code);
         const editWasDirty = isTaskEditFormDirty();
@@ -881,6 +886,10 @@ function useTasksPage() {
     } catch (error) {
       if (pageRequest === taskPageRequest) {
         loadError.value = buildFailureMessage("任务数据加载失败，请检查网络后重试", error);
+      }
+    } finally {
+      if (pageRequest === taskPageRequest) {
+        taskPageLoading.value = false;
       }
     }
     if (pageRequest !== taskPageRequest) {
@@ -1067,6 +1076,8 @@ function useTasksPage() {
     intakeModalOpen: intakeModal.open,
     intakeSampleCodePreview,
     intakeWarning,
+    hasLoaded,
+    isInitialLoading,
     loadError,
     metrics,
     pageCount,

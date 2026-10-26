@@ -2,7 +2,7 @@
   <span
     ref="rootElement"
     class="picker-only-input"
-    :class="{ 'picker-only-input--manual-time': manualTimeEntryEnabled }"
+    :class="{ 'picker-only-input--manual-time': manualTimeEntryEnabled, 'is-disabled': manualInputDisabled }"
   >
     <span
       v-if="manualTimeEntryEnabled"

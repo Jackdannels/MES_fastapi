@@ -1,4 +1,5 @@
 import { h, ref } from "vue";
+import { withVisualIcon } from "./visualIcons";
 
 const ANALYSIS_PRODUCT_COUNTS = {
   "振动一室": 72,
@@ -468,10 +469,10 @@ export const AnalysisScreen = {
 
       return h("div", { class: ["visual-board", "visual-analysis-board", props.compact ? "is-compact" : ""] }, [
         h("div", { class: "visual-board-top visual-analysis-top" }, [
-          h("div", { class: "visual-board-title-group" }, [
+          withVisualIcon(h("div", { class: "visual-board-title-group" }, [
             h("div", { class: "visual-board-kicker" }, "EQUIPMENT / PRODUCT"),
             h("div", { class: "visual-board-title" }, props.screen?.name || "设备状态与产品统计屏"),
-          ]),
+          ]), "database", props.compact, { boundary: ".visual-board-top", textTarget: ".visual-board-title" }),
           h("div", { class: "visual-analysis-filterbar" }, [
             h("select", { class: "visual-analysis-select", "aria-label": "试验间筛选" }, [
               h("option", "综合"),
@@ -535,7 +536,7 @@ export const AnalysisScreen = {
         h("div", { class: "visual-analysis-layout" }, [
           h("section", { class: "visual-analysis-panel visual-analysis-health" }, [
             h("div", { class: "visual-analysis-panel-head" }, [
-              h("strong", "年度设备健康状态"),
+              withVisualIcon(h("strong", "年度设备健康状态"), "cpu", props.compact, { boundary: ".visual-analysis-panel-head" }),
               h("span", "综合 · 2026年截至05-28 · 当前快照"),
             ]),
             h("div", { class: "visual-analysis-health-metrics" }, [
@@ -565,13 +566,13 @@ export const AnalysisScreen = {
           ]),
           h("section", { class: "visual-analysis-panel visual-analysis-product-panel" }, [
             h("div", { class: "visual-analysis-panel-head" }, [
-              h("strong", "试验间实验产品数分布"),
+              withVisualIcon(h("strong", "试验间实验产品数分布"), "database", props.compact, { boundary: ".visual-analysis-panel-head" }),
               h("span", `${activeConfig.label || "自定义"} · 全部试验间 · 模拟临时数据`),
             ]),
             h("div", { class: "visual-analysis-product-main" }, [
               h("svg", { class: "visual-analysis-pie", role: "img", viewBox: "0 0 760 560", "aria-label": "全部试验间实验产品数饼图" }, [
                 h("g", pieSegments.map((segment) => h("path", { class: "visual-analysis-pie-slice", d: segment.path, fill: segment.color, key: `${segment.name}-path` }))),
-                h("circle", { cx: "380", cy: "278", fill: "#05070a", r: "62", stroke: "rgba(238,253,249,.14)", "stroke-width": "18" }),
+                h("circle", { class: "visual-analysis-pie-center", cx: "380", cy: "278", fill: "#05070a", r: "62", stroke: "rgba(238,253,249,.14)", "stroke-width": "18" }),
                 h("text", { class: "visual-analysis-pie-total", "dominant-baseline": "central", "text-anchor": "middle", x: "380", y: "278" }, total),
                 h("g", pieSegments.map((segment) => h("path", { class: "visual-analysis-pie-guide", d: segment.guide, key: `${segment.name}-guide` }))),
                 h("g", { class: "visual-analysis-pie-labels" }, pieSegments.map((segment) =>

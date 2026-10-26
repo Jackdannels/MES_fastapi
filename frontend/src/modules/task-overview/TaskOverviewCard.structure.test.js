@@ -13,7 +13,6 @@ describe("TaskOverviewCard structure", () => {
     expect(source).toContain("readonly");
     expect(source).not.toContain('class="task-overview-editor"');
     expect(source).not.toContain('class="task-overview-delete-confirm"');
-    expect(source).toContain("任务编号");
     expect(source).toContain("双击进入详情模式，所有信息只读");
   });
 

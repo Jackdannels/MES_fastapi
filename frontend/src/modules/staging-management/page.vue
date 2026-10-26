@@ -5,7 +5,7 @@
         <div class="zancun-inventory-columns">
           <section class="zancun-inventory-column" data-testid="zancun-current-staging-column">
             <div class="zancun-inventory-column__head">
-              <h4 class="zancun-inventory-column__title zancun-inventory-column__title--current">
+              <h4 v-app-icon="{ name: 'box' }" class="zancun-inventory-column__title zancun-inventory-column__title--current">
                 {{ roomCopy.currentColumnTitle }} {{ currentStagingTotalCount }}
               </h4>
               <AppPagination
@@ -43,7 +43,7 @@
 
           <section class="zancun-inventory-column" data-testid="zancun-planned-inbound-column">
             <div class="zancun-inventory-column__head">
-              <h4 class="zancun-inventory-column__title zancun-inventory-column__title--planned">
+              <h4 v-app-icon="{ name: 'box' }" class="zancun-inventory-column__title zancun-inventory-column__title--planned">
                 {{ roomCopy.plannedTitle }} {{ plannedInboundTotalCount }}
               </h4>
               <AppPagination
@@ -317,6 +317,7 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "StagingManagementPage",
 });

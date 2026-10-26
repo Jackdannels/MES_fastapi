@@ -13,6 +13,10 @@
   margin-bottom: 12px;
 }
 
+.dashboard-main-grid > .card {
+  min-width: 0;
+}
+
 .dashboard-task-pagination {
   display: flex;
   gap: 6px;
@@ -43,8 +47,26 @@
   color: var(--danger);
 }
 
+@media (max-width: 1519px) {
+  .grid.cols-3.dashboard-main-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-main-grid > .card:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-task-header {
+    flex-wrap: wrap;
+  }
+}
+
 @media (max-width: 1100px) {
   .grid.cols-3.dashboard-main-grid {
     grid-template-columns: 1fr;
   }
+}
+.dashboard-kpi-pending {
+  font-size: 18px;
+  color: var(--muted);
 }

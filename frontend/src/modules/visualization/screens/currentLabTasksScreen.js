@@ -1,6 +1,7 @@
 import { h, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { serverNowMs } from "@/lib/serverClock";
+import { withVisualIcon } from "./visualIcons";
 
 const normalizeVisualText = (value) => String(value || "").trim();
 const formatLoginTimeLabel = (value) => {
@@ -164,7 +165,7 @@ export const CurrentLabTasksScreen = {
           style: countdown.active ? { "--current-task-progress": `${countdown.progressPercent || 0}%` } : {},
         },
         [
-          h("div", { class: "card-head" }, [
+          withVisualIcon(h("div", { class: "card-head" }, [
             h("h2", lab.labName),
             h(
               "span",
@@ -172,7 +173,7 @@ export const CurrentLabTasksScreen = {
               attendanceName ? `${attendanceName}${attendanceLoginTime ? ` · ${attendanceLoginTime}` : ""}` : "未登录",
             ),
             h("span", { class: "badge" }, lab.statusLabel || "-"),
-          ]),
+          ]), "cpu", props.compact, { boundary: ".card-head", textTarget: "h2" }),
           h("div", { class: "card-body" }, [
             h("div", { class: "left" }, [
               h("div", { class: "info" }, [h("label", "当前选择任务"), h("strong", lab.taskCode || "-")]),
@@ -225,12 +226,12 @@ export const CurrentLabTasksScreen = {
       const labs = Array.isArray(props.currentLabTaskView?.labs) ? props.currentLabTaskView.labs : [];
       const counts = props.currentLabTaskView?.counts || {};
       return h("div", { ref: matrixRoot, class: ["visual-lab-matrix-screen", "screen", props.compact ? "is-compact" : ""] }, [
-        h("header", { class: "header" }, [
+        withVisualIcon(h("header", { class: "header" }, [
           h("div", [
             h("div", { class: "kicker" }, "LAB TASK MATRIX"),
             h("h1", props.screen?.name || "试验间当前任务状态屏"),
           ]),
-        ]),
+        ]), "layers", props.compact, { boundary: ".header", textTarget: "h1" }),
         h("div", { class: "stats" }, [
           h("div", { class: "metric-unplanned stat gray" }, [h("span", "未排程"), h("strong", counts.unplanned || 0)]),
           h("div", { class: "metric-scheduled stat blue" }, [h("span", "已排程"), h("strong", counts.scheduled || 0)]),

@@ -1,6 +1,6 @@
 <template>
   <aside class="card devices-resource-sidebar" aria-label="资源余量">
-    <header class="devices-resource-heading"><h3>资源余量</h3><button class="action-link" type="button" :disabled="loading" @click="refresh">{{ loading ? '同步中…' : '刷新余量' }}</button></header>
+    <header class="devices-resource-heading"><h3 v-app-icon="{ name: 'box' }">资源余量</h3><button class="action-link" type="button" :disabled="loading" @click="refresh">{{ loading ? '同步中…' : '刷新余量' }}</button></header>
     <p v-if="error" class="form-alert" role="alert">{{ error }}；以下可能是上次同步值。</p>
     <article v-for="resource in cards" :key="resource.key" class="devices-resource-card" :class="{ 'is-low': resource.remaining != null && resource.remaining <= resource.capacity * 0.1 }" :data-testid="`resource-${resource.key}`">
       <div class="devices-resource-heading"><span>{{ resource.name }}剩余</span><span class="devices-resource-state">{{ resource.remaining == null ? '待同步' : resource.remaining === 0 ? '已耗尽' : resource.remaining <= resource.capacity * 0.1 ? '余量偏低' : '余量充足' }}</span></div>
@@ -28,6 +28,7 @@
 </template>
 
 <script setup>
+import { vAppIcon } from "@/directives/appIcon";
 import { computed, nextTick, ref } from "vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import { useResourceInventory } from "@/composables/useResourceInventory";

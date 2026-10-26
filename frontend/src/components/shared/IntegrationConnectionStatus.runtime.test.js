@@ -31,6 +31,21 @@ test("replaces hard-coded Modbus with independent real connection statuses", asy
   expect(wrapper.emitted("update").at(-1)[0].lims.state).toBe("online");
 });
 
+test("exposes actual connection details through persistent native disclosures", async () => {
+  fetch.mockResolvedValue({ ok: true, json: async () => ({ lims: { state: "online", detail: "LIMS心跳已确认" }, upper_computer: { state: "partial", detail: "MQTT部分实验室在线" } }) });
+  wrapper = mount(IntegrationConnectionStatus);
+  await flushPromises();
+  const details = wrapper.get('[data-testid="connection-details-upper_computer"]');
+  expect(details.element.tagName).toBe("DETAILS");
+  expect(details.get("summary").attributes("aria-label")).toBe("查看上位机系统连接详情");
+  expect(details.get("p").text()).toBe("MQTT部分实验室在线");
+  details.element.open = true;
+  fetch.mockResolvedValue({ ok: true, json: async () => ({ upper_computer: { state: "online", detail: "MQTT全部实验室在线" } }) });
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(details.element.open).toBe(true);
+  expect(details.get("p").text()).toBe("MQTT全部实验室在线");
+});
+
 test("polls and clears previous success on backend failure, then recovers", async () => {
   wrapper = mount(IntegrationConnectionStatus);
   await flushPromises();

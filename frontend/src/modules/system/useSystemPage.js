@@ -1,5 +1,5 @@
 // 负责系统页的员工账号管理界面状态，并暴露页面模型。
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { useDialogState } from "@/composables/useDialogState";
 import { useTableControls } from "@/composables/useTableControls";
@@ -132,6 +132,8 @@ function useSystemPage() {
   const operationLogRows = ref([]);
   const operationLogError = ref("");
   const operationLogSubmitting = ref(false);
+  const operationLogQueryState = ref("idle");
+  let operationLogRequest = 0;
   const operationLogFilters = ref(createOperationLogFilters());
   const operationLogScopeSelectorOpen = ref(false);
   const operationLogScopeInitialStep = ref("employee");
@@ -150,17 +152,32 @@ function useSystemPage() {
   const operationLogEmployeeLabel = computed(() => {
     const selected = operationLogFilters.value.employeeNames || [];
     if (selected.length === 0) {
-      return "选择员工";
+      return "全部员工";
     }
     return selected.length === 1 ? selected[0] : `已选 ${selected.length} 名员工`;
   });
   const operationLogLabLabel = computed(() => {
     const selected = operationLogFilters.value.labNames || [];
     if (selected.length === 0) {
-      return "选择试验间";
+      return "全部试验间";
     }
     return selected.length === 1 ? selected[0] : `已选 ${selected.length} 个试验间`;
   });
+
+  const operationLogEmptyMessage = computed(() => {
+    if (operationLogSubmitting.value) return "正在查询工作日志…";
+    if (operationLogQueryState.value === "loaded") return "当前日期及查询范围内没有匹配的工作日志。";
+    if (operationLogQueryState.value === "error") return "查询未成功，请检查上方提示后重试。";
+    if (!operationLogFilters.value.adminUsername.trim() || !operationLogFilters.value.adminPassword) return "请填写管理员账号和密码，确认日期与查询范围后点击“查询”。";
+    return "尚未查询，确认日期与查询范围后点击“查询”。";
+  });
+  watch(operationLogFilters, () => {
+    operationLogRequest += 1;
+    operationLogSubmitting.value = false;
+    operationLogRows.value = [];
+    operationLogQueryState.value = "idle";
+    operationLogError.value = "";
+  }, { deep: true, flush: "sync" });
 
   const editEmployeeFields = ref(createEmployeeForm(EMPTY_EMPLOYEE_FORM));
   const employeeHasChanges = computed(() => {
@@ -398,6 +415,9 @@ function useSystemPage() {
   };
 
   const openEmployeeOperationLogs = () => {
+    operationLogRequest += 1;
+    operationLogSubmitting.value = false;
+    operationLogQueryState.value = "idle";
     operationLogError.value = "";
     operationLogRows.value = [];
     operationLogFilters.value = createOperationLogFilters();
@@ -406,6 +426,8 @@ function useSystemPage() {
   };
 
   const closeEmployeeOperationLogs = () => {
+    operationLogRequest += 1;
+    operationLogSubmitting.value = false;
     operationLogError.value = "";
     operationLogScopeSelectorOpen.value = false;
     operationLogDialog.close();
@@ -436,13 +458,19 @@ function useSystemPage() {
     }
     operationLogError.value = "";
     operationLogSubmitting.value = true;
+    operationLogRows.value = [];
+    const request = ++operationLogRequest;
     try {
       const rows = await listAttendanceOperationLogs(operationLogFilters.value);
+      if (request !== operationLogRequest) return;
       operationLogRows.value = Array.isArray(rows) ? rows : [];
+      operationLogQueryState.value = "loaded";
     } catch (error) {
+      if (request !== operationLogRequest) return;
       operationLogError.value = String(error?.message || error || "读取员工工作日志失败");
+      operationLogQueryState.value = "error";
     } finally {
-      operationLogSubmitting.value = false;
+      if (request === operationLogRequest) operationLogSubmitting.value = false;
     }
   };
 
@@ -577,6 +605,7 @@ function useSystemPage() {
     qrSubmitting,
     qrSvg,
     operationLogError,
+    operationLogEmptyMessage,
     operationLogEmployeeLabel,
     operationLogEmployeeOptions,
     operationLogFilters,

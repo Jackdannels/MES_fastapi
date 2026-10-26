@@ -4,7 +4,7 @@
       <section class="card section tray-management-workspace" data-testid="samples-trays-workspace">
         <div class="tray-management-head">
           <div>
-            <h3>托盘信息</h3>
+            <h3 v-app-icon="{ name: 'box' }">托盘信息</h3>
             <div class="muted" data-testid="samples-trays-counter">剩余托盘/总托盘数 {{ trayCounterText }}</div>
           </div>
           <label class="tray-management-filter tray-management-filter-emphasis">
@@ -79,9 +79,15 @@
                 </div>
               </td>
               <td :data-testid="`samples-trays-tray-code-${index}`">
-                <div class="tray-code-stack">
+                <button
+                  type="button"
+                  class="tray-code-stack tray-select-button"
+                  :aria-pressed="slot.row.trayCode === selectedTrayCode"
+                  :aria-label="`查看托盘 ${slot.row.trayCode} 流程`"
+                  @click.stop="selectTray(slot.row.trayCode)"
+                >
                   <span class="tray-code-line">{{ slot.row.trayCode || "-" }}</span>
-                </div>
+                </button>
               </td>
               <td>
                 <div class="tray-current-status" :data-testid="`samples-trays-current-status-${index}`">
@@ -100,7 +106,7 @@
                     :type="sampleCode === SAMPLE_CODES_ELLIPSIS ? 'button' : undefined"
                     :aria-expanded="sampleCode === SAMPLE_CODES_ELLIPSIS ? sampleCodesPopoverIsOpen(slot.row) : undefined"
                     :aria-label="sampleCode === SAMPLE_CODES_ELLIPSIS ? '查看全部样品编号' : undefined"
-                    @click.stop="sampleCode === SAMPLE_CODES_ELLIPSIS ? toggleSampleCodesPopover(slot.row) : undefined"
+                    @click.stop="sampleCode === SAMPLE_CODES_ELLIPSIS ? toggleSampleCodesPopover(slot.row, $event) : undefined"
                   >
                     {{ sampleCode }}
                   </component>
@@ -110,7 +116,10 @@
                     :class="{ 'is-above': samplePopoverOpensAbove(index) }"
                     :data-testid="`samples-trays-sample-popover-${index}`"
                   >
-                    <strong>全部样品编号</strong>
+                    <div class="tray-sample-popover-header">
+                      <strong>全部样品编号</strong>
+                      <button type="button" class="tray-sample-popover-close" aria-label="关闭全部样品编号" @click.stop="closeSampleCodesPopover(true)">关闭</button>
+                    </div>
                     <span
                       v-for="sampleCode in allSampleCodes(slot.row)"
                       :key="`${slot.row.trayCode}-popover-${sampleCode}`"
@@ -138,7 +147,7 @@
 
       <aside class="tray-management-sidebar" data-testid="samples-trays-flows">
         <section class="sample-flow-card section sample-flow-horizontal" data-testid="samples-task-flow">
-          <div class="sample-flow-title">任务流程图</div>
+          <div v-app-icon="{ name: 'clipboard' }" class="sample-flow-title">任务流程图</div>
           <div class="sample-flow-status" data-testid="samples-task-flow-status">{{ selectedTaskFlow.currentStatus }}</div>
           <ol class="sample-flow-unified">
             <li
@@ -158,7 +167,7 @@
         </section>
 
         <section class="sample-flow-card section" data-testid="samples-tray-flow">
-          <div class="sample-flow-title">统一托盘流程图</div>
+          <div v-app-icon="{ name: 'truck' }" class="sample-flow-title">统一托盘流程图</div>
           <div
             v-if="selectedTrayFlow.displayRemark"
             class="sample-flow-status"
@@ -190,7 +199,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { vAppIcon } from "@/directives/appIcon";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
@@ -387,6 +397,7 @@ const selectedTrayCode = ref("");
 const selectedTaskCode = ref("");
 const trayPage = ref(1);
 const openSampleCodesTrayCode = ref("");
+let sampleCodesTrigger = null;
 
 const setTaskFilter = (taskCode) => {
   selectedTaskCode.value = String(taskCode || "").trim();
@@ -452,9 +463,31 @@ const hasHiddenSampleCodes = (row) => allSampleCodes(row).length > SAMPLE_CODES_
 const sampleCodesPopoverIsOpen = (row) =>
   Boolean(normalizeText(row?.trayCode) && openSampleCodesTrayCode.value === normalizeText(row?.trayCode));
 
-const toggleSampleCodesPopover = (row) => {
+const closeSampleCodesPopover = async (restoreFocus = false) => {
+  const trigger = sampleCodesTrigger;
+  openSampleCodesTrayCode.value = "";
+  sampleCodesTrigger = null;
+  if (restoreFocus) {
+    await nextTick();
+    if (trigger?.isConnected && !props.hidden) trigger.focus();
+  }
+};
+
+const toggleSampleCodesPopover = (row, event) => {
   const trayCode = normalizeText(row?.trayCode);
-  openSampleCodesTrayCode.value = openSampleCodesTrayCode.value === trayCode ? "" : trayCode;
+  if (openSampleCodesTrayCode.value === trayCode) {
+    void closeSampleCodesPopover();
+    return;
+  }
+  sampleCodesTrigger = event?.currentTarget;
+  openSampleCodesTrayCode.value = trayCode;
+};
+
+const closeSampleCodesPopoverOnEscape = (event) => {
+  if (event.key === "Escape" && openSampleCodesTrayCode.value) {
+    event.preventDefault();
+    void closeSampleCodesPopover(true);
+  }
 };
 
 const samplePopoverOpensAbove = (index) => index >= TRAY_PAGE_SIZE - 2;
@@ -467,7 +500,7 @@ const closeSampleCodesPopoverOnOutsideClick = (event) => {
   if (target instanceof Element && target.closest(".tray-sample-summary")) {
     return;
   }
-  openSampleCodesTrayCode.value = "";
+  void closeSampleCodesPopover();
 };
 
 const visibleSampleCodes = (row) => {
@@ -487,27 +520,33 @@ const selectTray = (trayCode) => {
 
 onMounted(() => {
   document.addEventListener("click", closeSampleCodesPopoverOnOutsideClick);
+  document.addEventListener("keydown", closeSampleCodesPopoverOnEscape);
 });
 
 onBeforeUnmount(() => {
   finishColumnResize();
   document.removeEventListener("click", closeSampleCodesPopoverOnOutsideClick);
+  document.removeEventListener("keydown", closeSampleCodesPopoverOnEscape);
 });
 
 watch(
   () => selectedTaskCode.value,
   () => {
     trayPage.value = 1;
-    openSampleCodesTrayCode.value = "";
+    void closeSampleCodesPopover();
   },
 );
 
 watch(
   () => safeTrayPage.value,
   () => {
-    openSampleCodesTrayCode.value = "";
+    void closeSampleCodesPopover();
   },
 );
+
+watch(() => props.hidden, (hidden) => {
+  if (hidden) void closeSampleCodesPopover();
+});
 
 watch(
   () => pagedTrayRows.value,
