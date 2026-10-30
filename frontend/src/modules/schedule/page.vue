@@ -628,8 +628,8 @@
             <strong>{{ row.task_code || "-" }}</strong>
             <span>{{ row.device || "-" }}</span>
           </div>
-          <div class="schedule-exception-card__reason">{{ row.reason }}</div>
-          <div class="schedule-exception-card__detail">{{ row.detail || "-" }}</div>
+          <div class="schedule-exception-card__reason">{{ localizeResponseMessage(row.reason) }}</div>
+          <div class="schedule-exception-card__detail">{{ row.detail ? localizeResponseMessage(row.detail) : "-" }}</div>
           <div class="schedule-exception-card__meta">触发时间：{{ formatLocalDateTime(row.created_at) || "-" }}</div>
           <div class="schedule-exception-card__actions">
             <button
@@ -741,6 +741,7 @@
 </template>
 
 <script setup>
+import { localizeResponseMessage } from "@/lib/responseMessages";
 import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "SchedulePage",

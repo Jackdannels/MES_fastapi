@@ -38,7 +38,8 @@ test("exposes actual connection details through persistent native disclosures", 
   const details = wrapper.get('[data-testid="connection-details-upper_computer"]');
   expect(details.element.tagName).toBe("DETAILS");
   expect(details.get("summary").attributes("aria-label")).toBe("查看上位机系统连接详情");
-  expect(details.get("p").text()).toBe("MQTT部分实验室在线");
+  expect(details.get("p").text()).toBe("消息接口部分实验室在线");
+  expect(wrapper.emitted("update").at(-1)[0].upper_computer.detail).toBe("MQTT部分实验室在线");
   details.element.open = true;
   fetch.mockResolvedValue({ ok: true, json: async () => ({ upper_computer: { state: "online", detail: "MQTT全部实验室在线" } }) });
   await vi.advanceTimersByTimeAsync(3000);

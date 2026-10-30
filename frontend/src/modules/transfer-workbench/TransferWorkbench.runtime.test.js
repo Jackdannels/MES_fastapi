@@ -1060,7 +1060,7 @@ describe("TransferWorkbench runtime", () => {
     expect(wrapper.get(".transfer-count-chip").text()).toBe("剩余空托盘 1");
     const firstCard = wrapper.get('[data-testid="transfer-tray-card-0"]');
     expect(firstCard.get(".transfer-tray-card__code").text()).toBe("SYLU-2026-03-101-TP-001");
-    expect(firstCard.get(".transfer-tray-card__number").text()).toBe("托盘 #1");
+    expect(firstCard.get(".transfer-tray-card__number").text()).toBe("托盘 #1/2");
     expect(firstCard.get(".transfer-tray-card__count").text()).toBe("二维码：未打印");
     expect(firstCard.get(".transfer-tray-experiment-tags").text()).toBe("盐雾试验");
     expect(firstCard.findAll(".sample-tray-sample-tag")).toHaveLength(2);
@@ -1070,6 +1070,73 @@ describe("TransferWorkbench runtime", () => {
     await settle(wrapper);
     expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("当前样品 1 / 2");
     expect(wrapper.get('[data-testid="transfer-tray-card-1"]').text()).toContain("当前样品 2 / 2");
+    wrapper.unmount();
+  });
+
+  test("handover uses the shared compact allocation detail while keeping all five original actions and live tray data", async () => {
+    const wrapper = mount(TransferWorkbench, { props: { mode: "handover", terminal: true } });
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+
+    expect(wrapper.get(".transfer-detail-shell").classes()).toContain("transfer-detail-shell--allocation");
+    expect(wrapper.get(".transfer-detail-shell__title h2").text()).toBe("托盘分装与入库");
+    expect(wrapper.get(".transfer-detail-task-line").text()).toContain("SYLU-2026-03-101");
+    expect(wrapper.findAll('[data-testid="transfer-task-code"]')).toHaveLength(1);
+    expect(wrapper.find(".transfer-task-header__summary").exists()).toBe(false);
+    const buttons = wrapper.findAll(".transfer-tray-actions--top > button");
+    expect(buttons.map((button) => button.text())).toEqual([
+      "打印二维码（2）", "保存托盘", "确认入库", "重新入库", "全部托盘应用全部试验",
+    ]);
+    expect(buttons.map((button) => button.findAll("svg[aria-hidden='true']").length)).toEqual([1, 1, 1, 1, 1]);
+    expect(wrapper.get('[data-testid="transfer-confirm-storage"]').attributes("disabled")).toBeUndefined();
+    expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeUndefined();
+    expect(wrapper.get(".transfer-allocation-mode-hint").text()).toBe("支持触控先点托盘再点样品，也支持样品换位");
+    const firstCard = wrapper.get('[data-testid="transfer-tray-card-0"]');
+    expect(firstCard.get(".transfer-tray-card__code").text()).toBe("SYLU-2026-03-101-TP-001");
+    expect(firstCard.get(".transfer-tray-card__number").text()).toBe("托盘 #1/2");
+    expect(firstCard.findAll(".sample-tray-sample-tag")).toHaveLength(2);
+    expect(firstCard.get(".transfer-tray-card__count").text()).toBe("二维码：未打印");
+
+    await firstCard.get(".sample-tray-sample-tag").trigger("dragstart");
+    await wrapper.get('[data-testid="transfer-tray-card-1"]').trigger("drop");
+    await settle(wrapper);
+    expect(wrapper.get('[data-testid="transfer-tray-card-0"]').text()).toContain("当前样品 1 / 2");
+    expect(wrapper.get('[data-testid="transfer-tray-card-1"]').text()).toContain("当前样品 2 / 2");
+    const experiment = wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]');
+    await experiment.trigger("click");
+    await settle(wrapper);
+    expect(experiment.classes()).toContain("active");
+    expect(wrapper.get(".transfer-allocation-mode-hint").text()).toContain("托盘选择模式");
+    await wrapper.get('[data-testid="transfer-task-code"]').trigger("click");
+    await settle(wrapper);
+    expect(experiment.classes()).not.toContain("active");
+    wrapper.unmount();
+  });
+
+  test.each(["pre-allocation", "handover"])("%s tray labels track all task trays including empty additions, removal and experiment selection", async (mode) => {
+    const wrapper = mount(TransferWorkbench, { props: { mode } });
+    await settle(wrapper);
+    await wrapper.get('[data-testid="transfer-task-row-101"]').trigger("click");
+    await settle(wrapper);
+    const labels = () => wrapper.findAll(".transfer-tray-card__number").map((node) => node.text());
+    expect(labels()).toEqual(["托盘 #1/2", "托盘 #2/2"]);
+    expect(wrapper.findAll(".transfer-allocation-action")).toHaveLength(4);
+    if (mode === "handover") expect(wrapper.get('[data-testid="transfer-confirm-storage"]').classes()).not.toContain("transfer-allocation-action");
+
+    await wrapper.get(".transfer-use-tray-btn").trigger("click");
+    await settle(wrapper);
+    expect(labels()).toEqual(["托盘 #1/3", "托盘 #2/3", "托盘 #3/3"]);
+    expect(wrapper.get('[data-testid="transfer-tray-card-2"]').findAll(".sample-tray-sample-tag")).toHaveLength(0);
+
+    await wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]').trigger("click");
+    await settle(wrapper);
+    expect(labels()).toEqual(["托盘 #1/3", "托盘 #2/3", "托盘 #3/3"]);
+    await wrapper.get('[data-testid="transfer-task-code"]').trigger("click");
+    await wrapper.get('[data-testid="transfer-tray-card-2"] .sample-tray-remove').trigger("click");
+    await settle(wrapper);
+    expect(labels()).toEqual(["托盘 #1/2", "托盘 #2/2"]);
+    expect(vi.mocked(fetch).mock.calls.some(([, options]) => options?.method === "POST")).toBe(false);
     wrapper.unmount();
   });
 

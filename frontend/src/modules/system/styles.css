@@ -120,6 +120,20 @@
   background: rgba(7, 17, 22, 0.42);
 }
 
+/* Offline personnel are neutral; device warnings outside these tables stay intact. */
+:root[data-theme="light"] .system-page #employee-table .status.warn,
+:root[data-theme="light"] .system-page #employee-worktime-table .status.warn {
+  color: var(--muted);
+  background: var(--surface-alternate);
+  border-color: color-mix(in srgb, var(--muted) 28%, var(--bg-panel));
+}
+
+:root[data-theme="light"] .system-page .system-pagination-footer {
+  background: color-mix(in srgb, var(--accent) 3%, var(--bg-panel));
+  border-color: var(--border);
+  box-shadow: none;
+}
+
 .system-pagination-range {
   color: var(--muted);
   font-size: 13px;

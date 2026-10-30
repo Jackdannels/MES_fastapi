@@ -1,7 +1,7 @@
 <template>
   <aside class="card devices-resource-sidebar" aria-label="资源余量">
     <header class="devices-resource-heading"><h3 v-app-icon="{ name: 'box' }">资源余量</h3><button class="action-link" type="button" :disabled="loading" @click="refresh">{{ loading ? '同步中…' : '刷新余量' }}</button></header>
-    <p v-if="error" class="form-alert" role="alert">{{ error }}；以下可能是上次同步值。</p>
+    <p v-if="error" class="form-alert" role="alert">{{ localizeResponseMessage(error) }}；以下可能是上次同步值。</p>
     <article v-for="resource in cards" :key="resource.key" class="devices-resource-card" :class="{ 'is-low': resource.remaining != null && resource.remaining <= resource.capacity * 0.1 }" :data-testid="`resource-${resource.key}`">
       <div class="devices-resource-heading"><span>{{ resource.name }}剩余</span><span class="devices-resource-state">{{ resource.remaining == null ? '待同步' : resource.remaining === 0 ? '已耗尽' : resource.remaining <= resource.capacity * 0.1 ? '余量偏低' : '余量充足' }}</span></div>
       <div class="devices-resource-number"><strong>{{ resource.remaining ?? '—' }}</strong><small>{{ resource.key === 'tray' ? '/ 10 个' : '基准 100' }}</small></div>
@@ -16,7 +16,7 @@
         <div class="devices-resource-projection"><div>当前剩余<strong>{{ current?.remaining ?? '—' }}</strong></div><span>→</span><div>补充后预计<strong>{{ projected }}</strong></div></div>
         <div class="form-field"><label for="resource-quantity">本次补充数量（正整数）</label><input id="resource-quantity" v-model="quantity" type="number" min="1" max="10000" step="1" required :disabled="submitting || !!attempt" aria-describedby="resource-quantity-help resource-form-error" @blur="validate"><small id="resource-quantity-help" class="muted">单次补充 1–10,000 份。</small></div>
         <div class="form-field"><label for="resource-note">备注（选填）</label><textarea id="resource-note" v-model="note" maxlength="120" :disabled="submitting || !!attempt" placeholder="耗材批次、补充说明"></textarea></div>
-        <p v-if="formError" id="resource-form-error" class="form-alert" role="alert">{{ formError }}</p>
+        <p v-if="formError" id="resource-form-error" class="form-alert" role="alert">{{ localizeResponseMessage(formError) }}</p>
       </form>
       <template #footer><button class="action-btn secondary" type="button" :disabled="submitting" @click="closeReplenishment">关闭</button><button class="action-btn" type="submit" form="resource-replenishment-form" :disabled="submitting">{{ submitting ? '正在补充…' : attempt ? '重试本次补充' : '确认补充' }}</button></template>
     </AppModal>
@@ -28,6 +28,7 @@
 </template>
 
 <script setup>
+import { localizeResponseMessage } from "@/lib/responseMessages";
 import { vAppIcon } from "@/directives/appIcon";
 import { computed, nextTick, ref } from "vue";
 import AppModal from "@/components/shared/AppModal.vue";

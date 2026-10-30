@@ -96,7 +96,7 @@
       </div>
 
       <div v-if="laboratoryMqError" class="laboratory-empty-hint" data-testid="laboratory-mq-error">
-        {{ laboratoryMqError.title }}：{{ laboratoryMqError.detail }}
+        {{ localizeResponseMessage(laboratoryMqError.title) }}：{{ localizeResponseMessage(laboratoryMqError.detail) }}
       </div>
 
       <div v-if="laboratoryTaskNotice" class="laboratory-empty-hint" data-testid="laboratory-task-empty-hint">
@@ -797,7 +797,7 @@
               role="alert"
             >
               <strong>未收到取消确认</strong>
-              <span>{{ cancellationConfirmationError }}</span>
+              <span>{{ localizeResponseMessage(cancellationConfirmationError) }}</span>
             </div>
             <button
               v-if="canCancelMoldExperiment"
@@ -828,7 +828,7 @@
               role="alert"
             >
               <strong>设备控制未确认</strong>
-              <span>{{ controlConfirmationError }}</span>
+              <span>{{ localizeResponseMessage(controlConfirmationError) }}</span>
             </div>
             <div
               v-if="!runningModalExperiment.completed && resumePreparationError"
@@ -837,7 +837,7 @@
               role="alert"
             >
               <strong>无法开始恢复准备</strong>
-              <span>{{ resumePreparationError }}</span>
+              <span>{{ localizeResponseMessage(resumePreparationError) }}</span>
             </div>
             <button
               v-if="isSaltSprayLaboratory && !runningModalExperiment.completed && !runningModalExperiment.isPaused && !runningModalExperiment.exposureComplete && !controlSubmitting && !controlAwaitingConfirmation"
@@ -923,7 +923,7 @@
               role="alert"
             >
               <strong>未收到结束确认</strong>
-              <span>{{ completionConfirmationError }}</span>
+              <span>{{ localizeResponseMessage(completionConfirmationError) }}</span>
             </div>
             <button
               v-if="!runningModalExperiment.completed
@@ -1045,6 +1045,7 @@
 </template>
 
 <script setup>
+import { localizeResponseMessage } from "@/lib/responseMessages";
 defineOptions({
   name: "LaboratoryPage",
 });

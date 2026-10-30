@@ -96,6 +96,18 @@
   box-shadow: inset 0 0 0 1px rgba(231, 183, 95, 0.2);
 }
 
+:root[data-theme="light"] .schedule-duration-toggle {
+  background: var(--bg-panel);
+  border-color: rgba(var(--industrial-accent-rgb), 0.28);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .schedule-duration-toggle__button.is-active {
+  color: var(--accent);
+  background: rgba(var(--industrial-accent-rgb), 0.14);
+  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.24);
+}
+
 .schedule-duration-toggle__button:not(.is-active):hover,
 .schedule-duration-toggle__button:not(.is-active):focus-visible {
   background: rgba(var(--industrial-accent-rgb), 0.12);

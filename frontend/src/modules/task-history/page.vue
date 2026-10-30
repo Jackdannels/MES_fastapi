@@ -25,7 +25,7 @@
             <option value="180">180日内</option>
           </select>
         </div>
-        <div v-if="loadError" class="form-alert">{{ loadError }}</div>
+        <div v-if="loadError" class="form-alert">{{ localizeResponseMessage(loadError) }}</div>
         <div v-if="pagedHistoryTasks.length === 0" class="history-empty muted">暂无历史任务数据</div>
         <button
           v-for="task in pagedHistoryTasks"
@@ -220,6 +220,7 @@
 </template>
 
 <script setup>
+import { localizeResponseMessage } from "@/lib/responseMessages";
 import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "TaskHistoryPage",
@@ -1041,6 +1042,12 @@ onBeforeUnmount(() => {
 
 .history-empty {
   padding: 24px 0;
+}
+
+:global(:root[data-theme="light"] .history-task-page .history-empty) {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--accent) 3%, var(--bg-panel));
+  box-shadow: inset 0 0 0 1px rgba(var(--industrial-accent-rgb), 0.16);
 }
 
 @media (max-width: 900px) {

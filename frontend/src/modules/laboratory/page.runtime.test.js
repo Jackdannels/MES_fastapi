@@ -4501,7 +4501,8 @@ describe("LaboratoryPage runtime", () => {
     await flushPageUpdates();
 
     expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).toContain("夹具安装下发失败");
-    expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).toContain("broker offline");
+    expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).toContain("消息服务未连接");
+    expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).not.toContain("broker offline");
     expect(mounted.get('[data-testid="laboratory-install"]').attributes("disabled")).toBeUndefined();
     expect(mounted.get('[data-testid="laboratory-install"]').text()).toContain("重新下发");
   });
@@ -4560,7 +4561,8 @@ describe("LaboratoryPage runtime", () => {
     await flushPageUpdates();
 
     expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).toContain("准备就绪下发失败");
-    expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).toContain("broker offline");
+    expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).toContain("消息服务未连接");
+    expect(mounted.get('[data-testid="laboratory-mq-error"]').text()).not.toContain("broker offline");
     expect(mounted.get('[data-testid="laboratory-ready"]').attributes("disabled")).toBeUndefined();
   });
 

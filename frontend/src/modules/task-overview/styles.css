@@ -58,6 +58,19 @@
   color: var(--muted);
 }
 
+/* White-theme view switches stay flat inside the existing outer card. */
+:root[data-theme="light"] .task-overview-module-card {
+  background: var(--bg-panel);
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .task-overview-module-card.active {
+  color: var(--accent);
+  background: var(--surface-inset);
+  border-color: rgba(var(--industrial-accent-rgb), 0.5);
+}
+
 .task-overview-schedule-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -136,6 +149,21 @@
   border-color: rgba(255, 107, 90, 0.48);
   background: rgba(255, 107, 90, 0.14);
   color: var(--danger);
+}
+
+/* Keep warning/alert variants; quiet only the ordinary summary surfaces. */
+:root[data-theme="light"] .task-overview-schedule-card {
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .task-overview-schedule-card.is-blue-tint:not(.is-unscheduled):not(.is-alert) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 3%, var(--bg-panel));
+  border-color: rgba(var(--industrial-accent-rgb), 0.24);
+}
+
+:root[data-theme="light"] .task-overview-schedule-card.is-blue-tint:not(.is-unscheduled):not(.is-alert) strong {
+  color: var(--accent);
 }
 
 .task-overview-heading-metrics {

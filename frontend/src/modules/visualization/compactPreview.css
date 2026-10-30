@@ -1,0 +1,273 @@
+/* The overview card names each screen once, above its compact content.
+   Scope every layout override to the overview: expanded and combined screens
+   keep their existing full-screen presentation. */
+.visualization-page .visual-screen-grid > .visual-screen-card {
+  display: grid;
+  grid-template-rows: 34px minmax(0, 1fr);
+}
+
+.visualization-page .visual-screen-grid > .visual-screen-card > .visual-card-meta {
+  position: static;
+  min-height: 0;
+  padding: 4px 8px;
+}
+
+.visualization-page .visual-screen-grid > .visual-screen-card > .visual-screen-frame {
+  min-height: 0;
+  height: 100%;
+}
+
+.visualization-page .visual-screen-grid .visual-board.is-compact {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.visualization-page .visual-screen-grid .visual-board.is-compact > .visual-board-top,
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact > .header,
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact > .visual-board-header {
+  display: none;
+}
+
+.visualization-page .visual-screen-grid .visual-board.is-compact .visual-empty-tray-flow {
+  min-height: 0;
+  height: 100%;
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+/* Screen 02 retains its five source-rendered compact rows at the original
+   compact text sizes; only redundant spacing and minimum heights shrink. */
+.visualization-page .visual-screen-grid .visual-board.visual-schedule-board.is-compact {
+  padding: 6px;
+}
+
+.visualization-page .visual-screen-grid .visual-schedule-board.is-compact .visual-schedule-main {
+  padding-top: 0;
+  gap: 4px;
+}
+
+.visualization-page .visual-screen-grid .visual-schedule-board.is-compact .visual-schedule-metrics div {
+  padding: 3px 5px;
+}
+
+.visualization-page .visual-screen-grid .visual-schedule-board.is-compact .visual-schedule-grid {
+  grid-template-rows: 18px repeat(var(--visual-schedule-row-count), minmax(18px, 1fr));
+  gap: 3px;
+}
+
+.visualization-page .visual-screen-grid .visual-schedule-board.is-compact .visual-schedule-grid-head {
+  min-height: 18px;
+  padding: 1px 3px;
+}
+
+.visualization-page .visual-screen-grid .visual-schedule-board.is-compact :is(.visual-schedule-lab-name, .visual-schedule-cell) {
+  min-height: 18px;
+}
+
+/* Screen 04 shows the actual six counters and every room/status. Attendance,
+   task/tray details and countdown remain available in the expanded screen. */
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact {
+  --gap: 4px;
+  --pad: 3px;
+  --title: 8px;
+  --body: 7px;
+  --small: 6px;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 6px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact .stat {
+  min-height: 30px;
+  padding: 3px 4px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact .stat span {
+  font-size: 6px;
+  line-height: 1.15;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact .stat strong {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact .grid {
+  gap: 4px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact .card {
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  padding: 3px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact .card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  min-height: 0;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact .card h2 {
+  font-size: 8px;
+  line-height: 1.15;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact .badge {
+  min-height: 0;
+  padding: 0;
+  font-size: 6px;
+  line-height: 1.15;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact .badge::before {
+  width: 4px;
+  height: 4px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-matrix-screen.is-compact :is(.attendance-chip, .card-body, .countdown) {
+  display: none;
+}
+
+/* Screen 06 empty states must not inherit full-screen 84/220px minimums. */
+.visualization-page .visual-screen-grid .visual-board.visual-staging-board.is-compact {
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 6px;
+}
+
+.visualization-page .visual-screen-grid .visual-staging-board.is-compact .visual-staging-overview {
+  padding-top: 0;
+}
+
+.visualization-page .visual-screen-grid .visual-staging-board.is-compact .visual-staging-layout {
+  padding-top: 4px;
+}
+
+.visualization-page .visual-screen-grid .visual-staging-board.is-compact .visual-staging-main {
+  grid-template-rows: auto minmax(28px, auto) minmax(0, 1fr);
+}
+
+.visualization-page .visual-screen-grid .visual-staging-board.is-compact .visual-staging-empty {
+  min-height: 28px;
+  min-width: 0;
+  height: 100%;
+  font-size: 8px;
+  line-height: 1.2;
+}
+
+.visualization-page .visual-screen-grid .visual-staging-board.is-compact .visual-staging-empty.is-detail {
+  min-height: 28px;
+}
+
+.visualization-page .visual-screen-grid .visual-staging-board.is-compact .visual-staging-tray-detail {
+  min-height: 0;
+}
+
+/* Screen 07 keeps communication/alarm summaries, room statuses and active
+   notices. Detailed telemetry/fault lists remain in the expanded screen. */
+.visualization-page .visual-screen-grid .visual-board.visual-lab-status-board.is-compact {
+  --telemetry-name-size: 8px;
+  --telemetry-small-size: 6px;
+  grid-template-rows: 22px minmax(0, 1fr);
+  gap: 4px;
+  padding: 6px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact .visual-lab-status-summary-item {
+  gap: 3px;
+  padding: 3px 4px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact .visual-lab-status-summary-item span {
+  font-size: 6px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact .visual-lab-status-summary-item strong {
+  font-size: 10px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact .visual-lab-status-card {
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 3px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact .visual-lab-status-card-head {
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 2px 4px;
+  padding-bottom: 2px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact .visual-lab-status-card-head strong {
+  width: 100%;
+  font-size: 8px;
+  line-height: 1.1;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact .visual-lab-status-card-head span {
+  max-width: 100%;
+  font-size: 6px;
+  line-height: 1.1;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact .visual-lab-status-card-head i {
+  width: 4px;
+  height: 4px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact :is(.visual-lab-status-metrics, .visual-telemetry-footer, .visual-telemetry-faults) {
+  display: none;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact .visual-lab-status-alarm {
+  min-height: 10px;
+  height: 10px;
+  padding: 0 2px;
+  gap: 2px;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact .visual-lab-status-alarm :is(b, span) {
+  padding: 0;
+  font-size: 6px;
+  line-height: 1;
+}
+
+.visualization-page .visual-screen-grid .visual-lab-status-board.is-compact .visual-lab-status-alarm.is-empty {
+  display: none;
+}
+
+/* Screen 08 uses its original category slices and primary total. Dense labels
+   and rankings are available in the expanded screen rather than overlapping. */
+.visualization-page .visual-screen-grid .visual-board.visual-analysis-board.is-compact {
+  grid-template-rows: minmax(0, 1fr);
+  padding: 6px;
+}
+
+.visualization-page .visual-screen-grid .visual-analysis-board.is-compact .visual-analysis-layout {
+  padding-top: 0;
+}
+
+.visualization-page .visual-screen-grid .visual-analysis-board.is-compact .visual-analysis-product-panel {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.visualization-page .visual-screen-grid .visual-analysis-board.is-compact :is(.visual-analysis-panel-head, .visual-analysis-pie-labels, .visual-analysis-pie-guide, .visual-analysis-rank-row) {
+  display: none;
+}
+
+.visualization-page .visual-screen-grid .visual-analysis-board.is-compact .visual-analysis-product-main {
+  grid-template-columns: minmax(0, 1fr) 100px;
+  grid-template-rows: minmax(0, 1fr);
+  padding: 4px;
+}
+
+.visualization-page .visual-screen-grid .visual-analysis-board.is-compact .visual-analysis-ranking {
+  grid-template-rows: auto;
+  align-content: center;
+}
+
+.visualization-page .visual-screen-grid .visual-analysis-board.is-compact .visual-analysis-total {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  justify-items: center;
+  text-align: center;
+}

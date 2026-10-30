@@ -116,6 +116,11 @@
   animation: process-lab-urgent-pulse 1.25s ease-in-out infinite;
 }
 
+/* Retain state borders and urgent pulses while removing nested light haze. */
+:root[data-theme="light"] .process-control-page .process-lab-card:not(.is-urgent) {
+  box-shadow: none;
+}
+
 .process-lab-top {
   display: flex;
   align-items: flex-start;

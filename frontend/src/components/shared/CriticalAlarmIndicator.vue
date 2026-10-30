@@ -26,7 +26,7 @@
     >
       <div class="critical-alarm-summary" :class="{ 'is-critical': isCritical }" role="status">
         <strong>{{ headline }}</strong>
-        <p>{{ status?.detail || '暂时无法取得最新状态，请等待刷新；不能据此判断故障已恢复。' }}</p>
+        <p>{{ localizeResponseMessage(status?.detail, '暂时无法取得最新状态，请等待刷新；不能据此判断故障已恢复。') }}</p>
       </div>
       <dl v-if="details" class="critical-alarm-fields">
         <div><dt>故障开始（北京时间）</dt><dd>{{ timestamp(details.fault_since) }}</dd></div>
@@ -43,12 +43,12 @@
         <ol>
           <li v-for="(entry, index) in history" :key="`${entry.at}-${entry.kind}-${index}`">
             <time>{{ timestamp(entry.at) }}</time>
-            <span>{{ historyLabel(entry.kind) }} · {{ entry.detail }}</span>
+            <span>{{ historyLabel(entry.kind) }} · {{ localizeResponseMessage(entry.detail, '通讯状态发生变化，请查看当前连接情况') }}</span>
           </li>
         </ol>
       </section>
       <p class="critical-alarm-note">确认已知悉不代表恢复，不停止自动重试或严重告警提醒。此弹窗不会改变当前页面的任务数据。</p>
-      <p v-if="feedback" class="critical-alarm-feedback" :class="{ 'is-error': failed }" role="status">{{ feedback }}</p>
+      <p v-if="feedback" class="critical-alarm-feedback" :class="{ 'is-error': failed }" role="status">{{ failed ? localizeResponseMessage(feedback) : feedback }}</p>
       <template #footer>
         <button
           class="action-btn secondary"
@@ -64,6 +64,7 @@
 </template>
 
 <script setup>
+import { localizeResponseMessage } from "@/lib/responseMessages";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import AppModal from "./AppModal.vue";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";

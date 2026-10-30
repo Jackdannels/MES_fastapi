@@ -44,7 +44,7 @@
 :root[data-theme="light"] .visualization-page .visual-board .visual-board-metrics div {
   background: var(--screen-panel);
   border-color: var(--screen-line);
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
 }
 
 :root[data-theme="light"] .visualization-page .visual-board-metrics strong {
@@ -200,7 +200,7 @@
 }
 
 :root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .card {
-  box-shadow: var(--shadow-soft);
+  box-shadow: none;
 }
 
 :root[data-theme="light"] .visualization-page .visual-lab-matrix-screen :is(.total, .scroll-hint, .badge) {
@@ -376,4 +376,48 @@
 
 :root[data-theme="light"] .visualization-page .visual-lab-status-metric:is(.is-unavailable, .is-stale) strong {
   color: var(--screen-muted);
+}
+
+/* Keep elevation at the outer overview cards, rather than stacking shadows
+   on every embedded panel. Semantic telemetry alarms retain their styling. */
+:root[data-theme="light"] .visualization-page .visual-summary-item {
+  box-shadow: var(--shadow-soft);
+}
+
+:root[data-theme="light"] .visualization-page .visual-board :is(.visual-lab-panel, .visual-tray-flow, .visual-empty-tray-flow, .visual-analysis-health-ring, .visual-analysis-trend, .visual-staging-overview-item) {
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .visualization-page .visual-analysis-pie-slice {
+  filter: none;
+}
+
+:root[data-theme="light"] .visualization-page .visual-screen-grid :is(.visual-flow-step.is-active .visual-flow-dot, .visual-schedule-slot) {
+  box-shadow: none;
+}
+
+/* Local green status treatment; global tokens and red/amber/purple meanings
+   are unchanged, as are all dark-theme declarations. */
+:root[data-theme="light"] .visualization-page .visual-card-status.tone-live,
+:root[data-theme="light"] .visualization-page .visual-board-live.tone-live,
+:root[data-theme="light"] .visualization-page .visual-lab-state.is-ok,
+:root[data-theme="light"] .visualization-page .visualization-live-chip {
+  color: #14532d;
+  background: #dcfce7;
+  border-color: #86b99a;
+}
+
+:root[data-theme="light"] .visualization-page .visualization-live-dot {
+  background: #15803d;
+  box-shadow: none;
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-status-card:is(.tone-online, .tone-running) .visual-lab-status-card-head span,
+:root[data-theme="light"] .visualization-page .visual-lab-matrix-screen .card.running .badge {
+  color: #14532d;
+}
+
+:root[data-theme="light"] .visualization-page .visual-lab-status-card:is(.tone-online, .tone-running) .visual-lab-status-card-head i {
+  background: #15803d;
+  box-shadow: none;
 }

@@ -25,7 +25,7 @@ describe("visualization light-theme contract", () => {
   });
 
   test("overrides cannot change layout, typography, motion, or category variables", () => {
-    const paintProperty = /^(?:color|background(?:-color|-image)?|border(?:-color)?|box-shadow|text-shadow|outline-color|fill|stroke|--(?:cyan|status-cyan|status-green|status-amber|status-line))$/;
+    const paintProperty = /^(?:color|background(?:-color|-image)?|border(?:-color)?|box-shadow|text-shadow|outline-color|fill|stroke|filter|--(?:cyan|status-cyan|status-green|status-amber|status-line))$/;
     for (const rule of rules) {
       for (const declaration of rule.body.split(";").map((item) => item.trim()).filter(Boolean)) {
         const property = declaration.slice(0, declaration.indexOf(":")).trim();

@@ -34,6 +34,7 @@
 .devices-resource-number { display: flex; align-items: baseline; gap: 10px; }
 .devices-resource-number strong { font: 700 34px/1.2 Consolas, monospace; font-variant-numeric: tabular-nums; }
 .devices-resource-number small { color: var(--text-muted); }
+:root[data-theme="light"] .devices-resource-number small { color: var(--muted); }
 .devices-resource-meter { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; }
 .devices-resource-meter i { height: 6px; border-radius: 2px; background: var(--border); }
 .devices-resource-meter i.active { background: var(--accent); }

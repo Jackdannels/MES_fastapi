@@ -1,22 +1,23 @@
 <template>
   <div class="integration-connections" role="status" aria-live="polite" aria-label="外部系统连接状态">
-    <div v-for="item in connections" :key="item.key" class="integration-connection" :title="item.detail">
+    <div v-for="item in connections" :key="item.key" class="integration-connection" :title="connectionDetail(item)">
       <span>{{ item.label }}</span>
       <span :class="`integration-connection__state integration-connection__state--${item.state}`">{{ labels[item.state] || labels.unknown }}</span>
       <details class="integration-connection__details" :data-testid="`connection-details-${item.key}`">
         <summary :aria-label="`查看${item.label}连接详情`">查看连接详情</summary>
-        <p>{{ item.detail }}</p>
+        <p>{{ connectionDetail(item) }}</p>
       </details>
       <span
         v-if="item.alert"
         class="integration-connection__alert"
         :class="{ 'integration-connection__alert--critical': item.alertSeverity === 'critical' }"
-      >{{ item.alert }}</span>
+      >{{ localizeResponseMessage(item.alert, '外部系统通讯异常') }}</span>
     </div>
   </div>
 </template>
 
 <script setup>
+import { localizeResponseMessage } from "@/lib/responseMessages";
 import { onBeforeUnmount, onMounted, ref } from "vue";
 import { buildApiUrl, getFrontendApiBaseUrl } from "@/lib/apiBase";
 
@@ -25,6 +26,7 @@ const emit = defineEmits(["update"]);
 const labels = { online: "已连接", offline: "未连接", partial: "部分连接", unknown: "未确认", checking: "检测中" };
 const systems = [{ key: "lims", label: "LIMS" }, { key: "upper_computer", label: "上位机系统" }];
 const connections = ref(systems.map((item) => ({ ...item, state: "checking", detail: "正在获取实际连接状态" })));
+const connectionDetail = (item) => item.state === "online" ? item.detail : localizeResponseMessage(item.detail, "连接状态暂不可用，请稍后重试");
 let timer;
 let controller;
 let stopped = false;

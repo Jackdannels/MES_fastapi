@@ -316,7 +316,7 @@
               <td><span class="data-code">{{ item.sampleCode || "-" }}</span></td>
               <td>{{ formatAxisLabel(item.axisCode) }}</td>
               <td>{{ formatExportRange(item) }}</td>
-              <td class="data-error-cell" :title="item.error || ''">{{ item.error || "未知错误" }}</td>
+              <td class="data-error-cell" :title="localizeResponseMessage(item.error, '未知错误')">{{ localizeResponseMessage(item.error, "未知错误") }}</td>
               <td>
                 <button
                   class="action-link data-retry-button"
@@ -337,6 +337,7 @@
 </template>
 
 <script setup>
+import { localizeResponseMessage } from "@/lib/responseMessages";
 import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "DataPage",

@@ -471,6 +471,18 @@
   opacity: 0.38;
 }
 
+:root[data-theme="light"] .data-page .data-output-action:disabled {
+  color: var(--text-disabled);
+  opacity: 1;
+}
+
+/* Backup failures remain actual data, with a stronger light-theme metric. */
+:root[data-theme="light"] .data-page .backup-settings .backup-metric.is-failed {
+  color: var(--status-danger-text);
+  background: color-mix(in srgb, var(--status-danger-text) 12%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--status-danger-text) 50%, var(--bg-panel));
+}
+
 .data-share-fallback {
   display: grid;
   grid-template-columns: auto minmax(240px, 1fr);

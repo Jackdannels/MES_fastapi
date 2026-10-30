@@ -912,7 +912,7 @@ describe("TransferAreaPage runtime", () => {
     expect(wrapper.get('[data-testid="transfer-save-trays"]').attributes("disabled")).toBeDefined();
     expect(wrapper.text()).toContain("盐雾试验 托盘选择模式");
 
-    await wrapper.get(".transfer-task-header__summary strong").trigger("click");
+    await wrapper.get('[data-testid="transfer-task-code"]').trigger("click");
     await settle(wrapper);
 
     expect(wrapper.get(".transfer-use-tray-btn").attributes("disabled")).toBeUndefined();
@@ -986,7 +986,7 @@ describe("TransferAreaPage runtime", () => {
     expect(firstTrayTags[0].text()).toBe("温度冲击");
     expect(firstTray.text()).not.toContain("实验：");
     const firstTrayInfoRow = firstTray.get(".transfer-tray-card__subhead-row");
-    expect(firstTrayInfoRow.text()).toContain("托盘 #1");
+    expect(firstTray.get(".transfer-tray-card__number").text()).toBe("托盘 #1/2");
     expect(firstTrayInfoRow.findAll(".transfer-tray-experiment-tag")).toHaveLength(1);
 
     expect(wrapper.get('[data-testid="transfer-experiment-tab-SYLU-2026-03-101-A"]').attributes("aria-disabled")).toBe("true");

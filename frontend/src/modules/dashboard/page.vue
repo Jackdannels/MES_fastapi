@@ -37,7 +37,7 @@
           />
         </div>
       </div>
-      <div v-if="loadError" class="form-alert" data-testid="dashboard-load-error">{{ loadError }}</div>
+      <div v-if="loadError" class="form-alert" data-testid="dashboard-load-error">{{ localizeResponseMessage(loadError) }}</div>
       <table class="table">
         <thead>
           <tr>
@@ -93,6 +93,7 @@
 </template>
 
 <script setup>
+import { localizeResponseMessage } from "@/lib/responseMessages";
 import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "DashboardPage",

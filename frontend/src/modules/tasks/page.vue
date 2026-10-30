@@ -44,7 +44,7 @@
         @change="setCurrentPage"
       />
     </div>
-    <div v-if="loadError" class="form-alert" data-testid="task-load-error">{{ loadError }}</div>
+    <div v-if="loadError" class="form-alert" data-testid="task-load-error">{{ localizeResponseMessage(loadError) }}</div>
     <AppFeedback :message="resetFeedback" tone="success" data-testid="task-reset-feedback" @close="resetFeedback = ''" />
     <div v-if="!hasLoaded" class="tasks-loading-state" role="status" data-testid="task-initial-state">
       {{ isInitialLoading ? "正在加载任务清单…" : "尚未取得任务数据，请刷新后重试" }}
@@ -675,6 +675,7 @@
 </template>
 
 <script setup>
+import { localizeResponseMessage } from "@/lib/responseMessages";
 import { vAppIcon } from "@/directives/appIcon";
 import TaskAdminAuthDialog from "@/components/shared/TaskAdminAuthDialog.vue";
 defineOptions({

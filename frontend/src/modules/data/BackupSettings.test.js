@@ -125,7 +125,7 @@ describe("BackupSettings", () => {
     wrapper.unmount();
   });
 
-  test("highlights failures and retains both original errors in collapsed details without triggering work", async () => {
+  test("shows Chinese failure details with original paths and numbers without triggering work", async () => {
     const backgroundError = "[Errno 13] Permission denied: 'backup'";
     const fileError = "[Errno 2] No such file or directory: '\\\\server\\share\\report.pdf'";
     api.readBackupStatus.mockResolvedValue({
@@ -142,9 +142,13 @@ describe("BackupSettings", () => {
     expect(wrapper.get(".backup-error-summary > strong").text()).toBe("备份文件或目录不存在");
     const details = wrapper.get('[data-testid="backup-error-details"]');
     expect(details.element.open).toBe(false);
-    expect(details.findAll("pre").map((entry) => entry.text())).toEqual([backgroundError, fileError]);
+    expect(details.findAll("pre").map((entry) => entry.text())).toEqual([
+      "（系统错误 13） 访问权限不足: 'backup'",
+      "（系统错误 2） 文件或目录不存在: '\\\\server\\share\\report.pdf'",
+    ]);
     details.element.open = true;
-    expect(details.text()).toContain(fileError);
+    expect(details.text()).toContain("\\\\server\\share\\report.pdf");
+    expect(details.text()).not.toMatch(/Permission denied|No such file|Errno/);
     expect(api.saveBackupPath).not.toHaveBeenCalled();
     expect(api.checkBackupPath).not.toHaveBeenCalled();
     wrapper.unmount();

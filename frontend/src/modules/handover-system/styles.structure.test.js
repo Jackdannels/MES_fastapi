@@ -37,7 +37,7 @@ describe("handover system styles", () => {
     expect(styleSource).toMatch(/\.transfer-system-actions\s+\.action-btn\s*\{[^}]*min-height:\s*64px/i);
   });
 
-  test("keeps tray actions and capacity controls on one fixed-height row with larger buttons", () => {
+  test("shares the approved responsive allocation detail with centered actions and aligned capacity controls", () => {
     const componentPath = resolve(process.cwd(), "src/modules/transfer-workbench/TransferWorkbench.vue");
     const stylesPath = resolve(process.cwd(), "src/modules/handover-system/styles.css");
     const componentSource = readFileSync(componentPath, "utf8");
@@ -46,12 +46,21 @@ describe("handover system styles", () => {
     expect(componentSource).not.toContain("<h3>托盘栏位</h3>");
     expect(componentSource).toContain('<section class="transfer-tray-panel" aria-label="托盘分装操作区">');
     expect(componentSource).toMatch(/class="transfer-panel-title transfer-panel-title--tray"[\s\S]*class="form-actions transfer-tray-actions transfer-tray-actions--top"[\s\S]*class="transfer-tray-toolbar"/);
-    expect(styleSource).toMatch(/\.transfer-panel-title--tray\s*\{[^}]*height:\s*106px/i);
-    expect(styleSource).toMatch(/\.transfer-panel-title--tray\s*\{[^}]*flex-wrap:\s*nowrap/i);
+    expect(componentSource).toContain('class="card transfer-detail-shell transfer-detail-shell--allocation"');
+    expect(componentSource).toMatch(/\.transfer-detail-shell--allocation\s+\.transfer-panel-title--tray\s*\{[^}]*align-items:\s*stretch/i);
+    expect(componentSource).toMatch(/\.transfer-detail-shell--allocation\s+\.transfer-tray-actions--top\s*>\s*\.action-btn\s*\{[^}]*min-height:\s*52px/i);
+    expect(componentSource).toMatch(/\.transfer-detail-shell--allocation\s+\.transfer-back-button,[^{]*\{[^}]*justify-content:\s*center/i);
+    expect(componentSource).toMatch(/\.transfer-detail-shell--allocation\s+\.transfer-panel-title--tray\s+\.transfer-tray-toolbar\s*\{[^}]*align-self:\s*stretch/i);
+    expect(componentSource).toMatch(/\.transfer-detail-shell--allocation\s+\.transfer-tray-list--two-columns\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/i);
+    expect(componentSource).toMatch(/@media\s*\(max-width:\s*760px\)\s*\{[\s\S]*?\.transfer-detail-shell--allocation\s+\.transfer-tray-list--two-columns\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/i);
     expect(styleSource).toMatch(/\.transfer-tray-actions--top\s*\{[^}]*margin:\s*0/i);
-    expect(styleSource).toMatch(/\.transfer-tray-actions--top\s*>\s*\.action-btn\s*\{[^}]*flex:\s*1\s+1\s+0/i);
-    expect(styleSource).toMatch(/\.transfer-tray-actions--top\s*>\s*\.action-btn\s*\{[^}]*height:\s*80px/i);
-    expect(styleSource).toMatch(/\.transfer-tray-actions--top\s*>\s*\.action-btn\s*\{[^}]*font-size:\s*clamp\(14px,\s*1vw,\s*18px\)/i);
+  });
+
+  test("strengthens the light experiment selection while retaining the original dark palette", () => {
+    const source = readFileSync(resolve(process.cwd(), "src/modules/handover-system/styles.css"), "utf8");
+    expect(source).toMatch(/:root\[data-theme="light"\]\s+\.transfer-detail-shell--allocation\s+\.transfer-task-experiment-pill\.active\s*\{[^}]*background:\s*#dbeafe;[^}]*color:\s*#1e40af;[^}]*border-color:\s*#2563eb/i);
+    expect(source).toMatch(/\.transfer-task-experiment-pill\.active\s*\{[^}]*background:\s*rgba\(var\(--industrial-accent-rgb\),\s*0\.15\);[^}]*color:\s*var\(--accent\)/i);
+    expect(source).not.toMatch(/:root\[data-theme="dark"\][^{]*\.transfer-task-experiment-pill/);
   });
 
   test("handover terminal uses the viewport as its layout boundary", () => {

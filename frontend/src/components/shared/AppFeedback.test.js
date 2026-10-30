@@ -45,6 +45,17 @@ describe("AppFeedback", () => {
     expect(wrapper.find(".app-feedback").exists()).toBe(false);
   });
 
+  test("removes English transport errors from the visible warning without assigning new codes", () => {
+    const message = "过期排程清理未完成，Failed to write storage schedule patch: 409 Conflict，删除后将自动撤回至发货点，请确认：SYLUN-2026-10-001-TP-001";
+    const wrapper = mount(AppFeedback, { props: { message, tone: "warning", autoDismissMs: 0 } });
+    expect(wrapper.text()).toContain("请求失败（409）");
+    expect(wrapper.text()).toContain("SYLUN-2026-10-001-TP-001");
+    expect(wrapper.text()).toContain("删除后将自动撤回至发货点");
+    expect(wrapper.text()).not.toMatch(/Failed|Conflict|错误编号/);
+    expect(wrapper.props("message")).toBe(message);
+    wrapper.unmount();
+  });
+
   test("hides itself after the default 10 seconds", async () => {
     vi.useFakeTimers();
     const wrapper = mount(AppFeedback, {

@@ -39,12 +39,12 @@
 
     <div id="backup-result" class="backup-result" aria-live="polite" :aria-busy="Boolean(action)">
       <p v-if="action === 'checking' || action === 'saving'" role="status">正在验证目录及读写权限，请稍候（网络检测最长约 15 秒）…</p>
-      <p v-if="error" class="backup-error" role="alert" data-testid="backup-error">{{ error }}</p>
+      <p v-if="error" class="backup-error" role="alert" data-testid="backup-error">{{ localizeResponseMessage(error) }}</p>
       <template v-if="probe">
-        <p :class="probe.ok ? 'backup-success' : 'backup-error'" data-testid="backup-probe-result">{{ probe.detail }}</p>
+        <p :class="probe.ok ? 'backup-success' : 'backup-error'" data-testid="backup-probe-result">{{ localizeResponseMessage(probe.detail, probe.ok ? '检测通过' : '检测未通过，请检查路径和权限') }}</p>
         <ul v-if="probe.checks?.length" class="backup-checks" aria-label="路径检测结果">
           <li v-for="item in probe.checks" :key="item.label" :class="item.ok ? '' : 'backup-error'">
-            {{ item.ok ? '通过' : '失败' }} · {{ item.label }}
+            {{ item.ok ? '通过' : '失败' }} · {{ localizeResponseMessage(item.label, '路径与权限检查') }}
           </li>
         </ul>
       </template>
@@ -66,10 +66,10 @@
       <strong>{{ backupErrorSummary.title }}</strong>
       <p>{{ backupErrorSummary.hint }}</p>
       <details data-testid="backup-error-details">
-        <summary>查看原始错误与完整路径</summary>
+        <summary>查看异常详情与完整路径</summary>
         <div v-for="entry in backupErrorDetails" :key="entry.label">
           <span>{{ entry.label }}</span>
-          <pre>{{ entry.detail }}</pre>
+          <pre>{{ localizeResponseMessage(entry.detail, backupErrorSummary.title) }}</pre>
         </div>
       </details>
     </section>
@@ -77,6 +77,7 @@
 </template>
 
 <script setup>
+import { localizeResponseMessage } from "@/lib/responseMessages";
 import { vAppIcon } from "@/directives/appIcon";
 import { computed, onMounted, ref, watch } from "vue";
 import { checkBackupPath, readBackupStatus, saveBackupPath, selectBackupDirectory } from "@/lib/testDataBackupApi";

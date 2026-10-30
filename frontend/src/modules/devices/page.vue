@@ -165,7 +165,7 @@
         <textarea id="maintenance-note" v-model="maintenancePlanForm.note" placeholder="维保说明"></textarea>
       </div>
       <div v-if="maintenancePlanWarning" class="form-alert" data-testid="maintenance-plan-warning">
-        {{ maintenancePlanWarning }}
+        {{ localizeResponseMessage(maintenancePlanWarning) }}
       </div>
     </div>
     <template #footer>
@@ -188,7 +188,7 @@
         </li>
       </ul>
       <div v-if="runningRepairChoiceWarning" class="form-alert" role="status" aria-live="polite" data-testid="running-repair-choice-warning">
-        {{ runningRepairChoiceWarning }}
+        {{ localizeResponseMessage(runningRepairChoiceWarning) }}
       </div>
     </div>
     <template #footer>
@@ -262,6 +262,7 @@
 </template>
 
 <script setup>
+import { localizeResponseMessage } from "@/lib/responseMessages";
 import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "DevicesPage",

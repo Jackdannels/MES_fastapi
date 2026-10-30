@@ -139,7 +139,7 @@
 
               <div v-else-if="bootstrapError" class="transfer-table__empty transfer-table__empty--error" data-testid="transfer-bootstrap-error">
                 <strong>接驳任务加载失败</strong>
-                <span>{{ bootstrapError }}</span>
+                <span>{{ localizeResponseMessage(bootstrapError, "任务读取失败，请稍后重试") }}</span>
                 <div class="transfer-empty-actions">
                   <button class="action-btn secondary" type="button" @click="reloadBootstrap">重新加载</button>
                 </div>
@@ -238,24 +238,19 @@
       </template>
 
       <template v-else>
-        <section class="card transfer-detail-shell" @click="handleDetailShellClick">
+        <section class="card transfer-detail-shell transfer-detail-shell--allocation" @click="handleDetailShellClick">
           <div class="transfer-detail-shell__top">
-            <button class="action-btn secondary transfer-back-button" type="button" :disabled="storageOperationPending" @click="backToOverview"><AppIcon v-if="mode === 'pre-allocation'" name="chevron-left" :size="18" /><span>返回总览</span></button>
+            <button class="action-btn secondary transfer-back-button" type="button" :disabled="storageOperationPending" @click="backToOverview"><AppIcon name="chevron-left" :size="18" /><span>返回总览</span></button>
             <div class="transfer-detail-shell__title">
               <h2>{{ mode === 'pre-allocation' ? "任务样品分配" : modeConfig.detailTitle }}</h2>
-              <div v-if="mode === 'pre-allocation'" class="transfer-detail-task-line">
+              <div class="transfer-detail-task-line">
                 <span>任务编号：</span>
                 <strong data-testid="transfer-task-code" @click.stop="setAssignmentMode('task')">{{ currentTask?.taskNo || "--" }}</strong>
               </div>
-              <div v-else class="muted">{{ isExperimentMode ? `${currentExperimentName} 托盘选择模式` : modeConfig.detailHint }}</div>
             </div>
           </div>
 
           <section class="transfer-task-header">
-            <div v-if="mode !== 'pre-allocation'" class="transfer-task-header__summary">
-              <div class="transfer-task-summary-card__label">任务编号</div>
-              <strong data-testid="transfer-task-code" @click.stop="setAssignmentMode('task')">{{ currentTask?.taskNo || "--" }}</strong>
-            </div>
             <div v-if="experiments.length" class="transfer-task-header__experiments">
               <button
                 v-for="experiment in experiments"
@@ -277,33 +272,34 @@
           <section class="transfer-tray-panel" aria-label="托盘分装操作区">
             <div class="transfer-panel-title transfer-panel-title--tray">
               <div class="form-actions transfer-tray-actions transfer-tray-actions--top">
-                <button class="action-btn transfer-print-all-btn" data-testid="transfer-print-barcodes" type="button" :disabled="!canPrint || printingAllBarcodes || storageOperationPending" @click="printAllTrayBarcodes">
-                  <AppIcon v-if="mode === 'pre-allocation'" name="print" :size="20" />
+                <button class="action-btn transfer-print-all-btn transfer-allocation-action" data-testid="transfer-print-barcodes" type="button" :disabled="!canPrint || printingAllBarcodes || storageOperationPending" @click="printAllTrayBarcodes">
+                  <AppIcon name="print" :size="20" />
                   <span>{{ printingAllBarcodes ? "生成中..." : `打印二维码（${loadedTrayCount}）` }}</span>
                 </button>
-                <button class="action-btn secondary" data-testid="transfer-save-trays" type="button" :disabled="!canSaveAllocation || storageOperationPending" @click="persistAllocation()"><AppIcon v-if="mode === 'pre-allocation'" name="save" :size="20" /><span>保存托盘</span></button>
+                <button class="action-btn secondary transfer-allocation-action" data-testid="transfer-save-trays" type="button" :disabled="!canSaveAllocation || storageOperationPending" @click="persistAllocation()"><AppIcon name="save" :size="20" /><span>保存托盘</span></button>
                 <button v-if="modeConfig.allowConfirm" class="action-btn" data-testid="transfer-confirm-storage" type="button" :disabled="!canConfirm || storageOperationPending" @click="confirmStorage">
-                  {{ storageOperationPending ? "处理中..." : "确认入库" }}
+                  <AppIcon name="check-circle" :size="20" />
+                  <span>{{ storageOperationPending ? "处理中..." : "确认入库" }}</span>
                 </button>
                 <button
                   v-if="modeConfig.allowReset"
-                  class="action-btn secondary"
+                  class="action-btn secondary transfer-allocation-action"
                   data-testid="transfer-reset-workspace"
                   :disabled="!canResetWorkspace || storageOperationPending"
                   @click="reloadWorkspace"
                 >
-                  <AppIcon v-if="mode === 'pre-allocation'" name="refresh" :size="20" />
+                  <AppIcon name="refresh" :size="20" />
                   <span>{{ modeConfig.resetActionLabel }}</span>
                 </button>
                 <button
                   v-if="experiments.length"
-                  class="action-btn secondary"
+                  class="action-btn secondary transfer-allocation-action"
                   data-testid="transfer-assign-all-experiments"
                   type="button"
                   :disabled="allocationReadOnly || assignedTrays.length === 0"
                   @click.stop="assignAllExperimentsToAllTrays"
                 >
-                  <AppIcon v-if="mode === 'pre-allocation'" name="layers" :size="20" />
+                  <AppIcon name="layers" :size="20" />
                   <span>全部托盘应用全部试验</span>
                 </button>
               </div>
@@ -328,15 +324,15 @@
                 </div>
 
                 <div class="transfer-panel-title__actions">
-                  <span class="transfer-count-chip"><AppIcon v-if="mode === 'pre-allocation'" name="database" :size="20" />剩余空托盘 {{ remainingTrayCount }}</span>
-                  <button class="action-btn secondary transfer-use-tray-btn" type="button" :disabled="taskEditingLocked || remainingTrayCount <= 0 || trayCapacityExceeded" @click="addInventoryTray"><AppIcon v-if="mode === 'pre-allocation'" name="plus" :size="20" /><span>新增托盘</span></button>
+                  <span class="transfer-count-chip"><AppIcon name="database" :size="20" />剩余空托盘 {{ remainingTrayCount }}</span>
+                  <button class="action-btn secondary transfer-use-tray-btn" type="button" :disabled="taskEditingLocked || remainingTrayCount <= 0 || trayCapacityExceeded" @click="addInventoryTray"><AppIcon name="plus" :size="20" /><span>新增托盘</span></button>
                 </div>
               </div>
             </div>
 
-            <p v-if="mode === 'pre-allocation'" class="transfer-allocation-mode-hint">
+            <p class="transfer-allocation-mode-hint">
               <AppIcon name="shield" :size="15" />
-              <span>{{ isStoredTask ? "当前任务样品已到货，相关托盘调整操作保持禁用状态。" : modeConfig.detailHint }}</span>
+              <span>{{ mode === 'pre-allocation' ? (isStoredTask ? "当前任务样品已到货，相关托盘调整操作保持禁用状态。" : modeConfig.detailHint) : (isExperimentMode ? `${currentExperimentName} 托盘选择模式` : modeConfig.detailHint) }}</span>
             </p>
 
             <div
@@ -374,14 +370,11 @@
                 @drop.prevent="handleTrayDrop(index)"
               >
                 <div class="sample-tray-card-head">
-                  <template v-if="mode === 'pre-allocation'">
-                    <span class="transfer-tray-card__icon"><AppIcon name="box" :size="26" /></span>
-                    <div class="transfer-tray-card__identity">
-                      <span class="transfer-tray-card__code">{{ tray.trayNo }}</span>
-                      <span class="transfer-tray-card__number">托盘 #{{ index + 1 }}</span>
-                    </div>
-                  </template>
-                  <span v-else>{{ tray.trayNo }}</span>
+                  <span class="transfer-tray-card__icon"><AppIcon name="box" :size="26" /></span>
+                  <div class="transfer-tray-card__identity">
+                    <span class="transfer-tray-card__code">{{ tray.trayNo }}</span>
+                    <span class="transfer-tray-card__number">托盘 #{{ index + 1 }}/{{ assignedTrays.length }}</span>
+                  </div>
                   <button
                     v-if="isExperimentMode"
                     class="transfer-tray-select-toggle"
@@ -396,7 +389,6 @@
                   </button>
                 </div>
                 <div class="transfer-tray-card__subhead-row">
-                  <div v-if="mode !== 'pre-allocation'" class="transfer-tray-card__subhead">托盘 #{{ index + 1 }}</div>
                   <div v-if="tray.experimentLabels?.length" class="transfer-tray-experiment-tags">
                     <span
                       v-for="(label, labelIndex) in tray.experimentLabels"
@@ -440,7 +432,7 @@
                       :disabled="storageOperationPending || isStoredTask || Boolean(reloadBlockedReason)"
                       @click.stop="removeTray(index)"
                     >
-                      <AppIcon v-if="mode === 'pre-allocation'" name="trash" :size="18" />
+                      <AppIcon name="trash" :size="18" />
                       <span>删除托盘</span>
                     </button>
                   </div>
@@ -597,6 +589,7 @@ import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppIcon from "@/components/shared/AppIcon.vue";
 import AppNumberInput from "@/components/shared/AppNumberInput.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
+import { localizeResponseMessage } from "@/lib/responseMessages";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import TrayErrorSampleDialog from "@/components/shared/TrayErrorSampleDialog.vue";
 import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
@@ -919,8 +912,8 @@ onBeforeUnmount(() => {
 <style scoped src="../handover-system/styles.css"></style>
 
 <style scoped>
-/* 预接驳详情使用确认的双列卡片布局；独立接驳工作台保持原布局。 */
-.is-pre-allocation .transfer-detail-shell {
+/* 接驳与预接驳复用同一套双列托盘详情展示。 */
+.transfer-detail-shell.transfer-detail-shell--allocation {
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -929,7 +922,11 @@ onBeforeUnmount(() => {
   gap: 0;
 }
 
-.is-pre-allocation .transfer-detail-shell__top {
+.transfer-area-screen.is-terminal .transfer-detail-shell--allocation {
+  align-content: start;
+}
+
+.transfer-detail-shell--allocation .transfer-detail-shell__top {
   flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
@@ -937,17 +934,17 @@ onBeforeUnmount(() => {
   margin-bottom: 18px;
 }
 
-.is-pre-allocation .transfer-detail-shell__title {
+.transfer-detail-shell--allocation .transfer-detail-shell__title {
   order: -1;
 }
 
-.is-pre-allocation .transfer-detail-shell__title h2 {
+.transfer-detail-shell--allocation .transfer-detail-shell__title h2 {
   margin: 0 0 7px;
   font-size: 25px;
   line-height: 1.4;
 }
 
-.is-pre-allocation .transfer-detail-task-line {
+.transfer-detail-shell--allocation .transfer-detail-task-line {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -957,31 +954,31 @@ onBeforeUnmount(() => {
   line-height: 1.6;
 }
 
-.is-pre-allocation .transfer-detail-task-line strong {
+.transfer-detail-shell--allocation .transfer-detail-task-line strong {
   color: var(--text);
   font-size: 19px;
   overflow-wrap: anywhere;
   cursor: pointer;
 }
 
-.is-pre-allocation .transfer-back-button,
-.is-pre-allocation .transfer-tray-actions--top > .action-btn,
-.is-pre-allocation .transfer-use-tray-btn,
-.is-pre-allocation .sample-tray-remove {
+.transfer-detail-shell--allocation .transfer-back-button,
+.transfer-detail-shell--allocation .transfer-tray-actions--top > .action-btn,
+.transfer-detail-shell--allocation .transfer-use-tray-btn,
+.transfer-detail-shell--allocation .sample-tray-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 9px;
 }
 
-.is-pre-allocation .transfer-back-button {
+.transfer-detail-shell--allocation .transfer-back-button {
   min-height: 46px;
   padding: 10px 17px;
   font-size: 14px;
   line-height: 24px;
 }
 
-.is-pre-allocation .transfer-task-header {
+.transfer-detail-shell--allocation .transfer-task-header {
   padding: 0;
   margin-bottom: 18px;
   border: 0;
@@ -990,32 +987,39 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
-.is-pre-allocation .transfer-task-header__experiments {
+.transfer-detail-shell--allocation .transfer-task-header__experiments {
   gap: 5px;
   border-bottom: 1px solid var(--border);
 }
 
-.is-pre-allocation .transfer-task-experiment-pill {
+.transfer-detail-shell--allocation .transfer-task-experiment-pill {
   min-height: 44px;
   padding: 10px 26px;
   border-radius: 5px 5px 0 0;
-  background: var(--bg-card);
   font-size: 15px;
   line-height: 24px;
 }
 
-.is-pre-allocation .transfer-task-experiment-pill.active {
+.transfer-detail-shell--allocation .transfer-task-experiment-pill.active {
+  border-bottom: 2px solid rgba(var(--industrial-accent-rgb), 0.56);
+}
+
+.is-pre-allocation .transfer-detail-shell--allocation .transfer-task-experiment-pill {
+  background: var(--bg-card);
+}
+
+.is-pre-allocation .transfer-detail-shell--allocation .transfer-task-experiment-pill.active {
   border-bottom: 2px solid var(--accent);
 }
 
-.is-pre-allocation .transfer-tray-panel {
+.transfer-detail-shell--allocation .transfer-tray-panel {
   padding: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
 }
 
-.is-pre-allocation .transfer-panel-title--tray {
+.transfer-detail-shell--allocation .transfer-panel-title--tray {
   height: auto;
   align-items: stretch;
   justify-content: space-between;
@@ -1026,15 +1030,16 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
-.is-pre-allocation .transfer-tray-actions--top {
+.transfer-detail-shell--allocation .transfer-tray-actions--top {
   flex: 0 1 auto;
   align-self: stretch;
   align-items: stretch;
   gap: 10px;
 }
 
-.is-pre-allocation .transfer-tray-actions--top > .action-btn {
+.transfer-detail-shell--allocation .transfer-tray-actions--top > .action-btn {
   flex: 0 0 auto;
+  min-width: max-content;
   height: auto;
   min-height: 52px;
   padding: 13px 22px;
@@ -1044,7 +1049,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.is-pre-allocation .transfer-panel-title--tray .transfer-tray-toolbar {
+.transfer-detail-shell--allocation .transfer-panel-title--tray .transfer-tray-toolbar {
   flex-direction: row;
   align-items: flex-end;
   align-self: stretch;
@@ -1053,30 +1058,30 @@ onBeforeUnmount(() => {
   border-left: 1px solid var(--border);
 }
 
-.is-pre-allocation .transfer-tray-limit-toolbar {
+.transfer-detail-shell--allocation .transfer-tray-limit-toolbar {
   justify-items: start;
   gap: 3px;
 }
 
-.is-pre-allocation .transfer-tray-limit-toolbar__label {
+.transfer-detail-shell--allocation .transfer-tray-limit-toolbar__label {
   font-size: 11px;
   line-height: 1.6;
 }
 
-.is-pre-allocation .transfer-tray-limit-stepper :deep(.app-number-input.is-horizontal) {
+.transfer-detail-shell--allocation .transfer-tray-limit-stepper :deep(.app-number-input.is-horizontal) {
   width: 144px;
   height: 52px;
   min-height: 52px;
   gap: 6px;
 }
 
-.is-pre-allocation .transfer-tray-limit-stepper :deep(.app-number-input__field),
-.is-pre-allocation .transfer-tray-limit-stepper :deep(.app-number-input__step) {
+.transfer-detail-shell--allocation .transfer-tray-limit-stepper :deep(.app-number-input__field),
+.transfer-detail-shell--allocation .transfer-tray-limit-stepper :deep(.app-number-input__step) {
   min-height: 52px;
   border-radius: 5px;
 }
 
-.is-pre-allocation .transfer-tray-limit-stepper :deep(.app-number-input__field) {
+.transfer-detail-shell--allocation .transfer-tray-limit-stepper :deep(.app-number-input__field) {
   width: 44px;
   padding: 8px 2px;
   color: var(--accent);
@@ -1084,14 +1089,14 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
-.is-pre-allocation .transfer-panel-title__actions {
+.transfer-detail-shell--allocation .transfer-panel-title__actions {
   flex-direction: row;
   align-items: stretch;
   gap: 10px;
 }
 
-.is-pre-allocation .transfer-count-chip,
-.is-pre-allocation .transfer-use-tray-btn {
+.transfer-detail-shell--allocation .transfer-count-chip,
+.transfer-detail-shell--allocation .transfer-use-tray-btn {
   min-height: 52px;
   border-radius: 5px;
   font-size: 14px;
@@ -1099,16 +1104,16 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.is-pre-allocation .transfer-count-chip {
+.transfer-detail-shell--allocation .transfer-count-chip {
   gap: 9px;
   padding: 8px 14px;
 }
 
-.is-pre-allocation .transfer-use-tray-btn {
+.transfer-detail-shell--allocation .transfer-use-tray-btn {
   padding: 10px 17px;
 }
 
-.is-pre-allocation .transfer-allocation-mode-hint {
+.transfer-detail-shell--allocation .transfer-allocation-mode-hint {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -1118,12 +1123,12 @@ onBeforeUnmount(() => {
   line-height: 1.6;
 }
 
-.is-pre-allocation .transfer-tray-list--two-columns {
+.transfer-detail-shell--allocation .transfer-tray-list--two-columns {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
 
-.is-pre-allocation .transfer-tray-card {
+.transfer-detail-shell--allocation .transfer-tray-card {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1133,13 +1138,13 @@ onBeforeUnmount(() => {
   background: var(--bg-card);
 }
 
-.is-pre-allocation .sample-tray-card-head {
+.transfer-detail-shell--allocation .sample-tray-card-head {
   align-items: flex-start;
   justify-content: flex-start;
   gap: 16px;
 }
 
-.is-pre-allocation .transfer-tray-card__icon {
+.transfer-detail-shell--allocation .transfer-tray-card__icon {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
@@ -1150,19 +1155,19 @@ onBeforeUnmount(() => {
   color: var(--accent);
 }
 
-.is-pre-allocation .transfer-tray-card__identity {
+.transfer-detail-shell--allocation .transfer-tray-card__identity {
   min-width: 0;
   flex: 1;
 }
 
-.is-pre-allocation .transfer-tray-card__code {
+.transfer-detail-shell--allocation .transfer-tray-card__code {
   display: block;
   font-size: 16px;
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
 
-.is-pre-allocation .transfer-tray-card__number {
+.transfer-detail-shell--allocation .transfer-tray-card__number {
   display: table;
   margin-top: 3px;
   padding: 0 9px;
@@ -1174,26 +1179,26 @@ onBeforeUnmount(() => {
   line-height: 1.6;
 }
 
-.is-pre-allocation .transfer-tray-card__subhead-row {
+.transfer-detail-shell--allocation .transfer-tray-card__subhead-row {
   margin: 10px 0 12px 58px;
   min-height: 28px;
 }
 
-.is-pre-allocation .transfer-tray-experiment-tags {
+.transfer-detail-shell--allocation .transfer-tray-experiment-tags {
   justify-content: flex-start;
   margin-left: 0;
 }
 
-.is-pre-allocation .transfer-tray-experiment-tag {
+.transfer-detail-shell--allocation .transfer-tray-experiment-tag {
   padding: 4px 16px;
 }
 
-.is-pre-allocation .sample-tray-card-meta {
+.transfer-detail-shell--allocation .sample-tray-card-meta {
   font-size: 13px;
   line-height: 1.8;
 }
 
-.is-pre-allocation .sample-tray-samples {
+.transfer-detail-shell--allocation .sample-tray-samples {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: stretch;
@@ -1202,7 +1207,7 @@ onBeforeUnmount(() => {
   min-height: 72px;
 }
 
-.is-pre-allocation .sample-tray-sample-tag {
+.transfer-detail-shell--allocation .sample-tray-sample-tag {
   width: 100%;
   min-width: 0;
   gap: 4px;
@@ -1211,24 +1216,24 @@ onBeforeUnmount(() => {
   text-align: left;
 }
 
-.is-pre-allocation .sample-tray-chip__code {
+.transfer-detail-shell--allocation .sample-tray-chip__code {
   overflow-wrap: anywhere;
   line-height: 1.6;
 }
 
-.is-pre-allocation .sample-tray-chip__status {
+.transfer-detail-shell--allocation .sample-tray-chip__status {
   font-size: 12px;
   line-height: 1.6;
 }
 
-.is-pre-allocation .transfer-tray-card__footer {
+.transfer-detail-shell--allocation .transfer-tray-card__footer {
   flex-direction: row;
   align-items: stretch;
   gap: 16px;
   margin-top: auto;
 }
 
-.is-pre-allocation .transfer-tray-card__count {
+.transfer-detail-shell--allocation .transfer-tray-card__count {
   min-width: 0;
   padding: 11px 16px;
   border: 0;
@@ -1237,7 +1242,7 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
 }
 
-.is-pre-allocation .sample-tray-remove {
+.transfer-detail-shell--allocation .sample-tray-remove {
   min-height: 46px;
   padding: 10px 17px;
   border-radius: 5px;
@@ -1247,11 +1252,15 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1700px) {
-  .is-pre-allocation .transfer-panel-title--tray {
+  .transfer-detail-shell--allocation .transfer-panel-title--tray {
     flex-wrap: wrap;
   }
 
-  .is-pre-allocation .transfer-panel-title--tray .transfer-tray-toolbar {
+  .transfer-detail-shell--allocation .transfer-tray-actions--top {
+    flex-wrap: wrap;
+  }
+
+  .transfer-detail-shell--allocation .transfer-panel-title--tray .transfer-tray-toolbar {
     margin-left: auto;
     padding-left: 0;
     border-left: 0;
@@ -1259,32 +1268,33 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1300px) {
-  .is-pre-allocation .sample-tray-samples {
+  .transfer-detail-shell--allocation .sample-tray-samples {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .is-pre-allocation .transfer-tray-card {
+  .transfer-detail-shell--allocation .transfer-tray-card {
     padding: 16px;
   }
 
-  .is-pre-allocation .transfer-tray-card__subhead-row {
+  .transfer-detail-shell--allocation .transfer-tray-card__subhead-row {
     margin-left: 0;
   }
 }
 
 @media (max-width: 760px) {
-  .is-pre-allocation .transfer-tray-list--two-columns {
+  .transfer-detail-shell--allocation .transfer-tray-list--two-columns {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .is-pre-allocation .transfer-tray-actions--top,
-  .is-pre-allocation .transfer-panel-title--tray .transfer-tray-toolbar {
+  .transfer-detail-shell--allocation .transfer-tray-actions--top,
+  .transfer-detail-shell--allocation .transfer-panel-title--tray .transfer-tray-toolbar {
     width: 100%;
     flex-wrap: wrap;
   }
 
-  .is-pre-allocation .transfer-tray-actions--top > .action-btn {
+  .transfer-detail-shell--allocation .transfer-tray-actions--top > .action-btn {
     flex: 1 1 auto;
+    min-width: 0;
     padding-inline: 14px;
   }
 }
