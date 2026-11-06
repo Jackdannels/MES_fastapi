@@ -99,6 +99,15 @@ function Write-ConnectionInfo {
     Write-Host ('Private login information: '+$path)
     if(-not $NoOpen){Start-Process notepad.exe -ArgumentList ('"'+$path+'"')|Out-Null}
 }
+function Open-DeploymentPages($WebConfig,[string]$MesUrl) {
+    $pages=@($MesUrl,[string]$WebConfig.limsUrl,[string]$WebConfig.upperComputerUrl)
+    try {
+        $browserArguments='--open-pages '+(($pages|ForEach-Object {'"'+$_+'"'}) -join ' ')
+        $browser=Start-Process -FilePath (Join-Path $runtime 'desktop-tools/MES控制中心_Docker版.exe') -ArgumentList $browserArguments -WindowStyle Hidden -PassThru
+        $handle=$browser.Handle;$browser.WaitForExit();$browser.Refresh()
+        if($browser.ExitCode -ne 0){Write-Warning '服务已就绪，请手动通过控制中心打开页面。'}
+    } catch {Write-Warning ('服务已就绪，网页打开失败：'+$_.Exception.Message)}
+}
 
 $transcript=$false
 try {
@@ -175,10 +184,7 @@ try {
         $webConfig=Read-Json (Join-Path $runtime 'desktop-tools/mes-desktop-tools.json')
         $text=[IO.File]::ReadAllText($environment)
         $url=Get-MesEnvironmentValue $text 'MES_PUBLIC_URL' ([string]$webConfig.serverUrl)
-        foreach($page in @($url,[string]$webConfig.limsUrl)){
-            try{Start-Process -FilePath $page | Out-Null}
-            catch{Write-Warning ('服务已就绪，请手动打开页面：'+$page)}
-        }
+        Open-DeploymentPages $webConfig $url
     }
     Write-Host 'MES installation completed. Use the three desktop shortcuts.'
 } catch {

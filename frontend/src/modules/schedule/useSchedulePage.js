@@ -39,6 +39,7 @@ import { writeStorageSchedulePatch } from "@/lib/storageApi";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
 import { useScheduleFormState } from "./useScheduleFormState";
 import { useScheduleRealtime } from "./useScheduleRealtime";
+import { useScheduleDrag } from "./useScheduleDrag";
 
 const SCHEDULE_PAGE_SIZE = 10;
 
@@ -534,7 +535,7 @@ function useSchedulePage(options = {}) {
   const syncRetentionClock = () => {
     // 页面上的当前时间、留样默认时间和合法性检查都跟随秒级时钟更新。
     now.value = serverNowDate();
-    if (temporalBoundaryHasElapsed(temporalBoundaryState, now.value)) {
+    if (!scheduleDrag.dragInteractionActive.value && temporalBoundaryHasElapsed(temporalBoundaryState, now.value)) {
       structuralNow.value = now.value;
       resetTemporalBoundaryState();
       // Reconcile once at a schedule, maintenance, or run forecast boundary.
@@ -933,8 +934,32 @@ function useSchedulePage(options = {}) {
     }
   };
 
+  const scheduleDrag = useScheduleDrag({
+    getContext: () => ({
+      devices: rawDevices.value, experiments: rawExperiments.value,
+      experimentRuns: rawExperimentRuns.value, experimentRunSteps: rawExperimentRunSteps.value,
+      experimentRunTrays: rawExperimentRunTrays.value, experimentTrays: rawExperimentTrays.value,
+      samples: rawSamples.value, schedules: rawSchedules.value, streams: rawStreams.value,
+      tasks: rawTasks.value, masterLabs: masterLabs.value, now: serverNowDate(),
+    }),
+    refreshContext: async () => {
+      // 拖放和确认时都严格读取服务端快照；读取失败不使用旧数据保存。
+      const snapshot = await loadSnapshot();
+      for (const [key, target] of [
+        [STORAGE_KEYS.devices, rawDevices], [STORAGE_KEYS.experiments, rawExperiments],
+        [STORAGE_KEYS.experiment_runs, rawExperimentRuns], [STORAGE_KEYS.experiment_run_steps, rawExperimentRunSteps],
+        [STORAGE_KEYS.experiment_run_trays, rawExperimentRunTrays], [STORAGE_KEYS.experiment_trays, rawExperimentTrays],
+        [STORAGE_KEYS.samples, rawSamples], [STORAGE_KEYS.schedules, rawSchedules],
+        [STORAGE_KEYS.streams, rawStreams], [STORAGE_KEYS.tasks, rawTasks],
+      ]) applySnapshotArray(snapshot, key, target);
+    },
+    persist: persistAll,
+    onClose: () => flushPendingRealtimeRefresh(),
+  });
+
   const { flushPendingRealtimeRefresh } = useScheduleRealtime({
     exceptionModal,
+    interactionPaused: () => scheduleDrag.dragInteractionActive.value,
     ignoredStorageRequestIds,
     loadSchedulePage,
     scheduleConflictModal,
@@ -994,6 +1019,7 @@ function useSchedulePage(options = {}) {
     });
 
   return {
+    ...scheduleDrag,
     buildEditLabOptions,
     buildEditLabOptionItems,
     acknowledgeException,

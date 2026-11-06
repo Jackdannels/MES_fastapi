@@ -182,12 +182,12 @@
       </div>
       </fieldset>
       <fieldset class="form-grid system-employee-section">
-        <legend>密码重置</legend>
+        <legend>修改密码</legend>
       <div class="form-field">
-        <label for="employee-new-password">新密码（仅重置时填写）</label>
-        <input id="employee-new-password" v-model="adminActionFields.newPassword" data-testid="reset-password-input" type="password" placeholder="用于重置员工密码" autocomplete="new-password" aria-describedby="employee-password-reset-note" />
+        <label for="employee-new-password">新密码（留空则不修改）</label>
+        <input id="employee-new-password" v-model="adminActionFields.newPassword" data-testid="reset-password-input" type="password" placeholder="请输入新密码" autocomplete="new-password" aria-describedby="employee-password-reset-note" />
       </div>
-        <p id="employee-password-reset-note" class="helper system-employee-section-note">填写后点击“重置密码”；“保存修改”只保存上方员工资料。</p>
+        <p id="employee-password-reset-note" class="helper system-employee-section-note">填写新密码后点击“保存修改”可与员工资料一起保存，也可单独点击“重置密码”。</p>
       </fieldset>
     </fieldset>
     <AppFeedback

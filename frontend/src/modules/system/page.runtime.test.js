@@ -102,9 +102,9 @@ describe("SystemPage runtime", () => {
     const wrapper = mount(SystemPage);
     await flushPromises();
     await wrapper.get('[data-testid="open-employee-drawer-0"]').trigger("click");
-    expect(wrapper.findAll(".system-employee-section legend").map((legend) => legend.text())).toEqual(["员工资料", "管理员身份验证", "密码重置"]);
+    expect(wrapper.findAll(".system-employee-section legend").map((legend) => legend.text())).toEqual(["员工资料", "管理员身份验证", "修改密码"]);
     expect(wrapper.findAll(".system-employee-section input, .system-employee-section select")).toHaveLength(6);
-    expect(wrapper.get("#employee-new-password").element.labels[0].textContent).toContain("仅重置时填写");
+    expect(wrapper.get("#employee-new-password").element.labels[0].textContent).toContain("留空则不修改");
     expect(wrapper.findAll(".system-employee-edit-modal .form-actions button")).toHaveLength(3);
     wrapper.unmount();
   });
@@ -608,7 +608,7 @@ describe("SystemPage runtime", () => {
     expect(wrapper.text()).toContain("员工账号详情");
   });
 
-  test("only employee edits enable saving and saves with administrator verification", async () => {
+  test("saves employee details with administrator verification and leaves an omitted password unchanged", async () => {
     const employees = stubAttendanceFetch();
     let completeSave;
     fetch.mockImplementation(async (input, options = {}) => {
@@ -625,7 +625,6 @@ describe("SystemPage runtime", () => {
     const actions = wrapper.findAll(".system-employee-edit-modal .form-actions button");
     expect(actions.map((button) => button.text())).toEqual(["重置密码", "保存修改", "删除账号"]);
     await wrapper.get('[data-testid="admin-password-input"]').setValue("123");
-    await wrapper.get('[data-testid="reset-password-input"]').setValue("do-not-submit");
     expect(save.element.disabled).toBe(true);
     for (const [selector, changed, original] of [
       ["edit-employee-name", "张四", "张三"],
@@ -660,6 +659,54 @@ describe("SystemPage runtime", () => {
     wrapper.unmount();
   });
 
+  test.each([false, true])("saves a new password with the save-changes button (profile edited: %s)", async (editProfile) => {
+    const employees = stubAttendanceFetch();
+    fetch.mockImplementation(async (input, options = {}) => {
+      if (options.method === "PUT") {
+        return { ok: true, json: async () => ({ ...employees[0], employeeName: editProfile ? "张四" : "张三" }) };
+      }
+      return { ok: true, json: async () => employees };
+    });
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+    await wrapper.get('[data-testid="open-employee-drawer-0"]').trigger("click");
+    const save = wrapper.get('[data-testid="employee-save-changes"]');
+    expect(save.element.disabled).toBe(true);
+    await wrapper.get('[data-testid="reset-password-input"]').setValue(" new-password ");
+    expect(save.element.disabled).toBe(false);
+    if (editProfile) {
+      await wrapper.get('[data-testid="edit-employee-name"]').setValue("张四");
+    }
+    await save.trigger("click");
+    await flushPromises(10);
+
+    const writes = fetch.mock.calls.filter(([, options]) => options?.method === "PUT" || options?.method === "POST");
+    expect(writes).toHaveLength(1);
+    expect(writes[0][0]).toBe("/api/attendance/users/1");
+    expect(JSON.parse(writes[0][1].body)).toEqual({
+      adminUsername: "admin", adminPassword: "123", employeeName: editProfile ? "张四" : "张三",
+      username: "zhangsan", roleName: "试验员", password: " new-password ",
+    });
+    expect(wrapper.get('[data-testid="employee-admin-action-feedback"]').text()).toContain("员工信息及密码已保存");
+    expect(wrapper.get('[data-testid="reset-password-input"]').element.value).toBe("");
+    expect(save.element.disabled).toBe(true);
+    wrapper.unmount();
+  });
+
+  test("rejects a whitespace-only new password without saving employee edits", async () => {
+    stubAttendanceFetch();
+    const wrapper = mount(SystemPage);
+    await flushPromises();
+    await wrapper.get('[data-testid="open-employee-drawer-0"]').trigger("click");
+    await wrapper.get('[data-testid="edit-employee-name"]').setValue("张四");
+    await wrapper.get('[data-testid="reset-password-input"]').setValue("   ");
+    await wrapper.get('[data-testid="employee-save-changes"]').trigger("click");
+    expect(wrapper.get('[data-testid="employee-admin-action-feedback"]').text()).toContain("新密码不能仅包含空白字符");
+    expect(fetch.mock.calls.some(([, options]) => options?.method === "PUT")).toBe(false);
+    expect(wrapper.get("#employee-table").text()).toContain("张三");
+    wrapper.unmount();
+  });
+
   test("failed saves keep edits and require administrator input", async () => {
     const employees = stubAttendanceFetch();
     fetch.mockImplementation(async (input, options = {}) => options.method === "PUT"
@@ -669,6 +716,7 @@ describe("SystemPage runtime", () => {
     await flushPromises();
     await wrapper.get('[data-testid="open-employee-drawer-0"]').trigger("click");
     await wrapper.get('[data-testid="edit-employee-role"]').setValue("试验组长");
+    await wrapper.get('[data-testid="reset-password-input"]').setValue("new-password");
     await wrapper.get('[data-testid="admin-password-input"]').setValue("");
     await wrapper.get('[data-testid="employee-save-changes"]').trigger("click");
     expect(wrapper.text()).toContain("请输入管理员账号和密码");
@@ -678,11 +726,13 @@ describe("SystemPage runtime", () => {
     await flushPromises(10);
     expect(wrapper.text()).toContain("管理员账号或密码错误");
     expect(wrapper.get('[data-testid="edit-employee-role"]').element.value).toBe("试验组长");
+    expect(wrapper.get('[data-testid="reset-password-input"]').element.value).toBe("new-password");
     expect(wrapper.get('[data-testid="employee-save-changes"]').element.disabled).toBe(false);
     expect(wrapper.get("#employee-table").text()).not.toContain("试验组长");
     await wrapper.get(".system-employee-edit-modal .modal-close").trigger("click");
     await wrapper.get('[data-testid="open-employee-drawer-0"]').trigger("click");
     expect(wrapper.get('[data-testid="edit-employee-role"]').element.value).toBe("试验员");
+    expect(wrapper.get('[data-testid="reset-password-input"]').element.value).toBe("");
     expect(wrapper.get('[data-testid="employee-save-changes"]').element.disabled).toBe(true);
     wrapper.unmount();
   });

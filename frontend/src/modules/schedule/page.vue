@@ -170,6 +170,8 @@
 
   <section class="card section">
     <h3 v-app-icon="{ name: 'calendar' }">{{ uiText.ganttTitle }}</h3>
+    <p class="helper schedule-drag-hint">拖拽未完成任务比对的排程到同一实验室的目标日期与时段，确认后改期。上午默认 08:00，下午默认 12:00；已有排程时接在其结束 10 分钟后，实验时长保持不变。</p>
+    <AppFeedback v-if="!dragModalOpen" :message="dragMessage" tone="info" @close="dragMessage = ''" />
     <div v-if="taskScheduledOverlays.length" class="schedule-task-overlays" data-testid="schedule-task-overlays">
       <div class="schedule-task-overlays__title">{{ uiText.currentTaskScheduledTitle }}</div>
       <div class="schedule-task-overlays__list">
@@ -191,7 +193,7 @@
         </article>
       </div>
     </div>
-    <div class="gantt-wrap" tabindex="0" role="region" aria-label="设备排程甘特图，可滚动查看日期和实验室">
+    <div class="gantt-wrap" tabindex="0" role="region" aria-label="设备排程甘特图，可滚动查看日期和实验室" @click.capture="suppressDragClick">
       <table class="gantt" id="gantt-table">
         <thead>
           <tr>
@@ -253,9 +255,10 @@
               <span class="gantt-lab-name">{{ row.device }}</span>
             </td>
             <td
-              v-for="segment in row.segments"
+              v-for="(segment, segmentIndex) in row.segments"
               :key="segment.key"
               :colspan="segment.colspan"
+              class="gantt-schedule-cell"
               :data-testid="
                 segment.displayMode === 'split'
                   ? `gantt-segment-split-${segment.stackKey}`
@@ -285,6 +288,9 @@
                         type="button"
                         :data-testid="segment.items[0]?.scheduleId ? `gantt-task-item-${segment.items[0].scheduleId}` : null"
                         :disabled="!segment.items[0]?.scheduleId"
+                        :draggable="canDragSchedule(segment.items[0]?.scheduleId, segment.items[0]?.scheduleIds)"
+                        @dragstart.stop="startScheduleDrag($event, segment.items[0]?.scheduleId, segment.items[0]?.scheduleIds)"
+                        @dragend="endScheduleDrag"
                         :aria-label="segment.task?.title || segment.items[0]?.title"
                         :style="{ '--gantt-task-color': segment.items[0]?.color }"
                         :title="segment.task?.title || segment.items[0]?.title"
@@ -311,6 +317,9 @@
                       type="button"
                       :data-testid="item.scheduleId ? `gantt-task-item-${item.scheduleId}` : null"
                       :disabled="!item.scheduleId"
+                      :draggable="canDragSchedule(item.scheduleId, item.scheduleIds)"
+                      @dragstart.stop="startScheduleDrag($event, item.scheduleId, item.scheduleIds)"
+                      @dragend="endScheduleDrag"
                       :style="{ '--gantt-task-color': item.color }"
                       :title="item.title"
                       @click.stop="item.scheduleId && openTaskDetailModal(item.scheduleId, item.scheduleIds)"
@@ -335,17 +344,52 @@
                 :class="segment.className"
                 type="button"
                 :disabled="!segment.scheduleId"
+                :draggable="segment.displayMode === 'single' && canDragSchedule(segment.scheduleId, segment.scheduleIds)"
+                @dragstart.stop="startScheduleDrag($event, segment.scheduleId, segment.scheduleIds)"
+                @dragend="endScheduleDrag"
                 :title="segment.title"
                 :style="segment.taskColor ? { '--gantt-task-color': segment.taskColor } : null"
               >
                 {{ segment.label }}
               </button>
+              <div v-if="draggingScheduleId" class="gantt-drop-targets" :style="{ gridTemplateColumns: `repeat(${segment.colspan}, minmax(0, 1fr))` }">
+                <div
+                  v-for="dropSlot in getGanttDropSlots(row, segmentIndex)"
+                  :key="dropSlot.key"
+                  class="gantt-drop-target"
+                  :class="{ 'is-hovered': dragHoverKey === dropSlot.key }"
+                  :data-testid="`gantt-drop-${dropSlot.key}`"
+                  @dragover="dragOverScheduleSlot($event, row.device, dropSlot)"
+                  @dragleave="dragHoverKey === dropSlot.key && (dragHoverKey = '')"
+                  @drop.stop="dropSchedule($event, row.device, dropSlot)"
+                >
+                  {{ dropSlot.date.slice(5) }}<br />{{ dropSlot.segment === 'am' ? '上午' : '下午' }}
+                </div>
+              </div>
             </td>
           </tr>
         </tbody>
       </table>
     </div>
   </section>
+
+  <AppModal :open="dragModalOpen" title="确认排程改期" content-class="schedule-drag-modal-content" data-testid="schedule-drag-modal" :show-close="!dragSubmitting" @close="closeDragPreview">
+    <div v-if="dragPreview" class="schedule-drag-preview">
+      <p><strong>{{ dragPreview.taskCode }}</strong> · {{ dragPreview.device }}</p>
+      <dl>
+        <dt>原开始时间</dt><dd>{{ formatDateTime(dragPreview.source.start_at) }}</dd>
+        <dt>原结束时间</dt><dd>{{ formatDateTime(dragPreview.source.end_at) }}</dd>
+        <dt>新开始时间</dt><dd data-testid="schedule-drag-new-start">{{ formatDateTime(dragPreview.startAt) }}</dd>
+        <dt>新结束时间</dt><dd data-testid="schedule-drag-new-end">{{ formatDateTime(dragPreview.endAt) }}</dd>
+        <dt>实验时长</dt><dd>{{ dragPreview.plannedHours }} 小时（保持不变）</dd>
+      </dl>
+      <AppFeedback :message="dragMessage" tone="warning" @close="dragMessage = ''" />
+    </div>
+    <template #footer>
+      <button class="action-btn" data-testid="schedule-drag-confirm" type="button" :disabled="dragSubmitting" :aria-busy="dragSubmitting" @click="confirmScheduleDrag">{{ dragSubmitting ? '保存中…' : '确认改期' }}</button>
+      <button class="action-btn secondary" data-testid="schedule-drag-cancel" type="button" :disabled="dragSubmitting" @click="closeDragPreview">取消</button>
+    </template>
+  </AppModal>
 
   <AppModal :open="ganttOverflowOpen" :title="uiText.ganttOverflowTitle" data-testid="gantt-overflow-modal" @close="closeGanttOverflowModal">
     <div class="gantt-overflow-list">
@@ -614,8 +658,8 @@
     </template>
   </AppModal>
 
-  <AppModal :open="exceptionModalOpen" title="异常处理" data-testid="schedule-exception-modal" @close="closeExceptionModal">
-    <div class="schedule-exception-panel">
+  <AppModal :open="exceptionModalOpen" title="异常处理" content-class="schedule-exception-modal-content" data-testid="schedule-exception-modal" @close="closeExceptionModal">
+    <div class="schedule-exception-panel" tabindex="0" role="region" aria-label="待确认异常列表">
       <div v-if="pendingExceptionRows.length === 0" class="muted">当前暂无待确认异常。</div>
       <div v-else class="schedule-exception-list">
         <article
@@ -748,6 +792,7 @@ defineOptions({
 });
 
 import { computed } from "vue";
+import { formatDateTime } from "./sharedModel";
 
 import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
@@ -846,6 +891,21 @@ const resolveDurationControlStep = (form, direction) => {
 };
 
 const {
+  canDragSchedule,
+  closeDragPreview,
+  confirmScheduleDrag,
+  dragHoverKey,
+  dragMessage,
+  dragModalOpen,
+  dragOverScheduleSlot,
+  dragPreview,
+  dragSubmitting,
+  draggingScheduleId,
+  dropSchedule,
+  endScheduleDrag,
+  getGanttDropSlots,
+  startScheduleDrag,
+  suppressDragClick,
   acknowledgeException,
   buildEditLabOptionItems,
   cancelScheduleConflict,

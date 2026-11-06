@@ -7,6 +7,7 @@ import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
 function useScheduleRealtime({
   exceptionModal,
   ignoredStorageRequestIds,
+  interactionPaused = () => false,
   loadSchedulePage,
   scheduleConflictModal,
   scheduleDrawer,
@@ -18,7 +19,8 @@ function useScheduleRealtime({
     void loadSchedulePage({ resetForm: false });
   };
   const isRealtimeRefreshPaused = () => Boolean(
-    scheduleDrawer.open.value
+    interactionPaused()
+    || scheduleDrawer.open.value
     || taskDetailModal.open.value
     || scheduleConflictModal.open.value
     || exceptionModal.open.value

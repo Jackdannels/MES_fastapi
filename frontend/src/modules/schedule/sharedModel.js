@@ -173,6 +173,7 @@ export {
   RETENTION_DEVICE,
   RETENTION_KEYWORD,
   SLOT_RANGES,
+  SLOT_BUFFER_MINUTES,
   addDays,
   buildFixedSlotLabel,
   createId,

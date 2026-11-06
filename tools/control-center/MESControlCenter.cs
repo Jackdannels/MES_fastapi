@@ -1687,6 +1687,21 @@ namespace MESControlCenter
         private static int Main(string[] args)
         {
             string scriptPath = Path.Combine(RuntimeRoot, "scripts", MESDesktopSettings.IsNative ? "native-service-control.ps1" : MESDesktopSettings.IsDocker ? "docker-service-control.ps1" : "mes-service-control.ps1");
+            if (args.Length > 1 && String.Equals(args[0], "--open-pages", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    string[] urls = new string[args.Length - 1];
+                    Array.Copy(args, 1, urls, 0, urls.Length);
+                    new MESBrowserSession(RuntimeRoot, null).Open(urls);
+                    return 0;
+                }
+                catch (Exception exception)
+                {
+                    MessageBox.Show("服务已就绪，网页打开失败：" + exception.Message, "MES 控制中心", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return 7;
+                }
+            }
             if (args.Length > 0 && String.Equals(args[0], "--self-test", StringComparison.OrdinalIgnoreCase))
             {
                 try

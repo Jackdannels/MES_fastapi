@@ -12,7 +12,10 @@ def digest(path):
     with path.open('rb') as stream:
         return hashlib.file_digest(stream,'sha256').hexdigest()
 
-def finalize(root,version):
+def finalize(root,version,display_name=None):
+    if display_name is None:
+        existing=root/'delivery-manifest.json'
+        display_name=json.loads(existing.read_text(encoding='utf-8')).get('displayName',root.name) if existing.exists() else root.name
     entries=[]
     for path in sorted(root.rglob('*')):
         if not path.is_file() or path.name in {'delivery-manifest.json','SHA256SUMS.txt'}:
@@ -23,12 +26,12 @@ def finalize(root,version):
         entries.append(dict(path=path.relative_to(root).as_posix(),bytes=path.stat().st_size,sha256=digest(path)))
     manifest=dict(format='mes-portable-click-deployment',format_version=1,version=version,
         created_at_utc=datetime.now(timezone.utc).isoformat(),releaseDirectory='release-'+version,
-        backupDirectory='data-backup-'+version,desktopDirectory='desktop-tools',controlCenterVersion='2.7.2',files=entries)
+        backupDirectory='data-backup-'+version,desktopDirectory='desktop-tools',controlCenterVersion='2.7.2',displayName=display_name,files=entries)
     (root/'delivery-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
     (root/'SHA256SUMS.txt').write_text(''.join(entry['sha256']+'  '+entry['path']+'\n' for entry in entries),encoding='utf-8')
     return manifest
 
-def assemble(root,release,backup,desktop,version):
+def assemble(root,release,backup,desktop,version,display_name=None):
     root.mkdir(parents=True,exist_ok=True)
     for source,target in ((release,root/('release-'+version)),(backup,root/('data-backup-'+version)),(desktop,root/'desktop-tools')):
         if source.resolve()!=target.resolve():
@@ -36,20 +39,23 @@ def assemble(root,release,backup,desktop,version):
     shutil.copy2(ROOT/'deploy/portable/Deploy-MES.ps1',root/'Deploy-MES.ps1')
     for name,action in (('01-Deploy.cmd','Install'),('02-Create-Desktop.cmd','Desktop'),('03-Connection-Info.cmd','Info'),('04-Verify.cmd','Verify')):
         (root/name).write_text('@echo off\r\ncd /d "%~dp0"\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Deploy-MES.ps1" -Action '+action+'\r\nset "MES_EXIT_CODE=%ERRORLEVEL%"\r\necho.\r\npause\r\nexit /b %MES_EXIT_CODE%\r\n',encoding='ascii',newline='')
-    shutil.copy2(ROOT/'docs/portable-one-click.md',root/'先读我.md')
-    return finalize(root,version)
+    text=(ROOT/'docs/portable-one-click.md').read_text(encoding='utf-8')
+    text=text.replace('2026.10.31-v1.1',version).replace('v1.1预交付docker测试版',display_name or root.name)
+    (root/'先读我.md').write_text(text,encoding='utf-8')
+    return finalize(root,version,display_name)
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--version',required=True)
+    parser.add_argument('--display-name')
     parser.add_argument('--release',type=Path)
     parser.add_argument('--backup',type=Path)
     parser.add_argument('--desktop',type=Path)
     parser.add_argument('--finalize-only',action='store_true')
     args=parser.parse_args()
-    if args.finalize_only: manifest=finalize(args.output,args.version)
+    if args.finalize_only: manifest=finalize(args.output,args.version,args.display_name)
     else:
         if not all((args.release,args.backup,args.desktop)):parser.error('Release, backup and desktop directories are required')
-        manifest=assemble(args.output,args.release,args.backup,args.desktop,args.version)
+        manifest=assemble(args.output,args.release,args.backup,args.desktop,args.version,args.display_name)
     print(json.dumps(dict(output=str(args.output),files=len(manifest['files']),bytes=sum(e['bytes'] for e in manifest['files'])),ensure_ascii=False))

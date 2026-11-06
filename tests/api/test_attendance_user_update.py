@@ -8,6 +8,26 @@ from app.services.attendance_service import AttendanceService, InMemoryAttendanc
 ADMIN = {"adminUsername": "admin", "adminPassword": "123"}
 
 
+@pytest.mark.parametrize("profile_changes", [{}, {"employeeName": "新姓名", "roleName": "试验组长"}])
+def test_employee_save_can_update_password_with_or_without_profile_changes(client, profile_changes):
+    service = AttendanceService(repository=InMemoryAttendanceRepository())
+    set_attendance_service_for_tests(service)
+    user = service.create_user(username="password-worker", password="old-secret", employee_name="原姓名", role_name="试验员")
+    url = f"/api/attendance/users/{user['id']}"
+    changes = {**profile_changes, "password": " new-secret "}
+    denied = client.put(url, json={**changes, **ADMIN, "adminPassword": "wrong"})
+    assert denied.status_code == 401
+    login_url = "/api/attendance/labs/冲击一室/login"
+    assert client.post(login_url, json={"username": "password-worker", "password": "old-secret"}).status_code == 200
+
+    response = client.put(url, json={**changes, **ADMIN})
+    assert response.status_code == 200
+    assert all(response.json()[key] == value for key, value in profile_changes.items())
+    assert not {"password", "password_hash", "adminPassword"} & response.json().keys()
+    assert client.post(login_url, json={"username": "password-worker", "password": "old-secret"}).status_code == 401
+    assert client.post(login_url, json={"username": "password-worker", "password": " new-secret "}).status_code == 200
+
+
 def test_employee_update_requires_admin_and_preserves_login_history_and_work_time(client):
     now = datetime(2026, 9, 19, 8, tzinfo=timezone.utc)
     repository = InMemoryAttendanceRepository()

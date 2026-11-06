@@ -182,9 +182,9 @@ function useSystemPage() {
   const editEmployeeFields = ref(createEmployeeForm(EMPTY_EMPLOYEE_FORM));
   const employeeHasChanges = computed(() => {
     const original = editEmployeeDialog.payload.value;
-    return Boolean(original) && ["employeeName", "username", "roleName"].some(
+    return Boolean(original) && (Boolean(adminActionFields.value.newPassword) || ["employeeName", "username", "roleName"].some(
       (key) => editEmployeeFields.value[key].trim() !== String(original[key] || "").trim(),
-    );
+    ));
   });
   const employeeSaving = ref(false);
 
@@ -305,12 +305,17 @@ function useSystemPage() {
     adminActionError.value = "";
     adminActionSuccess.value = "";
     const form = editEmployeeFields.value;
+    const newPassword = adminActionFields.value.newPassword;
     if (!form.employeeName.trim() || !form.username.trim()) {
       adminActionError.value = "请填写员工姓名和账号";
       return;
     }
     if (!adminActionFields.value.adminUsername.trim() || !adminActionFields.value.adminPassword.trim()) {
       adminActionError.value = "请输入管理员账号和密码";
+      return;
+    }
+    if (newPassword && !newPassword.trim()) {
+      adminActionError.value = "新密码不能仅包含空白字符";
       return;
     }
     adminActionSubmitting.value = true;
@@ -320,6 +325,7 @@ function useSystemPage() {
         employeeName: form.employeeName,
         username: form.username,
         roleName: form.roleName,
+        ...(newPassword ? { password: newPassword } : {}),
         adminUsername: adminActionFields.value.adminUsername,
         adminPassword: adminActionFields.value.adminPassword,
       });
@@ -331,7 +337,8 @@ function useSystemPage() {
       const saved = employeeRows.value.find((row) => row.id === employee.id);
       editEmployeeDialog.openWith(saved);
       editEmployeeFields.value = createEmployeeForm(saved);
-      adminActionSuccess.value = "员工信息已保存";
+      adminActionFields.value.newPassword = "";
+      adminActionSuccess.value = newPassword ? "员工信息及密码已保存" : "员工信息已保存";
     } catch (error) {
       adminActionError.value = String(error?.message || "保存员工信息失败，请重试");
     } finally {

@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory=$true)] [string]$OutputDirectory,
     [string]$ServerUrl = 'http://127.0.0.1:15173',
+    [string]$ReleaseVersion = '2026.10.31-v1.1',
     [switch]$Native
 )
 $ErrorActionPreference = 'Stop'
@@ -50,7 +51,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $project 'docs/desktop-tools-docker.md') -Destination (Join-Path $output '使用说明.md')
         Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-v2.5-upgrade.md') -Destination (Join-Path $output 'control-center-v2.5-upgrade.md')
     }
-    $config = [ordered]@{deploymentDirectory='../release-20261019-r1'; environmentFile='.tmp/portable.env'; mode='demo';
+    $config = [ordered]@{deploymentDirectory=('../release-'+$ReleaseVersion); environmentFile='.tmp/portable.env'; mode='demo';
         serverUrl=$ServerUrl.TrimEnd('/'); apiUrl='http://127.0.0.1:18000'; limsUrl='http://127.0.0.1:18900'; upperComputerUrl='http://127.0.0.1:18899'}
     if($Native) { $config.deploymentMode='windows-service' }
     Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-v2.7.md') -Destination (Join-Path $output 'control-center-v2.7.md')
@@ -64,7 +65,7 @@ try {
         finally { $stream.Dispose(); $algorithm.Dispose() }
         [ordered]@{path=$file.FullName.Substring($output.Length+1).Replace('\','/'); bytes=$file.Length; sha256=$hash}
     })
-    $manifest = [ordered]@{format='mes-docker-desktop-tools'; format_version=1; version='2026.10.21-r6'; controlCenterVersion='2.7.2';
+    $manifest = [ordered]@{format='mes-docker-desktop-tools'; format_version=1; version=$ReleaseVersion; controlCenterVersion='2.7.2';
         platform='windows-dotnet-framework'; files=$files}
     Write-Utf8 (Join-Path $output 'desktop-tools-manifest.json') ($manifest | ConvertTo-Json -Depth 6)
     Write-Output "Three Windows desktop tools built: $output"

@@ -78,3 +78,36 @@ def test_install_state_guards_and_automatic_shortcuts_are_present():
     assert "'-Action',$Step,'-EnvFile',$environment" in source
     assert "'MES控制中心_v2.7.2_Docker版'" in source
     assert 'MES工作台设置_Docker版' in source and 'MES终端管理_Docker版' in source
+
+
+def test_installer_opens_all_three_pages_through_managed_controller(tmp_path):
+    script=tmp_path/'pages.ps1'
+    script.write_text('''param([string]$Source)
+$ErrorActionPreference='Stop'
+$tree=[Management.Automation.Language.Parser]::ParseFile($Source,[ref]$null,[ref]$null)
+$function=$tree.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Open-DeploymentPages'},$true)
+Invoke-Expression $function.Extent.Text
+$runtime='C:\\MES local'
+function Start-Process {
+    param($FilePath,$ArgumentList,$WindowStyle,[switch]$PassThru)
+    if(-not $FilePath.EndsWith('MES控制中心_Docker版.exe')){throw 'Must use managed desktop browser session'}
+    $script:captured=$ArgumentList
+    $process=[pscustomobject]@{Handle=1;ExitCode=0}
+    $process|Add-Member ScriptMethod WaitForExit {}
+    $process|Add-Member ScriptMethod Refresh {}
+    return $process
+}
+Open-DeploymentPages ([pscustomobject]@{limsUrl='http://127.0.0.1:28900';upperComputerUrl='http://127.0.0.1:28899'}) 'http://192.0.2.5:25173'
+if($script:captured -ne '--open-pages "http://192.0.2.5:25173" "http://127.0.0.1:28900" "http://127.0.0.1:28899"'){throw 'Incorrect startup pages'}
+''',encoding='utf-8-sig')
+    result=subprocess.run([PS,'-NoProfile','-ExecutionPolicy','Bypass','-File',str(script),'-Source',str(ROOT/'deploy/portable/Deploy-MES.ps1')],
+        capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=20)
+    assert result.returncode==0,result.stdout+result.stderr
+
+
+def test_delivery_display_name_and_new_release_paths_persist(tmp_path):
+    delivery,_,_=make_delivery(tmp_path)
+    manifest=builder.finalize(delivery,'2026.10.31-v1.1','v1.1预交付docker测试版')
+    assert manifest['releaseDirectory']=='release-2026.10.31-v1.1'
+    assert manifest['backupDirectory']=='data-backup-2026.10.31-v1.1'
+    assert builder.finalize(delivery,'2026.10.31-v1.1')['displayName']=='v1.1预交付docker测试版'

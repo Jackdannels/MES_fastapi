@@ -259,6 +259,7 @@
   border: 1px solid var(--border);
   background: var(--bg-card-raised);
   color: var(--text);
+  overflow-wrap: anywhere;
   box-shadow: var(--shadow);
 }
 
@@ -389,7 +390,8 @@
   padding: 4px 0 8px;
 }
 
-.modal-content.schedule-conflict-modal-content {
+.modal-content.schedule-conflict-modal-content,
+.modal-content.schedule-exception-modal-content {
   display: flex;
   flex-direction: column;
   max-height: min(760px, calc(100dvh - 32px));
@@ -398,11 +400,13 @@
 }
 
 .schedule-conflict-modal-content .modal-header,
-.schedule-conflict-modal-content > .form-actions {
+.schedule-conflict-modal-content > .form-actions,
+.schedule-exception-modal-content .modal-header {
   flex: 0 0 auto;
 }
 
-.schedule-conflict-modal-content .schedule-conflict-panel {
+.schedule-conflict-modal-content .schedule-conflict-panel,
+.schedule-exception-modal-content .schedule-exception-panel {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -411,7 +415,8 @@
   padding-right: 8px;
 }
 
-.schedule-conflict-modal-content .schedule-conflict-panel:focus-visible {
+.schedule-conflict-modal-content .schedule-conflict-panel:focus-visible,
+.schedule-exception-modal-content .schedule-exception-panel:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -510,6 +515,65 @@
 }
 
 /* 长表在容器内滚动，始终保留日期、时段与实验室参照。 */
+.schedule-drag-hint {
+  line-height: 1.6;
+}
+
+.gantt-schedule-cell {
+  position: relative;
+}
+
+.gantt-schedule-cell [draggable="true"] {
+  cursor: grab;
+}
+
+.gantt-drop-targets {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  z-index: 3;
+}
+
+.gantt-drop-target {
+  display: grid;
+  align-content: center;
+  min-width: 0;
+  padding: 4px;
+  border: 1px dashed var(--accent);
+  background: var(--surface-overlay);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.gantt-drop-target.is-hovered {
+  background: var(--bg-panel-strong);
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.modal-content.schedule-drag-modal-content {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.schedule-drag-preview dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px 20px;
+  line-height: 1.5;
+}
+
+.schedule-drag-preview dt {
+  color: var(--muted);
+}
+
+.schedule-drag-preview dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .gantt-wrap {
   overflow: auto;
   max-height: min(70vh, 760px);
