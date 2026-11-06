@@ -17,6 +17,7 @@ import {
   resolveTrayCode,
 } from "./sharedModel";
 import { entryMatchesTrayCode, relationIsCompletedForSample } from "./experimentCompletionModel";
+import { resolveMoldReschedulePreview } from "@/modules/samples/sampleFlow.moldReschedule";
 
 const deviceMatchesLab = (device, labName) =>
   normalizeText(device?.code) === labName || normalizeText(device?.name) === labName;
@@ -220,6 +221,7 @@ const buildTrayRowsByLab = ({
   const { relationsByTaskAndTrayCode } = buildRelationIndexes({ experimentTrays, experiments, schedules });
   const latestStockOutTargetByTaskAndTray = buildLatestStockOutTargetByTaskAndTray(stagingEvents);
   const trayAggregatesByLab = asArray(labs).map(() => new Map());
+  const reschedulePreviewByTray = new Map();
 
   asArray(samples).forEach((sample) => {
     const sampleCode = normalizeText(sample?.code || sample?.sample_code);
@@ -266,15 +268,23 @@ const buildTrayRowsByLab = ({
         : normalizeLifecycleStatus(sample?.location, normalizeText(sample?.status));
       const lifecycleLocation = trayStatus ? "" : sample?.location;
       const statusHasOwnFlowContext = isCompletedOrPartialAxisStatus(lifecycleStatus);
+      if (!reschedulePreviewByTray.has(trayMapKey)) {
+        reschedulePreviewByTray.set(trayMapKey, resolveMoldReschedulePreview({
+          taskCode, trayCode, status: lifecycleStatus, samples, experiments, schedules, experimentTrays, experimentRuns, experimentRunTrays,
+        }));
+      }
+      const reschedulePreview = reschedulePreviewByTray.get(trayMapKey);
       const completedAtPhysicalLab = ["实验已完成", "实验完成", "实验已经完成"].includes(lifecycleStatus)
         && incompleteRelations.length > 0
         && asArray(labs).some((lab) => textMatchesLab(sample?.location, lab));
       asArray(labs).forEach((lab, labIndex) => {
         const labIdentity = lab || lab?.name || lab?.code;
         const incompleteLabRelations = incompleteRelations.filter((relation) => relationMatchesLab(relation, labIdentity));
-        if (completedAtPhysicalLab
-          ? !textMatchesLab(sample?.location, labIdentity)
-          : incompleteLabRelations.length === 0) {
+        if (reschedulePreview
+          ? !scheduleMatchesLab(reschedulePreview.schedule, labIdentity)
+          : completedAtPhysicalLab
+            ? !textMatchesLab(sample?.location, labIdentity)
+            : incompleteLabRelations.length === 0) {
           return;
         }
         const sampleLocationMatchesLab = textMatchesLab(sample?.location, labIdentity);
@@ -287,6 +297,7 @@ const buildTrayRowsByLab = ({
             ? incompleteLabRelations[0].experimentCode
             : "";
         const entry = {
+          previewExperimentCode: reschedulePreview?.experimentCode || "",
           currentExperimentCode: statusHasOwnFlowContext ? "" : activeTargetExperimentCode || currentLabExperimentCode,
           dispatchTargetLab: statusHasOwnFlowContext ? "" : activeTargetLab,
           ignoreTrayDispatchTarget: isAxisPartialProgressStatus(lifecycleStatus),
@@ -324,6 +335,7 @@ const buildTrayRowsByLab = ({
       .map((aggregate) => {
         const entry = aggregate.representativeEntry || {};
         const flow = buildTrayFlow({
+          previewExperimentCode: entry.previewExperimentCode,
           currentExperimentCode: entry.currentExperimentCode,
           dispatchTargetLab: entry.dispatchTargetLab,
           experimentRunPauses,
@@ -343,6 +355,9 @@ const buildTrayRowsByLab = ({
         });
         return {
           canonicalStatus: flow.canonicalStatus || flow.status || "-",
+          isSchedulePreview: Boolean(flow.isSchedulePreview),
+          actualStatus: flow.actualStatus,
+          actualLocation: flow.actualLocation,
           displayRemark: flow.displayRemark || "",
           quantity: aggregate.quantity,
           sampleCodes: Array.from(aggregate.sampleCodeSet).sort(compareText),

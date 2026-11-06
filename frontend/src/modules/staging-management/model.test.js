@@ -5548,6 +5548,40 @@ describe("staging-management model", () => {
     expect(result.snapshot[STORAGE_KEYS.staging_events].filter((event) => event.action === "stock_out" && event.tray_code === "SYLU-2026-03-001-TP-002")).toHaveLength(0);
   });
 
+  test.each(["四综合试验", "振动试验", "冲击试验"])("does not reuse old mold cancellation to authorize appearance storage after %s", (experimentName) => {
+    const taskCode = "TASK-MOLD-THEN-OTHER", trayCode = `${taskCode}-TP-001`;
+    const snapshot = createSnapshot();
+    snapshot[STORAGE_KEYS.tasks].push({ code: taskCode, test_type: `霉菌试验 / ${experimentName}` });
+    snapshot[STORAGE_KEYS.experiments].push(
+      { task_code: taskCode, experiment_code: "MOLD-OLD", experiment_name: "霉菌试验", required_device: "霉菌试验室", status: "待排程" },
+      { task_code: taskCode, experiment_code: "OTHER", experiment_name: experimentName, status: "实验已完成" },
+    );
+    snapshot[STORAGE_KEYS.experiment_trays].push(...["MOLD-OLD", "OTHER"].map((experiment_code) => ({ task_code: taskCode, tray_code: trayCode, experiment_code })));
+    snapshot[STORAGE_KEYS.experiment_run_trays] = [
+      { task_code: taskCode, tray_code: trayCode, experiment_code: "OTHER", run_no: "NEW", run_tray_status: "实验已完成", ended_at: "2026-11-06 16:55:09" },
+      { task_code: taskCode, tray_code: trayCode, experiment_code: "MOLD-OLD", run_no: "OLD", run_tray_status: "实验已取消", ended_at: "2026-11-06 16:54:51" },
+    ];
+    snapshot[STORAGE_KEYS.samples].push({
+      code: `${taskCode}-SP-001`, task_code: taskCode, status: "实验已完成", flow_status: "实验已完成", location: "四综合实验室",
+      trays: [{ tray_code: trayCode, quantity: 1, status: "实验已完成", target_experiment_code: "MOLD-OLD", target_lab: "霉菌试验室" }],
+      history: [{ detail: `${taskCode} / ${experimentName} / 实验已完成`, status: "实验已完成", time: "2026-11-06 16:55:09", tray_code: trayCode }],
+    });
+    const before = JSON.stringify(snapshot);
+    const rows = buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" });
+    expect(rows.some((row) => row.trayCode === trayCode)).toBe(false);
+    const result = applyZancunInventoryAction({ now: TODAY, payload: { code: trayCode, mode: "stockIn" }, room: "appearance", snapshot });
+    expect(result.error).not.toBe("");
+    expect(JSON.stringify(snapshot)).toBe(before);
+
+    // An already recorded physical stock-in remains visible for a corrective
+    // outbound; tightening future admission must not strand existing inventory.
+    const sample = snapshot[STORAGE_KEYS.samples].find((row) => row.task_code === taskCode);
+    sample.status = sample.flow_status = sample.trays[0].status = "实验后外观检测间存放";
+    sample.location = "外观检测间";
+    snapshot[STORAGE_KEYS.staging_events].push({ task_code: taskCode, tray_code: trayCode, room: "appearance", action: "stock_in", status: sample.status, time: "2026-11-06 16:55:15" });
+    expect(buildZancunRowsFromSnapshot(snapshot, { now: TODAY, room: "appearance" }).find((row) => row.trayCode === trayCode)?.status).toBe("实验后外观检测间存放");
+  });
+
   test("routes a canceled mold tray only to appearance recovery without treating experiments as completed", () => {
     const taskCode = "TASK-MOLD-CANCELED";
     const experimentCode = `${taskCode}-MOLD`;

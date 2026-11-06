@@ -7,9 +7,7 @@ const terminalStatuses = new Set(["实验已取消", "设备故障试验取消",
 const scheduleId = (row) => text(row?.schedule_id || row?.scheduleId || row?.schedule_no || row?.id);
 const nameOf = (row) => text(row?.displayName || row?.experiment_name || row?.experimentName || row?.name);
 
-// This is a forecast, not execution evidence. Only cancellation/recovery invokes
-// it; subsequent real operations continue through the normal flow engine.
-export function insertMoldPendingRoute(steps, input, { cancellation, recovery, relation }) {
+export function resolveNextMoldCancellationSchedule(input) {
   const taskCode = text(input.taskCode), trayCode = text(input.trayCode);
   const experimentCodes = new Set(asArray(input.experimentTrays || input.experiment_trays)
     .filter((row) => resolveEntryTaskCode(row) === taskCode && resolveEntryTrayCode(row) === trayCode)
@@ -32,9 +30,16 @@ export function insertMoldPendingRoute(steps, input, { cancellation, recovery, r
     return !["实验已完成", "实验完成", "实验已经完成", "厂家收回"].includes(text(latest?.run_tray_status || latest?.status));
   }).sort((a, b) => (parseTimeValue(a.start_at) || Infinity) - (parseTimeValue(b.start_at) || Infinity)
     || scheduleId(a).localeCompare(scheduleId(b)));
-  const nextSchedule = candidates[0];
+  return candidates[0] || null;
+}
+
+// This is a forecast, not execution evidence. Subsequent real operations continue
+// through the normal flow engine.
+export function insertMoldPendingRoute(steps, input, { cancellation, recovery, relation }) {
+  const nextSchedule = resolveNextMoldCancellationSchedule(input);
   const nextCode = resolveEntryExperimentCode(nextSchedule);
-  const nextExperiment = experiments.find((row) => resolveEntryExperimentCode(row) === nextCode);
+  const nextExperiment = asArray(input.experiments).find((row) => resolveEntryTaskCode(row) === text(input.taskCode)
+    && resolveEntryExperimentCode(row) === nextCode);
   const nextName = nameOf(nextExperiment);
   const boundary = parseTimeValue(relation?.ended_at || relation?.updated_at);
   // Remove stale or duplicate preparation templates, not genuine earlier history.

@@ -488,28 +488,21 @@ const trayHasAllowedAppearanceSource = ({ samples, taskCode, trayCode, experimen
   const normalizedTaskCode = normalizeText(taskCode);
   const normalizedTrayCode = normalizeText(trayCode);
   const experimentMap = buildExperimentMap(experiments);
-  const faultRelation = asArray(experimentRunTrays)
-    .filter((entry) => normalizeText(entry.task_code) === normalizedTaskCode && normalizeText(entry.tray_code) === normalizedTrayCode)
-    .sort((a, b) => Date.parse(a.updated_at || a.ended_at || a.started_at) - Date.parse(b.updated_at || b.ended_at || b.started_at)).at(-1);
-  if (normalizeText(faultRelation?.run_tray_status || faultRelation?.status) === "设备故障试验取消"
-      && appearanceExperimentIsAllowed(resolveExperimentName(experimentMap.get(normalizeText(faultRelation.experiment_code))))) return true;
-  const hasCanceledMoldRun = asArray(experimentRunTrays).some((entry) => {
-    if (
-      normalizeText(entry?.task_code || entry?.taskCode || entry?.task_no || entry?.taskNo) !== normalizedTaskCode
-      || normalizeText(entry?.tray_code || entry?.trayCode || entry?.tray_no || entry?.trayNo) !== normalizedTrayCode
-      || normalizeText(entry?.run_tray_status || entry?.runTrayStatus || entry?.status) !== "实验已取消"
-    ) {
-      return false;
-    }
-    const experimentCode = normalizeText(entry?.experiment_code || entry?.experimentCode || entry?.experiment_no || entry?.experimentNo);
-    const experiment = experimentMap.get(experimentCode);
-    return resolveExperimentName(experiment, experimentCode).includes("霉菌")
-      || normalizeText(experiment?.required_device || experiment?.requiredDevice).includes("霉菌");
-  });
-  if (hasCanceledMoldRun) {
-    return true;
-  }
   const latestCompleted = latestCompletedExperimentEvent({ experiments, experimentRunSteps, experimentRunTrays, samples, taskCode, trayCode });
+  const latestRelation = asArray(experimentRunTrays)
+    .filter((entry) => normalizeText(entry.task_code || entry.taskCode || entry.task_no) === normalizedTaskCode && normalizeText(entry.tray_code || entry.trayCode || entry.tray_no) === normalizedTrayCode)
+    .sort((a, b) => parseCompletedEventTimeValue(a.ended_at || a.endedAt || a.updated_at || a.updatedAt || a.started_at) - parseCompletedEventTimeValue(b.ended_at || b.endedAt || b.updated_at || b.updatedAt || b.started_at)).at(-1);
+  const latestRunTime = parseCompletedEventTimeValue(latestRelation?.ended_at || latestRelation?.endedAt || latestRelation?.updated_at || latestRelation?.updatedAt || latestRelation?.started_at);
+  const cancellationIsLatest = !latestCompleted || latestRunTime >= (Number(latestCompleted.time) || 0);
+  const latestRunStatus = normalizeText(latestRelation?.run_tray_status || latestRelation?.runTrayStatus || latestRelation?.status);
+  if (cancellationIsLatest && ["实验已取消", "设备故障试验取消"].includes(latestRunStatus)) {
+    const code = normalizeText(latestRelation?.experiment_code || latestRelation?.experimentCode || latestRelation?.experiment_no);
+    const experiment = experimentMap.get(code);
+    const name = resolveExperimentName(experiment, code);
+    return latestRunStatus === "设备故障试验取消"
+      ? appearanceExperimentIsAllowed(name)
+      : name.includes("霉菌") || normalizeText(experiment?.required_device || experiment?.requiredDevice).includes("霉菌");
+  }
   if (appearanceExperimentIsAllowed(latestCompleted?.experimentName)) {
     return true;
   }

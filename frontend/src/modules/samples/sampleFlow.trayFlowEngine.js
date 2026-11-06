@@ -290,6 +290,9 @@ function buildTrayFlowEngine(input = {}) {
         (latest, time) => Math.max(latest, time),
         0,
       );
+      const currentAppearanceTime = currentLifecycleStatus === APPEARANCE_STOCKED_STATUS
+        ? routeStepTimeAfter(APPEARANCE_STOCKED_STATUS, latestCompletedTimeBeforeCurrent)
+        : "";
       const explicitRouteStatus = normalizeText(activeExperiment?.routeStatus);
       const lifecycleRouteStatus = normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status);
       let normalizedRouteStatus = explicitRouteStatus
@@ -426,10 +429,11 @@ function buildTrayFlowEngine(input = {}) {
         : null;
       const stableAppearanceIndexes =
         isPostCompletionAppearanceStatus
-        && !completedAppearanceIndexes.at(-1)
+        && (!completedAppearanceIndexes.at(-1)
+          || (currentAppearanceTime && !experimentRequiresAppearanceInspection(experimentsBeforeCurrent.at(-1))))
         && !activeAppearanceIndexes
           ? {
-              stocked: pushStep({ key: `route-stable-appearance-stocked-${currentExperimentIndex}`, label: APPEARANCE_STOCKED_STATUS }),
+              stocked: pushStep({ key: `route-stable-appearance-stocked-${currentExperimentIndex}`, label: APPEARANCE_STOCKED_STATUS, time: currentAppearanceTime }),
             }
           : null;
 
@@ -501,6 +505,7 @@ function buildTrayFlowEngine(input = {}) {
         isPostCompletionAppearanceStatus
         && completedStepIndexes.at(-1) !== undefined
         && !latestCompletedExperimentRequiresAppearance
+        && !currentAppearanceTime
       ) {
         const latestCompletedIndex = completedStepIndexes.at(-1);
         currentStatus = steps[latestCompletedIndex].label;

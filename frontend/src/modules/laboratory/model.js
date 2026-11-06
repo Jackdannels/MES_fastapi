@@ -286,6 +286,7 @@ function buildLaboratoryWorkbenchView({
   const currentTaskFlow = buildLaboratoryTaskFlow(currentTaskStatus, currentTask?.axisProgress);
   const rawSelectedTrayFlow = selectedTrayRow
     ? buildTrayFlowView({
+        previewExperimentCode: normalizeText(flowContextTask?.experimentCode),
         currentExperimentCode: selectedTrayAxisPartialStatusSupersededByLaterCompletion
           || selectedTrayProjectsFromOtherExperimentCompletion
           || selectedTrayOnlyHasOtherExperimentCompletion

@@ -22,6 +22,7 @@ from app.services.appearance_inspection import (
     completed_mid_experiment_appearance_stock_is_recoverable,
     latest_mid_experiment_appearance_action,
     resolve_mid_experiment_appearance_context,
+    run_trays_allow_appearance_source,
 )
 
 
@@ -675,7 +676,11 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
     fault_appearance_allowed = any(keyword in normalize_text(fault_experiment.get("experiment_name") or fault_experiment.get("experiment_type"))
                                    for keyword in ("盐雾", "霉菌", "高低温湿热"))
     allows_fault_stock_in = bool(fault_context) and (config["event_room"] == STAGING_ROOM or fault_appearance_allowed)
-    allows_canceled_mold_stock_in = bool(canceled_mold_context) and config["event_room"] == APPEARANCE_ROOM
+    allows_canceled_mold_stock_in = (
+        bool(canceled_mold_context)
+        and config["event_room"] == APPEARANCE_ROOM
+        and run_trays_allow_appearance_source(matches[0][0], matches[0][1], snapshot.get(EXPERIMENTS_KEY), snapshot.get(EXPERIMENT_RUN_TRAYS_KEY))
+    )
     allows_partial_axis_stock_in = (
         config["event_room"] == STAGING_ROOM
         and is_partial_axis_completion_status(current_status)
@@ -720,6 +725,15 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
         and not allows_fault_stock_in
     ):
         raise StorageTrayActionError(config["stock_in_blocked_error"], status_code=400)
+    if (
+        config["event_room"] == APPEARANCE_ROOM
+        and not allows_pre_experiment_appearance_stock_in
+        and not allows_mid_experiment_appearance_stock_in
+        and not allows_canceled_mold_stock_in
+        and not allows_fault_stock_in
+        and not run_trays_allow_appearance_source(matches[0][0], matches[0][1], snapshot.get(EXPERIMENTS_KEY), snapshot.get(EXPERIMENT_RUN_TRAYS_KEY))
+    ):
+        raise StorageTrayActionError("当前试验类型不支持进入外观检测间。", status_code=400)
 
     owner = normalize_text(payload.get("operator")) or "扫码登记"
     requested_status = normalize_text(payload.get("status"))

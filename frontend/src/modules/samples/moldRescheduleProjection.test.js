@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 import { buildTrayFlowView } from "./samplesFlowModel";
 import { buildLaboratoryWorkbenchView } from "../laboratory/model";
 import { buildLabProcessPanels } from "../visualization/model";
+import { mount } from "@vue/test-utils";
+import { LabProcessScreen } from "../visualization/screens/labProcessScreen";
 
 const taskCode = "SYLU-2026-09-021";
 const trayCode = `${taskCode}-TP-002`;
@@ -55,6 +57,19 @@ const expectCompletedVibration = (flow) => {
   }
 };
 
+const expectMoldPreview = (flow) => {
+  expect(flow).toMatchObject({ isSchedulePreview: true, actualStatus: "振动试验已完成", actualLocation: "振动一室", canonicalStatus: "已排程" });
+  expect(flow.steps.filter((step) => step.active).map((step) => step.label)).toEqual(["霉菌试验已排程（待到达）"]);
+  expect(flow.steps.find((step) => step.label === "振动试验已完成")).toMatchObject({ active: false, reached: true, time: "2026-09-10 20:38:48" });
+  expect(flow.steps.filter((step) => step.key.startsWith("route-final-"))).toHaveLength(0);
+  expect(flow.steps.filter((step) => step.planned && step.scheduleId).map((step) => step.label)).toEqual(["送至霉菌试验室", "已到达实验室", "工装夹具安装", "实验准备就绪"]);
+  for (const step of flow.steps.filter((step) => step.planned && step.scheduleId)) {
+    expect(step).toMatchObject({ reached: false, active: false, time: "", experimentCode: moldCode, scheduleId: "new-mold", labName: "霉菌试验室" });
+  }
+  expect(flow.steps.find((step) => step.label === "霉菌试验未完成")).toMatchObject({ reached: false, active: false, time: "" });
+  expect(flow.steps.some((step) => step.label === "霉菌试验进行中")).toBe(false);
+};
+
 describe("mold reschedule does not move a completed tray", () => {
   test("sample flow keeps the latest real completion despite old scoped start history", () => {
     expectCompletedVibration(buildTrayFlowView(snapshot()));
@@ -62,7 +77,7 @@ describe("mold reschedule does not move a completed tray", () => {
   test("mold workbench shows next plan without reviving the canceled run", () => {
     const view = buildLaboratoryWorkbenchView({ ...snapshot(), labName: "霉菌试验室", selectedTrayCode: trayCode });
     expect(view.runningExperiment.active).toBe(false);
-    expectCompletedVibration(view.selectedTrayFlow);
+    expectMoldPreview(view.selectedTrayFlow);
   });
   test("a genuinely started new mold run can become current using its own start time", () => {
     const input = snapshot();
@@ -74,12 +89,120 @@ describe("mold reschedule does not move a completed tray", () => {
     const flow = buildTrayFlowView({ ...input, status: "实验进行中", location: "霉菌试验室", currentExperimentCode: moldCode });
     expect(flow.steps.find((step) => step.active)).toMatchObject({ label: "霉菌试验进行中", time: "2026-09-11 08:00:00" });
   });
-  test("visualization keeps the completed tray in its physical lab, not the new plan lab", () => {
-    const panels = buildLabProcessPanels({ ...snapshot(), labNames: ["霉菌试验室", "振动一室"] });
-    expect(panels.find((panel) => panel.name === "霉菌试验室")?.trays.some((tray) => tray.trayCode === trayCode) || false).toBe(false);
-    const tray = panels.find((panel) => panel.name === "振动一室")?.trays.find((row) => row.trayCode === trayCode);
+  test("visualization previews the rescheduled mold plan and retains the physical location without mutating input", () => {
+    const input = snapshot();
+    const before = JSON.stringify(input);
+    const panels = buildLabProcessPanels({ ...input, labNames: ["霉菌试验室", "振动一室"] });
+    const tray = panels.find((panel) => panel.name === "霉菌试验室")?.trays.find((row) => row.trayCode === trayCode);
     expect(tray).toBeDefined();
-    expectCompletedVibration(tray);
+    expectMoldPreview(tray);
+    expect(panels.find((panel) => panel.name === "振动一室").trays).toEqual([]);
+    const view = buildLaboratoryWorkbenchView({ ...input, labName: "霉菌试验室", selectedTrayCode: trayCode });
+    expect(tray.steps).toEqual(view.selectedTrayFlow.steps);
+    expect(JSON.stringify(input)).toBe(before);
+  });
+
+  test("renders the new mold route, the completed vibration summary and the real location on the screen", () => {
+    const labs = buildLabProcessPanels({ ...snapshot(), labNames: ["霉菌试验室", "振动一室"] });
+    const wrapper = mount(LabProcessScreen, { props: { labs, interactive: true } });
+    const moldPanel = wrapper.findAll(".visual-lab-panel")[0];
+    expect(moldPanel.text()).toContain("霉菌试验已排程（待到达）");
+    expect(moldPanel.text()).toContain("实际位置：振动一室");
+    expect(moldPanel.findAll(".visual-flow-step.is-active").map((step) => step.text())).toEqual(["霉菌试验已排程（待到达）"]);
+    expect(moldPanel.text()).toContain("振动试验已完成");
+    expect(moldPanel.text()).toContain("送至霉菌试验室");
+    expect(moldPanel.text()).not.toContain("霉菌试验进行中");
+    wrapper.unmount();
+  });
+
+  test.each(["missing", "canceled", "other-tray", "old-attempt"])("does not preview a %s mold schedule", (kind) => {
+    const input = snapshot();
+    if (kind === "missing") input.schedules.shift();
+    if (kind === "canceled") input.schedules[0].status = "实验已取消";
+    if (kind === "other-tray") input.schedules[0].tray_codes = ["OTHER-TRAY"];
+    if (kind === "old-attempt") input.schedules[0].id = "deleted-mold";
+    const panels = buildLabProcessPanels({ ...input, labNames: ["霉菌试验室", "振动一室"] });
+    expect(panels.find((panel) => panel.name === "霉菌试验室").trays).toEqual([]);
+    expectCompletedVibration(panels.find((panel) => panel.name === "振动一室").trays[0]);
+  });
+
+  test("previews only after a real completion after cancellation, and follows the next valid schedule", () => {
+    const input = snapshot();
+    input.experimentRunTrays[1].ended_at = "2026-09-10 20:37:00";
+    let flow = buildTrayFlowView({ ...input, previewExperimentCode: moldCode });
+    expect(flow.isSchedulePreview).not.toBe(true);
+    input.experimentRunTrays[1].ended_at = "2026-09-10 20:38:48";
+    const otherCode = `${taskCode}-C`;
+    input.experiments.push({ task_code: taskCode, experiment_code: otherCode, experiment_name: "四综合试验", required_device: "四综合实验室" });
+    input.experimentTrays.push({ task_code: taskCode, experiment_code: otherCode, tray_code: trayCode });
+    input.schedules.push({ id: "earlier-other", task_code: taskCode, experiment_code: otherCode, device: "四综合实验室", status: "已排程", start_at: "2026-09-11 07:00:00" });
+    flow = buildTrayFlowView({ ...input, previewExperimentCode: moldCode });
+    expect(flow.isSchedulePreview).not.toBe(true);
+  });
+
+  test("an actual mold comparison replaces the preview with its real preparation time", () => {
+    const input = snapshot();
+    input.status = input.samples[0].status = input.samples[0].trays[0].status = "已到达实验室";
+    input.location = input.samples[0].location = "霉菌试验室";
+    Object.assign(input.samples[0].trays[0], { target_experiment_code: moldCode, target_lab: "霉菌试验室", target_schedule_id: "new-mold" });
+    input.samples[0].history.unshift({ action: "任务比对", detail: `${taskCode} / 霉菌试验 / 已到达实验室`, status: "已到达实验室", location: "霉菌试验室", time: "2026-09-11 07:55:00", tray_code: trayCode });
+    const flow = buildLaboratoryWorkbenchView({ ...input, labName: "霉菌试验室", selectedTrayCode: trayCode }).selectedTrayFlow;
+    expect(flow.isSchedulePreview).not.toBe(true);
+    expect(flow.steps.find((step) => step.active)).toMatchObject({ label: "已到达实验室", time: "2026-09-11 07:55:00" });
+  });
+
+  test("uses the latest run state when an intermediate vibration attempt was canceled", () => {
+    const input = snapshot();
+    input.experimentRunTrays.unshift({ run_no: "vibration-fault", task_code: taskCode, experiment_code: vibrationCode, tray_code: trayCode, run_tray_status: "设备故障试验取消", ended_at: "2026-09-10 20:38:20" });
+    expect(buildTrayFlowView({ ...input, previewExperimentCode: moldCode }).isSchedulePreview).toBe(true);
+    input.experimentRunTrays.push({ run_no: "another-vibration", task_code: taskCode, experiment_code: vibrationCode, tray_code: trayCode, run_tray_status: "实验进行中", started_at: "2026-09-11 08:00:00" });
+    expect(buildTrayFlowView({ ...input, previewExperimentCode: moldCode }).isSchedulePreview).not.toBe(true);
+  });
+
+  test.each([false, true])("11-011 keeps a real appearance stock-in current after canceled mold and completed vibration (completed template=%s)", (completedTemplate) => {
+    const input = snapshot();
+    if (completedTemplate) input.experimentFlow = [{ code: vibrationCode, displayName: "振动试验", state: "completed", destinationLab: "振动一室" }];
+    input.status = input.samples[0].status = input.samples[0].trays[0].status = "实验后外观检测间存放";
+    input.location = input.samples[0].location = "外观检测间";
+    input.samples[0].history.unshift({ action: "外观检测间扫码入库", status: input.status, location: input.location, time: "2026-09-10 20:39:00", tray_code: trayCode });
+    input.stagingEvents = [{ task_code: taskCode, tray_code: trayCode, action: "stock_in", room: "appearance", appearance_phase: "post_experiment", status: input.status, time: "2026-09-10 20:39:00" }];
+    const flow = buildTrayFlowView(input);
+    expect(flow.status).toBe(input.status);
+    expect(flow.steps.filter((step) => step.active)).toEqual([expect.objectContaining({ label: input.status, time: "2026-09-10 20:39:00" })]);
+    const actualAppearanceIndex = flow.steps.findIndex((step) => step.active);
+    expect(actualAppearanceIndex).toBeGreaterThan(flow.steps.findIndex((step) => step.label === "振动试验已完成"));
+    expect(actualAppearanceIndex).toBeLessThan(flow.steps.findIndex((step) => step.label === "霉菌试验未完成"));
+    for (const step of flow.steps.filter((step) => ["送至实验室", "送至霉菌试验室", "已到达实验室", "工装夹具安装", "实验准备就绪"].includes(step.label) && !step.reached)) {
+      expect(flow.steps.indexOf(step)).toBeGreaterThan(actualAppearanceIndex);
+    }
+    expect(flow.steps.find((step) => step.label === "振动试验已完成")).toMatchObject({ active: false, reached: true });
+    expect(flow.steps.filter((step) => step.key.startsWith("cancel-staging-")).every((step) => step.reached && step.inferred && !step.active && !step.time)).toBe(true);
+    const preview = buildLaboratoryWorkbenchView({ ...input, labName: "霉菌试验室", selectedTrayCode: trayCode }).selectedTrayFlow;
+    expect(preview).toMatchObject({ isSchedulePreview: true, actualStatus: input.status, actualLocation: input.location });
+    const appearance = preview.steps.find((step) => step.label === input.status);
+    expect(appearance).toMatchObject({ reached: true, active: false, time: "2026-09-10 20:39:00" });
+    expect(preview.steps.indexOf(appearance)).toBeLessThan(preview.steps.findIndex((step) => step.planned));
+  });
+
+  test("keeps an older appearance visit historical and a new visit after vibration current", () => {
+    const input = snapshot();
+    input.status = input.samples[0].status = input.samples[0].trays[0].status = "实验后外观检测间存放";
+    input.location = input.samples[0].location = "外观检测间";
+    input.experimentFlow = [
+      { code: "SALT", displayName: "盐雾试验", state: "completed", required_device: "盐雾试验室" },
+      { code: vibrationCode, displayName: "振动试验", state: "completed" },
+      { code: moldCode, displayName: "霉菌试验", state: "current", unstarted: true, routeStatus: input.status },
+    ];
+    input.samples[0].history.push(
+      { action: "实验完成", detail: `${taskCode} / 盐雾试验 / 实验已完成`, status: "实验已完成", time: "2026-09-10 20:36:00", tray_code: trayCode },
+      { action: "外观检测间扫码入库", status: input.status, location: input.location, time: "2026-09-10 20:37:00", tray_code: trayCode },
+      { action: "外观检测间扫码入库", status: input.status, location: input.location, time: "2026-09-10 20:39:00", tray_code: trayCode },
+    );
+    const flow = buildTrayFlowView(input);
+    const appearances = flow.steps.filter((step) => step.label === input.status);
+    expect(appearances).toHaveLength(2);
+    expect(appearances[0]).toMatchObject({ active: false, reached: true, time: "2026-09-10 20:37:00" });
+    expect(appearances[1]).toMatchObject({ active: true, time: "2026-09-10 20:39:00" });
   });
 });
 

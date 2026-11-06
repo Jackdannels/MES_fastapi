@@ -54,6 +54,52 @@ class CountingStorage(FakeStorage):
         return super().read_all()
 
 
+@pytest.mark.parametrize("latest_name,allowed", [
+    ("四综合试验", False), ("振动试验", False), ("冲击试验", False),
+    ("盐雾试验", True), ("霉菌试验", True), ("高低温湿热试验", True),
+])
+@pytest.mark.parametrize("old_status", ["实验已取消", "实验已完成"])
+@pytest.mark.parametrize("endpoint", ["stock-in", "storage"])
+def test_appearance_admission_uses_latest_experiment_instead_of_old_mold(monkeypatch, latest_name, allowed, old_status, endpoint):
+    from app.services.storage_tray_actions import StorageTrayActionError, build_stock_in_updates
+
+    task_code, tray_code = "TASK-LATEST-APPEARANCE", "TP-LATEST-APPEARANCE"
+    samples = [{
+        "code": "SP-LATEST-APPEARANCE", "task_code": task_code,
+        "status": "实验已完成", "flow_status": "实验已完成", "location": "四综合实验室",
+        "trays": [{"tray_code": tray_code, "quantity": 1, "status": "实验已完成",
+                   "target_experiment_code": "OLD-MOLD", "target_lab": "霉菌试验室"}],
+        "history": [{"status": "实验已完成", "detail": f"{task_code} / {latest_name} / 实验已完成", "time": "2026-11-06 16:55:09"}],
+    }]
+    payloads = {
+        "mes.samples": samples,
+        "mes.experiments": [
+            {"task_code": task_code, "experiment_code": "OLD-MOLD", "experiment_name": "霉菌试验"},
+            {"task_code": task_code, "experiment_code": "NEW", "experiment_name": latest_name},
+        ],
+        "mes.experiment_run_trays": [
+            {"task_code": task_code, "tray_code": tray_code, "experiment_code": "NEW", "run_no": "RUN-NEW", "run_tray_status": "实验已完成", "ended_at": "2026-11-06 16:55:09"},
+            {"task_code": task_code, "tray_code": tray_code, "experiment_code": "OLD-MOLD", "run_no": "RUN-OLD", "run_tray_status": old_status, "ended_at": "2026-11-06 16:54:51"},
+        ],
+    }
+    if not allowed:
+        with pytest.raises(StorageTrayActionError, match="当前试验类型不支持进入外观检测间"):
+            build_stock_in_updates(payloads, room="appearance", tray_code=tray_code, payload={}, now="2026-11-06 16:55:15")
+    client, storage = build_client(monkeypatch, payloads)
+    if endpoint == "stock-in":
+        response = client.post(f"/api/storage/rooms/appearance/trays/{tray_code}/stock-in", json={})
+    else:
+        attempted = deepcopy(samples)
+        attempted[0].update(status="实验后外观检测间存放", flow_status="实验后外观检测间存放", location="外观检测间")
+        attempted[0]["trays"][0]["status"] = "实验后外观检测间存放"
+        response = client.put("/api/storage", json={"mes.samples": attempted})
+    assert response.status_code == (200 if allowed else 400), response.json()
+    if not allowed:
+        assert response.json()["detail"] == "当前试验类型不支持进入外观检测间。"
+        assert storage.read("mes.samples") == samples
+        assert not storage.read("mes.staging_events")
+
+
 class ScopedTrayActionStorage(FakeStorage):
     def __init__(self, payloads=None, *, tray_task_codes=None):
         super().__init__(payloads)

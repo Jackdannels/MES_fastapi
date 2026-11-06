@@ -416,6 +416,35 @@ def experiment_requires_appearance_inspection(experiment_name: Any, experiment: 
     return any(keyword in joined for keyword in APPEARANCE_REQUIRED_KEYWORDS)
 
 
+def run_trays_allow_appearance_source(sample: Any, tray: Any, experiments: Any, experiment_run_trays: Any) -> bool:
+    """Only the tray's most recent run can authorize post-test appearance storage."""
+    task_code = record_text(sample, "task_code", "taskCode", "task_no", "taskNo")
+    tray_code = tray_code_text(tray)
+    if not task_code or not tray_code:
+        return False
+    candidates = [
+        (index, row)
+        for index, row in enumerate(as_list(experiment_run_trays))
+        if isinstance(row, dict)
+        and record_text(row, "task_code", "taskCode", "task_no", "taskNo") == task_code
+        and tray_code_text(row) == tray_code
+    ]
+    if not candidates:
+        return False
+    _, latest = max(candidates, key=lambda pair: (
+        parse_datetime_value(record_text(pair[1], "ended_at", "endedAt", "updated_at", "updatedAt", "started_at", "startedAt")) or datetime.min,
+        pair[0],
+    ))
+    code = record_text(latest, "experiment_code", "experimentCode", "experiment_no", "experimentNo")
+    experiment = next((row for row in as_list(experiments) if isinstance(row, dict)
+                       and record_text(row, "task_code", "taskCode", "task_no", "taskNo") in {"", task_code}
+                       and record_text(row, "experiment_code", "experimentCode", "experiment_no", "experimentNo") == code), {})
+    name = record_text(experiment, "experiment_name", "experimentName", "experiment_type", "test_type", "required_device") or record_text(latest, "experiment_name") or code
+    status = record_text(latest, "run_tray_status", "runTrayStatus", "status")
+    allowed_status = status in {"实验已完成", "实验完成", "实验已经完成", "设备故障试验取消"} or (status == "实验已取消" and "霉菌" in name)
+    return allowed_status and experiment_requires_appearance_inspection(name, experiment)
+
+
 def experiment_name_by_code(experiments: Any, experiment_code: Any) -> str:
     normalized_code = normalize_text(experiment_code)
     if not normalized_code:

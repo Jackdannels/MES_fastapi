@@ -9,8 +9,8 @@ from app.core.axis_codes import sort_axis_codes
 from app.core.storage_backend import STORAGE_KEYS, get_storage_backend
 from app.core.time_utils import now_business_datetime, now_business_text, parse_business_datetime
 from app.services.appearance_inspection import (
+    run_trays_allow_appearance_source,
     PRE_EXPERIMENT_APPEARANCE_STATUS,
-    experiment_requires_appearance_inspection,
     pre_experiment_appearance_already_dispatched,
     should_route_pre_experiment_appearance,
     target_requires_appearance_inspection,
@@ -90,7 +90,6 @@ from app.services.storage_staging_policy import (
 from app.services.storage_schedule_lock_policy import (
     validate_fixture_locked_schedules as _validate_fixture_locked_schedules,
 )
-from app.services.laboratory_termination import MOLD_CANCELED_STATUS
 
 router = APIRouter(prefix="/api/storage", tags=["storage"])
 
@@ -196,56 +195,13 @@ def _is_completed_status(value: Any) -> bool:
 
 
 
-def _experiment_name_by_code(experiments: Any) -> dict[str, str]:
-    names: dict[str, str] = {}
-    for experiment in _as_list(experiments):
-        if not isinstance(experiment, dict):
-            continue
-        code = _normalize_text(experiment.get("experiment_code") or experiment.get("experiment_no"))
-        if not code:
-            continue
-        names[code] = (
-            _normalize_text(experiment.get("experiment_name"))
-            or _normalize_text(experiment.get("experiment_type"))
-            or _normalize_text(experiment.get("test_type"))
-            or _normalize_text(experiment.get("required_device"))
-        )
-    return names
-
-
 def _run_trays_have_allowed_appearance_source(
     sample: Any,
     tray: Any,
     experiments: Any,
     experiment_run_trays: Any,
 ) -> bool:
-    task_code = _normalize_text(sample.get("task_code") or sample.get("task_no")) if isinstance(sample, dict) else ""
-    tray_code = _tray_code(tray)
-    if not task_code or not tray_code:
-        return False
-    experiment_names = _experiment_name_by_code(experiments)
-    for entry in _as_list(experiment_run_trays):
-        if not isinstance(entry, dict):
-            continue
-        if (
-            _normalize_text(entry.get("task_code") or entry.get("task_no")) != task_code
-            or _normalize_text(entry.get("tray_code") or entry.get("tray_no")) != tray_code
-        ):
-            continue
-        experiment_code = _normalize_text(entry.get("experiment_code") or entry.get("experiment_no"))
-        experiment_name = (
-            experiment_names.get(experiment_code, "")
-            or _normalize_text(entry.get("experiment_name"))
-            or experiment_code
-        )
-        relation_status = _normalize_text(entry.get("status") or entry.get("run_tray_status"))
-        is_completed = relation_status in COMPLETED_EXPERIMENT_STATUSES
-        is_canceled_mold = relation_status == MOLD_CANCELED_STATUS and "霉菌" in experiment_name
-        if not (is_completed or is_canceled_mold or relation_status == "设备故障试验取消"):
-            continue
-        if experiment_requires_appearance_inspection(experiment_name):
-            return True
-    return False
+    return run_trays_allow_appearance_source(sample, tray, experiments, experiment_run_trays)
 
 
 def _tray_has_allowed_appearance_source(

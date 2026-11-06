@@ -169,8 +169,13 @@ function buildCompletedTrayFlowState({
     time: stepTimeMap.get(completedLabel) || stepTimeMap.get(completedIdentityLabel) || stepTimeMap.get(completedCodeLabel) || "",
   });
   const normalizedFinalStatus = normalizeLifecycleStatus(effectiveInput.location, effectiveInput.status);
-  const shouldShowFinalAppearance = experimentRequiresAppearanceInspection(lastExperiment)
-    && (normalizedFinalStatus === APPEARANCE_STOCKED_STATUS || Boolean(stepTimeMap.get(APPEARANCE_STOCKED_STATUS)));
+  const currentAppearanceTime = normalizedFinalStatus === APPEARANCE_STOCKED_STATUS
+    ? routeStepTimeAfter(APPEARANCE_STOCKED_STATUS, finalCompletedTime)
+    : "";
+  const shouldShowFinalAppearance = Boolean(currentAppearanceTime) || (
+    experimentRequiresAppearanceInspection(lastExperiment)
+    && (normalizedFinalStatus === APPEARANCE_STOCKED_STATUS || Boolean(stepTimeMap.get(APPEARANCE_STOCKED_STATUS)))
+  );
   const finalAppearanceIndexes = shouldShowFinalAppearance
     ? { stocked: pushStep({ key: "route-final-appearance-stocked", label: APPEARANCE_STOCKED_STATUS }) }
     : null;

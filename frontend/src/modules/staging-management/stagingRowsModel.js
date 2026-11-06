@@ -496,6 +496,7 @@ function buildZancunRowsFromSnapshot(snapshot = {}, options = {}) {
       if (
         config.key === "appearance"
         && status
+        && !(isCurrentStagingStatus(status, config) && ["stock_in", "stock_out_withdraw"].includes(normalizeText(lastEvent?.action)))
         && !midPause
         && !isDeviceFaultInbound
         && !trayHasAllowedAppearanceSource({

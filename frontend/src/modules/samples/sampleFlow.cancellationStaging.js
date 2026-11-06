@@ -5,6 +5,7 @@ const rows = (value) => Array.isArray(value) ? value : [];
 const at = (value) => Date.parse(value) || 0;
 const stagingLabels = new Set(["送至暂存间", "已到达暂存间"]);
 const downstreamStatuses = new Set(["送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "实验进行中", "实验中", "实验暂停", "实验已完成", "实验完成"]);
+const downstreamLifecycleStatuses = new Set([...downstreamStatuses, "送至外观检测间", "实验后外观检测间存放", "实验后暂存间存放", "厂家收回"]);
 const isCancellation = (step) => step.kind === "device-fault-cancel" || text(step.key).startsWith("mold-canceled-");
 const isNormalStaging = (location) => text(location).includes("暂存间") && !text(location).includes("实验后");
 
@@ -59,7 +60,7 @@ function presentCancellationStaging(flow, input = {}) {
     && !isNormalStaging(event.target_lab) && Boolean(event.target_lab || event.target_lab_code));
   const recoveryIsCurrent = rows(flow.steps).some((step) => step.active && text(step.key).startsWith("mold-cancel-recovery-"));
   const advancedPastStaging = !summary.active && !recoveryIsCurrent
-    && (downstreamStatuses.has(status) || (/部分完成/.test(status) && /轴/.test(status)))
+    && (downstreamLifecycleStatuses.has(status) || (/部分完成/.test(status) && /轴/.test(status)))
     && (hasDownstreamHistory || hasDownstreamRun || hasLabDispatch);
   const latestArrival = evidence.filter((entry) => entry.label === "已到达暂存间").sort((a, b) => at(b.time) - at(a.time))[0];
   const pair = [
