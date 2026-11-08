@@ -1055,6 +1055,7 @@ import AppIcon from "@/components/shared/AppIcon.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import { vAppIcon } from "@/directives/appIcon";
 import { normalizeTrayScanCode } from "@/lib/trayQrCode";
+import { getDesktopLaboratory } from "@/lib/desktopClient";
 import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 import { useLaboratoryPage } from "./useLaboratoryPage";
@@ -1065,6 +1066,8 @@ const RUNNING_TRAY_PREVIEW_LIMIT = 3;
 const RUNNING_SAMPLE_PREVIEW_LIMIT = 5;
 const route = useRoute();
 const selectedLabName = computed(() => {
+  const fixedLab = getDesktopLaboratory();
+  if (fixedLab) return fixedLab;
   const rawLabName = route.query?.lab;
   return Array.isArray(rawLabName) ? rawLabName[0] || "" : rawLabName || "";
 });

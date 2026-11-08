@@ -6,6 +6,10 @@ from datetime import datetime
 
 from app.services.laboratory_snapshot_adapter import completion_updates, snapshot_from_storage_payload
 from app.services.laboratory_termination import terminate_storage_laboratory_experiment
+from app.services.appearance_inspection import (
+    APPEARANCE_INSPECTION_LOCATION, APPEARANCE_INSPECTION_STOCKED_STATUS,
+    mid_experiment_appearance_stocked_trays_for_run,
+)
 
 FAULT_CANCELED = "设备故障试验取消"
 FAULT_END_MODE = "device_fault_cancel"
@@ -42,6 +46,10 @@ def build_fault_cancellation_updates(payload: dict, *, run_no: str, task_code: s
     relations = [row for row in snapshot["experiment_run_trays"] if text(row.get("run_no")) == run_no]
     if not relations or any(text(row.get("run_tray_status") or row.get("status")) not in ACTIVE_STATUSES for row in relations):
         raise ValueError("设备故障取消必须包含当前运行的全部托盘")
+    appearance_trays = mid_experiment_appearance_stocked_trays_for_run(
+        {**snapshot, "samples": [sample for sample in snapshot["samples"] if text(sample.get("task_code")) == task_code]},
+        run_no=run_no, tray_codes={text(row.get("tray_code")) for row in relations},
+    )
     result = terminate_storage_laboratory_experiment(
         snapshot, task_code=task_code, experiment_code=experiment_code, run_no=run_no,
         terminated_at=canceled_at, termination_reason=reason, terminal_status=FAULT_CANCELED,
@@ -59,6 +67,30 @@ def build_fault_cancellation_updates(payload: dict, *, run_no: str, task_code: s
             if text(tray.get("tray_code")) in affected:
                 for key in ("fixture_install_id", "fixtureInstallId", "target_schedule_id", "targetScheduleId"):
                     tray.pop(key, None)
+    if appearance_trays:
+        # The trays are already physically stocked here. End their mid-run
+        # inspection phase so ordinary appearance stock-out can continue.
+        for sample in result["affectedSamples"]:
+            if text(sample.get("location")) != APPEARANCE_INSPECTION_LOCATION:
+                continue
+            stocked = False
+            for tray in sample["trays"]:
+                if text(tray.get("tray_code")) in appearance_trays:
+                    tray["status"] = APPEARANCE_INSPECTION_STOCKED_STATUS
+                    stocked = True
+            if stocked:
+                sample["status"] = sample["flow_status"] = APPEARANCE_INSPECTION_STOCKED_STATUS
+        events = deepcopy(snapshot["staging_events"])
+        for tray_code in sorted(appearance_trays):
+            events.append({
+                "id": f"fault-appearance-{run_no}-{tray_code}", "task_code": task_code,
+                "tray_code": tray_code, "room": "appearance", "action": "stock_in",
+                "appearance_phase": FAULT_APPEARANCE_PHASE, "source": "device_fault_cancellation",
+                "source_run_no": run_no, "run_no": run_no, "source_experiment_code": experiment_code,
+                "experiment_code": experiment_code, "status": APPEARANCE_INSPECTION_STOCKED_STATUS,
+                "location": APPEARANCE_INSPECTION_LOCATION, "time": canceled_at,
+            })
+        result["stagingEvents"] = events
     result["experimentRunSteps"] = [
         {**step, "status": FAULT_CANCELED, "ended_at": canceled_at, "updated_at": canceled_at}
         if text(step.get("run_no")) == run_no and text(step.get("status")) not in COMPLETED_STATUSES

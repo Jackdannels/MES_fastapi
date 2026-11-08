@@ -122,6 +122,32 @@
   flex-wrap: wrap;
 }
 
+.sidebar-system-info {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sidebar-system-info > div {
+  display: grid;
+  gap: 2px;
+}
+
+.sidebar-system-info dt {
+  color: var(--muted);
+}
+
+.sidebar-system-info dd {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-code);
+  overflow-wrap: anywhere;
+}
+
 .badge {
   padding: 4px 10px;
   border-radius: var(--radius-control);

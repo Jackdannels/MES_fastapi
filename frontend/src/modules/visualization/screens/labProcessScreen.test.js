@@ -54,6 +54,7 @@ describe("LabProcessScreen headers", () => {
     expect(wrapper.text()).toContain("已到达盐雾试验室");
     expect(wrapper.text()).not.toContain("已到达实验室");
     expect(wrapper.findAll(".visual-flow-step")[0].classes()).toContain("is-done");
+    expect(wrapper.findAll(".visual-flow-step")[0].classes()).toContain("is-device-fault-cancel");
     expect(wrapper.find(".is-canceled").exists()).toBe(false);
     wrapper.unmount();
   });

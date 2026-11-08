@@ -22,7 +22,7 @@ $name = 'MES控制中心_' + $variant + '.exe'
 $executable = Join-Path $target $name
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw "所选目录缺少 $name" }
 foreach ($process in Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($name)) -ErrorAction SilentlyContinue) {
-    if (-not $process.Path -or [IO.Path]::GetFullPath($process.Path) -eq $executable) { throw '请先关闭要升级的控制中心窗口，再重新运行。MES 后台服务可保持运行。' }
+    if (-not $process.Path -or [IO.Path]::GetFullPath($process.Path) -eq $executable) { throw '请先关闭要升级的控制中心窗口，再重新运行。从 v2.8.2 开始，退出控制中心会同步关闭系统，请安排在允许停机时更新。' }
 }
 $mapping = @([pscustomobject]@{Key=($variant+'/'+$name);Target=$executable;Backup=$name})
 $release = ''
@@ -66,7 +66,7 @@ try {
             $entries += [pscustomobject]@{path=$file;bytes=(Get-Item -LiteralPath $path).Length;sha256=(Get-Sha256 $path)}
         }
         $releaseManifest.files = $entries
-        $releaseManifest | Add-Member -NotePropertyName control_center_update -NotePropertyValue '2.7.2' -Force
+        $releaseManifest | Add-Member -NotePropertyName control_center_update -NotePropertyValue '2.8.2' -Force
         [IO.File]::WriteAllText($releaseManifestPath, ($releaseManifest | ConvertTo-Json -Depth 15), (New-Object Text.UTF8Encoding($false)))
     }
 } catch {
@@ -84,12 +84,12 @@ if (Test-Path -LiteralPath (Join-Path $target 'desktop-tools-manifest.json')) {
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'update-manifest.json') -Destination (Join-Path $target 'control-center-update-manifest.json') -Force
 if (-not $NoShortcut) {
     $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) ('MES控制中心_v2.7.2_'+$variant+'.lnk')))
+    $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) ('MES控制中心_v2.8.2_'+$variant+'.lnk')))
     $shortcut.TargetPath = $executable
     $shortcut.WorkingDirectory = $target
     $shortcut.IconLocation = $executable + ',0'
     $shortcut.Save()
 }
-Write-Output "MES 控制中心已升级为 v2.7.2（$variant），备份：$backup"
-if (-not $NoShortcut) { Write-Output '桌面已提供 v2.7.2 快捷方式。' }
-Write-Output 'v2.7.2 统一打开和关闭 MES、LIMS、上位机模拟器三个网页。旧版本已打开的普通标签页需手动关闭一次；当前业务服务保持原状态。'
+Write-Output "MES 控制中心已升级为 v2.8.2（$variant），备份：$backup"
+if (-not $NoShortcut) { Write-Output '桌面已提供 v2.8.2 快捷方式。' }
+Write-Output 'v2.8.2 退出控制中心时确认并关闭系统，失败则保留窗口。需要保留服务时请最小化；单独关闭中控界面仍保留后台服务。'

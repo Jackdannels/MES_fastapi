@@ -81,12 +81,19 @@ Describe "MES control center integration" {
         $LASTEXITCODE | Should Be 0
     }
 
-    It "exposes v2.7.2 and four independently visible service states" {
-        $source | Should Match 'AssemblyVersion\("2\.7\.2\.0"\)'
-        $source | Should Match 'AssemblyFileVersion\("2\.7\.2\.0"\)'
-        $source | Should Match 'MES 控制中心 v2\.7\.2'
-        $source | Should Match 'CONTROL CENTER  v2\.7\.2'
-        $build | Should Match 'MES控制中心_v2\.7\.2\.exe'
+    It "requires confirmed system shutdown before exiting and retains the controller on failure" {
+        $executable=Join-Path $TestDrive 'exit-app/MESControlCenter.exe'
+        & $buildPath -ProjectRoot $projectRoot -OutputPath $executable -NoAdminManifest
+        & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Test-ControlCenterExit.ps1') -Executable $executable -TestDirectory (Join-Path $TestDrive 'exit')
+        $LASTEXITCODE | Should Be 0
+    }
+
+    It "exposes v2.8.2 and four independently visible service states" {
+        $source | Should Match 'AssemblyVersion\("2\.8\.2\.0"\)'
+        $source | Should Match 'AssemblyFileVersion\("2\.8\.2\.0"\)'
+        $source | Should Match 'MES 控制中心 v2\.8\.2'
+        $source | Should Match 'CONTROL CENTER  v2\.8\.2'
+        $build | Should Match 'MES控制中心_v2\.8\.2\.exe'
         $source | Should Match 'AddServiceLine\(lines, "后端服务", MESDesktopSettings.PortLabel\("apiUrl"'
         $source | Should Match 'AddServiceLine\(lines, "前端服务", MESDesktopSettings.PortLabel\("serverUrl"'
         $source | Should Match 'AddServiceLine\(lines, "LIMS 模拟器", MESDesktopSettings.PortLabel\("limsUrl"'

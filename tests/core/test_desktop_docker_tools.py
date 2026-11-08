@@ -268,8 +268,8 @@ def test_compiled_control_center_about_and_offline_startup(tmp_path):
         capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
     manifest = json.loads((output / 'desktop-tools-manifest.json').read_text(encoding='utf-8-sig'))
-    assert manifest['controlCenterVersion'] == '2.7.2'
-    assert (output / 'control-center-v2.7.2.md').is_file()
+    assert manifest['controlCenterVersion'] == '2.8.2'
+    assert (output / 'control-center-v2.8.2.md').is_file()
     result = subprocess.run([PS, '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File',
         str(ROOT / 'tests/control_center/Test-ControlCenterAbout.ps1'),
         '-Executable', str(output / 'MES控制中心_Docker版.exe')],
@@ -320,7 +320,7 @@ def test_control_center_upgrade_keeps_connection_settings_and_other_programs(tmp
     result = subprocess.run([PS, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
         '-DesktopToolsDirectory', str(target), '-NoShortcut'], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=15)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert 'v2.7.2' in result.stdout
+    assert 'v2.8.2' in result.stdout
     assert '桌面已提供' not in result.stdout
     assert (target / name).read_bytes() == b'updated-control-file'
     assert (target / 'mes-desktop-tools.json').read_bytes() == configuration
@@ -330,7 +330,7 @@ def test_control_center_upgrade_keeps_connection_settings_and_other_programs(tmp
     assert (backups[0] / name).read_bytes() == b'old-control'
     assert (backups[0] / 'desktop-tools-manifest.json').is_file()
     if not native:
-        assert json.loads((release / 'manifest.json').read_text(encoding='utf-8'))['control_center_update'] == '2.7.2'
+        assert json.loads((release / 'manifest.json').read_text(encoding='utf-8'))['control_center_update'] == '2.8.2'
         assert (release / 'scripts/deploy/Mes-Portable.ps1').read_bytes() == b'new-deployment-helper'
         assert (backups[0] / 'release/scripts/deploy/Mes-Portable.ps1').read_bytes() == b'old-deployment-helper'
 
@@ -366,7 +366,7 @@ def test_control_center_update_package_contains_v272_binaries_and_valid_inventor
     assert result.returncode == 0, result.stdout + result.stderr
     manifest = json.loads((output / 'update-manifest.json').read_text(encoding='utf-8'))
     assert manifest['format'] == 'mes-control-center-update'
-    assert manifest['version'] == '2.7.2'
+    assert manifest['version'] == '2.8.2'
     names = {entry['path'] for entry in manifest['files']}
     assert {'Docker版/MES控制中心_Docker版.exe', '原生版/MES控制中心_原生版.exe',
             'Docker版/scripts/docker-service-control.ps1', 'Update-ControlCenter.ps1', '使用说明.md'} <= names
@@ -374,11 +374,11 @@ def test_control_center_update_package_contains_v272_binaries_and_valid_inventor
         path = output / entry['path']
         assert path.stat().st_size == entry['bytes']
         assert hashlib.sha256(path.read_bytes()).hexdigest() == entry['sha256']
-    assert (output / '使用说明.md').read_text(encoding='utf-8').startswith('# MES 控制中心 v2.7.2')
+    assert (output / '使用说明.md').read_text(encoding='utf-8').startswith('# MES 控制中心 v2.8.2')
     probe = subprocess.run([PS, '-NoProfile', '-Command',
         "Get-ChildItem -LiteralPath $env:MES_VERSION_PACKAGE -Filter '*.exe' -Recurse | "
         "ForEach-Object { $_.VersionInfo.FileVersion } | ConvertTo-Json -Compress"],
         env={**os.environ, 'MES_VERSION_PACKAGE': str(output)},
         capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10)
     assert probe.returncode == 0, probe.stdout + probe.stderr
-    assert json.loads(probe.stdout) == ['2.7.2.0', '2.7.2.0']
+    assert json.loads(probe.stdout) == ['2.8.2.0', '2.8.2.0']

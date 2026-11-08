@@ -18,6 +18,8 @@ import {
 } from "./sharedModel";
 import { entryMatchesTrayCode, relationIsCompletedForSample } from "./experimentCompletionModel";
 import { resolveMoldReschedulePreview } from "@/modules/samples/sampleFlow.moldReschedule";
+import { DEVICE_FAULT_CANCELED } from "@/lib/deviceFaultCancellation";
+import { createFaultTrayResidencyResolver, faultResidencyMatchesLab } from "./faultTrayResidency";
 
 const deviceMatchesLab = (device, labName) =>
   normalizeText(device?.code) === labName || normalizeText(device?.name) === labName;
@@ -222,6 +224,7 @@ const buildTrayRowsByLab = ({
   const latestStockOutTargetByTaskAndTray = buildLatestStockOutTargetByTaskAndTray(stagingEvents);
   const trayAggregatesByLab = asArray(labs).map(() => new Map());
   const reschedulePreviewByTray = new Map();
+  const faultResidencyForTray = createFaultTrayResidencyResolver({ experimentRuns, experimentRunTrays, stagingEvents, samples });
 
   asArray(samples).forEach((sample) => {
     const sampleCode = normalizeText(sample?.code || sample?.sample_code);
@@ -267,6 +270,8 @@ const buildTrayRowsByLab = ({
           : normalizeLifecycleStatus("", trayStatus)
         : normalizeLifecycleStatus(sample?.location, normalizeText(sample?.status));
       const lifecycleLocation = trayStatus ? "" : sample?.location;
+      const faultResidency = faultResidencyForTray(sample, tray);
+      const isFaultResident = Boolean(faultResidency?.isResident);
       const statusHasOwnFlowContext = isCompletedOrPartialAxisStatus(lifecycleStatus);
       if (!reschedulePreviewByTray.has(trayMapKey)) {
         reschedulePreviewByTray.set(trayMapKey, resolveMoldReschedulePreview({
@@ -280,11 +285,16 @@ const buildTrayRowsByLab = ({
       asArray(labs).forEach((lab, labIndex) => {
         const labIdentity = lab || lab?.name || lab?.code;
         const incompleteLabRelations = incompleteRelations.filter((relation) => relationMatchesLab(relation, labIdentity));
-        if (reschedulePreview
+        if (isFaultResident ? !faultResidencyMatchesLab(faultResidency, labIdentity) : faultResidency
+          && faultResidencyMatchesLab(faultResidency, labIdentity)
+          && !lifecycleStatusBelongsToLabFlow(lifecycleStatus, lifecycleLocation)) {
+          return;
+        }
+        if (!isFaultResident && (reschedulePreview
           ? !scheduleMatchesLab(reschedulePreview.schedule, labIdentity)
           : completedAtPhysicalLab
             ? !textMatchesLab(sample?.location, labIdentity)
-            : incompleteLabRelations.length === 0) {
+            : incompleteLabRelations.length === 0)) {
           return;
         }
         const sampleLocationMatchesLab = textMatchesLab(sample?.location, labIdentity);
@@ -297,12 +307,13 @@ const buildTrayRowsByLab = ({
             ? incompleteLabRelations[0].experimentCode
             : "";
         const entry = {
-          previewExperimentCode: reschedulePreview?.experimentCode || "",
-          currentExperimentCode: statusHasOwnFlowContext ? "" : activeTargetExperimentCode || currentLabExperimentCode,
-          dispatchTargetLab: statusHasOwnFlowContext ? "" : activeTargetLab,
+          previewExperimentCode: isFaultResident ? "" : reschedulePreview?.experimentCode || "",
+          currentExperimentCode: statusHasOwnFlowContext || isFaultResident ? "" : activeTargetExperimentCode || currentLabExperimentCode,
+          dispatchTargetLab: statusHasOwnFlowContext || isFaultResident ? "" : activeTargetLab,
           ignoreTrayDispatchTarget: isAxisPartialProgressStatus(lifecycleStatus),
-          lifecycleLocation,
-          lifecycleStatus,
+          lifecycleLocation: isFaultResident ? faultResidency.actualLocation : lifecycleLocation,
+          lifecycleStatus: isFaultResident ? DEVICE_FAULT_CANCELED : lifecycleStatus,
+          isFaultResident,
           sample,
           status: lifecycleStatus,
           tray,
@@ -356,9 +367,10 @@ const buildTrayRowsByLab = ({
         return {
           canonicalStatus: flow.canonicalStatus || flow.status || "-",
           isSchedulePreview: Boolean(flow.isSchedulePreview),
-          actualStatus: flow.actualStatus,
-          actualLocation: flow.actualLocation,
-          displayRemark: flow.displayRemark || "",
+          actualStatus: entry.isFaultResident ? DEVICE_FAULT_CANCELED : flow.actualStatus,
+          actualLocation: entry.isFaultResident ? entry.lifecycleLocation : flow.actualLocation,
+          isFaultResident: Boolean(entry.isFaultResident),
+          displayRemark: entry.isFaultResident ? "待转运" : flow.displayRemark || "",
           quantity: aggregate.quantity,
           sampleCodes: Array.from(aggregate.sampleCodeSet).sort(compareText),
           status: flow.status || "-",
@@ -420,6 +432,7 @@ function buildLabProcessPanels(input = {}) {
       task: activeTray?.taskCode || "-",
       taskCount: taskCodes.size,
       trayCount: trays.length,
+      pendingTransferCount: trays.filter((tray) => tray.isFaultResident).length,
       trays,
     };
   });

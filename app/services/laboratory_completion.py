@@ -17,6 +17,7 @@ from app.services.appearance_inspection import (
 from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
 from app.services.laboratory_operations import clear_fixture_ready_marker
 from app.services.laboratory_run_lifecycle import close_superseded_running_runs_for_trays
+from app.services.laboratory_termination import MOLD_CANCELED_STATUS
 from app.services.laboratory_completion_rules import (
     COMPLETED_STATUS,
     COMPLETION_ACTION,
@@ -33,6 +34,12 @@ from app.services.laboratory_completion_rules import (
     run_axis_codes,
     run_tray_completed_statuses_for_experiment,
 )
+
+
+def validate_run_completion_status(run: dict[str, Any] | None) -> None:
+    status = normalize_text((run or {}).get("run_status") or (run or {}).get("status"))
+    if status == MOLD_CANCELED_STATUS:
+        raise ValueError("已取消的实验运行不能改为正常完成")
 
 
 def completed_axis_codes_for_completion(
@@ -324,17 +331,21 @@ def complete_storage_laboratory_experiment(
         and normalize_text(item.get("tray_code"))
     }
     requested_tray_codes = {normalize_text(code) for code in (tray_codes or []) if normalize_text(code)}
-    if not normalized_sub_experiment_code and normalized_run_no:
+    if normalized_run_no:
         for run in experiment_runs:
             if (
                 normalize_text(run.get("run_no") or run.get("runNo") or run.get("id")) == normalized_run_no
                 and normalize_text(run.get("task_code") or run.get("task_no")) == normalized_task_code
                 and normalize_text(run.get("experiment_code") or run.get("experiment_no")) == normalized_experiment_code
             ):
-                normalized_sub_experiment_code = resolve_record_sub_experiment_code(
-                    run,
-                    experiment_code=normalized_experiment_code,
-                )
+                # Check the snapshot loaded under the storage commit lock too:
+                # cancellation may have won after the MQTT ingress lookup.
+                validate_run_completion_status(run)
+                if not normalized_sub_experiment_code:
+                    normalized_sub_experiment_code = resolve_record_sub_experiment_code(
+                        run,
+                        experiment_code=normalized_experiment_code,
+                    )
                 break
 
     def run_matches_request(run: dict[str, Any]) -> bool:

@@ -1,6 +1,6 @@
 <template>
   <AppModal :open="open" title="退出登录" @close="handleClose">
-    <div class="form-grid">
+    <div v-if="allowModuleSwitch" class="form-grid">
       <label class="form-field">
         <span>切换界面</span>
         <select v-model="selectedModule" class="search-input" data-testid="module-exit-select">
@@ -22,7 +22,7 @@
     <template #footer>
       <button class="action-btn secondary" data-testid="module-exit-cancel" type="button" @click="handleClose">取消</button>
       <button class="action-btn danger" data-testid="module-exit-logout" type="button" @click="handleLogout">彻底退出</button>
-      <button class="action-btn" data-testid="module-exit-switch" type="button" @click="handleSwitch">切换其他界面</button>
+      <button v-if="allowModuleSwitch" class="action-btn" data-testid="module-exit-switch" type="button" @click="handleSwitch">切换其他界面</button>
     </template>
   </AppModal>
 </template>
@@ -35,6 +35,10 @@ import { LABORATORY_OPTIONS, MODULE_OPTIONS } from "@/lib/moduleCatalog";
 import AppModal from "./AppModal.vue";
 
 const props = defineProps({
+  allowModuleSwitch: {
+    type: Boolean,
+    default: true,
+  },
   currentModule: {
     type: String,
     default: "central",
@@ -86,6 +90,7 @@ const handleLogout = () => {
 };
 
 const handleSwitch = () => {
+  if (!props.allowModuleSwitch) return;
   const isCurrentLaboratory =
     selectedModule.value === "laboratory" &&
     props.currentModule === "laboratory" &&

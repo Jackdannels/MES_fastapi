@@ -176,7 +176,7 @@
 
   <AppModal :open="runningRepairChoiceOpen" title="设备维修确认" @close="closeRunningRepairChoice">
     <div class="devices-maintenance-conflict" data-testid="running-repair-choice-modal">
-      <strong>当前试验间正在进行实验。</strong>
+      <strong>当前试验间存在尚未结束的实验，包括暂停及中途外观检查中的托盘。</strong>
       <p>重新排程将申请因设备故障取消本次运行，保留本次结果，原试验回到待排程。收到上位机确认前，请勿移动样品。</p>
       <div class="form-field">
         <label for="device-fault-reason">设备故障原因（重新排程必填）</label>
@@ -185,6 +185,10 @@
       <ul>
         <li v-for="schedule in runningRepairChoiceDetail?.runningSchedules || []" :key="schedule.id">
           {{ schedule.task_code }} / {{ schedule.experiment_code || "-" }}
+          <span v-if="schedule.run_status"> · {{ schedule.run_status }}</span>
+          <div v-for="tray in schedule.tray_locations || []" :key="tray.tray_code" data-testid="running-repair-tray-location">
+            托盘：{{ tray.tray_code }} · 样品：{{ tray.sample_codes.join("、") || "-" }} · 当前位置：{{ tray.location }}
+          </div>
         </li>
       </ul>
       <div v-if="runningRepairChoiceWarning" class="form-alert" role="status" aria-live="polite" data-testid="running-repair-choice-warning">
@@ -194,7 +198,7 @@
     <template #footer>
       <button class="action-btn secondary" type="button" @click="closeRunningRepairChoice">取消</button>
       <button class="action-btn secondary" type="button" :disabled="runningRepairSubmitting || runningRepairPending" data-testid="running-repair-reschedule" @click="confirmRunningRepairReschedule">
-        {{ runningRepairSubmitting ? "正在发送…" : runningRepairConfirmed ? "取消已确认" : runningRepairPending ? "等待上位机确认" : "重新排程" }}
+        {{ runningRepairSubmitting ? "正在发送…" : runningRepairConfirmed ? "取消已确认" : runningRepairPending ? "等待上位机确认" : "取消后重新排程" }}
       </button>
       <button class="action-btn" type="button" :disabled="runningRepairSubmitting || runningRepairPending" data-testid="running-repair-complete" @click="confirmRunningRepairComplete">
         设为实验已完成

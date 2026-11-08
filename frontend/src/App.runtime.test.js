@@ -119,6 +119,8 @@ describe("App runtime boundary", () => {
   });
   afterEach(() => {
     wrapper?.unmount();
+    delete window.__MES_DESKTOP__;
+    delete window.chrome;
     wrapper = undefined;
     reactiveRoute.meta = { module: "central", title: "任务/托盘总览" };
     reactiveRoute.name = "task-overview";
@@ -255,6 +257,22 @@ describe("App runtime boundary", () => {
     await nextTick();
     expect(wrapper.find('[data-testid="tray-error-sample-dialog"]').exists()).toBe(true);
     expect(wrapper.find(".sidebar").exists()).toBe(false);
+  });
+
+  test("offers native close for a desktop terminal without logging out or opening a second dialog", async () => {
+    window.__MES_DESKTOP__ = { module: "staging", version: "1.7.0", autoLogin: true, canCloseWindow: true };
+    window.chrome = { webview: { postMessage: vi.fn() } };
+    authSessionState.current = { module: "staging", terminal_auth: true };
+    reactiveRoute.meta = { module: "staging", title: "暂存间系统" };
+    reactiveRoute.name = "staging-management";
+    reactiveRoute.path = "/staging-management";
+    mountApp();
+    expect(wrapper.get('[data-testid="app-logout"]').text()).toBe("关闭");
+    await wrapper.get('[data-testid="app-logout"]').trigger("click");
+    expect(window.chrome.webview.postMessage).toHaveBeenCalledWith("mes-client-close-request");
+    expect(logoutSessionMock).not.toHaveBeenCalled();
+    expect(routerReplace).not.toHaveBeenCalled();
+    expect(wrapper.findComponent({ name: "ModuleExitDialog" }).exists()).toBe(false);
   });
 
   test.each([

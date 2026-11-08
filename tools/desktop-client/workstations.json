@@ -1,0 +1,17 @@
+[
+  {"folder":"冲击一室","module":"laboratory","labCode":"LAB_IMPACT_1","labName":"冲击一室"},
+  {"folder":"冲击二室","module":"laboratory","labCode":"LAB_IMPACT_2","labName":"冲击二室"},
+  {"folder":"振动一室","module":"laboratory","labCode":"LAB_VIBRATION_1","labName":"振动一室"},
+  {"folder":"振动二室","module":"laboratory","labCode":"LAB_VIBRATION_2","labName":"振动二室"},
+  {"folder":"四综合实验室","module":"laboratory","labCode":"LAB_COMPREHENSIVE","labName":"四综合实验室"},
+  {"folder":"温度冲击一室","module":"laboratory","labCode":"LAB_TEMP_SHOCK_1","labName":"温度冲击一室"},
+  {"folder":"温度冲击二室","module":"laboratory","labCode":"LAB_TEMP_SHOCK_2","labName":"温度冲击二室"},
+  {"folder":"高低温湿热一室","module":"laboratory","labCode":"LAB_HOT_HUMID","labName":"高低温湿热一室"},
+  {"folder":"高低温湿热二室","module":"laboratory","labCode":"LAB_HOT_HUMID_2","labName":"高低温湿热二室"},
+  {"folder":"盐雾试验室","module":"laboratory","labCode":"LAB_SALT","labName":"盐雾试验室"},
+  {"folder":"霉菌试验室","module":"laboratory","labCode":"LAB_MOLD","labName":"霉菌试验室"},
+  {"folder":"可视化管理","module":"visual","labCode":"","labName":""},
+  {"folder":"接驳区系统","module":"handover","labCode":"","labName":""},
+  {"folder":"暂存间系统","module":"staging","labCode":"","labName":""},
+  {"folder":"外观检测间系统","module":"appearance","labCode":"","labName":""}
+]

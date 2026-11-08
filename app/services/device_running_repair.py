@@ -129,6 +129,7 @@ def build_completed_running_repair_updates(
     working_snapshot = snapshot_from_storage_payload(storage_payload)
     result: dict[str, Any] | None = None
     seen_scopes: set[tuple[str, str, str]] = set()
+    staging_changed = False
     for raw_target in targets:
         if not isinstance(raw_target, dict):
             continue
@@ -168,9 +169,14 @@ def build_completed_running_repair_updates(
         working_snapshot["schedules"] = result["schedules"]
         working_snapshot["experiment_runs"] = result["experimentRuns"]
         working_snapshot["experiment_run_trays"] = result["experimentRunTrays"]
+        if "stagingEvents" in result:
+            working_snapshot["staging_events"] = result["stagingEvents"]
+            staging_changed = True
 
     if result is None:
         raise DeviceRunningRepairError("未找到正在进行的实验")
+    if staging_changed:
+        result["stagingEvents"] = working_snapshot["staging_events"]
 
     maintenance_note = _text(payload.get("maintenance_note") or payload.get("maintenanceNote"))
     next_devices = [

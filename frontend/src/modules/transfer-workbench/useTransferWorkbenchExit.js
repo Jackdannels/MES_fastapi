@@ -2,11 +2,15 @@ import { ref } from "vue";
 
 import { logoutSession, resolveModuleHome, switchSessionModule } from "@/auth";
 import { resolveLaboratoryRouteKey } from "@/lib/labs";
+import { canCloseDesktopWindow, getDesktopModule, requestDesktopClose } from "@/lib/desktopClient";
 
 function useTransferWorkbenchExit(router) {
   const exitDialogOpen = ref(false);
+  const desktopCloseAvailable = canCloseDesktopWindow();
+  const desktopModule = getDesktopModule();
 
   const handleLogout = () => {
+    if (desktopCloseAvailable) { requestDesktopClose(); return; }
     exitDialogOpen.value = true;
   };
 
@@ -39,6 +43,8 @@ function useTransferWorkbenchExit(router) {
     closeExitDialog,
     confirmLogout,
     exitDialogOpen,
+    desktopCloseAvailable,
+    desktopModule,
     handleLogout,
     switchModule,
   };

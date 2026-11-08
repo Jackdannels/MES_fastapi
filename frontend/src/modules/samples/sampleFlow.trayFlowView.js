@@ -2,6 +2,7 @@ import { buildTrayFlowEngine } from "./sampleFlow.trayFlowEngine";
 import { presentLaboratoryArrivals } from "./sampleFlow.arrivalPresentation";
 import { presentCancellationStaging } from "./sampleFlow.cancellationStaging";
 import { presentMoldReschedule } from "./sampleFlow.moldReschedule";
+import { presentSaltSprayPauseHistory } from "./sampleFlow.saltPauseHistory";
 
 const presentCurrentAppearance = (flow) => {
   const steps = flow.steps || [];
@@ -22,7 +23,7 @@ const presentCurrentAppearance = (flow) => {
 // 公共兼容入口：参数与返回结构保持不变，流程装配委托给职责模块。
 function buildTrayFlowView(input = {}) {
   const flow = presentCurrentAppearance(presentCancellationStaging(buildTrayFlowEngine(input), input));
-  return presentLaboratoryArrivals(presentMoldReschedule(flow, input), input);
+  return presentSaltSprayPauseHistory(presentLaboratoryArrivals(presentMoldReschedule(flow, input), input), input);
 }
 
 export { buildTrayFlowView };

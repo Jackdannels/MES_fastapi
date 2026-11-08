@@ -386,6 +386,13 @@ def apply_laboratory_operation(
 def apply_salt_resume_preparation(
     request: SaltResumePreparationRequest = Body(default_factory=SaltResumePreparationRequest),
 ) -> dict[str, Any]:
+    # Physical fixture confirmation belongs to the MQTT callback. Only operator
+    # preparation actions may enter through this HTTP boundary.
+    if normalize_text(request.operation_type) not in {"start", "compare", "install", "ready"}:
+        raise HTTPException(
+            status_code=409,
+            detail="继续实验准备仅支持开始、比对、安装和就绪；夹具就绪必须由上位机 MQTT 确认",
+        )
     storage = get_storage_backend()
     resource_keys = operation_resource_keys(lab_code=request.lab_code, tray_codes=request.tray_codes)
 

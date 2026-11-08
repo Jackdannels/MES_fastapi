@@ -627,6 +627,51 @@ describe("useDevicesPage", () => {
     expect(mocks.persistSnapshot).not.toHaveBeenCalled();
   });
 
+  test.each(["cancel", "complete"])("indexes paused salt run trays outside the lab before choosing %s", async (choice) => {
+    const snapshot = buildRunningExperimentSnapshot();
+    snapshot["mes.devices"] = [{ code: "盐雾试验室", name: "盐雾试验系统", status: "可用" }];
+    snapshot["mes.experiment_runs"] = [{ task_code: "TASK-001", experiment_code: "EXP-SALT", run_no: "RUN-SALT", schedule_id: "S-SALT", device: "盐雾试验室", lab_code: "LAB_SALT", status: "实验暂停" }];
+    snapshot["mes.experiment_run_trays"] = [
+      ...["TP-1", "TP-2"].map((tray_code) => ({ task_code: "TASK-001", experiment_code: "EXP-SALT", run_no: "RUN-SALT", tray_code, run_tray_status: "实验暂停" })),
+      { task_code: "TASK-001", experiment_code: "EXP-SALT", run_no: "OLD-RUN", tray_code: "TP-OLD", run_tray_status: "实验已完成" },
+    ];
+    snapshot["mes.schedules"] = [
+      { id: "FUTURE", task_code: "TASK-001", experiment_code: "EXP-SALT", device: "盐雾试验室", status: "已排程" },
+      { id: "S-SALT", task_code: "TASK-001", experiment_code: "EXP-SALT", device: "盐雾试验室", status: "实验进行中" },
+    ];
+    snapshot["mes.experiment_trays"] = ["TP-1", "TP-2", "TP-OLD"].map((tray_code) => ({ task_code: "TASK-001", experiment_code: "EXP-SALT", tray_code }));
+    snapshot["mes.samples"] = ["TP-1", "TP-2", "TP-OLD"].map((tray_code, index) => ({ code: `SP-${index + 1}`, task_code: "TASK-001", location: "外观检测间", status: "中途外观检查中", trays: [{ tray_code, status: "中途外观检查中", quantity: 1 }] }));
+    mocks.loadSnapshot.mockResolvedValue(snapshot);
+    const wrapper = mount(TestHarness);
+    await settle(wrapper);
+    wrapper.vm.openMaintenancePlan(wrapper.vm.deviceRows.find((row) => row.code === "盐雾试验室"));
+    wrapper.vm.maintenancePlanForm.type = "维修";
+    await wrapper.vm.saveMaintenancePlan();
+
+    expect(wrapper.vm.runningRepairChoiceOpen).toBe(true);
+    expect(mocks.persistSnapshot).not.toHaveBeenCalled();
+    const targets = wrapper.vm.runningRepairChoiceDetail.runningSchedules;
+    expect(targets).toHaveLength(1);
+    expect(targets[0]).toMatchObject({ id: "S-SALT", run_no: "RUN-SALT", run_status: "实验暂停", tray_codes: ["TP-1", "TP-2"], sample_codes: ["SP-1", "SP-2"] });
+    expect(targets[0].tray_locations).toEqual([
+      expect.objectContaining({ tray_code: "TP-1", location: "外观检测间", sample_codes: ["SP-1"] }),
+      expect.objectContaining({ tray_code: "TP-2", location: "外观检测间", sample_codes: ["SP-2"] }),
+    ]);
+    if (choice === "cancel") {
+      wrapper.vm.runningRepairReason = "盐雾设备故障";
+      await wrapper.vm.confirmRunningRepairReschedule();
+      expect(mocks.publishDeviceFaultCancelRequest).toHaveBeenCalledWith({ task_code: "TASK-001", experiment_code: "EXP-SALT", run_no: "RUN-SALT", lab_code: "LAB_SALT", cancel_reason: "盐雾设备故障" });
+      expect(mocks.persistRunningRepair).not.toHaveBeenCalled();
+      expect(wrapper.vm.runningRepairPending).toBe(true);
+      expect(snapshot["mes.samples"][0].location).toBe("外观检测间");
+    } else {
+      await wrapper.vm.confirmRunningRepairComplete();
+      expect(mocks.persistRunningRepair).toHaveBeenCalledWith({ deviceCode: "盐雾试验室", maintenanceNote: "", targets: [expect.objectContaining({ run_no: "RUN-SALT", tray_codes: ["TP-1", "TP-2"] })] });
+      expect(mocks.publishDeviceFaultCancelRequest).not.toHaveBeenCalled();
+    }
+    wrapper.unmount();
+  });
+
   test("requests fault cancellation without deleting the run or rolling trays back before host confirmation", async () => {
     mocks.loadSnapshot.mockResolvedValueOnce(buildRunningExperimentSnapshot());
     const wrapper = mount(TestHarness);

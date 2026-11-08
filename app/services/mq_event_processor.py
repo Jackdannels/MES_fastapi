@@ -32,6 +32,7 @@ from app.services.laboratory_axis_steps import (
 )
 from app.services.laboratory_completion import (
     complete_storage_laboratory_experiment,
+    validate_run_completion_status,
 )
 from app.services.laboratory_operations import (
     acquire_laboratory_storage_commit_lock,
@@ -1438,6 +1439,8 @@ def process_laboratory_event(
         if payload_end_mode == FAULT_END_MODE and normalize_text((run or {}).get("lab_code")) == lab_code:
             return build_ack(message_id, "DUPLICATE")
         raise ValueError("设备故障取消的历史运行不能改为正常完成")
+    if message_type == "EXPERIMENT_ENDED":
+        validate_run_completion_status(run)
     fault_finder = getattr(repo, "find_pending_device_fault_cancel", None)
     if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_STARTED", "EXPERIMENT_PAUSED", "EXPERIMENT_RESUMED", "EXPERIMENT_STOPPED"} and callable(fault_finder):
         pending_fault = fault_finder(payload_run_no or normalize_text((run or {}).get("run_no")))

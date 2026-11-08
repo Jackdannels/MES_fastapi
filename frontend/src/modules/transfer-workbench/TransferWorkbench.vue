@@ -38,7 +38,7 @@
         >
           出错样品处理
         </button>
-        <button v-app-icon="{ name: mode === 'handover' ? 'logout' : '', placement: 'button' }" class="action-btn secondary" data-testid="handover-logout" type="button" :disabled="storageOperationPending" @click="handleLogout">退出登录</button>
+        <button v-app-icon="{ name: desktopCloseAvailable ? 'close' : mode === 'handover' ? 'logout' : '', placement: 'button' }" class="action-btn secondary" data-testid="handover-logout" type="button" :disabled="storageOperationPending" @click="handleLogout">{{ desktopCloseAvailable ? "关闭" : "退出登录" }}</button>
       </div>
     </header>
 
@@ -572,6 +572,7 @@
     <ModuleExitDialog
       v-if="showModeHeader"
       :current-module="'handover'"
+      :allow-module-switch="!desktopModule"
       :open="exitDialogOpen"
       @close="closeExitDialog"
       @logout="confirmLogout"
@@ -738,6 +739,8 @@ const {
   closeExitDialog,
   confirmLogout,
   exitDialogOpen,
+  desktopCloseAvailable,
+  desktopModule,
   handleLogout,
   switchModule,
 } = useTransferWorkbenchExit(router);

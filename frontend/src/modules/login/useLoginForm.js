@@ -2,15 +2,19 @@
 import { ref } from "vue";
 import { syncHostInterfaceMode } from "@/lib/hostInterfaceModeApi";
 import { HOST_INTERFACE_MODES } from "@/lib/hostInterfaceMode";
-import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
+import { LABORATORY_OPTIONS, MODULE_LABELS } from "@/lib/moduleCatalog";
 import { resolveLaboratoryRouteKey } from "@/lib/labs";
+import { getDesktopHome, getDesktopLaboratory, getDesktopModule } from "@/lib/desktopClient";
 
 // 将认证输入和提交流程集中到一个可复用的组合函数中。
 function useLoginForm({ login, navigate, redirectPath, resolveModuleHome }) {
   const username = ref("admin");
   const password = ref("123");
-  const moduleKey = ref("central");
-  const selectedLabName = ref(LABORATORY_OPTIONS[0]?.key || "");
+  const fixedModule = getDesktopModule();
+  const fixedLaboratory = getDesktopLaboratory();
+  const fixedModuleLabel = fixedLaboratory || MODULE_LABELS[fixedModule] || "";
+  const moduleKey = ref(fixedModule || "central");
+  const selectedLabName = ref(fixedLaboratory || LABORATORY_OPTIONS[0]?.key || "");
   const errorMessage = ref("");
   const submitting = ref(false);
 
@@ -33,7 +37,7 @@ function useLoginForm({ login, navigate, redirectPath, resolveModuleHome }) {
     errorMessage.value = "";
     submitting.value = true;
     try {
-      const result = await login(username.value, password.value, moduleKey.value);
+      const result = await login(username.value, password.value, fixedModule || moduleKey.value);
       if (!result.ok) {
         errorMessage.value = result.message || "登录失败";
         return;
@@ -44,7 +48,7 @@ function useLoginForm({ login, navigate, redirectPath, resolveModuleHome }) {
       }
 
       // 明确 redirectPath 时优先使用，否则按模块类型回到对应首页。
-      const target = redirectPath || (result.module === "laboratory" && selectedLabName.value
+      const target = fixedModule ? getDesktopHome() : redirectPath || (result.module === "laboratory" && selectedLabName.value
         ? { path: resolveModuleHome(result.module), query: { lab: resolveLaboratoryRouteKey(selectedLabName.value) } }
         : resolveModuleHome(result.module));
       navigate(target);
@@ -55,6 +59,9 @@ function useLoginForm({ login, navigate, redirectPath, resolveModuleHome }) {
 
   return {
     errorMessage,
+    fixedModule,
+    fixedLaboratory,
+    fixedModuleLabel,
     moduleKey,
     password,
     selectedLabName,

@@ -635,6 +635,17 @@
   background: var(--screen-panel);
 }
 
+.visual-tray-flow-head .visual-fault-resident-note {
+  color: var(--status-warning-text);
+  font-weight: 800;
+}
+
+.visual-fault-resident-count {
+  color: var(--status-warning-text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .visual-lab-switchboard {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
@@ -5363,3 +5374,13 @@
     grid-template-columns: 1fr;
   }
 }
+
+.visual-board .visual-flow-step.is-device-fault-cancel strong {
+  display: block;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  -webkit-line-clamp: unset;
+}
+

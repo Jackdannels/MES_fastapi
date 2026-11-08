@@ -260,6 +260,8 @@ Payload：
 | success_id | string | 是 | 成功标识 |
 | fixture_ready_at | string | 是 | 夹具安装完成时间，北京时间 |
 
+盐雾暂停后的恢复准备复用 `fixture-ready` 确认链。HTTP 接口 `/api/laboratory/salt-resume-preparation` 仅接受 `start`、`compare`、`install`、`ready`；`fixtureReady` / `fixture_ready` 必须由匹配安装记录的上位机 MQTT 确认推进。客户端直接调用该 HTTP 接口确认夹具就绪会返回 `409`，不会写入夹具标记或恢复准备确认记录。
+
 ### 5.2 实验开始时间
 
 Topic：
@@ -338,7 +340,9 @@ Payload：
 
 同一 `run_no` 可以包含多个轴向结束事件。上位机应按 `run_no + sub_experiment_code + axis_code` 保证轴向结束事件幂等，不能在首个轴向结束后屏蔽该运行批次的后续轴向。
 
-霉菌取消确认必须同时匹配 `run_no + end_mode + cancel_request_id`。MES 在收到匹配确认前不会释放运行批次、托盘或排程；缺少取消标识的普通 `experiment-ended` 仍按正常实验完成处理。
+霉菌取消确认必须同时匹配 `run_no + end_mode + cancel_request_id`。MES 在收到匹配确认前不会释放运行批次、托盘或排程，待确认期间不接受普通 `experiment-ended` 代替取消确认。
+
+霉菌运行确认取消后，该 `run_no` 的取消状态保持终态。后续指向该旧批次的普通 `experiment-ended` 会被拒绝，即使携带新的 `message_id` 或省略 `message_id`，也不能改写实验、托盘或新运行的状态。重新试验使用新的 `run_no`，其正常完成不受旧批次取消影响。未取消且没有待确认取消请求的有效运行继续按正常实验完成处理。
 
 ### 5.4 实验结果接收
 

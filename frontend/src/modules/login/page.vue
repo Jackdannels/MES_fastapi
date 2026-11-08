@@ -2,8 +2,13 @@
   <section class="login-wrap">
     <div class="login-card">
       <div class="login-brand">七二四新火工区信息化中控管理系统</div>
-      <div class="login-subtitle">统一登录入口</div>
-      <form class="login-form" @submit.prevent="submitLogin">
+      <div class="login-subtitle">{{ fixedModule ? `${fixedModuleLabel}专用登录` : "统一登录入口" }}</div>
+      <div v-if="desktopAutoLogin" class="login-form" data-testid="desktop-auto-login">
+        <p>正在连接{{ fixedModuleLabel }}…</p>
+        <button class="action-btn" type="button" @click="requestDesktopAuthentication">重新连接</button>
+        <button class="action-btn secondary" type="button" @click="requestDesktopClose">关闭</button>
+      </div>
+      <form v-else class="login-form" @submit.prevent="submitLogin">
         <label class="login-field">
           <span>账号</span>
           <input v-model="username" type="text" autocomplete="username" placeholder="请输入账号" />
@@ -12,7 +17,7 @@
           <span>密码</span>
           <input v-model="password" type="password" autocomplete="current-password" placeholder="请输入密码" />
         </label>
-        <label class="login-field">
+        <label v-if="!fixedModule" class="login-field">
           <span>界面</span>
           <select v-model="moduleKey">
             <option value="central">中控管理</option>
@@ -23,7 +28,7 @@
             <option value="laboratory">试验室操作台</option>
           </select>
         </label>
-        <label v-if="moduleKey === 'laboratory'" class="login-field">
+        <label v-if="moduleKey === 'laboratory' && !fixedLaboratory" class="login-field">
           <span>试验室</span>
           <select v-model="selectedLabName">
             <option v-for="option in LABORATORY_OPTIONS" :key="option.key" :value="option.key">
@@ -46,6 +51,8 @@ defineOptions({
 });
 
 import { useRoute, useRouter } from "vue-router";
+import { onMounted } from "vue";
+import { isDesktopAutoLogin, requestDesktopAuthentication, requestDesktopClose } from "@/lib/desktopClient";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import { loginWithCredentials, resolveModuleHome } from "@/auth";
 import { LABORATORY_OPTIONS } from "@/lib/moduleCatalog";
@@ -53,9 +60,11 @@ import { useLoginForm } from "./useLoginForm";
 
 const router = useRouter();
 const route = useRoute();
+const desktopAutoLogin = isDesktopAutoLogin();
+onMounted(() => { if (desktopAutoLogin) requestDesktopAuthentication(); });
 const redirectPath =
   typeof route.query.redirect === "string" && route.query.redirect.trim() ? route.query.redirect.trim() : "";
-const { errorMessage, moduleKey, password, selectedLabName, submitLogin, submitting, username } = useLoginForm({
+const { errorMessage, fixedModule, fixedLaboratory, fixedModuleLabel, moduleKey, password, selectedLabName, submitLogin, submitting, username } = useLoginForm({
   login: loginWithCredentials,
   navigate: (target) => router.replace(target),
   redirectPath,

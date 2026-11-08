@@ -870,6 +870,7 @@ describe("LaboratoryPage runtime", () => {
 
   afterEach(async () => {
     wrapper?.unmount();
+    delete window.__MES_DESKTOP__;
     vi.clearAllTimers();
     await flushPageUpdates();
     wrapper = undefined;
@@ -878,6 +879,16 @@ describe("LaboratoryPage runtime", () => {
     headerActions = undefined;
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  test("uses the compiled desktop room for page requests even when the route points to another room", async () => {
+    window.__MES_DESKTOP__ = { module: "laboratory", version: "1.6.0", labCode: "LAB_HOT_HUMID_2", labName: "高低温湿热二室" };
+    reactiveRoute.query = { lab: "LAB_SALT" };
+    await mountPage();
+    const attendanceUrls = fetch.mock.calls.map(([url]) => decodeURIComponent(String(url)))
+      .filter((url) => url.includes("/api/attendance/labs/"));
+    expect(attendanceUrls.length).toBeGreaterThan(0);
+    expect(attendanceUrls.every((url) => url.includes("/高低温湿热二室/"))).toBe(true);
   });
 
   test("hides the running overlay while the resume-preparation comparison dialog is open", async () => {

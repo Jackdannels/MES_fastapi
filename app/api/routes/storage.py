@@ -1058,7 +1058,14 @@ def complete_running_experiment_for_device_repair(
                 payload=payload if isinstance(payload, dict) else {},
                 completed_at=completed_at,
             )
-            _validate_storage_update(storage, updates, snapshot)
+            # This trusted server operation also produces the completion facts
+            # that authorize an in-place mid/post appearance phase transition.
+            validation_snapshot = {
+                **snapshot,
+                "mes.experiments": updates["mes.experiments"],
+                "mes.experiment_run_trays": updates["mes.experiment_run_trays"],
+            }
+            _validate_storage_update(storage, updates, validation_snapshot)
             storage.write_many(updates)
     except DeviceRunningRepairError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error

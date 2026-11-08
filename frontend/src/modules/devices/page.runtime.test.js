@@ -45,6 +45,7 @@ const maintenancePlanFormState = reactive({
   startAt: "",
   type: "计划维修",
 });
+const repairTargetState = ref({ runningSchedules: [{ experiment_code: "TASK-001-A", id: "schedule-1", task_code: "TASK-001" }] });
 
 vi.mock("./useDevicesPage", () => ({
   useDevicesPage: () => ({
@@ -116,9 +117,7 @@ vi.mock("./useDevicesPage", () => ({
     openDeviceDrawer: openDeviceDrawerMock,
     openMaintenancePlan: openMaintenancePlanMock,
     query: ref(""),
-    runningRepairChoiceDetail: ref({
-      runningSchedules: [{ experiment_code: "TASK-001-A", id: "schedule-1", task_code: "TASK-001" }],
-    }),
+    runningRepairChoiceDetail: repairTargetState,
     runningRepairChoiceOpen: computed(() => devicesState.runningRepairChoiceOpen),
     saveCurrentDevice: saveCurrentDeviceMock,
     saveEditedDevice: saveEditedDeviceMock,
@@ -149,6 +148,7 @@ describe("DevicesPage runtime", () => {
     devicesState.maintenancePlanWarning = "";
     devicesState.maintenancePlanOpen = false;
     devicesState.runningRepairChoiceOpen = false;
+    repairTargetState.value = { runningSchedules: [{ experiment_code: "TASK-001-A", id: "schedule-1", task_code: "TASK-001" }] };
     Object.assign(maintenancePlanFormState, {
       endAt: "",
       note: "",
@@ -243,6 +243,19 @@ describe("DevicesPage runtime", () => {
 
     expect(openEditDeviceMock).toHaveBeenCalledTimes(1);
     expect(openMaintenancePlanMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("shows paused repair trays in the appearance room and both processing choices", async () => {
+    repairTargetState.value = { runningSchedules: [{ id: "S-SALT", task_code: "TASK-SALT", experiment_code: "EXP-SALT", run_status: "实验暂停", tray_locations: [{ tray_code: "TP-SALT", sample_codes: ["SP-1", "SP-2"], location: "外观检测间" }] }] };
+    devicesState.runningRepairChoiceOpen = true;
+    const wrapper = mount(DevicesPage);
+    const details = wrapper.get('[data-testid="running-repair-tray-location"]');
+    expect(details.text()).toContain("TP-SALT");
+    expect(details.text()).toContain("SP-1、SP-2");
+    expect(details.text()).toContain("当前位置：外观检测间");
+    expect(wrapper.get('[data-testid="running-repair-reschedule"]').text()).toContain("取消后重新排程");
+    expect(wrapper.get('[data-testid="running-repair-complete"]').text()).toBe("设为实验已完成");
+    wrapper.unmount();
   });
 
   test("renders maintenance plan type options and action order", async () => {

@@ -1,9 +1,11 @@
-import { mount } from "@vue/test-utils";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { TEST_LABS } from "@/lib/labs";
 import { RETENTION_DEVICE, STATUS_RETENTION, STATUS_SCHEDULED, STATUS_WAITING } from "./model";
 import SchedulePage from "./page.vue";
+
+enableAutoUnmount(afterEach);
 
 const TASKS_KEY = "mes.tasks";
 const DEVICES_KEY = "mes.devices";

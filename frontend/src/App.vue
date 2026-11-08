@@ -46,6 +46,7 @@
           <span class="badge">自动采集</span>
           <span class="badge">固定报告</span>
         </div>
+        <SidebarSystemInfo />
       </div>
     </AppSidebar>
     <main class="main">
@@ -134,8 +135,8 @@
           >
             出错样品处理
           </button>
-          <template v-if="!isFixedTerminal">
-            <button v-app-icon="{ name: 'logout', placement: 'button' }" class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">退出登录</button>
+          <template v-if="desktopCloseAvailable || !isFixedTerminal">
+            <button v-app-icon="{ name: desktopCloseAvailable ? 'close' : 'logout', placement: 'button' }" class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">{{ desktopCloseAvailable ? "关闭" : "退出登录" }}</button>
           </template>
         </div>
       </header>
@@ -146,6 +147,7 @@
   <ModuleExitDialog
     v-if="!isAuthLayout && !isBareModule && !isFixedTerminal"
     :current-module="currentModule"
+    :allow-module-switch="!desktopModule"
     :current-lab-name="currentLabName"
     :open="exitDialogOpen"
     @close="closeExitDialog"
@@ -164,6 +166,7 @@ import { vAppIcon } from "@/directives/appIcon";
 import { useRoute, useRouter } from "vue-router";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import AppSidebar from "@/components/shared/AppSidebar.vue";
+import SidebarSystemInfo from "@/components/shared/SidebarSystemInfo.vue";
 import IntegrationConnectionStatus from "@/components/shared/IntegrationConnectionStatus.vue";
 import CriticalAlarmIndicator from "@/components/shared/CriticalAlarmIndicator.vue";
 import TrayErrorSampleDialog from "@/components/shared/TrayErrorSampleDialog.vue";
@@ -172,6 +175,7 @@ import { useStorageSnapshotRefresh } from "@/composables/useStorageSnapshotRefre
 import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHandling";
 import { useTerminalPresence } from "@/composables/useTerminalPresence";
 import { useTheme } from "@/composables/useTheme";
+import { canCloseDesktopWindow, getDesktopModule, requestDesktopClose } from "@/lib/desktopClient";
 import { findFirstOverdueWaitingTaskCode, hasOverdueWaitingExperiment } from "@/lib/taskOverviewAlerts";
 import { serverNowMs } from "@/lib/serverClock";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -192,6 +196,8 @@ const NAV_ALERT_STORAGE_KEYS = [STORAGE_KEYS.tasks, STORAGE_KEYS.experiments, ST
 const NAV_ALERT_FALLBACK_REFRESH_MS = 60 * 1000;
 
 const route = useRoute();
+const desktopModule = getDesktopModule();
+const desktopCloseAvailable = canCloseDesktopWindow();
 const router = useRouter();
 const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.experiments, STORAGE_KEYS.schedules, STORAGE_KEYS.samples, STORAGE_KEYS.conflicts]);
 const exitDialogOpen = ref(false);
@@ -339,6 +345,7 @@ const refreshPage = () => {
 };
 
 const handleLogout = () => {
+  if (desktopCloseAvailable) { requestDesktopClose(); return; }
   exitDialogOpen.value = true;
 };
 

@@ -100,6 +100,10 @@ export const LabProcessScreen = {
                       { class: ["visual-lab-state", lab.alert ? "is-alert" : "is-ok", lab.healthState ? `is-${lab.healthState}` : ""] },
                       lab.healthLabel || (lab.alert ? "复核" : "正常"),
                     ),
+                    lab.pendingTransferCount ? h("span", {
+                      class: "visual-fault-resident-count",
+                      "data-testid": "visual-fault-resident-count",
+                    }, `待转运 ${lab.pendingTransferCount} 托盘`) : null,
                   ]),
                   h("div", { class: "visual-lab-head-actions" }, [
                     props.interactive
@@ -159,14 +163,20 @@ export const LabProcessScreen = {
                         h("div", { class: "visual-tray-flow-head" }, [
                           h("strong", `任务编号：${tray.taskCode}`),
                           h("span", `托盘编号：${tray.trayCode}`),
-                          tray.displayRemark ? h("span", `备注：${tray.displayRemark}`) : null,
+                          tray.displayRemark ? h("span", {
+                            class: tray.isFaultResident ? "visual-fault-resident-note" : "",
+                            "data-testid": tray.isFaultResident ? "visual-fault-resident-note" : undefined,
+                          }, `备注：${tray.displayRemark}`) : null,
+                          tray.isFaultResident && tray.actualLocation ? h("span", {
+                            "data-testid": "visual-fault-resident-location",
+                          }, `当前位置：${tray.actualLocation}`) : null,
                         ]),
                         h(
                           "div",
                           { class: "visual-flow-line" },
                           (props.compact ? compactFlowSteps(tray.steps) : tray.steps || displayedFlowSteps).map((step, stepIndex) =>
                             h("div", {
-                              class: ["visual-flow-step", stepClass(step), flowStepConnectorClass(stepIndex, flowLayoutColumns)],
+                              class: ["visual-flow-step", stepClass(step), flowStepConnectorClass(stepIndex, flowLayoutColumns), step.kind === "device-fault-cancel" ? "is-device-fault-cancel" : ""],
                               title: resolveVisualFlowStepTitle(step, formatBeijingFlowTime),
                             }, [
                               h("span", { class: "visual-flow-dot" }),
