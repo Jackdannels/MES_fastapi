@@ -956,6 +956,8 @@ def build_storage_sample_item(
             "created_at": format_iso_storage_datetime(tray.get("created_at")),
             "updated_at": format_iso_storage_datetime(tray.get("updated_at")),
         }
+        if tray.get("unbind_time"):
+            tray_item["unbind_time"] = format_iso_storage_datetime(tray.get("unbind_time"))
         target_sub_experiment_code = normalize_text(
             tray.get("target_sub_experiment_code") or tray.get("targetSubExperimentCode")
         )

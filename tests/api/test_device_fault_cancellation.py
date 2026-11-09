@@ -75,14 +75,30 @@ def test_fault_status_alone_cannot_unlock_storage(monkeypatch):
 
 
 def test_fault_canceled_tray_can_compare_next_experiment(monkeypatch):
+    from app.api.routes import laboratory
+
     snapshot = fault_snapshot()
     snapshot.update(cancel(snapshot))
     client, storage = build_client(monkeypatch, snapshot)
+    monkeypatch.setattr(laboratory, "get_storage_backend", lambda: storage)
+    client.app.include_router(laboratory.router)
     samples = deepcopy(snapshot["mes.samples"])
     samples[0].update(status="已到达实验室", flow_status="已到达实验室", location="振动一室")
     samples[0]["trays"][0].update(status="已到达实验室", target_lab="振动一室", target_experiment_code="NEXT", target_schedule_id="S2")
     response = client.put("/api/storage/mes.samples", json=samples)
-    assert response.status_code == 200, response.json()
+    assert response.status_code == 409, response.json()
+    assert storage.read("mes.samples") == snapshot["mes.samples"]
+    assert client.post("/api/storage/rooms/staging/trays/TP/stock-in", json={}).status_code == 200
+    dispatch = client.post("/api/storage/rooms/staging/trays/TP/stock-out", json={
+        "targetLab": "振动一室", "targetExperimentCode": "NEXT", "scheduleId": "S2",
+    })
+    assert dispatch.status_code == 200, dispatch.text
+    response = client.post("/api/laboratory/operations", json={
+        "operationType": "compare", "taskCode": "T", "experimentCode": "NEXT",
+        "scheduleId": "S2", "labName": "振动一室", "trayCodes": ["TP"],
+    })
+    assert response.status_code == 200, response.text
+    assert storage.read("mes.samples")[0]["status"] == "已到达实验室"
     assert storage.read("mes.experiments")[0]["status"] == "待排程"
 
 

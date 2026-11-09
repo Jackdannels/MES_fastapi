@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
@@ -40,7 +40,6 @@ from app.services.salt_spray_pause import (
     PAUSED,
     RUNNING,
     SALT_LAB_CODE,
-    TERMINATION_TYPES,
 )
 from app.services.salt_spray_resume_preparation import (
     RESUME_PREPARATION_FIXTURE_READY,
@@ -204,7 +203,7 @@ class SaltResumeRequest(BaseModel):
 
 
 class SaltStopRequest(SaltResumeRequest):
-    termination_type: str = Field(validation_alias=AliasChoices("termination_type", "terminationType"))
+    termination_type: Literal["completion_criteria"] = Field(validation_alias=AliasChoices("termination_type", "terminationType"))
     termination_reason: str = Field(min_length=1, max_length=500, validation_alias=AliasChoices("termination_reason", "terminationReason"))
 
     @field_validator("termination_type", "termination_reason", mode="before")
@@ -723,8 +722,6 @@ def publish_salt_stop_request(request: SaltStopRequest) -> dict[str, Any]:
     )
     if not pause or str(pause.get("run_no") or "").strip() != request.run_no or str(pause.get("status") or "").strip() != PAUSED:
         raise HTTPException(status_code=409, detail="当前实验不存在可停止的暂停区间")
-    if request.termination_type not in TERMINATION_TYPES:
-        raise HTTPException(status_code=422, detail="termination_type 仅支持 completion_criteria 或 abnormal")
     try:
         validate_salt_early_stop_allowed(
             {"staging_events": storage.read("mes.staging_events")},

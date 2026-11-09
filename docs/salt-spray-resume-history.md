@@ -10,3 +10,11 @@
 - 多次暂停时使用当前运行的最新暂停上下文，保留此前真实暂存时间；恢复运行后也使用相同历史判断。
 
 回归位于frontend/src/modules/samples/saltSprayResumeHistory.test.js，覆盖无暂存历史、真实历史、仓储事件、缺失时间、多次暂停、多托盘、跨任务和多试验，以及生产组件渲染。
+
+## 盐雾提前结束的唯一处理方式
+
+- 当前项目只支持正常提前完成：`POST /api/mq/laboratory/stop-request` 的 `termination_type` 固定为 `completion_criteria`，字段与 MQTT topic 不变。
+- MES 下发 `experiment-stop-request`，匹配的 `experiment-stopped` 确认后执行正常完成，已在外观间的托盘按实验后外观存放继续流转。
+- 旧 `abnormal` 分支已删除：HTTP 请求返回 422；绕过 HTTP 的发布调用、旧待确认命令以及带异常停止类型的 MQTT 确认也不能创建该状态。上位机模拟器不再自动或手动发送此类型。
+- 设备故障仍从维修入口选择“取消后重新排程”或“设为实验已完成”；霉菌专用取消保持原流程。
+- 已存在的历史异常终止记录不批量删除、不改判正常完成；保留拒绝迟到正常完成的只读保护，不能再通过业务接口创建异常提前终止。

@@ -197,6 +197,21 @@ describe("useSaltSprayPauseFlow", () => {
     mounted.wrapper.unmount();
   });
 
+  test("does not accept legacy abnormal state as confirmation of normal early completion", async () => {
+    vi.useFakeTimers();
+    const mounted = mountFlow({ paused: true });
+    mounted.flow.stopReason.value = "达到外观检查终止条件";
+    await mounted.flow.confirmStop();
+    expect(mounted.flow.controlAwaitingConfirmation.value?.action).toBe("stop");
+    mounted.experimentRuns.value[0].status = "实验异常终止";
+    await nextTick();
+    expect(mounted.flow.controlAwaitingConfirmation.value?.action).toBe("stop");
+    mounted.experimentRuns.value[0].status = "实验已完成";
+    await nextTick();
+    expect(mounted.flow.controlAwaitingConfirmation.value).toBeNull();
+    mounted.wrapper.unmount();
+  });
+
   test("disables and defensively rejects early stop after resume comparison completes", async () => {
     const mounted = mountFlow({ paused: true });
     expect(mounted.flow.canStopPausedExperiment.value).toBe(true);

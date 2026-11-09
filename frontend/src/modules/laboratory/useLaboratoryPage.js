@@ -561,7 +561,6 @@ function useLaboratoryPage(options = {}) {
     isHostlessFixtureLab,
     isMqttHostInterfaceMode,
     publishLaboratoryMqSafely,
-    usesMqttExperimentEnd,
   } = createLaboratoryDeviceInterface({
     confirmedModalOpen,
     fixtureConfirmModalOpen,
@@ -573,7 +572,6 @@ function useLaboratoryPage(options = {}) {
   const clearHostlessTimers = () => {
     clearHostlessFixtureReadyTimer();
   };
-  const usesMqttCompletion = () => isMqttHostInterfaceMode() && usesMqttExperimentEnd();
   saltSprayPauseFlow = useSaltSprayPauseFlow({
     currentTask,
     experimentRunPauses,
@@ -944,7 +942,6 @@ function useLaboratoryPage(options = {}) {
     buildReadyPayload,
     persistCurrentTaskStep,
     persistFixtureReadyForTask,
-    persistRunningExperimentCompletion,
   } = useLaboratoryOperationPersistence({
     applyExperimentStartAttendance,
     currentTask,
@@ -965,20 +962,12 @@ function useLaboratoryPage(options = {}) {
     confirmCompleteCurrentAxis,
   } = useLaboratoryCompletionFlow({
     axisContinuation,
-    clearRunningModalRestoreTimer,
     completionAwaitingConfirmation,
     completionConfirmationError,
     completionSubmitting,
-    completedRunningExperiment,
     currentTask,
-    experimentRunSteps,
-    experimentRunTrays,
-    experimentRuns,
-    experiments,
     flushPendingRealtimeRefresh: () => flushPendingRealtimeRefresh(),
     laboratoryConfig,
-    load,
-    persistRunningExperimentCompletion,
     requestMqttExperimentEnd: (payload) => publishLaboratoryMqSafely(
       publishLaboratoryEndRequest,
       payload,
@@ -986,10 +975,7 @@ function useLaboratoryPage(options = {}) {
     ),
     runWithAttendance,
     runningExperiment,
-    runningModalVisible,
-    samples,
     schedules,
-    usesMqttCompletion,
   });
   watch(
     completionAwaitingConfirmation,

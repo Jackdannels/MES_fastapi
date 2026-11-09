@@ -72,15 +72,15 @@ def test_employee_update_requires_admin_and_preserves_login_history_and_work_tim
     ({"roleName": "管理员"}, "请选择有效的员工角色"),
 ])
 def test_invalid_employee_edits_are_not_persisted(client, changes, expected):
-    user = client.get("/api/attendance/users").json()[0]
+    user = client.get("/api/attendance/work-times").json()[0]
     response = client.put(f"/api/attendance/users/{user['id']}", json={**ADMIN, **changes})
     assert response.status_code in {400, 409}
     assert response.json()["detail"] == expected
-    assert client.get("/api/attendance/users").json()[0] == user
+    assert client.get("/api/attendance/work-times").json()[0] == user
 
 
 def test_password_and_log_errors_are_chinese(client):
-    user = client.get("/api/attendance/users").json()[0]
+    user = client.get("/api/attendance/work-times").json()[0]
     response = client.post(f"/api/attendance/users/{user['id']}/password/reset", json={**ADMIN, "newPassword": ""})
     assert response.status_code == 400
     assert response.json()["detail"] == "请输入新密码"
@@ -90,7 +90,7 @@ def test_password_and_log_errors_are_chinese(client):
 
 
 def test_role_only_update_and_missing_employee(client):
-    user = client.get("/api/attendance/users").json()[0]
+    user = client.get("/api/attendance/work-times").json()[0]
     response = client.put(f"/api/attendance/users/{user['id']}", json={**ADMIN, "roleName": "试验组长"})
     assert response.status_code == 200
     assert response.json()["username"] == user["username"]

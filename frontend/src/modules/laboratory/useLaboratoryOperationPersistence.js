@@ -1,6 +1,5 @@
 import {
   applyLaboratoryOperation,
-  completeLaboratoryExperiment,
 } from "@/lib/laboratoryApi";
 import { formatLocalDateTime } from "@/lib/dateTime";
 import { SAMPLES_UPDATED_EVENT } from "@/modules/samples/sampleEvents";
@@ -152,20 +151,6 @@ function useLaboratoryOperationPersistence({
     return persistOperation;
   };
 
-  const persistRunningExperimentCompletion = (payload) => {
-    const writeCompletion = () => completeLaboratoryExperiment(payload);
-    const persistOperation = samplesPersistQueue
-      ? samplesPersistQueue.catch(() => {}).then(writeCompletion)
-      : writeCompletion();
-    const trackedOperation = persistOperation.finally(() => {
-      if (samplesPersistQueue === trackedOperation) {
-        samplesPersistQueue = null;
-      }
-    });
-    samplesPersistQueue = trackedOperation;
-    return persistOperation;
-  };
-
   const operationTypeForStatus = (nextStatus) => {
     const normalizedStatus = normalizeText(nextStatus);
     if (normalizedStatus === LAB_COMPARE_STATUS) {
@@ -246,7 +231,6 @@ function useLaboratoryOperationPersistence({
     buildReadyPayload,
     persistCurrentTaskStep,
     persistFixtureReadyForTask,
-    persistRunningExperimentCompletion,
   };
 }
 

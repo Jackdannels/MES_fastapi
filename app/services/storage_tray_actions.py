@@ -335,6 +335,52 @@ def find_samples_for_tray(samples: list[Any], tray_code: str) -> list[tuple[dict
     return matches
 
 
+def sample_task_code(sample: dict[str, Any]) -> str:
+    # A sample's code identifies the sample, never its owning task.
+    return normalize_text(sample.get("task_code") or sample.get("taskCode") or sample.get("task_no") or sample.get("taskNo"))
+
+
+def tray_binding_is_current(sample: dict[str, Any], tray: dict[str, Any]) -> bool:
+    if tray.get("unbind_time") or tray.get("unbindTime"):
+        return False
+    return (tray_status(tray) or normalize_text(sample.get("status") or sample.get("flow_status"))) != RETURNED_STATUS
+
+
+def resolve_tray_action_matches(
+    samples: list[Any],
+    tray_code: str,
+    *,
+    expected_task_code: str | None = None,
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Reject ambiguous current loads before looking at workflow state or mutating anything."""
+    matches = find_samples_for_tray(samples, tray_code)
+    current = [(sample, tray) for sample, tray in matches if tray_binding_is_current(sample, tray)]
+    if matches and not current:
+        raise StorageTrayActionError("该托盘当前没有有效装载，不能执行出入库或厂家收回。", status_code=409)
+    tasks = {sample_task_code(sample) for sample, _tray in current}
+    if len(tasks) > 1 or (current and not next(iter(tasks))):
+        raise StorageTrayActionError("托盘号存在跨任务归属冲突或归属缺失，请核对数据后重试。", status_code=409)
+    if current and expected_task_code is not None and tasks != {normalize_text(expected_task_code)}:
+        raise StorageTrayActionError("托盘号当前装载任务与所属任务不一致，存在归属冲突，请核对数据后重试。", status_code=409)
+    return current
+
+
+def tray_task_context(snapshot: dict[str, Any], task_code: str) -> dict[str, Any]:
+    """Keep old tasks' run/pause/event evidence out of a reused tray's decisions.
+
+    Use this view only for workflow checks; updates still preserve the original
+    collections, and laboratory occupancy must still use its global snapshot.
+    """
+    context = dict(snapshot)
+    for key in (
+        SAMPLES_KEY, SCHEDULES_KEY, EXPERIMENTS_KEY, EXPERIMENT_RUN_TRAYS_KEY,
+        "mes.experiment_runs", "mes.experiment_run_pauses", STAGING_EVENTS_KEY,
+    ):
+        context[key] = [row for row in as_list(snapshot.get(key))
+                        if isinstance(row, dict) and sample_task_code(row) in {"", task_code}]
+    return context
+
+
 def primary_status(matches: list[tuple[dict[str, Any], dict[str, Any]]]) -> str:
     for sample, tray in matches:
         status = tray_status(tray) or normalize_text(sample.get("status") or sample.get("flow_status"))
@@ -345,7 +391,7 @@ def primary_status(matches: list[tuple[dict[str, Any], dict[str, Any]]]) -> str:
 
 def primary_task_code(matches: list[tuple[dict[str, Any], dict[str, Any]]]) -> str:
     for sample, _tray in matches:
-        task_code = task_code_value(sample)
+        task_code = sample_task_code(sample)
         if task_code:
             return task_code
     return ""
@@ -355,6 +401,7 @@ def update_tray_samples(
     samples: list[Any],
     tray_code: str,
     *,
+    task_code: str,
     history_action: str,
     history_detail: str,
     location: str,
@@ -372,6 +419,8 @@ def update_tray_samples(
     time: str,
 ) -> list[dict[str, Any]]:
     normalized_tray_code = normalize_text(tray_code)
+    normalized_task_code = normalize_text(task_code)
+    resolve_tray_action_matches(samples, normalized_tray_code, expected_task_code=normalized_task_code)
     updated_samples: list[dict[str, Any]] = []
     for sample in samples:
         if not isinstance(sample, dict):
@@ -383,7 +432,11 @@ def update_tray_samples(
             if not isinstance(tray, dict):
                 continue
             next_tray = dict(tray)
-            if tray_code_value(next_tray) == normalized_tray_code:
+            if (
+                tray_code_value(next_tray) == normalized_tray_code
+                and sample_task_code(sample) == normalized_task_code
+                and tray_binding_is_current(sample, tray)
+            ):
                 touched = True
                 next_tray["status"] = status
                 next_tray["updated_at"] = time
@@ -462,16 +515,17 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
     config = room_config(room)
     samples = [deepcopy(sample) for sample in as_list(snapshot.get(SAMPLES_KEY)) if isinstance(sample, dict)]
     events = [deepcopy(event) for event in as_list(snapshot.get(STAGING_EVENTS_KEY)) if isinstance(event, dict)]
-    matches = find_samples_for_tray(samples, tray_code)
+    matches = resolve_tray_action_matches(samples, tray_code)
     if not matches:
         raise StorageTrayActionError("未找到对应的出库托盘。", status_code=404)
     current_status = primary_status(matches)
     normalized_tray_code = normalize_text(tray_code)
     task_code = primary_task_code(matches)
+    context = tray_task_context(snapshot, task_code)
     if (
         config["event_room"] == APPEARANCE_ROOM
         and current_status in {"实验已完成", "实验完成", "实验已经完成"}
-        and completed_mid_experiment_appearance_stock_is_recoverable(snapshot, tray_code=tray_code)
+        and completed_mid_experiment_appearance_stock_is_recoverable(context, tray_code=tray_code)
     ):
         # Compatibility for records produced before normal completion preserved
         # the tray's physical appearance-room storage state.
@@ -492,7 +546,7 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
         raise StorageTrayActionError("当前霉菌取消恢复记录已失效，请刷新后重试。", status_code=409)
 
     mid_context = (
-        resolve_mid_experiment_appearance_context(snapshot, tray_code)
+        resolve_mid_experiment_appearance_context(context, tray_code)
         if config["event_room"] == APPEARANCE_ROOM and current_status == MID_EXPERIMENT_APPEARANCE_STATUS
         else None
     )
@@ -607,6 +661,7 @@ def build_stock_out_updates(snapshot: dict[str, Any], *, room: str, tray_code: s
     updated_samples = update_tray_samples(
         samples,
         normalized_tray_code,
+        task_code=task_code,
         history_action=config["history_stock_out_action"],
         history_detail=history_detail,
         location=location,
@@ -651,7 +706,7 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
     config = room_config(room)
     samples = [deepcopy(sample) for sample in as_list(snapshot.get(SAMPLES_KEY)) if isinstance(sample, dict)]
     events = [deepcopy(event) for event in as_list(snapshot.get(STAGING_EVENTS_KEY)) if isinstance(event, dict)]
-    matches = find_samples_for_tray(samples, tray_code)
+    matches = resolve_tray_action_matches(samples, tray_code)
     if not matches:
         raise StorageTrayActionError("未找到对应的入库托盘。", status_code=404)
     current_status = primary_status(matches)
@@ -659,6 +714,7 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
         raise StorageTrayActionError(config["duplicate_stock_in_error"], status_code=409)
     normalized_tray_code = normalize_text(tray_code)
     task_code = primary_task_code(matches)
+    context = tray_task_context(snapshot, task_code)
     canceled_mold_context = (
         canceled_mold_recovery_context(
             snapshot,
@@ -695,10 +751,10 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
         current_status,
         payload,
     )
-    mid_context = resolve_mid_experiment_appearance_context(snapshot, tray_code) if config["event_room"] == APPEARANCE_ROOM else None
+    mid_context = resolve_mid_experiment_appearance_context(context, tray_code) if config["event_room"] == APPEARANCE_ROOM else None
     mid_action = (
         latest_mid_experiment_appearance_action(
-            snapshot,
+            context,
             tray_code=normalize_text(tray_code),
             run_no=mid_context["run_no"],
             pause_no=mid_context["pause_no"],
@@ -794,6 +850,7 @@ def build_stock_in_updates(snapshot: dict[str, Any], *, room: str, tray_code: st
     updated_samples = update_tray_samples(
         samples,
         normalized_tray_code,
+        task_code=task_code,
         history_action=config["history_stock_in_action"],
         history_detail=f"{normalized_tray_code} {status}",
         location=location,
@@ -825,7 +882,7 @@ def build_manufacturer_return_updates(snapshot: dict[str, Any], *, room: str, tr
     samples = [deepcopy(sample) for sample in as_list(snapshot.get(SAMPLES_KEY)) if isinstance(sample, dict)]
     tasks = [deepcopy(task) for task in as_list(snapshot.get(TASKS_KEY)) if isinstance(task, dict)]
     events = [deepcopy(event) for event in as_list(snapshot.get(STAGING_EVENTS_KEY)) if isinstance(event, dict)]
-    matches = find_samples_for_tray(samples, tray_code)
+    matches = resolve_tray_action_matches(samples, tray_code)
     if not matches:
         raise StorageTrayActionError("未找到对应的出库托盘。", status_code=404)
     current_status = primary_status(matches)
@@ -838,6 +895,7 @@ def build_manufacturer_return_updates(snapshot: dict[str, Any], *, room: str, tr
     updated_samples = update_tray_samples(
         samples,
         normalized_tray_code,
+        task_code=task_code,
         history_action="厂家收回",
         history_detail=f"{normalized_tray_code} 厂家收回",
         location=RETURNED_STATUS,
@@ -875,14 +933,21 @@ def build_manufacturer_return_updates(snapshot: dict[str, Any], *, room: str, tr
     return updates
 
 
-def summarize_tray_row(samples: list[Any], tray_code: str) -> dict[str, Any]:
+def summarize_tray_row(
+    samples: list[Any], tray_code: str, *, task_code: str = "", sample_codes: set[str] | None = None,
+) -> dict[str, Any]:
     matches = find_samples_for_tray(samples, tray_code)
+    if task_code:
+        matches = [(sample, tray) for sample, tray in matches if sample_task_code(sample) == normalize_text(task_code)]
+    if sample_codes is not None:
+        matches = [(sample, tray) for sample, tray in matches
+                   if normalize_text(sample.get("code") or sample.get("sample_code") or sample.get("id")) in sample_codes]
     quantity = len(matches)
     sample, tray = matches[0] if matches else ({}, {})
     return {
         "location": normalize_text(sample.get("location")),
         "quantity": quantity,
         "status": tray_status(tray) or normalize_text(sample.get("status") or sample.get("flow_status")),
-        "taskCode": task_code_value(sample),
+        "taskCode": sample_task_code(sample),
         "trayCode": normalize_text(tray_code),
     }

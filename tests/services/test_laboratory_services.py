@@ -14,7 +14,6 @@ from app.services.laboratory_axis_steps import (
 )
 from app.services.laboratory_operations import apply_laboratory_task_operation
 from app.services.laboratory_start import start_storage_laboratory_experiment
-from app.services.laboratory_termination import terminate_storage_laboratory_experiment
 from app.services.storage_tray_actions import (
     StorageTrayActionError,
     build_stock_out_updates,
@@ -147,83 +146,6 @@ def test_laboratory_operation_records_tray_code_in_comparison_history():
     assert "TP-1" in history["detail"]
     assert "振动试验" in history["detail"]
 
-
-def test_abnormal_termination_closes_run_trays_and_waiting_resume_samples_without_completing_task():
-    snapshot = {
-        "tasks": [{"code": "TASK-SALT", "status": "任务进行中"}],
-        "experiments": [
-            {
-                "task_code": "TASK-SALT",
-                "experiment_code": "EXP-SALT",
-                "experiment_name": "盐雾试验",
-                "status": "实验进行中",
-            }
-        ],
-        "schedules": [
-            {
-                "id": "SCHEDULE-SALT",
-                "task_code": "TASK-SALT",
-                "experiment_code": "EXP-SALT",
-                "status": "实验进行中",
-            }
-        ],
-        "experiment_runs": [
-            {
-                "run_no": "RUN-SALT",
-                "schedule_id": "SCHEDULE-SALT",
-                "task_code": "TASK-SALT",
-                "experiment_code": "EXP-SALT",
-                "status": "实验暂停",
-            }
-        ],
-        "experiment_run_trays": [
-            {
-                "run_no": "RUN-SALT",
-                "task_code": "TASK-SALT",
-                "experiment_code": "EXP-SALT",
-                "tray_code": tray_code,
-                "run_tray_status": "实验进行中",
-            }
-            for tray_code in ("TP-1", "TP-2")
-        ],
-        "experiment_samples": [
-            {"task_code": "TASK-SALT", "experiment_code": "EXP-SALT", "sample_code": sample_code}
-            for sample_code in ("SP-1", "SP-2")
-        ],
-        "samples": [
-            _sample("SP-1", "TASK-SALT", "TP-1", "等待恢复实验", "盐雾试验室"),
-            _sample("SP-2", "TASK-SALT", "TP-2", "等待恢复实验", "盐雾试验室"),
-        ],
-    }
-
-    result = terminate_storage_laboratory_experiment(
-        snapshot,
-        task_code="TASK-SALT",
-        experiment_code="EXP-SALT",
-        run_no="RUN-SALT",
-        terminated_at="2026-08-31 20:11:52",
-        termination_reason="设备故障",
-    )
-
-    assert result["experimentRuns"][0]["status"] == "实验异常终止"
-    assert result["experimentRuns"][0]["ended_at"] == "2026-08-31 20:11:52"
-    assert {
-        relation["run_tray_status"] for relation in result["experimentRunTrays"]
-    } == {"实验异常终止"}
-    assert {sample["status"] for sample in result["samples"]} == {"实验异常终止"}
-    assert {
-        tray["status"]
-        for sample in result["samples"]
-        for tray in sample["trays"]
-    } == {"实验异常终止"}
-    assert result["experiments"][0]["status"] == "实验异常终止"
-    assert result["schedules"][0]["status"] == "实验异常终止"
-    assert result["tasks"][0]["status"] != "任务已完成"
-    history = result["samples"][0]["history"][0]
-    assert history["action"] == "异常终止实验"
-    assert history["time"] == "2026-08-31 20:11:52"
-    assert history["tray_code"] == "TP-1"
-    assert "设备故障" in history["detail"]
 
 def test_laboratory_compare_rejects_tray_still_stocked_in_appearance_room():
     snapshot = {

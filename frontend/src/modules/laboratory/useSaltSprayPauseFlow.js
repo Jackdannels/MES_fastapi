@@ -5,7 +5,6 @@ import { findActivePause } from "./saltSprayPausePresentation";
 
 const SALT_SPRAY_LAB_CODE = "LAB_SALT";
 const CONTROL_CONFIRMATION_TIMEOUT_MS = 16_000;
-const ABNORMAL_TERMINATION_STATUSES = new Set(["实验异常终止", "异常终止"]);
 
 const resolveRunNo = (row) => normalizeText(row?.run_no || row?.runNo || row?.id);
 
@@ -336,7 +335,7 @@ function useSaltSprayPauseFlow({
       ? status === "实验暂停"
       : pending.action === "resume"
         ? status === "实验进行中" || status === "实验中"
-        : COMPLETED_EXPERIMENT_RUN_STATUSES.has(status) || ABNORMAL_TERMINATION_STATUSES.has(status);
+        : COMPLETED_EXPERIMENT_RUN_STATUSES.has(status);
     if (!confirmed) {
       return;
     }

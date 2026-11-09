@@ -6,6 +6,7 @@
   "timeFormat": "北京时间 YYYY-MM-DD HH:mm:ss",
   "topicPrefix": "mes/v1",
   "scheduleContext": "排程编号和排程快照仅保存在 MES 内部，MQTT 报文不传输；上位机按 fixture_install_id 和 run_no 回传对应事件",
+  "eventIdentity": "事件类型以 MQTT Topic 为准；payload.message_type/event 如提供必须一致。开始、结束、结果和盐雾暂停/恢复/停止确认必须回传已有 run_no，不按试验间回退选批次。",
   "laboratoryInterfaceExceptions": {
     "LAB_HOT_HUMID_2": {
       "hostless": ["INSTALL_FIXTURE", "FIXTURE_READY"],
@@ -125,6 +126,7 @@
       "topic": "mes/v1/labs/{lab_code}/events/experiment-result",
       "payload": {
         "lab_code": "试验间编码",
+        "run_no": "必填；原样回传 MES 下发的实验运行批次号",
         "result_at": "2026-05-16 17:31:00",
         "result_package": {
           "conclusion": "PASS",

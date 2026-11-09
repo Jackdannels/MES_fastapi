@@ -287,6 +287,42 @@ class MySQLMesStorageBackend(StorageBackend):
                 row = cursor.fetchone()
         return normalize_text(row.get("task_no") if isinstance(row, dict) else row[0] if row else "")
 
+    def read_tray_bindings(self, tray_code: str) -> list[dict[str, Any]]:
+        """Read all sample memberships of one tray before applying a task scope.
+
+        The tray's unique row cannot prove that every associated sample belongs
+        to its task. Keep returned/unbound rows for the shared ownership policy.
+        """
+        normalized_tray_code = normalize_text(tray_code)
+        if not normalized_tray_code:
+            return []
+        with self._connect() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT sample.sample_no, task.task_no, sample.sample_status, sample.flow_status,
+                           item.status AS binding_status, item.unbind_time
+                    FROM biz_tray AS tray
+                    INNER JOIN biz_tray_item AS item ON item.tray_id = tray.tray_id
+                    INNER JOIN biz_sample AS sample ON sample.sample_id = item.sample_id
+                    LEFT JOIN biz_task AS task ON task.task_id = sample.task_id
+                    WHERE tray.tray_no = %s
+                    """,
+                    (normalized_tray_code,),
+                )
+                rows = cursor.fetchall()
+        return [{
+            "code": normalize_text(row.get("sample_no")),
+            "task_code": normalize_text(row.get("task_no")),
+            "status": normalize_experiment_status_text(row.get("sample_status")),
+            "flow_status": normalize_experiment_status_text(row.get("flow_status")),
+            "trays": [{
+                "tray_code": normalized_tray_code,
+                "status": normalize_experiment_status_text(row.get("binding_status")),
+                "unbind_time": row.get("unbind_time"),
+            }],
+        } for row in rows]
+
     def _ensure_schema_extensions(self) -> None:
         if self._schema_initialized:
             return

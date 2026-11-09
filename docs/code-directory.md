@@ -25,7 +25,6 @@
 
 - `app/api/auth_session.py`：后端认证会话辅助逻辑。
 - `app/api/routes/auth.py`：登录和认证接口。
-- `app/api/routes/permissions.py`：权限数据接口。
 - `app/services/fixed_terminal_auth.py`：固定终端认证规则。
 - `frontend/src/auth.js`：前端认证、会话和模块切换处理。
 - `frontend/src/modules/login/`：登录页面、登录表单状态和样式。
@@ -69,9 +68,6 @@
 
 ## 排程与实验进度模块
 
-- `app/api/routes/workflows.py`：工作流相关基础接口。
-- `app/api/routes/technologies.py`：工艺数据接口。
-- `app/api/routes/manufactureplan.py`：生产计划数据接口。
 - `frontend/src/modules/schedule/`：排班页面模块。
 - `frontend/src/modules/schedule/model.js`：排班模型兼容入口。
 - `frontend/src/modules/schedule/sharedModel.js`：时段、时间、重叠判断和甘特槽等共享规则。
@@ -111,9 +107,6 @@
 
 ## 样品与托盘流转模块
 
-- `app/api/routes/warehouse.py`：仓储业务数据接口。
-- `app/api/routes/productcatalog.py`：产品目录数据接口。
-- `app/api/routes/quality.py`：质量数据接口。
 - `frontend/src/modules/samples/`：样品列表、托盘管理和全流程状态模块。
 - `frontend/src/modules/samples/useSamplesFlow.js`：样品页面组合式状态入口。
 - `frontend/src/modules/samples/SamplesManagementPanel.vue`：样品管理面板。
@@ -199,7 +192,7 @@
 - `frontend/src/modules/laboratory/laboratoryComparisonFeedback.js`：托盘比对失败反馈生成。
 - `frontend/src/modules/laboratory/scheduleCompletion.js`：排程完成状态处理。
 - `frontend/src/modules/laboratory/useLaboratoryPage.js`：实验室页面组合式状态入口。
-- `frontend/src/modules/laboratory/useLaboratoryOperationPersistence.js`：比对、安装、就绪和完成的持久化编排。
+- `frontend/src/modules/laboratory/useLaboratoryOperationPersistence.js`：比对、安装和就绪的持久化编排。
 - `frontend/src/modules/laboratory/useLaboratoryCompletionFlow.js`：实验完成、轴向继续和完成弹窗流程。
 - `frontend/src/modules/laboratory/useLaboratoryResetFlow.js`：任务撤回确认和响应落地流程。
 - `frontend/src/modules/laboratory/useLaboratoryFixtureConfirmation.js`：夹具确认、MQTT 等待和 hostless 自动确认计时。
@@ -228,7 +221,7 @@
 
 ## 设备与终端控制模块
 
-- `app/api/routes/device.py`：设备数据接口。
+- `app/api/routes/resource_inventory.py`：设备与资源库存读取接口；设备配置通过受业务校验的 storage 接口维护。
 - `app/api/routes/terminal_control.py`：终端状态、管理列表和远程命令接口。
 - `app/services/terminal_control.py`：终端心跳、在线状态、命令队列和权限判定。
 - `app/services/storage_maintenance_policy.py`：设备维护相关存储规则。
@@ -266,6 +259,7 @@
 
 - `app/api/routes/storage.py`：快照读取、持久化、事务内更新和更新通知接口。
 - `app/services/storage_atomic.py`：存储原子更新和事务辅助逻辑。
+- `app/services/storage_public_write_policy.py`：公共快照写入白名单、实验状态与后台运行事实的入口约束。
 - `app/services/storage_update_bus.py`：存储更新事件发布。
 - `app/services/storage_read_helpers.py`：文本、时间、托盘、任务、排程和轴范围的只读归一化。
 - `app/services/storage_policies.py`：存储业务策略公共入口。
@@ -276,7 +270,6 @@
 - `app/services/capacity_diagnostics.py`：重点表、快照体积和 MySQL 连接池容量诊断，供 `/health/capacity` 使用。
 - `app/core/storage_contract.py`：存储 key、运行后端常量和最小存储契约。
 - `app/core/storage_backend.py`：统一存储后端、快照规范化和后端选择。
-- `app/core/store.py`：本地存储入口。
 - `app/core/mysql_storage_backend.py`：MySQL 存储后端兼容入口和读写编排。
 - `app/core/mysql_storage_codecs.py`：MySQL 文本、时间、数字、布尔和 meta 编解码。
 - `app/core/mysql_storage_mappers.py`：任务、实验、排班、设备、数据流、样品和托盘行映射。
@@ -328,23 +321,10 @@
 - `app/core/demo_data_reset.py`：演示数据重置。
 - `app/core/legacy_fallback.py`：旧数据兜底命中记录。
 - `app/core/local_run.py`：本地运行辅助。
-- `app/api/routes/crud_factory.py`：通用 CRUD 路由工厂。
-- `app/api/routes/companydepartment.py`：公司和部门数据接口。
-- `app/api/routes/customer.py`：客户数据接口。
-- `app/api/routes/person.py`：人员数据接口。
-- `app/api/routes/material.py`：物料数据接口。
-- `app/api/routes/report.py`：报告数据接口。
-- `app/api/routes/yt_barcode.py`：条码数据接口。
-- `app/api/routes/yt_file.py`：文件数据接口。
-- `app/api/routes/yt_log.py`：日志数据接口。
-- `app/api/routes/yt_object.py`：对象数据接口。
-- `app/api/routes/yt_report.py`：外部报告数据接口。
-- `app/api/routes/yt_timesheet.py`：工时数据接口。
 - `frontend/src/modules/data/`：数据管理页面模块。
 - `frontend/src/modules/system/`：系统设置页面模块。
 - `tests/api/test_master_data.py`：主数据 API 测试。
 - `tests/api/test_system_time.py`：系统时间 API 测试。
-- `tests/api/test_crud_factory.py`：通用 CRUD 路由测试。
 - `tests/core/`：配置、主数据、本地运行和存储核心测试。
 - `frontend/src/modules/data/*.test.js`：数据管理模块测试。
 - `frontend/src/modules/system/*.test.js`：系统设置模块测试。
@@ -355,6 +335,7 @@
 - `tests/api/test_health.py`：健康检查测试。
 - `tests/api/test_module_registry.py`：模块注册测试。
 - `tests/api/test_router_registry.py`：API 路由注册测试。
+- `tests/api/test_current_api_contract.py`：当前版本已移除接口、MQTT 批次身份与公共存储写入边界回归。
 - `tests/api/test_cors.py`：跨域配置测试。
 - `tests/web/`：SPA 和 Web 路由测试。
 - `frontend/src/App.runtime.test.js`：前端根应用运行时测试。

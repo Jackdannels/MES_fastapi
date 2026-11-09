@@ -357,6 +357,7 @@ def build_tray_item_rows(
                     "position_no": f"P{index:02d}",
                     "quantity": quantity,
                     "bind_time": parse_storage_datetime(tray_payload.get("created_at")) or parse_storage_datetime(tray_payload.get("updated_at")),
+                    "unbind_time": parse_storage_datetime(tray_payload.get("unbind_time") or tray_payload.get("unbindTime")),
                     "status": normalize_experiment_status_text(tray_payload.get("status")) or sample_status_by_code.get(sample_code) or "ACTIVE",
                     "created_at": parse_storage_datetime(tray_payload.get("created_at")),
                     "updated_at": parse_storage_datetime(tray_payload.get("updated_at")),
@@ -373,7 +374,7 @@ def insert_tray_item_rows(cursor, tray_item_rows: list[dict[str, Any]]) -> None:
         INSERT INTO biz_tray_item (
           tray_id, sample_id, position_no, quantity, bind_time, unbind_time, status, created_at, updated_at
         ) VALUES (
-          %(tray_id)s, %(sample_id)s, %(position_no)s, %(quantity)s, %(bind_time)s, NULL, %(status)s,
+          %(tray_id)s, %(sample_id)s, %(position_no)s, %(quantity)s, %(bind_time)s, %(unbind_time)s, %(status)s,
           COALESCE(%(created_at)s, CURRENT_TIMESTAMP), COALESCE(%(updated_at)s, CURRENT_TIMESTAMP)
         )
         """,

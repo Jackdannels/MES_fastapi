@@ -65,6 +65,8 @@ def test_auto_replies_do_not_cache_or_echo_schedule_context(monkeypatch, command
         "schedule_no": "SCH-1", "scheduleNo": "SCH-1",
         "schedule_snapshot": {"id": "SCH-1"}, "scheduleSnapshot": {"id": "SCH-1"},
     }
+    if command == "experiment-stop-request":
+        payload["termination_type"] = "completion_criteria"
 
     simulator._on_message(None, None, FakeMessage(f"mes/v1/labs/LAB_SALT/commands/{command}", payload))
     FakeTimer.created[-1].callback()
@@ -333,7 +335,7 @@ def test_auto_mode_acknowledges_salt_resume_and_stop(monkeypatch):
             "experiment-stop-request",
             "experiment-stopped",
             "stopped_at",
-            {"termination_type": "abnormal", "termination_reason": "设备故障"},
+            {"termination_type": "completion_criteria", "termination_reason": "达到外观终止条件"},
         ),
     )
 
@@ -362,6 +364,23 @@ def test_auto_mode_acknowledges_salt_resume_and_stop(monkeypatch):
         assert payload[event_time_field]
         for field, value in extra.items():
             assert payload[field] == value
+
+
+def test_auto_mode_does_not_acknowledge_retired_abnormal_stop(monkeypatch):
+    simulator, published = build_auto_simulator(monkeypatch)
+    simulator._on_message(None, None, FakeMessage(
+        "mes/v1/labs/LAB_SALT/commands/experiment-stop-request",
+        {"lab_code": "LAB_SALT", "run_no": "RUN-1", "pause_no": "P-1", "termination_type": "abnormal"},
+    ))
+    assert FakeTimer.created == []
+    assert published == []
+
+
+def test_manual_simulator_does_not_publish_retired_abnormal_stop():
+    simulator = simulator_app.MqttSimulator()
+    with pytest.raises(simulator_app.HTTPException, match="提前结束仅支持") as rejected:
+        simulator.publish("experiment-stopped", {"lab_code": "LAB_SALT", "termination_type": "abnormal"})
+    assert rejected.value.status_code == 422
 
 
 def test_auto_mode_waits_for_resume_request_after_resume_preparation_ready(monkeypatch):

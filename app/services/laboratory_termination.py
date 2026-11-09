@@ -6,8 +6,8 @@ from app.core.time_utils import format_business_datetime, now_business_text
 from app.services.laboratory_operations import clear_fixture_ready_marker
 
 
-ABNORMAL_TERMINATION_STATUS = "实验异常终止"
-ABNORMAL_TERMINATION_ACTION = "异常终止实验"
+# Read-only protection for historical data; no active transition creates this state.
+LEGACY_ABNORMAL_TERMINATION_STATUS = "实验异常终止"
 MOLD_CANCELED_STATUS = "实验已取消"
 MOLD_CANCELED_ACTION = "取消本次霉菌实验"
 MOLD_PENDING_STATUS = "待排程"
@@ -28,13 +28,18 @@ def terminate_storage_laboratory_experiment(
     tray_codes: list[str] | None = None,
     terminated_at: str = "",
     termination_reason: str = "",
-    terminal_status: str = ABNORMAL_TERMINATION_STATUS,
-    history_action: str = ABNORMAL_TERMINATION_ACTION,
-    next_experiment_status: str = ABNORMAL_TERMINATION_STATUS,
+    terminal_status: str,
+    history_action: str,
+    next_experiment_status: str,
     remove_current_schedule: bool = False,
     require_full_run: bool = False,
 ) -> dict[str, Any]:
-    """Apply the shared abnormal-stop workflow to a laboratory storage snapshot."""
+    """Apply the shared mold/device-fault cancellation workflow."""
+
+    if normalize_text(terminal_status) not in {MOLD_CANCELED_STATUS, "设备故障试验取消"}:
+        raise ValueError("运行终止仅支持霉菌取消或设备故障取消")
+    if not normalize_text(history_action) or not normalize_text(next_experiment_status):
+        raise ValueError("取消操作必须指定历史动作和后续实验状态")
 
     normalized_task_code = normalize_text(task_code)
     normalized_experiment_code = normalize_text(experiment_code)
@@ -73,7 +78,7 @@ def terminate_storage_laboratory_experiment(
         None,
     )
     if run is None:
-        raise ValueError("experiment run is required for abnormal termination")
+        raise ValueError("experiment run is required for laboratory cancellation")
 
     relation_tray_codes = {
         normalize_text(item.get("tray_code") or item.get("tray_no"))
@@ -84,7 +89,7 @@ def terminate_storage_laboratory_experiment(
         and normalize_text(item.get("tray_code") or item.get("tray_no"))
     }
     if not relation_tray_codes:
-        raise ValueError("experiment_run_trays are required for abnormal termination")
+        raise ValueError("experiment_run_trays are required for laboratory cancellation")
     requested_tray_codes = {
         normalize_text(tray_code)
         for tray_code in tray_codes or []
@@ -116,8 +121,8 @@ def terminate_storage_laboratory_experiment(
         and normalize_text(item.get("sample_code") or item.get("sample_no") or item.get("sample_id"))
     }
     reason = normalize_text(termination_reason)
-    normalized_terminal_status = normalize_text(terminal_status) or ABNORMAL_TERMINATION_STATUS
-    normalized_history_action = normalize_text(history_action) or ABNORMAL_TERMINATION_ACTION
+    normalized_terminal_status = normalize_text(terminal_status)
+    normalized_history_action = normalize_text(history_action)
     normalized_next_experiment_status = normalize_text(next_experiment_status) or normalized_terminal_status
     detail = f"{normalized_task_code} / {experiment_name} / {normalized_terminal_status}"
     if reason:

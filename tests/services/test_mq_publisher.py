@@ -29,6 +29,8 @@ def test_commands_exclude_schedule_context_from_mqtt_but_preserve_mes_binding(mo
         "schedule_snapshot": {"id": "SCH-1", "device": "盐雾试验室"},
         "scheduleSnapshot": {"id": "SCH-1"},
     }
+    if command == "STOP_REQUEST":
+        payload["termination_type"] = "completion_criteria"
     original = deepcopy(payload)
 
     def record(_command, _topic, context, result):
@@ -49,13 +51,16 @@ def test_commands_exclude_schedule_context_from_mqtt_but_preserve_mes_binding(mo
 
     assert result["published"] is True
     assert calls[0] == ("record", original, "SENDING")
-    assert calls[1] == ("publish", {
+    expected_upper = {
         "task_code": "TASK-1", "lab_code": "LAB_SALT", "experiment_code": "EXP-1",
         "run_no": "RUN-1", "fixture_install_id": "FIXTURE-1", "pause_no": "PAUSE-1",
         "tray_codes": ["TP-1"], "sub_experiment_code": "EXP-1-AXIS",
         "current_axis_code": "x+", "end_mode": "device_fault_cancel",
         "cancel_request_id": "CANCEL-1",
-    })
+    }
+    if command == "STOP_REQUEST":
+        expected_upper["termination_type"] = "completion_criteria"
+    assert calls[1] == ("publish", expected_upper)
     assert calls[2] == ("update", 91, True)
     assert payload == original
 

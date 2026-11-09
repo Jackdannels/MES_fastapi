@@ -18,12 +18,14 @@ COMMAND_CONFIRMATION_TIMEOUT_SECONDS = 15
 RUNNING = "实验进行中"
 PAUSED = "实验暂停"
 COMPLETED = "实验已完成"
-ABNORMAL = "实验异常终止"
 PAUSE_RESUMED = "实验已恢复"
 PAUSE_STOPPED = "实验已停止"
 TERMINATION_COMPLETION = "completion_criteria"
-TERMINATION_ABNORMAL = "abnormal"
-TERMINATION_TYPES = {TERMINATION_COMPLETION, TERMINATION_ABNORMAL}
+
+
+def validate_salt_stop_type(value: Any) -> None:
+    if normalize_text(value) != TERMINATION_COMPLETION:
+        raise ValueError("盐雾提前结束仅支持 completion_criteria，异常提前终止已停用")
 
 
 def pause_no_from_payload(payload: dict[str, Any]) -> str:

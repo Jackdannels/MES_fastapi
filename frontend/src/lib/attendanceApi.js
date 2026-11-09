@@ -113,9 +113,7 @@ async function listAttendanceOperationLogs(filters = {}) {
   });
 }
 
-async function listAttendanceUsers() {
-  return readJson("/api/attendance/users", "读取员工账号失败");
-}
+
 
 async function createAttendanceUser(payload = {}) {
   return writeJson("/api/attendance/users", {
@@ -186,7 +184,6 @@ export {
   deleteAttendanceUser,
   finishElapsedLaboratoryAttendanceWork,
   listLaboratoryAttendanceSessions,
-  listAttendanceUsers,
   listAttendanceOperationLogs,
   listAttendanceWorkTimes,
   loginLaboratoryAttendance,

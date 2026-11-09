@@ -120,12 +120,6 @@ def _verify_admin_credentials(payload: AttendanceAdminRequest) -> None:
         raise HTTPException(status_code=401, detail="管理员账号或密码错误")
 
 
-@router.get("/users")
-def list_users() -> list[dict[str, Any]]:
-    try:
-        return get_attendance_service().list_users()
-    except AttendanceError as exc:
-        raise _service_error(exc) from exc
 
 
 @router.post("/users", status_code=status.HTTP_201_CREATED)

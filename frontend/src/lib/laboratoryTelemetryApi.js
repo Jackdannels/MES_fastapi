@@ -15,7 +15,5 @@ async function readLaboratoryTelemetrySnapshot({ signal } = {}) {
   return { items: Array.isArray(payload?.items) ? payload.items : [], monitorStatus: payload?.monitor_status || "online", monitorMessage: payload?.monitor_message || "" };
 }
 
-async function listLaboratoryTelemetry(options) {
-  return (await readLaboratoryTelemetrySnapshot(options)).items;
-}
-export { listLaboratoryTelemetry, readLaboratoryTelemetrySnapshot };
+
+export { readLaboratoryTelemetrySnapshot };

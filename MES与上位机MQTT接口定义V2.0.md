@@ -232,6 +232,12 @@ mes/v1/labs/{lab_code}/commands/experiment-end-request
 | cancel_reason | string | 取消时是 | MES 操作人员填写的取消原因 |
 | cancel_request_id | string | 取消时是 | MES 生成的取消请求标识，上位机确认时必须原样返回 |
 
+### 4.4 盐雾暂停后的提前结束
+
+盐雾已暂停并满足提前结束条件时，MES 通过原 `commands/experiment-stop-request` 下发停止请求，保留 `task_code`、`lab_code=LAB_SALT`、`experiment_code`、`run_no`、`pause_no`、`termination_reason` 和 `termination_type` 字段；`termination_type` 唯一支持值为 `completion_criteria`。
+
+上位机通过原 `events/experiment-stopped` 回传匹配的运行和暂停编号。MES 确认后按正常完成处理，不增加确认字段或握手次数。异常提前终止 `abnormal` 已停用，旧类型请求或确认不会再写入实验异常终止状态；设备故障使用维修取消/人工完成流程。已有历史异常记录仅保留审计和终态保护。
+
 ## 5. 上位机发送给 MES
 
 ### 5.1 夹具安装完成，启动准备就绪
@@ -380,7 +386,7 @@ Payload：
 
 ## 6. MES 内部反绑定规则
 
-上位机只需要告诉 MES 哪个试验间发生了什么事件，并在实验开始后的事件中原样带回 MES 下发的 `run_no`。MES 根据 `run_no` 精确绑定实验批次，根据 `lab_code` 反查当前试验间对应的任务、实验和托盘上下文。
+上位机在实验开始、结束、结果以及盐雾暂停、恢复、停止确认中，必须原样带回 MES 下发的 `run_no`。MES 根据 `run_no` 精确绑定实验批次，并校验 `lab_code` 与批次所属试验间一致；不再按试验间猜测当前批次。
 
 匹配规则：
 
@@ -392,16 +398,17 @@ experiment-started:
 首次启动时使用 payload.run_no 创建并启动对应实验批次。轴向接续时使用 payload.run_no + payload.current_axis_code 精确恢复原批次的目标轴向，只把该轴向从“等待上位机启动”更新为“实验进行中”，不会重建批次或重新激活已完成轴向。
 
 experiment-ended:
-根据 payload.run_no 精确找到实验批次。轴向任务按 payload.axis_code 完成当前轴向，最后一个轴向完成后再将实验置为实验已完成；非轴向任务直接完成实验。如未携带 run_no，则仅兼容旧协议按 lab_code 找正在运行批次。
+根据必填的 payload.run_no 精确找到实验批次。轴向任务按 payload.axis_code 完成当前轴向，最后一个轴向完成后再将实验置为实验已完成；非轴向任务直接完成实验。缺少 run_no 时拒绝更新。
 
 experiment-result:
-根据 payload.run_no 精确找到实验批次并绑定 result_package。未携带 run_no 的旧结果包只作为历史兼容处理，可能触发旧兜底风险日志。
+根据必填的 payload.run_no 精确找到实验批次并绑定 result_package。缺少 run_no 时拒绝更新。
 ```
 
 约束：
 
 ```text
 同一个试验间同一时刻只能有一个由上位机控制的活动实验批次。
+事件类型由 MQTT Topic 确定；payload 如携带 message_type 或 event，必须与 Topic 对应的事件类型一致，否则拒绝更新。
 如果存在多个可匹配批次，MES 不更新状态，并记录异常。
 如果找不到可匹配批次，MES 不更新状态，并记录异常。
 ```

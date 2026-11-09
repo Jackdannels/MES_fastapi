@@ -1504,8 +1504,6 @@ class FakeMqEventRepository:
     def record_result(self, result):
         self.results.append(dict(result))
 
-    def find_active_run_by_lab(self, lab_code):
-        return self.runs_by_lab.get(lab_code)
 
     def find_run_by_no(self, run_no):
         for run in self.runs_by_lab.values():
@@ -1767,7 +1765,7 @@ def test_process_experiment_started_starts_ready_context_even_when_active_run_ex
 
     ack = process_laboratory_event(
         "mes/v1/labs/salt-spray-lab-01/events/experiment-started",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "started_at": "2026-05-16 10:00:00",
         },
@@ -1796,7 +1794,7 @@ def test_process_experiment_started_rejects_before_ready_even_when_stale_run_exi
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_IMPACT_1/events/experiment-started",
-        {
+        {"run_no": "RUN-READY-IMPACT",
             "lab_code": "LAB_IMPACT_1",
             "started_at": "2026-06-03 10:00:00",
         },
@@ -1818,7 +1816,7 @@ def test_process_experiment_ended_rejects_old_lab_after_tray_moved_to_next_lab()
     try:
         process_laboratory_event(
             "mes/v1/labs/LAB_IMPACT_1/events/experiment-ended",
-            {
+            {"run_no": "RUN-READY-IMPACT",
                 "lab_code": "LAB_IMPACT_1",
                 "ended_at": "2026-06-04 12:50:00",
             },
@@ -1848,7 +1846,7 @@ def test_process_experiment_started_ready_context_takes_precedence_over_stale_ru
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_IMPACT_1/events/experiment-started",
-        {
+        {"run_no": "RUN-READY-IMPACT",
             "lab_code": "LAB_IMPACT_1",
             "started_at": "2026-06-03 10:00:00",
         },
@@ -1903,7 +1901,7 @@ def test_process_experiment_started_rejected_early_event_can_be_retried_after_re
     ready_context = dict(repository.contexts_by_lab["LAB_IMPACT_1"])
     repository.contexts_by_lab = {}
     repository.runs_by_lab = {}
-    payload = {
+    payload = {"run_no": "RUN-READY-IMPACT",
         "message_id": "HOST-START-LAB-IMPACT-001",
         "lab_code": "LAB_IMPACT_1",
         "started_at": "2026-06-03 10:00:00",
@@ -1936,7 +1934,7 @@ def test_process_experiment_started_creates_run_from_ready_lab_context_when_no_a
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-started",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "started_at": "2026-05-16 10:00:00",
         },
@@ -1989,7 +1987,7 @@ def test_process_experiment_started_and_ended_updates_attendance_work_interval()
 
     started_ack = process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-started",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "started_at": "2026-07-03T08:00:00Z",
         },
@@ -2006,7 +2004,7 @@ def test_process_experiment_started_and_ended_updates_attendance_work_interval()
     current_time["value"] = datetime(2026, 7, 3, 8, 5, 0, tzinfo=timezone.utc)
     ended_ack = process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-ended",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "ended_at": "2026-07-03T08:05:00Z",
         },
@@ -2049,7 +2047,7 @@ def test_process_experiment_started_creates_run_from_non_salt_ready_context():
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_IMPACT_1/events/experiment-started",
-        {
+        {"run_no": "RUN-READY-IMPACT",
             "lab_code": "LAB_IMPACT_1",
             "started_at": "2026-06-03 10:00:00",
         },
@@ -2086,7 +2084,7 @@ def test_process_experiment_started_prefers_ready_context_over_payload_experimen
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_IMPACT_1/events/experiment-started",
-        {
+        {"run_no": "RUN-READY-IMPACT",
             "lab_code": "LAB_IMPACT_1",
             "task_code": "SYLU-2026-06-OLD",
             "experiment_code": "SYLU-2026-06-002-OLD",
@@ -2187,7 +2185,7 @@ def test_mysql_start_run_for_context_uses_shared_start_rules(monkeypatch):
             "sample_nos": ["SAMPLE-001"],
         },
         "2026-05-16 10:00:00",
-    )
+     run_no="RUN-SALT-001",)
 
     written = storage.writes[-1]
     started_tray = written["mes.samples"][0]["trays"][0]
@@ -2289,7 +2287,7 @@ def test_mysql_start_run_for_context_rejects_returned_trays_with_shared_start_ru
                 "sample_nos": ["SAMPLE-001"],
             },
             "2026-06-06 12:59:00",
-        )
+         run_no="RUN-SALT-001",)
 
     assert storage.writes == []
 
@@ -2493,7 +2491,7 @@ def test_mysql_start_run_for_context_rejects_tray_status_returned_without_run_tr
                 "sample_nos": ["SAMPLE-001"],
             },
             "2026-06-06 12:59:00",
-        )
+         run_no="RUN-SALT-001",)
 
     assert storage.writes == []
 
@@ -2583,7 +2581,7 @@ def test_mysql_start_run_for_context_ignores_returned_sample_from_other_experime
             "sample_nos": ["SAMPLE-CURRENT"],
         },
         "2026-06-06 13:10:00",
-    )
+     run_no="RUN-SALT-001",)
 
     written_samples = {sample["code"]: sample for sample in storage.writes[-1]["mes.samples"]}
     assert written_samples["SAMPLE-OLD"]["status"] == "厂家收回"
@@ -2592,110 +2590,8 @@ def test_mysql_start_run_for_context_ignores_returned_sample_from_other_experime
     assert written_samples["SAMPLE-CURRENT"]["trays"][0]["status"] == "实验进行中"
 
 
-def test_mysql_find_active_run_by_lab_matches_tray_lab_code_when_device_name_differs(monkeypatch):
-    class TupleCursor:
-        description = None
-
-        def __init__(self):
-            self.matching_active_run_query = False
-            self.params = []
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def execute(self, sql, params=None):
-            self.params.append(params)
-            self.matching_active_run_query = False
-            if "FROM md_lab" in sql:
-                self.description = (("lab_name",),)
-            elif "JOIN biz_experiment_run_tray" in sql and "lab.lab_code = %s" in sql:
-                self.description = (("run_no",), ("task_no",), ("experiment_no",), ("device_name",), ("run_status",))
-                self.matching_active_run_query = True
-            else:
-                self.description = None
-
-        def fetchone(self):
-            columns = [column[0] for column in (self.description or [])]
-            if columns == ["lab_name"]:
-                return ("Salt Spray Lab",)
-            if self.matching_active_run_query and columns == ["run_no", "task_no", "experiment_no", "device_name", "run_status"]:
-                return ("RUN-SALT-001", "SYLU-2026-03-001", "SYLU-2026-03-001-A", "盐雾试验室", "实验进行中")
-            return None
-
-    class TupleConnection:
-        def __init__(self):
-            self.cursor_obj = TupleCursor()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def cursor(self):
-            return self.cursor_obj
-
-    connection = TupleConnection()
-    monkeypatch.setattr("app.services.mq_event_processor.get_connection", lambda: connection)
-
-    run = MySQLMqEventRepository().find_active_run_by_lab("LAB_SALT")
-
-    assert run == {
-        "run_no": "RUN-SALT-001",
-        "task_no": "SYLU-2026-03-001",
-        "experiment_no": "SYLU-2026-03-001-A",
-        "device_name": "盐雾试验室",
-        "run_status": "实验进行中",
-    }
-    assert any(params and params[-1] == "LAB_SALT" for params in connection.cursor_obj.params)
 
 
-def test_mysql_find_active_run_by_lab_prioritizes_running_runs_in_query(monkeypatch):
-    class TupleCursor:
-        description = None
-
-        def __init__(self):
-            self.active_run_sql = ""
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def execute(self, sql, params=None):
-            if "JOIN biz_experiment_run_tray" in sql and "lab.lab_code = %s" in sql:
-                self.active_run_sql = " ".join(sql.split())
-                self.description = (("run_no",), ("task_no",), ("experiment_no",), ("device_name",), ("run_status",))
-            else:
-                self.description = None
-
-        def fetchone(self):
-            return None
-
-    class TupleConnection:
-        def __init__(self):
-            self.cursor_obj = TupleCursor()
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def cursor(self):
-            return self.cursor_obj
-
-    connection = TupleConnection()
-    monkeypatch.setattr("app.services.mq_event_processor.get_connection", lambda: connection)
-
-    MySQLMqEventRepository().find_active_run_by_lab("LAB_SALT")
-
-    assert "CASE WHEN er.run_status IN ('实验进行中', '实验暂停') THEN 0 ELSE 1 END" in connection.cursor_obj.active_run_sql
-    assert connection.cursor_obj.active_run_sql.index("CASE WHEN er.run_status") < connection.cursor_obj.active_run_sql.index("er.started_at DESC")
 
 
 def test_mysql_find_run_by_no_uses_exact_run_no(monkeypatch):
@@ -4500,7 +4396,7 @@ def test_process_experiment_started_rejects_lab_without_ready_context():
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-started",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "started_at": "2026-05-16 10:00:00",
         },
@@ -4513,13 +4409,13 @@ def test_process_experiment_started_rejects_lab_without_ready_context():
     assert repository.events == []
 
 
-def test_process_experiment_ended_marks_active_run_by_lab_code():
+def test_process_experiment_ended_marks_exact_run_by_run_no():
     repository = FakeMqEventRepository()
     repository.runs_by_lab["LAB_SALT"]["sub_experiment_code"] = "SYLU-2026-03-001-A-AXIS-Y"
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-ended",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "ended_at": "2026-05-16 11:00:00",
         },
@@ -4712,7 +4608,7 @@ def test_process_experiment_ended_uses_mes_receive_time_as_business_time(monkeyp
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-ended",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "ended_at": "2000-01-01 00:00:00",
         },
@@ -4730,7 +4626,7 @@ def test_process_experiment_ended_prefers_active_run_over_payload_experiment_cod
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-ended",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "task_code": "SYLU-2026-03-OLD",
             "experiment_code": "SYLU-2026-03-001-OLD",
@@ -4753,7 +4649,7 @@ def test_process_experiment_ended_passes_axis_fields_to_run_completion():
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-ended",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "ended_at": "2026-05-16 11:00:00",
             "axis_code": "y+",
@@ -4831,7 +4727,7 @@ def test_process_axis_continuation_does_not_finish_attendance_work_interval(monk
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-ended",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "ended_at": "2026-05-16 11:00:00",
             "axis_code": "y+",
@@ -4851,7 +4747,7 @@ def test_process_experiment_ended_passes_payload_sub_experiment_code_to_run_comp
 
     ack = process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-ended",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "ended_at": "2026-05-16 11:00:00",
             "sub_experiment_code": "SYLU-2026-03-001-A-AXIS-Z",
@@ -4897,7 +4793,7 @@ def test_process_experiment_result_rejects_missing_run_no_after_ended_event():
 
     process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-ended",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "ended_at": "2026-05-16 17:30:00",
         },
@@ -4931,7 +4827,7 @@ def test_process_experiment_result_uses_payload_run_no_without_recent_completed_
 
     process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-ended",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "ended_at": "2026-05-16 17:30:00",
         },
@@ -4968,7 +4864,7 @@ def test_process_experiment_result_rejects_unknown_payload_run_no_without_recent
 
     process_laboratory_event(
         "mes/v1/labs/LAB_SALT/events/experiment-ended",
-        {
+        {"run_no": "RUN-SALT-001",
             "lab_code": "LAB_SALT",
             "ended_at": "2026-05-16 17:30:00",
         },

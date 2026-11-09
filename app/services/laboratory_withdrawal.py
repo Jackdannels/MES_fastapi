@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Any
 
 from app.core.axis_codes import normalize_text
@@ -11,6 +12,10 @@ from app.services.appearance_inspection import PRE_EXPERIMENT_APPEARANCE_STATUS
 ALLOW_WITHDRAW_STATUSES = {"已到达实验室", "工装夹具安装", "实验准备就绪"}
 COMPLETED_EXPERIMENT_STATUSES = {"实验已完成", "实验完成", "实验已经完成"}
 BLOCK_WITHDRAW_TRAY_STATUSES = {
+    "到货",
+    "已到达暂存间",
+    "实验前外观检测间存放",
+    "霉菌取消后恢复处理中",
     "实验进行中",
     "实验中",
     "实验已完成",
@@ -51,6 +56,22 @@ def parse_experiment_history_detail(detail: Any, task_code: str) -> dict[str, st
     if status in {"实验完成", "实验已经完成"}:
         status = "实验已完成"
     return {"experimentName": parts[1], "status": status}
+
+
+def history_entry_matches_tray(entry: dict[str, Any], tray_code: str) -> bool:
+    """Legacy unscoped history applies to the sample; scoped records apply only to their trays."""
+    codes = {
+        normalize_text(code)
+        for code in as_list(entry.get("tray_codes") or entry.get("trayCodes"))
+        if normalize_text(code)
+    }
+    explicit_code = normalize_text(entry.get("tray_code") or entry.get("trayCode") or entry.get("tray_no"))
+    if explicit_code:
+        codes.add(explicit_code)
+    for part in normalize_text(entry.get("detail")).split(" / "):
+        if part.startswith(("托盘：", "托盘:")):
+            codes.update(code for code in re.split(r"[、,，;；\s]+", part[3:]) if code)
+    return not codes or normalize_text(tray_code) in codes
 
 
 def staging_event_room(event: dict[str, Any]) -> str:
@@ -124,6 +145,7 @@ def latest_staging_origin_snapshot(
         parse_datetime_value(entry.get("time")) or datetime.min
         for entry in as_list(sample.get("history"))
         if normalize_text(entry.get("action")) in WITHDRAWAL_HISTORY_ACTIONS
+        and history_entry_matches_tray(entry, normalized_tray_code)
     )
     latest_withdrawal_time = max(withdrawal_times) if withdrawal_times else datetime.min
 
@@ -211,6 +233,7 @@ def latest_appearance_origin_snapshot(
         parse_datetime_value(entry.get("time")) or datetime.min
         for entry in as_list(sample.get("history"))
         if normalize_text(entry.get("action")) in WITHDRAWAL_HISTORY_ACTIONS
+        and history_entry_matches_tray(entry, normalized_tray_code)
     )
     latest_withdrawal_time = max(withdrawal_times) if withdrawal_times else datetime.min
 
@@ -314,19 +337,12 @@ def single_tray_sample_matches_current_with_stale_target(
     normalized_lab_name = normalize_text(lab_name)
     if normalized_lab_name and normalize_text(sample.get("location")) != normalized_lab_name:
         return False
-    current_name = normalize_text(current_experiment_name)
-    latest_match: dict[str, Any] | None = None
-    for entry in as_list(sample.get("history")):
-        parsed = parse_experiment_history_detail(entry.get("detail"), task_code)
-        if not parsed or parsed["experimentName"] != current_name:
-            continue
-        entry_time = parse_datetime_value(entry.get("time")) or datetime.min
-        if latest_match is None or entry_time >= latest_match["time"]:
-            latest_match = {
-                "location": normalize_text(entry.get("location")),
-                "status": normalize_text(parsed["status"]),
-                "time": entry_time,
-            }
+    latest_match = latest_current_experiment_history_entry(
+        sample,
+        current_experiment_name=current_experiment_name,
+        task_code=task_code,
+        tray_code=normalize_text(sample["trays"][0].get("tray_code")),
+    )
     if not latest_match:
         return False
     if latest_match["status"] not in ALLOW_WITHDRAW_STATUSES:
@@ -353,30 +369,49 @@ def is_withdrawable_laboratory_status(status: str, current_experiment_name: str 
     return normalize_text(status) in ALLOW_WITHDRAW_STATUSES
 
 
+def latest_current_experiment_history_entry(
+    sample: dict[str, Any],
+    *,
+    current_experiment_name: str,
+    task_code: str,
+    tray_code: str = "",
+) -> dict[str, Any] | None:
+    current_name = normalize_text(current_experiment_name)
+    latest_match: dict[str, Any] | None = None
+    for entry in as_list(sample.get("history")):
+        if tray_code and not history_entry_matches_tray(entry, tray_code):
+            continue
+        parsed = parse_experiment_history_detail(entry.get("detail"), task_code)
+        if not parsed or parsed["experimentName"] != current_name:
+            continue
+        entry_time = parse_datetime_value(entry.get("time")) or datetime.min
+        # History is newest first. A newer withdrawal must also win when the
+        # preparation and withdrawal share the same second (or have no time).
+        if latest_match is None or entry_time > latest_match["time"]:
+            latest_match = {
+                "action": normalize_text(entry.get("action")),
+                "location": normalize_text(entry.get("location")),
+                "status": normalize_text(parsed["status"]),
+                "time": entry_time,
+            }
+    return latest_match
+
+
 def latest_current_experiment_withdrawable_history_status(
     sample: dict[str, Any],
     *,
     current_experiment_name: str,
     lab_name: str,
     task_code: str,
+    tray_code: str = "",
 ) -> str:
-    current_name = normalize_text(current_experiment_name)
-    normalized_lab_name = normalize_text(lab_name)
-    latest_match: dict[str, Any] | None = None
-    for entry in as_list(sample.get("history")):
-        parsed = parse_experiment_history_detail(entry.get("detail"), task_code)
-        if not parsed or parsed["experimentName"] != current_name:
-            continue
-        entry_location = normalize_text(entry.get("location"))
-        if normalized_lab_name and entry_location != normalized_lab_name:
-            continue
-        entry_status = normalize_text(parsed["status"])
-        if not is_withdrawable_laboratory_status(entry_status, current_name):
-            continue
-        entry_time = parse_datetime_value(entry.get("time")) or datetime.min
-        if latest_match is None or entry_time >= latest_match["time"]:
-            latest_match = {"status": entry_status, "time": entry_time}
-    return normalize_text(latest_match.get("status")) if latest_match else ""
+    latest = latest_current_experiment_history_entry(
+        sample, current_experiment_name=current_experiment_name,
+        task_code=task_code, tray_code=tray_code,
+    )
+    if not latest or (normalize_text(lab_name) and latest["location"] != normalize_text(lab_name)):
+        return ""
+    return latest["status"] if is_withdrawable_laboratory_status(latest["status"], current_experiment_name) else ""
 
 
 def status_has_current_experiment_progress(status: Any, current_experiment_name: str) -> bool:
@@ -547,16 +582,29 @@ def withdrawable_sample_matches(
     for sample, matched_tray_codes in sample_matches:
         matched_code_set = set(matched_tray_codes)
         withdrawable_codes: list[str] = []
-        history_withdrawable_status = latest_current_experiment_withdrawable_history_status(
-            sample,
-            current_experiment_name=current_experiment_name,
-            lab_name=lab_name,
-            task_code=task_code,
-        )
         for tray in as_list(sample.get("trays")):
             tray_code = normalize_text(tray.get("tray_code"))
             if tray_code not in matched_code_set:
                 continue
+            tray_status = normalize_text(tray.get("status"))
+            if tray_status in BLOCK_WITHDRAW_TRAY_STATUSES:
+                continue
+            latest_history = latest_current_experiment_history_entry(
+                sample, current_experiment_name=current_experiment_name,
+                task_code=task_code, tray_code=tray_code,
+            )
+            if (
+                latest_history
+                and latest_history["action"] in WITHDRAWAL_HISTORY_ACTIONS
+                and not is_withdrawable_laboratory_status(tray_status, current_name)
+            ):
+                # The last preparation attempt is closed, even if a sibling
+                # tray keeps the sample-level status at installed/ready.
+                continue
+            history_withdrawable_status = latest_current_experiment_withdrawable_history_status(
+                sample, current_experiment_name=current_experiment_name,
+                lab_name=lab_name, task_code=task_code, tray_code=tray_code,
+            )
             target_experiment_code = normalize_text(tray.get("target_experiment_code") or tray.get("targetExperimentCode"))
             target_lab = normalize_text(tray.get("target_lab") or tray.get("targetLab"))
             stale_target_matches_current = single_tray_sample_matches_current_with_stale_target(
@@ -574,9 +622,6 @@ def withdrawable_sample_matches(
             if target_lab and normalized_lab_name and target_lab != normalized_lab_name and not stale_target_matches_current:
                 continue
             sample_status = normalize_text(sample.get("status"))
-            tray_status = normalize_text(tray.get("status"))
-            if tray_status in BLOCK_WITHDRAW_TRAY_STATUSES:
-                continue
             if is_withdrawable_laboratory_status(tray_status, current_name):
                 current_status = tray_status
             elif is_withdrawable_laboratory_status(sample_status, current_name):

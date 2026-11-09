@@ -45,12 +45,11 @@ from app.services.laboratory_start import start_storage_laboratory_experiment
 from app.services.laboratory_termination import (
     MOLD_LAB_CODE,
     cancel_storage_mold_experiment,
-    terminate_storage_laboratory_experiment,
 )
 from app.services.schedule_cascade_runtime import apply_run_schedule_cascade, run_forecast_end_at
 from app.services.salt_spray_pause import (
-    ABNORMAL, PAUSED, PAUSE_RESUMED, PAUSE_STOPPED, RUNNING, SALT_LAB_CODE,
-    COMMAND_CONFIRMATION_TIMEOUT_SECONDS, TERMINATION_ABNORMAL, TERMINATION_TYPES,
+    PAUSED, PAUSE_RESUMED, PAUSE_STOPPED, RUNNING, SALT_LAB_CODE,
+    COMMAND_CONFIRMATION_TIMEOUT_SECONDS, validate_salt_stop_type,
     decode_command_payload, inspection_tray_codes, pause_no_from_payload, shifted_planned_end,
 )
 from app.services.salt_spray_resume_preparation import (
@@ -93,7 +92,6 @@ class MqEventRepository(Protocol):
 
     def find_run_by_no(self, run_no: str) -> dict[str, Any] | None: ...
 
-    def find_active_run_by_lab(self, lab_code: str) -> dict[str, Any] | None: ...
 
     def find_current_context_by_lab(
         self,
@@ -385,45 +383,6 @@ class MySQLMqEventRepository:
                 )
             connection.commit()
 
-    def find_active_run_by_lab(self, lab_code: str) -> dict[str, Any] | None:
-        normalized_lab_code = normalize_text(lab_code)
-        if not normalized_lab_code:
-            return None
-        with get_connection() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT
-                      er.run_no,
-                      er.task_no,
-                      er.experiment_no,
-                      er.sub_experiment_code,
-                      er.axis_codes_json,
-                      er.schedule_no,
-                      er.planned_end_at,
-                      er.device_name,
-                      er.run_status,
-                      lab.lab_code
-                    FROM biz_experiment_run er
-                    JOIN biz_experiment_run_tray ert
-                      ON ert.run_no = er.run_no
-                    JOIN biz_tray tr
-                      ON tr.tray_no = ert.tray_no
-                    JOIN md_lab lab
-                      ON lab.lab_id = tr.current_lab_id
-                    WHERE lab.lab_code = %s
-                      AND COALESCE(er.run_status, '') IN ('实验准备就绪', '实验进行中', '实验暂停')
-                    ORDER BY
-                      CASE WHEN er.run_status IN ('实验进行中', '实验暂停') THEN 0 ELSE 1 END,
-                      er.started_at DESC,
-                      er.created_at DESC,
-                      er.run_no DESC
-                    LIMIT 1
-                    """,
-                    (normalized_lab_code,),
-                )
-                row = cursor_row_as_dict(cursor)
-        return row
 
     def find_run_by_no(self, run_no: str) -> dict[str, Any] | None:
         normalized_run_no = normalize_text(run_no)
@@ -685,7 +644,7 @@ class MySQLMqEventRepository:
             apply_run_schedule_cascade(storage, {"run_no": run_no, "schedule_id": row.get("schedule_no")}, new_end_at=next_end, reason="盐雾实验暂停恢复")
 
     def mark_salt_run_stopped(self, run_no: str, pause_no: str, occurred_at: str, termination_type: str, reason: str) -> None:
-        cascade_run: dict[str, Any] = {}
+        validate_salt_stop_type(termination_type)
         with get_connection() as connection:
             with connection.cursor() as cursor:
                 cursor.execute("""SELECT p.pause_status,p.paused_at,p.termination_type,er.schedule_no
@@ -693,8 +652,9 @@ class MySQLMqEventRepository:
                     WHERE p.pause_no=%s AND p.run_no=%s FOR UPDATE""", (pause_no,run_no))
                 pause = cursor_row_as_dict(cursor) or {}
                 if normalize_text(pause.get("pause_status")) == PAUSE_STOPPED:
-                    if normalize_text(pause.get("termination_type")) == TERMINATION_ABNORMAL:
-                        cascade_run = {"run_no": run_no, "schedule_id": pause.get("schedule_no")}
+                    # A legacy abnormal stop cannot be reinterpreted as a
+                    # normal completion by a retry from an obsolete client.
+                    validate_salt_stop_type(pause.get("termination_type"))
                 elif normalize_text(pause.get("pause_status")) != PAUSED:
                     raise ValueError("当前实验不存在可停止的暂停区间")
                 else:
@@ -703,67 +663,7 @@ class MySQLMqEventRepository:
                     cursor.execute("""UPDATE biz_experiment_run_pause SET pause_status=%s,stopped_at=%s,pause_seconds=%s,
                         termination_type=%s,termination_reason=%s,updated_at=%s WHERE pause_no=%s""",
                         (PAUSE_STOPPED,mysql_datetime_text(occurred_at),seconds,termination_type,reason or None,mysql_datetime_text(occurred_at),pause_no))
-                    if termination_type == TERMINATION_ABNORMAL:
-                        cursor.execute("UPDATE biz_experiment_run SET run_status=%s,ended_at=%s,updated_at=%s WHERE run_no=%s AND run_status=%s", (ABNORMAL,mysql_datetime_text(occurred_at),mysql_datetime_text(occurred_at),run_no,PAUSED))
-                        cascade_run = {"run_no": run_no, "schedule_id": pause.get("schedule_no")}
             connection.commit()
-        if cascade_run:
-            self._mark_storage_run_abnormally_stopped(
-                run_no=run_no,
-                occurred_at=occurred_at,
-                reason=reason,
-            )
-
-    def _mark_storage_run_abnormally_stopped(self, *, run_no: str, occurred_at: str, reason: str) -> None:
-        storage = get_storage_backend()
-        with acquire_laboratory_storage_commit_lock():
-            snapshot, task_scope = self._storage_snapshot_for_run(storage, run_no)
-            run = run_context_from_snapshot(snapshot, run_no)
-            task_no = normalize_text(run.get("task_code") or run.get("task_no")) or task_scope
-            experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
-            tray_codes = [
-                normalize_text(item.get("tray_code") or item.get("tray_no"))
-                for item in snapshot.get("experiment_run_trays", [])
-                if normalize_text(item.get("run_no") or item.get("runNo")) == normalize_text(run_no)
-                and normalize_text(item.get("task_code") or item.get("task_no")) == task_no
-                and normalize_text(item.get("experiment_code") or item.get("experiment_no")) == experiment_no
-                and normalize_text(item.get("tray_code") or item.get("tray_no"))
-            ]
-            if not tray_codes:
-                raise ValueError("experiment_run_trays are required for abnormal termination")
-            scoped_snapshot = scope_snapshot_samples_for_experiment(
-                snapshot,
-                task_code=task_no,
-                experiment_code=experiment_no,
-                tray_codes=tray_codes,
-            )
-            result = terminate_storage_laboratory_experiment(
-                scoped_snapshot,
-                task_code=task_no,
-                experiment_code=experiment_no,
-                run_no=run_no,
-                tray_codes=tray_codes,
-                terminated_at=occurred_at,
-                termination_reason=reason,
-            )
-            write_laboratory_updates(
-                storage,
-                {
-                    "mes.samples": merge_scoped_samples(snapshot["samples"], result["samples"]),
-                    "mes.experiments": result["experiments"],
-                    "mes.schedules": result["schedules"],
-                    "mes.experiment_runs": result["experimentRuns"],
-                    "mes.experiment_run_trays": result["experimentRunTrays"],
-                },
-                scoped_samples=result["affectedSamples"],
-                task_codes={task_no},
-            )
-            apply_run_schedule_cascade(
-                storage,
-                {"run_no": run_no, "schedule_id": run.get("schedule_id") or run.get("schedule_no")},
-                new_end_at=occurred_at,
-                reason="盐雾实验异常停止",
-            )
 
     def mark_device_fault_canceled(self, run_no: str, occurred_at: str, command: dict[str, Any]) -> None:
         storage = get_storage_backend()
@@ -1049,6 +949,9 @@ class MySQLMqEventRepository:
         return snapshot, normalize_text(run.get("task_code") or run.get("task_no"))
 
     def start_run_for_context(self, context: dict[str, Any], occurred_at: str, run_no: str = "") -> dict[str, Any]:
+        run_no = normalize_text(run_no)
+        if not run_no:
+            raise ValueError("run_no is required for experiment started")
         task_no = normalize_text(context.get("task_no"))
         experiment_no = normalize_text(context.get("experiment_no"))
         sub_experiment_code = record_sub_experiment_code(context)
@@ -1066,7 +969,6 @@ class MySQLMqEventRepository:
             planned_end_at = (started_dt + timedelta(hours=planned_hours)).strftime("%Y-%m-%d %H:%M:%S")
         if not planned_end_at:
             planned_end_at = mysql_datetime_text(context.get("schedule_end_time"))
-        run_no = normalize_text(run_no) or generated_run_no()
         storage = get_storage_backend()
         with acquire_laboratory_storage_commit_lock():
             snapshot = storage_completion_snapshot(read_laboratory_task_payload(storage, task_no))
@@ -1189,6 +1091,10 @@ class MySQLMqEventRepository:
         with acquire_laboratory_storage_commit_lock():
             snapshot, task_scope = self._storage_snapshot_for_run(storage, run_no)
             run = run_context_from_snapshot(snapshot, run_no)
+            # Ingress may have read a paused/running run before an abnormal
+            # stop committed. Recheck the authoritative state while holding
+            # the commit lock, including the axis-completion branch below.
+            validate_run_completion_status(run)
             task_no = normalize_text(run.get("task_code") or run.get("task_no"))
             task_scope = task_scope or task_no
             experiment_no = normalize_text(run.get("experiment_code") or run.get("experiment_no"))
@@ -1339,9 +1245,13 @@ def process_laboratory_event(
     received_at: str = "",
 ) -> dict[str, Any]:
     repo = repository or MySQLMqEventRepository()
-    message_type = normalize_text(payload.get("message_type") or payload.get("event")) or event_type_from_topic(topic)
+    message_type = event_type_from_topic(topic)
     if message_type not in EVENT_TYPES:
         raise ValueError(f"Unsupported event type: {message_type}")
+    for field in ("message_type", "event"):
+        declared_type = normalize_text(payload.get(field))
+        if declared_type and declared_type != message_type:
+            raise ValueError("event type does not match MQTT topic")
     lab_code = first_text(payload, "lab_code") or topic_lab_code(topic)
     if not lab_code:
         raise ValueError("lab_code is required")
@@ -1361,6 +1271,10 @@ def process_laboratory_event(
     message_id = first_text(payload, "message_id") or generated_message_id(message_type, lab_code, occurred_at)
     if repo.message_exists(message_id):
         return build_ack(message_id, "DUPLICATE")
+    if message_type == "EXPERIMENT_STOPPED":
+        for field in ("termination_type", "terminationType"):
+            if field in payload:
+                validate_salt_stop_type(payload[field])
 
     context = None
     fixture_installation = None
@@ -1392,18 +1306,18 @@ def process_laboratory_event(
     payload_next_axis_code = first_text(payload, "next_axis_code", "nextAxisCode")
     payload_end_mode = first_text(payload, "end_mode", "endMode")
     payload_cancel_request_id = first_text(payload, "cancel_request_id", "cancelRequestId")
-    if message_type == "EXPERIMENT_RESULT" and not payload_run_no:
-        raise ValueError("run_no is required for experiment result")
+    if message_type in {"EXPERIMENT_STARTED", "EXPERIMENT_ENDED", "EXPERIMENT_RESULT", "EXPERIMENT_PAUSED", "EXPERIMENT_RESUMED", "EXPERIMENT_STOPPED"} and not payload_run_no:
+        raise ValueError(f"run_no is required for {message_type.lower().replace('_', ' ')}")
     run = None
     if message_type in {"EXPERIMENT_ENDED", "EXPERIMENT_RESULT", "EXPERIMENT_PAUSED", "EXPERIMENT_RESUMED", "EXPERIMENT_STOPPED"}:
-        run = repo.find_run_by_no(payload_run_no) if payload_run_no else repo.find_active_run_by_lab(lab_code)
+        run = repo.find_run_by_no(payload_run_no)
     created_run_from_context = False
     started_existing_axis = False
     if message_type == "EXPERIMENT_STARTED":
         checker = getattr(repo, "assert_device_available", None)
         if callable(checker):
             checker(lab_code)
-        existing_payload_run = repo.find_run_by_no(payload_run_no) if payload_run_no else None
+        existing_payload_run = repo.find_run_by_no(payload_run_no)
         if (
             lab_code == SALT_LAB_CODE
             and existing_payload_run
@@ -1415,7 +1329,7 @@ def process_laboratory_event(
                 "RESUME_EVENT_REQUIRED",
                 "盐雾暂停运行必须通过 experiment-resumed 恢复，不能重复 experiment-started",
             )
-        if payload_run_no and payload_axis_code:
+        if payload_axis_code:
             run = existing_payload_run or repo.find_run_by_no(payload_run_no)
             started_existing_axis = bool(run and run_axis_codes(run))
         if started_existing_axis:
@@ -1547,11 +1461,9 @@ def process_laboratory_event(
         else:
             termination_type = normalize_text(command_payload.get("termination_type"))
             termination_reason = normalize_text(command_payload.get("termination_reason"))
-            if termination_type not in TERMINATION_TYPES:
-                raise ValueError("termination_type 仅支持 completion_criteria 或 abnormal")
+            validate_salt_stop_type(termination_type)
             repo.mark_salt_run_stopped(run_no, pause_no, occurred_at, termination_type, termination_reason)
-            if termination_type != TERMINATION_ABNORMAL:
-                repo.mark_run_ended(run_no, occurred_at, "", "", sub_experiment_code)
+            repo.mark_run_ended(run_no, occurred_at, "", "", sub_experiment_code)
     if fault_cancel_command:
         repo.mark_device_fault_canceled(run_no, occurred_at, fault_cancel_command)
     if mold_cancel_command:

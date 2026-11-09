@@ -11,6 +11,7 @@ from app.core.config import Settings, settings
 from app.core.performance import increment_performance_count, performance_span
 from app.db.session import get_connection
 from app.services.mq_event_processor import MySQLMqEventRepository, normalize_text
+from app.services.salt_spray_pause import validate_salt_stop_type
 
 
 COMMAND_TOPICS = {
@@ -254,6 +255,11 @@ def build_laboratory_topic(command: str, lab_code: str, app_settings: Settings =
 
 
 def publish_laboratory_command(command: str, payload: dict[str, Any], app_settings: Settings = settings) -> dict[str, Any]:
+    if command == "STOP_REQUEST":
+        validate_salt_stop_type(payload.get("termination_type") or payload.get("terminationType"))
+        for field in ("termination_type", "terminationType"):
+            if field in payload:
+                validate_salt_stop_type(payload[field])
     topic = build_laboratory_topic(command, str(payload.get("lab_code") or ""), app_settings)
     # Keep schedule context in the MES log for run binding and cancellation
     # reports. It is not part of the upper-computer MQTT contract.

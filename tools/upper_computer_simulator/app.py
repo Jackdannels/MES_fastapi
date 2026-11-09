@@ -764,6 +764,9 @@ class MqttSimulator:
         salt_control_event = salt_control_events.get(command)
         if salt_control_event:
             request_payload = dict(payload) if isinstance(payload, dict) else {}
+            if command == "experiment-stop-request" and normalize_text(request_payload.get("termination_type")) != "completion_criteria":
+                self.log("error", "盐雾提前结束仅支持 completion_criteria，拒绝已停用的停止类型", request_payload, topic)
+                return
             event_name, event_time_field = salt_control_event
             # Snapshot the exact control-command correlation context. A later
             # command for this laboratory must not overwrite the delayed ACK.
@@ -783,6 +786,10 @@ class MqttSimulator:
             )
 
     def publish(self, event_name: str, payload: dict[str, Any], lab_code: str | None = None) -> dict[str, Any]:
+        if event_name == "experiment-stopped":
+            for field in ("termination_type", "terminationType"):
+                if field in payload and normalize_text(payload[field]) != "completion_criteria":
+                    raise HTTPException(status_code=422, detail="盐雾提前结束仅支持 completion_criteria")
         payload = without_schedule_context(payload)
         with self._lock:
             client = self._client

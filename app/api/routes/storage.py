@@ -34,6 +34,8 @@ from app.services.storage_tray_actions import (
     build_manufacturer_return_updates,
     build_stock_in_updates,
     build_stock_out_updates,
+    resolve_tray_action_matches,
+    sample_task_code,
     summarize_tray_row,
 )
 from app.services.storage_schedule_patch import (
@@ -45,6 +47,7 @@ from app.services.storage_schedule_patch import (
     validate_schedule_maintenance_conflicts,
 )
 from app.services.storage_update_bus import publish_storage_update, storage_update_event_stream as _storage_update_event_stream
+from app.services.storage_public_write_policy import validate_public_storage_keys, validate_public_storage_write
 from app.services.read_through_cache import read_snapshot_cache, storage_cache_identity
 from app.services.device_running_repair import (
     DeviceRunningRepairError,
@@ -865,8 +868,12 @@ def _read_tray_action_snapshot(
     scope_writer = getattr(storage, "write_task_scope", None)
     if callable(task_resolver) and callable(scope_reader) and callable(scope_writer):
         task_code = _normalize_text(task_resolver(tray_code))
+        binding_reader = getattr(storage, "read_tray_bindings", None)
+        if callable(binding_reader):
+            resolve_tray_action_matches(binding_reader(tray_code), tray_code, expected_task_code=task_code)
         if task_code:
             snapshot = scope_reader({task_code}, TRAY_ACTION_SCOPE_KEYS)
+            resolve_tray_action_matches(snapshot.get(SAMPLES_KEY, []), tray_code, expected_task_code=task_code)
             if include_global_lab_occupancy:
                 read_many = getattr(storage, "read_many", None)
                 occupancy_snapshot = (
@@ -877,7 +884,10 @@ def _read_tray_action_snapshot(
                 for storage_key, snapshot_key in LAB_OCCUPANCY_SNAPSHOT_KEYS.items():
                     snapshot[snapshot_key] = occupancy_snapshot.get(storage_key, [])
             return snapshot, task_code, True
-    return storage.read_all(), "", False
+    snapshot = storage.read_all()
+    matches = resolve_tray_action_matches(snapshot.get(SAMPLES_KEY, []), tray_code)
+    task_code = sample_task_code(matches[0][0]) if matches else ""
+    return snapshot, task_code, False
 
 
 def _stock_out_targets_laboratory(update_builder: Any, payload: dict[str, Any]) -> bool:
@@ -921,6 +931,11 @@ def _run_storage_tray_action(
                 normalized_tray_code,
                 include_global_lab_occupancy=_stock_out_targets_laboratory(update_builder, payload),
             )
+            current_matches = resolve_tray_action_matches(snapshot.get(SAMPLES_KEY, []), normalized_tray_code)
+            current_sample_codes = {
+                _normalize_text(sample.get("code") or sample.get("sample_code") or sample.get("id"))
+                for sample, _tray in current_matches
+            }
             updates = update_builder(snapshot, room=room, tray_code=normalized_tray_code, payload=payload, now=action_time)
             _validate_storage_update(
                 storage,
@@ -939,7 +954,7 @@ def _run_storage_tray_action(
     return {
         "ok": True,
         "trayCode": normalized_tray_code,
-        "row": summarize_tray_row(updated_samples, normalized_tray_code),
+        "row": summarize_tray_row(updated_samples, normalized_tray_code, task_code=task_code, sample_codes=current_sample_codes),
         "updatedKeys": list(updates.keys()),
     }
 
@@ -1092,11 +1107,19 @@ def read_key(key: str) -> Any:
 def write_key(key: str, payload: Any = Body(...)) -> Dict[str, bool]:
     if key not in STORAGE_KEYS:
         raise HTTPException(status_code=404, detail="Unknown storage key")
+    try:
+        validate_public_storage_keys({key})
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     storage = get_storage_backend()
     with acquire_laboratory_storage_commit_lock():
         snapshot = _read_storage_update_snapshot(storage, {key})
         updates = merge_concurrent_storage_updates(snapshot, {key: payload})
         updates = _normalize_future_maintenance_device_statuses(updates)
+        try:
+            validate_public_storage_write(snapshot, updates)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         _validate_storage_update(storage, updates, snapshot)
         storage.write(key, updates[key])
     publish_storage_update([key])
@@ -1110,6 +1133,10 @@ def write_many(
     update_request_id: str = Header(default="", alias="X-MES-Update-Request-Id"),
 ) -> Dict[str, bool]:
     storage = get_storage_backend()
+    try:
+        validate_public_storage_keys(payload)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     updates = {key: value for key, value in payload.items() if key in STORAGE_KEYS}
     if not updates:
         raise HTTPException(status_code=400, detail="No valid storage keys provided")
@@ -1117,6 +1144,10 @@ def write_many(
         snapshot = _read_storage_update_snapshot(storage, updates)
         updates = merge_concurrent_storage_updates(snapshot, updates)
         updates = _normalize_future_maintenance_device_statuses(updates)
+        try:
+            validate_public_storage_write(snapshot, updates)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         _validate_storage_update(storage, updates, snapshot)
         storage.write_many(updates)
     source = str(update_source or "").strip()

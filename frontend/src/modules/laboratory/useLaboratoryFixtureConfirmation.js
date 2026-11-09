@@ -66,7 +66,7 @@ function useLaboratoryFixtureConfirmation({
     }, FIXTURE_CONFIRM_SUCCESS_MS);
   };
 
-  const startFixtureConfirmCountdown = ({ taskCode, trayCodes }) => {
+  const startFixtureConfirmCountdown = () => {
     clearFixtureConfirmTimer();
     clearFixtureConfirmSuccessTimer();
     fixtureConfirmHostless.value = false;
@@ -101,8 +101,6 @@ function useLaboratoryFixtureConfirmation({
           });
         return;
       }
-      openFixtureConfirmSuccess();
-      void persistFixtureReadyForTask({ taskCode, trayCodes });
     }, 1000);
   };
 

@@ -17,7 +17,7 @@ from app.services.appearance_inspection import (
 from app.services.experiment_segments import record_sub_experiment_code, resolve_record_sub_experiment_code
 from app.services.laboratory_operations import clear_fixture_ready_marker
 from app.services.laboratory_run_lifecycle import close_superseded_running_runs_for_trays
-from app.services.laboratory_termination import MOLD_CANCELED_STATUS
+from app.services.laboratory_termination import LEGACY_ABNORMAL_TERMINATION_STATUS, MOLD_CANCELED_STATUS
 from app.services.laboratory_completion_rules import (
     COMPLETED_STATUS,
     COMPLETION_ACTION,
@@ -40,6 +40,8 @@ def validate_run_completion_status(run: dict[str, Any] | None) -> None:
     status = normalize_text((run or {}).get("run_status") or (run or {}).get("status"))
     if status == MOLD_CANCELED_STATUS:
         raise ValueError("已取消的实验运行不能改为正常完成")
+    if status == LEGACY_ABNORMAL_TERMINATION_STATUS:
+        raise ValueError("异常终止的实验运行不能改为正常完成")
 
 
 def completed_axis_codes_for_completion(

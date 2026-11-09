@@ -853,8 +853,8 @@ def test_storage_rejects_lab_arrival_when_tray_was_not_dispatched_from_transfer_
 
     response = client.put("/api/storage/mes.samples", json=attempted)
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "托盘尚未从接驳间出库，不能直接到达实验室"
+    assert response.status_code == 409
+    assert "对应业务入口" in response.json()["detail"]
     assert storage.read("mes.samples") == samples
 
 
@@ -1333,8 +1333,8 @@ def test_storage_bulk_update_rejects_lab_arrival_when_sample_has_no_dispatched_t
 
     response = client.put("/api/storage", json={"mes.samples": attempted})
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "托盘尚未从接驳间出库，不能直接到达实验室"
+    assert response.status_code == 409
+    assert "对应业务入口" in response.json()["detail"]
     assert storage.read("mes.samples") == samples
 
 
@@ -1436,7 +1436,7 @@ def test_storage_bulk_update_merges_stale_storage_room_snapshot_without_revertin
     assert event_ids == ["event-existing", "event-new"]
 
 
-def test_storage_allows_lab_arrival_after_transfer_area_dispatch(monkeypatch):
+def test_storage_rejects_direct_lab_arrival_after_transfer_area_dispatch(monkeypatch):
     samples = [
         {
             "code": "SP-DISPATCHED",
@@ -1473,8 +1473,8 @@ def test_storage_allows_lab_arrival_after_transfer_area_dispatch(monkeypatch):
 
     response = client.put("/api/storage", json={"mes.samples": updated})
 
-    assert response.status_code == 200
-    assert storage.read("mes.samples") == updated
+    assert response.status_code == 409
+    assert storage.read("mes.samples") == samples
 
 
 def test_storage_rejects_rearrival_after_manufacturer_return(monkeypatch):
@@ -2086,12 +2086,12 @@ def test_storage_rejects_laboratory_progress_when_device_is_under_maintenance(mo
 
     response = client.put("/api/storage", json={"mes.samples": updated})
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "盐雾试验室设备维修中，禁止实验室操作"
+    assert response.status_code == 409
+    assert "对应业务入口" in response.json()["detail"]
     assert storage.read("mes.samples") == samples
 
 
-def test_storage_allows_laboratory_progress_after_maintenance_window_ends(monkeypatch):
+def test_storage_rejects_direct_laboratory_progress_after_maintenance_window_ends(monkeypatch):
     samples = [
         {
             "code": "SP-MAINTENANCE-ENDED",
@@ -2138,8 +2138,8 @@ def test_storage_allows_laboratory_progress_after_maintenance_window_ends(monkey
 
     response = client.put("/api/storage", json={"mes.samples": updated})
 
-    assert response.status_code == 200
-    assert storage.read("mes.samples") == updated
+    assert response.status_code == 409
+    assert storage.read("mes.samples") == samples
 
 
 def test_storage_rejects_laboratory_progress_after_open_ended_maintenance_starts(monkeypatch):
@@ -2175,12 +2175,12 @@ def test_storage_rejects_laboratory_progress_after_open_ended_maintenance_starts
 
     response = client.put("/api/storage", json={"mes.samples": updated})
 
-    assert response.status_code == 400
-    assert response.json()["detail"] == "盐雾试验室设备维修中，禁止实验室操作"
+    assert response.status_code == 409
+    assert "对应业务入口" in response.json()["detail"]
     assert storage.read("mes.samples") == samples
 
 
-def test_storage_allows_next_experiment_arrival_after_previous_experiment_completed(monkeypatch):
+def test_storage_rejects_direct_next_experiment_arrival_after_previous_experiment_completed(monkeypatch):
     samples = [
         {
             "code": "SP-PREVIOUS-COMPLETED",
@@ -2237,8 +2237,8 @@ def test_storage_allows_next_experiment_arrival_after_previous_experiment_comple
 
     response = client.put("/api/storage", json={"mes.samples": updated})
 
-    assert response.status_code == 200
-    assert storage.read("mes.samples") == updated
+    assert response.status_code == 409
+    assert storage.read("mes.samples") == samples
 
 
 def test_storage_allows_idempotent_snapshot_when_sample_already_arrived_lab(monkeypatch):
