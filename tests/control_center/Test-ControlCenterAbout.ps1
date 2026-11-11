@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Web.Extensions
 $assembly = [Reflection.Assembly]::LoadFrom($Executable)
-if ($assembly.GetName().Version.ToString() -ne '2.8.2.0' -or [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable).FileVersion -ne '2.8.2.0') { throw 'Control center assembly/file version is not 2.8.2.0' }
+if ($assembly.GetName().Version.ToString() -ne '2.9.0.0' -or [Diagnostics.FileVersionInfo]::GetVersionInfo($Executable).FileVersion -ne '2.9.0.0') { throw 'Control center assembly/file version is not 2.9.0.0' }
 $static = [Reflection.BindingFlags]'Static,NonPublic'
 $fields = [Reflection.BindingFlags]'Instance,NonPublic,Public'
 $type = $assembly.GetType('MESControlCenter.MESAccessInfo', $true)
@@ -62,6 +62,6 @@ try {
     $formType.GetField('systemRunning', $fields).SetValue($form, $true)
     $null = $formType.GetMethod('UpdateServiceActionState', $fields).Invoke($form, @())
     if (-not $openCentral.Enabled -or $formType.GetField('startServiceButton', $fields).GetValue($form).Enabled) { throw 'Running services must allow reopening the interface without starting services' }
-    if ($banner.Text -ne 'http://192.168.110.15:32173' -or -not $form.Text.Contains('v2.8.2')) { throw 'Homepage LAN address or v2.8.2 title missing' }
+    if ($banner.Text -ne 'http://192.168.110.15:32173' -or -not $form.Text.Contains('v2.9.0')) { throw 'Homepage LAN address or v2.9.0 title missing' }
 } finally { $form.Dispose() }
 Write-Output 'About runtime checks passed: loopback, wildcard, specific NIC, custom port, offline Docker, candidate status and configured startup URL.'

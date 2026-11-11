@@ -4,6 +4,10 @@ tools/lims_simulator/data/
 __pycache__/
 *.pyc
 .env
+.env.bak.*
+.env.tmp.*
+*.env.bak.*
+*.env.tmp.*
 .runtime/
 artifacts/performance/
 artifacts/p0-runtime/
@@ -26,6 +30,7 @@ app/static/dist/
 .tmp/desktop-client*
 artifacts/desktop-client/
 .tmp/control-center-*
+.tmp/5826*/
 .tmp/finalize-control-center-v24.py
 .tmp/*password*.txt
 .tmp/backup-*/

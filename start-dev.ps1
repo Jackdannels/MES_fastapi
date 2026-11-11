@@ -179,7 +179,7 @@ $launcherSessionId = [Guid]::NewGuid().ToString("N")
 if ($condaBat) {
     $backendReloadArgument = if ($Production) { "" } else { " --reload" }
     $backendCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"LIMS_HEALTH_URL=$limsSimulatorReadyUrl`" && set `"LIMS_DATA_PUBLIC_BASE_URL=$limsDataPublicBaseUrl`" && set `"LIMS_HTTP_CALLBACK_URL=$limsHttpCallbackUrl`" && set `"RABBITMQ_ENABLED=true`" && set `"RABBITMQ_REQUIRED=true`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_local.py$backendReloadArgument --host $BackendHost --port $BackendPort"
-    $limsSimulatorCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"LIMS_MES_BASE_URL=http://127.0.0.1:$BackendPort`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$LimsSimulatorRoot`" && python -m uvicorn app:app --host $LimsSimulatorHost --port $LimsSimulatorPort"
+    $limsSimulatorCommand = "set `"MES_LAUNCHER_SESSION=$launcherSessionId`" && set `"LIMS_MES_BASE_URL=http://127.0.0.1:$BackendPort`" && set `"RABBITMQ_URL=$RabbitMqUrl`" && call `"$condaBat`" activate $CondaEnv && cd /d `"$ProjectRoot`" && python scripts\run_lims_simulator.py --host $LimsSimulatorHost --port $LimsSimulatorPort"
 } else {
     $backendCommand = "echo Unable to find conda.bat. Please install Anaconda/Miniconda or add conda to PATH. && echo Expected environment: $CondaEnv"
     $limsSimulatorCommand = "echo Unable to find conda.bat. LIMS simulator was not started."
@@ -304,8 +304,8 @@ if ($Production) {
             -WorkingDirectory $FrontendRoot -PassThru
 
         $limsSimulatorProcess = Start-Process -FilePath $condaPython `
-            -ArgumentList "-m", "uvicorn", "app:app", "--host", $LimsSimulatorHost, "--port", $LimsSimulatorPort `
-            -WorkingDirectory $LimsSimulatorRoot -WindowStyle Hidden -PassThru `
+            -ArgumentList ('"' + (Join-Path $ProjectRoot 'scripts/run_lims_simulator.py') + '"'), "--host", $LimsSimulatorHost, "--port", $LimsSimulatorPort `
+            -WorkingDirectory $ProjectRoot -WindowStyle Hidden -PassThru `
             -RedirectStandardOutput (Join-Path $logDirectory "lims.stdout.log") `
             -RedirectStandardError (Join-Path $logDirectory "lims.stderr.log")
     } finally {

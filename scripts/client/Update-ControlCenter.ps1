@@ -35,6 +35,23 @@ if (-not $native) {
     }
 }
 $manifest = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $PSScriptRoot 'update-manifest.json') | ConvertFrom-Json
+$updatedReleaseFiles = @('scripts/deploy/Mes-Portable.ps1','scripts/deploy/Mes-PortableHost.ps1')
+$nativeManifestPath = ''
+if (-not $native) {
+    foreach ($file in @('compose.portable.yml','compose.portable.simulators.yml')) {
+        $key = '部署更新/'+$file
+        if (@($manifest.files | Where-Object { $_.path -ceq $key }).Count -gt 0) {
+            $mapping += [pscustomobject]@{Key=$key;Target=(Join-Path $release $file);Backup=('release/'+$file)}
+            $updatedReleaseFiles += $file
+        }
+    }
+} elseif (@($manifest.files | Where-Object { $_.path -ceq '原生部署更新/service_entry.py' }).Count -gt 0) {
+    if (-not $settings.PSObject.Properties['programRoot'] -or -not $settings.programRoot) { throw '原生桌面配置缺少 programRoot，无法定位配套服务入口。' }
+    $entryPath = Join-Path (Resolve-ToolPath $target ([string]$settings.programRoot)) 'native/service_entry.py'
+    if (-not (Test-Path -LiteralPath $entryPath -PathType Leaf)) { throw '未找到原生服务入口，请检查实际安装目录。' }
+    $mapping += [pscustomobject]@{Key='原生部署更新/service_entry.py';Target=$entryPath;Backup='native/service_entry.py'}
+    $nativeManifestPath = Join-Path (Resolve-ToolPath $target ([string]$settings.programRoot)) 'native-manifest.json'
+}
 foreach ($file in $mapping) {
     $entry = @($manifest.files | Where-Object { $_.path -ceq $file.Key })
     $source = Join-Path $PSScriptRoot $file.Key
@@ -53,6 +70,7 @@ foreach ($file in $mapping) {
 }
 $releaseManifestPath = if ($release) { Join-Path $release 'manifest.json' } else { '' }
 if ($releaseManifestPath -and (Test-Path -LiteralPath $releaseManifestPath)) { Copy-Item -LiteralPath $releaseManifestPath -Destination (Join-Path $backup 'release-manifest.json') }
+if ($nativeManifestPath -and (Test-Path -LiteralPath $nativeManifestPath)) { Copy-Item -LiteralPath $nativeManifestPath -Destination (Join-Path $backup 'native-manifest.json') }
 try {
     foreach ($file in $mapping) {
         New-Item -ItemType Directory -Path (Split-Path -Parent $file.Target) -Force | Out-Null
@@ -60,14 +78,22 @@ try {
     }
     if ($releaseManifestPath -and (Test-Path -LiteralPath $releaseManifestPath)) {
         $releaseManifest = Get-Content -Raw -Encoding UTF8 -LiteralPath $releaseManifestPath | ConvertFrom-Json
-        $entries = @($releaseManifest.files | Where-Object { $_.path -notin @('scripts/deploy/Mes-Portable.ps1','scripts/deploy/Mes-PortableHost.ps1') })
-        foreach ($file in @('scripts/deploy/Mes-Portable.ps1','scripts/deploy/Mes-PortableHost.ps1')) {
+        $entries = @($releaseManifest.files | Where-Object { $_.path -notin $updatedReleaseFiles })
+        foreach ($file in $updatedReleaseFiles) {
             $path = Join-Path $release $file
             $entries += [pscustomobject]@{path=$file;bytes=(Get-Item -LiteralPath $path).Length;sha256=(Get-Sha256 $path)}
         }
         $releaseManifest.files = $entries
-        $releaseManifest | Add-Member -NotePropertyName control_center_update -NotePropertyValue '2.8.2' -Force
+        $releaseManifest | Add-Member -NotePropertyName control_center_update -NotePropertyValue '2.9.0' -Force
         [IO.File]::WriteAllText($releaseManifestPath, ($releaseManifest | ConvertTo-Json -Depth 15), (New-Object Text.UTF8Encoding($false)))
+    }
+    if ($nativeManifestPath -and (Test-Path -LiteralPath $nativeManifestPath)) {
+        $nativeManifest = Get-Content -Raw -Encoding UTF8 -LiteralPath $nativeManifestPath | ConvertFrom-Json
+        $entries = @($nativeManifest.files | Where-Object { $_.path -cne 'native/service_entry.py' })
+        $entries += [pscustomobject]@{path='native/service_entry.py';bytes=(Get-Item -LiteralPath $entryPath).Length;sha256=(Get-Sha256 $entryPath)}
+        $nativeManifest.files = $entries
+        $nativeManifest | Add-Member -NotePropertyName control_center_update -NotePropertyValue '2.9.0' -Force
+        [IO.File]::WriteAllText($nativeManifestPath, ($nativeManifest | ConvertTo-Json -Depth 15), (New-Object Text.UTF8Encoding($false)))
     }
 } catch {
     foreach ($file in $mapping) {
@@ -76,6 +102,7 @@ try {
         elseif ([IO.File]::Exists($file.Target)) { [IO.File]::Delete($file.Target) }
     }
     if ($releaseManifestPath -and (Test-Path -LiteralPath (Join-Path $backup 'release-manifest.json'))) { Copy-Item -LiteralPath (Join-Path $backup 'release-manifest.json') -Destination $releaseManifestPath -Force }
+    if ($nativeManifestPath -and (Test-Path -LiteralPath (Join-Path $backup 'native-manifest.json'))) { Copy-Item -LiteralPath (Join-Path $backup 'native-manifest.json') -Destination $nativeManifestPath -Force }
     throw
 }
 if (Test-Path -LiteralPath (Join-Path $target 'desktop-tools-manifest.json')) {
@@ -84,12 +111,13 @@ if (Test-Path -LiteralPath (Join-Path $target 'desktop-tools-manifest.json')) {
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'update-manifest.json') -Destination (Join-Path $target 'control-center-update-manifest.json') -Force
 if (-not $NoShortcut) {
     $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) ('MES控制中心_v2.8.2_'+$variant+'.lnk')))
+    $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) ('MES控制中心_v2.9.0_'+$variant+'.lnk')))
     $shortcut.TargetPath = $executable
     $shortcut.WorkingDirectory = $target
     $shortcut.IconLocation = $executable + ',0'
     $shortcut.Save()
 }
-Write-Output "MES 控制中心已升级为 v2.8.2（$variant），备份：$backup"
-if (-not $NoShortcut) { Write-Output '桌面已提供 v2.8.2 快捷方式。' }
-Write-Output 'v2.8.2 退出控制中心时确认并关闭系统，失败则保留窗口。需要保留服务时请最小化；单独关闭中控界面仍保留后台服务。'
+Write-Output "MES 控制中心已升级为 v2.9.0（$variant），备份：$backup"
+if (-not $NoShortcut) { Write-Output '桌面已提供 v2.9.0 快捷方式。' }
+Write-Output 'v2.9.0 退出控制中心时确认并关闭系统，失败则保留窗口。需要保留服务时请最小化；单独关闭中控界面仍保留后台服务。'
+Write-Output '本更新包含“系统配置”功能及配套部署入口；业务配置和数据保留在原位置。'

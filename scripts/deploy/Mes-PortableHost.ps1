@@ -72,10 +72,12 @@ function Update-MesPortableNetwork([string]$EnvironmentFile, [switch]$ConfigureF
     if ($interfaces.Count -eq 0) { Write-Warning 'No active wired/Wi-Fi IPv4 interface found; connect the LAN and start again to update public URLs.' }
     return [pscustomobject]@{Mode=$mode;PublicUrl=$url;Changed=($updated -cne $text);Port=$port;BackupPath=$backup}
 }
-function Test-MesDockerEngine {
+function Get-MesDockerEngineStatus {
     $info = New-Object Diagnostics.ProcessStartInfo
-    $info.FileName = 'docker.exe'
-    $info.Arguments = 'info --format "{{.ServerVersion}}"'
+    $cli=Resolve-MesDockerCli
+    if(-not $cli){return [pscustomobject]@{Ready=$false;OsType='';Reason='未找到 Docker 命令行程序，请安装 Docker Desktop。'}}
+    $info.FileName = $cli
+    $info.Arguments = 'info --format "{{.OSType}}"'
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
     $info.RedirectStandardOutput = $true
@@ -83,26 +85,71 @@ function Test-MesDockerEngine {
     $process = New-Object Diagnostics.Process
     $process.StartInfo = $info
     try {
-        if (-not $process.Start()) { return $false }
+        if (-not $process.Start()) { throw '无法启动 docker.exe。' }
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit(5000)) { $process.Kill(); return $false }
-        return $process.ExitCode -eq 0
-    } catch { return $false }
+        if (-not $process.WaitForExit(5000)) { $process.Kill(); throw 'docker info 在 5 秒内没有响应。' }
+        $null=$stdout.Wait(200);$null=$stderr.Wait(200)
+        $os=if($stdout.IsCompleted){$stdout.Result.Trim().ToLowerInvariant()}else{''}
+        $reason=if($stderr.IsCompleted){$stderr.Result.Trim()}else{''}
+        if($reason.Length -gt 1800){$reason=$reason.Substring(0,1800)}
+        return [pscustomobject]@{Ready=($process.ExitCode -eq 0);OsType=$os;Reason=$reason}
+    } catch { return [pscustomobject]@{Ready=$false;OsType='';Reason=$_.Exception.Message} }
     finally { $process.Dispose() }
 }
-function Wait-MesDockerEngine {
-    if (Test-MesDockerEngine) { return }
-    $desktop = Join-Path $env:ProgramFiles 'Docker/Docker/Docker Desktop.exe'
-    if (-not (Test-Path -LiteralPath $desktop)) { throw 'Docker engine is unavailable. Start the configured Docker engine first.' }
+function Test-MesDockerEngine { $status=Get-MesDockerEngineStatus; return $status.Ready -and $status.OsType -eq 'linux' }
+function Get-MesDockerDesktopCandidates {
+    if($env:MES_DOCKER_DESKTOP_PATH){$env:MES_DOCKER_DESKTOP_PATH}
+    if($env:LOCALAPPDATA){Join-Path $env:LOCALAPPDATA 'Programs/DockerDesktop/Docker Desktop.exe'}
+    if($env:ProgramFiles){Join-Path $env:ProgramFiles 'Docker/Docker/Docker Desktop.exe'}
+    $command=Get-Command docker.exe -ErrorAction SilentlyContinue
+    if($command -and $command.Source){
+        $directory=Split-Path -Parent $command.Source
+        Join-Path $directory 'Docker Desktop.exe'
+        [IO.Path]::GetFullPath((Join-Path $directory '../../Docker Desktop.exe'))
+    }
+    foreach($key in @('HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\Docker Desktop.exe','HKLM:\Software\Microsoft\Windows\CurrentVersion\App Paths\Docker Desktop.exe')){
+        if(Test-Path $key){try{(Get-Item -LiteralPath $key).GetValue('')}catch{}}
+    }
+    foreach($key in @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Docker Desktop','HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Docker Desktop','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Docker Desktop')){
+        if(Test-Path $key){try{$item=Get-ItemProperty -LiteralPath $key;if($item.PSObject.Properties['InstallLocation'] -and $item.InstallLocation){Join-Path $item.InstallLocation 'Docker Desktop.exe'}}catch{}}
+    }
+    foreach($process in @(Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue)){try{if($process.Path){$process.Path}}catch{}}
+}
+function Resolve-MesDockerDesktop {
+    foreach($candidate in @(Get-MesDockerDesktopCandidates|Where-Object {$_}|Select-Object -Unique)){
+        $path=([string]$candidate).Trim('"')
+        if(Test-Path -LiteralPath $path -PathType Leaf){return [IO.Path]::GetFullPath($path)}
+    }
+    return ''
+}
+function Resolve-MesDockerCli {
+    $command=Get-Command docker.exe -ErrorAction SilentlyContinue
+    if($command -and $command.Source){return $command.Source}
+    $desktop=Resolve-MesDockerDesktop
+    if($desktop){$cli=Join-Path (Split-Path -Parent $desktop) 'resources/bin/docker.exe';if(Test-Path -LiteralPath $cli -PathType Leaf){return $cli}}
+    return ''
+}
+function Wait-MesDockerEngine([int]$TimeoutSeconds=180,[int]$PollMilliseconds=2000) {
+    $cli=Resolve-MesDockerCli
+    if($cli -and -not (Get-Command docker.exe -ErrorAction SilentlyContinue)){$env:PATH=(Split-Path -Parent $cli)+[IO.Path]::PathSeparator+$env:PATH}
+    $status=Get-MesDockerEngineStatus
+    if($status.Ready){
+        if($status.OsType -eq 'linux'){return}
+        throw 'Docker 当前不是 Linux 容器引擎。请在 Docker Desktop 中切换为 Linux 容器，再继续安装。'
+    }
+    $desktop=Resolve-MesDockerDesktop
+    if (-not $desktop) { throw ('无法连接 Docker Linux 引擎，也未找到 Docker Desktop。请先启动或安装 Docker Desktop 并完成 WSL 初始化。支持自定义安装路径，可设置 MES_DOCKER_DESKTOP_PATH 指向 Docker Desktop.exe。诊断：'+$status.Reason) }
     Write-Host 'Starting Docker Desktop and waiting for its Linux engine...'
     Start-Process -FilePath $desktop -WindowStyle Hidden | Out-Null
-    $deadline = [DateTime]::UtcNow.AddSeconds(180)
-    while ([DateTime]::UtcNow -lt $deadline) {
-        if (Test-MesDockerEngine) { return }
-        Start-Sleep -Seconds 2
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ($true) {
+        $status=Get-MesDockerEngineStatus
+        if($status.Ready){if($status.OsType -eq 'linux'){return};throw 'Docker 当前为 Windows 容器模式，请切换为 Linux 容器后继续安装。'}
+        if([DateTime]::UtcNow -ge $deadline){break}
+        Start-Sleep -Milliseconds $PollMilliseconds
     }
-    throw 'Docker Desktop did not become ready within 180 seconds. Inspect its startup diagnostics.'
+    throw ('Docker Desktop 已启动，但 Linux 引擎在 '+$TimeoutSeconds+' 秒内仍未就绪。请检查 Docker Desktop 的启动、WSL 和虚拟化提示。诊断：'+$status.Reason)
 }
 function Write-MesStartupOverride([string]$Path, [bool]$FastHealthChecks) {
     $directory = Split-Path -Parent $Path

@@ -16,7 +16,8 @@ def configure(path: Path, service: str):
     # Each process receives only its own integration configuration. LIMS and the
     # device simulator must never inherit database/admin credentials.
     if service == "lims":
-        keys = {"RABBITMQ_URL", "LIMS_MES_BASE_URL", "LIMS_HTTP_TOKEN", "LIMS_SEQUENCE_PATH", "LIMS_INBOX_PATH"}
+        keys = {"RABBITMQ_URL", "RABBITMQ_COMMAND_EXCHANGE", "RABBITMQ_INTAKE_ROUTING_KEY",
+                "LIMS_MES_BASE_URL", "LIMS_HTTP_TOKEN", "LIMS_SEQUENCE_PATH", "LIMS_INBOX_PATH"}
     elif service == "upper":
         keys = {"MQTT_HOST", "MQTT_PORT", "MQTT_USERNAME", "MQTT_PASSWORD", "MQTT_TOPIC_PREFIX", "SIMULATOR_AUTO_CONNECT"}
     else:

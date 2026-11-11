@@ -3,6 +3,8 @@ param(
     [ValidateSet('Install','Desktop','Info','Verify')] [string]$Action='Install',
     [string]$EnvironmentFile='',
     [string]$DesktopDirectory='',
+    [string]$DesktopToolsDirectory='',
+    [switch]$SelectedComponentsOnly,
     [switch]$NoOpen
 )
 $ErrorActionPreference='Stop'
@@ -25,6 +27,7 @@ function Resolve-Payload([string]$Relative) {
 function Verify-Delivery($Manifest) {
     if($Manifest.format -ne 'mes-portable-click-deployment' -or $Manifest.format_version -ne 1){throw 'Unsupported delivery manifest'}
     foreach($file in $Manifest.files) {
+        if($SelectedComponentsOnly -and ([string]$file.path).StartsWith('workstation-payload/')){continue}
         $path=Resolve-Payload ([string]$file.path)
         if(-not (Test-Path -LiteralPath $path -PathType Leaf)){throw ('Missing delivery file: '+$file.path)}
         if((Get-Item -LiteralPath $path).Length -ne $file.bytes -or (Get-Digest $path) -cne $file.sha256){throw ('Delivery checksum mismatch: '+$file.path)}
@@ -61,26 +64,41 @@ function Assert-NewTarget($Configuration,$State) {
     if($occupied.Count){throw ('MES target ports are already occupied: '+($occupied -join ', ')+'. Stop the intended old deployment before installing this new instance.')}
 }
 function Install-DesktopTools {
-    $destination=Join-Path $runtime 'desktop-tools'
+    $destination=if($DesktopToolsDirectory){[IO.Path]::GetFullPath($DesktopToolsDirectory)}else{Join-Path $runtime 'desktop-tools'}
     [IO.Directory]::CreateDirectory($destination)|Out-Null
     Copy-Item -Path (Join-Path $desktopPayload '*') -Destination $destination -Recurse -Force
     $configure=Join-Path $destination 'Configure-DesktopTools.ps1'
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $configure -DeploymentDirectory $release -EnvironmentFile $environment
+    $publicUrl=Get-MesEnvironmentValue ([IO.File]::ReadAllText($environment)) 'MES_PUBLIC_URL'
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $configure -DeploymentDirectory $release -EnvironmentFile $environment -ServerUrl $publicUrl
     if($LASTEXITCODE -ne 0){throw 'Desktop connection configuration failed'}
     $config=Read-Json (Join-Path $destination 'mes-desktop-tools.json')
     $config | Add-Member -NotePropertyName deploymentMode -NotePropertyValue 'docker' -Force
     Write-Json (Join-Path $destination 'mes-desktop-tools.json') $config
+    $central=Join-Path $destination 'central-client/mes-client.json'
+    if(Test-Path -LiteralPath $central) {
+        $centralConfig=Read-Json $central
+        $centralConfig.serverUrl=$config.serverUrl
+        if($centralConfig.PSObject.Properties['limsUrl']){$centralConfig.limsUrl=$config.limsUrl}
+        if($centralConfig.PSObject.Properties['upperComputerUrl']){$centralConfig.upperComputerUrl=$config.upperComputerUrl}
+        Write-Json $central $centralConfig
+    }
     $desktop=$DesktopDirectory
     if(-not $desktop){$desktop=[Environment]::GetFolderPath('Desktop')}
     [IO.Directory]::CreateDirectory($desktop)|Out-Null
     $shell=New-Object -ComObject WScript.Shell
     foreach($tool in @(
-        @{File='MES控制中心_Docker版.exe';Name='MES控制中心_v2.7.2_Docker版'},
+        @{File='MES控制中心_Docker版.exe';Name='MES控制中心_v2.9.0_Docker版'},
         @{File='MES工作台设置_Docker版.exe';Name='MES工作台设置_Docker版'},
         @{File='MES终端管理_Docker版.exe';Name='MES终端管理_Docker版'})) {
         $executable=Join-Path $destination $tool.File
         $shortcut=$shell.CreateShortcut((Join-Path $desktop ($tool.Name+'.lnk')))
         $shortcut.TargetPath=$executable;$shortcut.WorkingDirectory=$destination;$shortcut.IconLocation=$executable+',0';$shortcut.Save()
+    }
+    if(Test-Path -LiteralPath (Join-Path $destination 'central-client/MES中控管理.exe')) {
+        $shortcut=$shell.CreateShortcut((Join-Path $desktop 'MES中控管理.lnk'))
+        $shortcut.TargetPath=Join-Path $destination 'central-client/MES中控管理.exe'
+        $shortcut.WorkingDirectory=Join-Path $destination 'central-client'
+        $shortcut.IconLocation=$shortcut.TargetPath+',0';$shortcut.Save()
     }
     Write-Host ('Three desktop programs are ready: '+$desktop)
 }
@@ -123,6 +141,8 @@ try {
     if($Action -eq 'Install' -and -not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         $arguments='-NoProfile -ExecutionPolicy Bypass -File "'+$PSCommandPath+'" -Action Install -EnvironmentFile "'+$environment+'"'
         if($DesktopDirectory){$arguments+=' -DesktopDirectory "'+$DesktopDirectory+'"'}
+        if($DesktopToolsDirectory){$arguments+=' -DesktopToolsDirectory "'+$DesktopToolsDirectory+'"'}
+        if($SelectedComponentsOnly){$arguments+=' -SelectedComponentsOnly'}
         if($NoOpen){$arguments+=' -NoOpen'}
         $process=Start-Process powershell.exe -Verb RunAs -ArgumentList $arguments -WindowStyle Normal -PassThru
         $handle=$process.Handle;$process.WaitForExit();$process.Refresh();exit $process.ExitCode
@@ -145,7 +165,6 @@ try {
         Install-DesktopTools
         exit 0
     }
-    if(-not (Get-Command docker.exe -ErrorAction SilentlyContinue)){throw 'Install Docker Desktop with its Linux engine first, then run 01-Deploy.cmd again.'}
     Wait-MesDockerEngine
     if(-not (Test-Path -LiteralPath $environment)){
         Invoke-Release 'Initialize'

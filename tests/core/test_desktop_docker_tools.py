@@ -268,8 +268,8 @@ def test_compiled_control_center_about_and_offline_startup(tmp_path):
         capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
     manifest = json.loads((output / 'desktop-tools-manifest.json').read_text(encoding='utf-8-sig'))
-    assert manifest['controlCenterVersion'] == '2.8.2'
-    assert (output / 'control-center-v2.8.2.md').is_file()
+    assert manifest['controlCenterVersion'] == '2.9.0'
+    assert (output / 'control-center-v2.9.0.md').is_file()
     result = subprocess.run([PS, '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File',
         str(ROOT / 'tests/control_center/Test-ControlCenterAbout.ps1'),
         '-Executable', str(output / 'MES控制中心_Docker版.exe')],
@@ -278,7 +278,8 @@ def test_compiled_control_center_about_and_offline_startup(tmp_path):
 
 
 @pytest.mark.parametrize('native', [False, True])
-def test_control_center_upgrade_keeps_connection_settings_and_other_programs(tmp_path, native):
+@pytest.mark.parametrize('configuration_update', [False, True])
+def test_control_center_upgrade_keeps_connection_settings_and_other_programs(tmp_path, native, configuration_update):
     import hashlib
     package = tmp_path / 'update package'
     target = tmp_path / 'installed desktop'
@@ -293,6 +294,12 @@ def test_control_center_upgrade_keeps_connection_settings_and_other_programs(tmp
     (release / 'compose.portable.yml').write_text('services: {}')
     (release / 'manifest.json').write_text('{"files":[]}', encoding='utf-8')
     configuration = b'{"deploymentMode":"windows-service","serverUrl":"http://192.0.2.9:25173"}' if native else json.dumps({'deploymentDirectory': str(release), 'serverUrl': 'http://192.0.2.9:15173'}).encode()
+    program = tmp_path / 'native program'
+    if native and configuration_update:
+        (program / 'native').mkdir(parents=True)
+        (program / 'native/service_entry.py').write_bytes(b'old-native-entry')
+        (program / 'native-manifest.json').write_text('{"files":[]}', encoding='utf-8')
+        configuration = json.dumps({'deploymentMode': 'windows-service', 'programRoot': str(program), 'serverUrl': 'http://192.0.2.9:25173'}).encode()
     (target / 'mes-desktop-tools.json').write_bytes(configuration)
     (target / name).write_bytes(b'old-control')
     (target / 'workstation.exe').write_bytes(b'preserve-workstation')
@@ -316,11 +323,18 @@ def test_control_center_upgrade_keeps_connection_settings_and_other_programs(tmp
             payload.write_bytes(b'new-deployment-helper')
             inventory.append({'path': relative, 'sha256': hashlib.sha256(payload.read_bytes()).hexdigest()})
         (release / 'scripts/deploy/Mes-Portable.ps1').write_bytes(b'old-deployment-helper')
+    if configuration_update:
+        new_files = ['原生部署更新/service_entry.py'] if native else ['部署更新/compose.portable.yml', '部署更新/compose.portable.simulators.yml']
+        for relative in new_files:
+            payload = package / relative
+            payload.parent.mkdir(parents=True, exist_ok=True)
+            payload.write_bytes(b'updated-configuration-entry')
+            inventory.append({'path': relative, 'sha256': hashlib.sha256(payload.read_bytes()).hexdigest()})
     (package / 'update-manifest.json').write_text(json.dumps({'files': inventory}), encoding='utf-8')
     result = subprocess.run([PS, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script),
         '-DesktopToolsDirectory', str(target), '-NoShortcut'], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=15)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert 'v2.8.2' in result.stdout
+    assert 'v2.9.0' in result.stdout
     assert '桌面已提供' not in result.stdout
     assert (target / name).read_bytes() == b'updated-control-file'
     assert (target / 'mes-desktop-tools.json').read_bytes() == configuration
@@ -330,9 +344,21 @@ def test_control_center_upgrade_keeps_connection_settings_and_other_programs(tmp
     assert (backups[0] / name).read_bytes() == b'old-control'
     assert (backups[0] / 'desktop-tools-manifest.json').is_file()
     if not native:
-        assert json.loads((release / 'manifest.json').read_text(encoding='utf-8'))['control_center_update'] == '2.8.2'
+        assert json.loads((release / 'manifest.json').read_text(encoding='utf-8'))['control_center_update'] == '2.9.0'
         assert (release / 'scripts/deploy/Mes-Portable.ps1').read_bytes() == b'new-deployment-helper'
         assert (backups[0] / 'release/scripts/deploy/Mes-Portable.ps1').read_bytes() == b'old-deployment-helper'
+    if configuration_update:
+        if native:
+            assert (program / 'native/service_entry.py').read_bytes() == b'updated-configuration-entry'
+            assert (backups[0] / 'native/service_entry.py').read_bytes() == b'old-native-entry'
+            updated_manifest = json.loads((program / 'native-manifest.json').read_text(encoding='utf-8'))
+            entry = next(item for item in updated_manifest['files'] if item['path'] == 'native/service_entry.py')
+        else:
+            assert (release / 'compose.portable.yml').read_bytes() == b'updated-configuration-entry'
+            assert (backups[0] / 'release/compose.portable.yml').read_text() == 'services: {}'
+            updated_manifest = json.loads((release / 'manifest.json').read_text(encoding='utf-8'))
+            entry = next(item for item in updated_manifest['files'] if item['path'] == 'compose.portable.yml')
+        assert entry['sha256'] == hashlib.sha256(b'updated-configuration-entry').hexdigest()
 
 
 def test_control_center_upgrade_rejects_corrupt_file_before_replacing_existing_executable(tmp_path):
@@ -357,7 +383,7 @@ def test_control_center_upgrade_rejects_corrupt_file_before_replacing_existing_e
     assert not list(target.glob('control-center-backup-*'))
 
 
-def test_control_center_update_package_contains_v272_binaries_and_valid_inventory(tmp_path):
+def test_control_center_update_package_contains_v290_binaries_and_valid_inventory(tmp_path):
     import hashlib
     output = tmp_path / 'update package'
     result = subprocess.run([PS, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
@@ -366,19 +392,22 @@ def test_control_center_update_package_contains_v272_binaries_and_valid_inventor
     assert result.returncode == 0, result.stdout + result.stderr
     manifest = json.loads((output / 'update-manifest.json').read_text(encoding='utf-8'))
     assert manifest['format'] == 'mes-control-center-update'
-    assert manifest['version'] == '2.8.2'
+    assert manifest['version'] == '2.9.0'
     names = {entry['path'] for entry in manifest['files']}
     assert {'Docker版/MES控制中心_Docker版.exe', '原生版/MES控制中心_原生版.exe',
-            'Docker版/scripts/docker-service-control.ps1', 'Update-ControlCenter.ps1', '使用说明.md'} <= names
+            'Docker版/scripts/docker-service-control.ps1', 'Update-ControlCenter.ps1', '使用说明.md',
+            '部署更新/compose.portable.yml', '部署更新/compose.portable.simulators.yml',
+            '原生部署更新/service_entry.py', '系统配置说明.md'} <= names
+    assert b'level="requireAdministrator"' in (output / '原生版/MES控制中心_原生版.exe').read_bytes()
     for entry in manifest['files']:
         path = output / entry['path']
         assert path.stat().st_size == entry['bytes']
         assert hashlib.sha256(path.read_bytes()).hexdigest() == entry['sha256']
-    assert (output / '使用说明.md').read_text(encoding='utf-8').startswith('# MES 控制中心 v2.8.2')
+    assert (output / '使用说明.md').read_text(encoding='utf-8').startswith('# MES 控制中心 v2.9.0')
     probe = subprocess.run([PS, '-NoProfile', '-Command',
         "Get-ChildItem -LiteralPath $env:MES_VERSION_PACKAGE -Filter '*.exe' -Recurse | "
         "ForEach-Object { $_.VersionInfo.FileVersion } | ConvertTo-Json -Compress"],
         env={**os.environ, 'MES_VERSION_PACKAGE': str(output)},
         capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=10)
     assert probe.returncode == 0, probe.stdout + probe.stderr
-    assert json.loads(probe.stdout) == ['2.8.2.0', '2.8.2.0']
+    assert json.loads(probe.stdout) == ['2.9.0.0', '2.9.0.0']

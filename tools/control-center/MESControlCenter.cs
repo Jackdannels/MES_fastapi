@@ -20,8 +20,8 @@ using MESNetwork;
 [assembly: AssemblyDescription("MES 服务控制与固定工作台终端管理")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Control Center")]
-[assembly: AssemblyVersion("2.8.2.0")]
-[assembly: AssemblyFileVersion("2.8.2.0")]
+[assembly: AssemblyVersion("2.9.0.0")]
+[assembly: AssemblyFileVersion("2.9.0.0")]
 
 namespace MESControlCenter
 {
@@ -484,9 +484,11 @@ namespace MESControlCenter
         private Panel dashboardPage;
         private Panel terminalPage;
         private Panel aboutPage;
+        private ConfigurationPage configurationPage;
         private Button dashboardNav;
         private Button terminalNav;
         private Button aboutNav;
+        private Button configurationNav;
         private Label aboutBinding;
         private Label aboutGuidance;
         private TextBox aboutLocalUrl;
@@ -554,7 +556,7 @@ namespace MESControlCenter
             controlScript = scriptPath;
             browserSession = new MESBrowserSession(Program.RuntimeRoot, null);
             automaticRefresh = autoStart;
-            Text = "MES 控制中心 v2.8.2";
+            Text = "MES 控制中心 v2.9.0";
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(1160, 700);
             ClientSize = new Size(1420, 820);
@@ -606,7 +608,7 @@ namespace MESControlCenter
             Panel brand = new Panel { Dock = DockStyle.Top, Height = 70 };
             BrandIcon brandIcon = new BrandIcon { Location = new Point(6, 2) };
             Label brandTitle = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), Location = new Point(58, 6), Text = "MES 控制中心" };
-            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font("Segoe UI", 8F), Location = new Point(59, 31), Text = "CONTROL CENTER  v2.8.2" };
+            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font("Segoe UI", 8F), Location = new Point(59, 31), Text = "CONTROL CENTER  v2.9.0" };
             brand.Controls.AddRange(new Control[] { brandIcon, brandTitle, brandVersion });
             sidebar.Controls.Add(brand);
 
@@ -624,6 +626,9 @@ namespace MESControlCenter
             aboutNav = CreateNavigationButton("关于与访问地址", 280);
             aboutNav.Click += async delegate { ShowAboutPage(); await RefreshAboutInfo(); };
             sidebar.Controls.Add(aboutNav);
+            configurationNav = CreateNavigationButton("系统配置", 328);
+            configurationNav.Click += delegate { ShowConfigurationPage(); };
+            sidebar.Controls.Add(configurationNav);
 
             Panel nodeSummary = new Panel { Dock = DockStyle.Bottom, Height = 82, BackColor = Theme.Surface };
             nodeSummary.Padding = new Padding(13);
@@ -663,6 +668,13 @@ namespace MESControlCenter
             dashboardPage = BuildDashboardPage();
             terminalPage = BuildTerminalPage();
             aboutPage = BuildAboutPage();
+            string deploymentMode = MESDesktopSettings.IsNative ? "native" : MESDesktopSettings.IsDocker ? "docker" : "development";
+            configurationPage = new ConfigurationPage(deploymentMode,
+                delegate { return ConfigurationDocument.Locate(deploymentMode, Program.RuntimeRoot, Path.GetDirectoryName(typeof(ControlCenterForm).Assembly.Location)); },
+                delegate { return serviceBusy || openCentralBusy || exitRequested; }, delegate { RequestServiceAction("Restart"); });
+            configurationPage.Visible = false;
+            if (MESDesktopSettings.IsDocker) configurationPage.ReadDockerTemplates = delegate { return ConfigurationDocument.DockerTemplates(Path.GetDirectoryName(typeof(ControlCenterForm).Assembly.Location)); };
+            pageHost.Controls.Add(configurationPage);
             pageHost.Controls.Add(aboutPage);
             pageHost.Controls.Add(terminalPage);
             pageHost.Controls.Add(dashboardPage);
@@ -937,7 +949,7 @@ namespace MESControlCenter
             Panel page = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Visible = false };
             Panel header = new Panel { Dock = DockStyle.Top, Height = 144, BackColor = Theme.Surface };
             string mode = MESDesktopSettings.IsNative ? "Windows 原生服务" : MESDesktopSettings.IsDocker ? "Docker 容器" : "本机开发服务";
-            Label title = new Label { AutoSize = true, Text = "MES 控制中心  v2.8.2", ForeColor = Theme.Text, Font = new Font(Font, FontStyle.Bold), Location = new Point(18, 16) };
+            Label title = new Label { AutoSize = true, Text = "MES 控制中心  v2.9.0", ForeColor = Theme.Text, Font = new Font(Font, FontStyle.Bold), Location = new Point(18, 16) };
             Label deployment = new Label { AutoSize = true, Text = "部署方式：" + mode + "    ·    Web、API、LIMS 与上位机服务管理", ForeColor = Theme.Muted, Location = new Point(18, 43) };
             Label local = new Label { AutoSize = true, Text = "本机访问", ForeColor = Theme.Muted, Location = new Point(18, 78) };
             aboutLocalUrl = new TextBox { ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, BackColor = Theme.SurfaceStrong, ForeColor = Theme.Accent, Location = new Point(90, 74), Size = new Size(320, 28), Font = new Font("Consolas", 10F), AccessibleName = "MES 本机访问地址" };
@@ -981,6 +993,7 @@ namespace MESControlCenter
 
         private void ShowAboutPage()
         {
+            HideConfigurationPage();
             dashboardPage.Visible = false;
             terminalPage.Visible = false;
             aboutPage.Visible = true;
@@ -1104,6 +1117,7 @@ namespace MESControlCenter
 
         private void ShowPage(bool dashboard)
         {
+            HideConfigurationPage();
             aboutPage.Visible = false;
             aboutNav.BackColor = Theme.Sidebar;
             aboutNav.ForeColor = Theme.Muted;
@@ -1122,11 +1136,33 @@ namespace MESControlCenter
         private async void RefreshAll()
         {
             if (serviceBusy) return;
+            if (configurationPage.Visible) { configurationPage.Reload(true); return; }
             if (aboutPage.Visible) { await RefreshAboutInfo(); return; }
             await RefreshServiceStatus(true);
             await RefreshAboutInfo();
             if (terminalConnected) await RefreshTerminals(true);
             else await ConnectAndRefresh(false);
+        }
+
+        private void HideConfigurationPage()
+        {
+            configurationPage.Visible = false;
+            configurationNav.BackColor = Theme.Sidebar;
+            configurationNav.ForeColor = Theme.Muted;
+        }
+
+        private void ShowConfigurationPage()
+        {
+            dashboardPage.Visible = terminalPage.Visible = aboutPage.Visible = false;
+            dashboardNav.BackColor = terminalNav.BackColor = aboutNav.BackColor = Theme.Sidebar;
+            dashboardNav.ForeColor = terminalNav.ForeColor = aboutNav.ForeColor = Theme.Muted;
+            configurationNav.BackColor = Theme.AccentSoft;
+            configurationNav.ForeColor = Theme.Accent;
+            configurationPage.Visible = true;
+            configurationPage.BringToFront();
+            configurationPage.EnsureLoaded();
+            pageTitle.Text = "系统配置";
+            pageDescription.Text = "重要连接参数 · 读取实际配置文件，保存后重启生效";
         }
 
         private async Task RefreshServiceStatus(bool showErrors)
@@ -1306,7 +1342,8 @@ namespace MESControlCenter
             }
             if (modalOverlay.Visible) return;
             ShowModal("关闭系统并退出控制中心",
-                "将停止 MES 后端、前端及模拟器服务，并关闭相关界面。\n数据库、报告和业务文件会保留。确认后，系统关闭成功才会退出控制中心。",
+                "将停止 MES 后端、前端及模拟器服务，并关闭相关界面。\n数据库、报告和业务文件会保留。确认后，系统关闭成功才会退出控制中心。"
+                + (configurationPage.Dirty ? "\n系统配置中尚未保存的修改将丢弃。" : ""),
                 true, async delegate { await CloseSystemAndExit(); }, false);
             modalConfirmButton.Text = "关闭并退出";
             AcceptButton = modalCancelButton;
@@ -1842,7 +1879,7 @@ namespace MESControlCenter
         internal bool ValidateLayout()
         {
             PerformLayout();
-            return dashboardPage != null && terminalPage != null && aboutPage != null && aboutGrid != null && dashboardGrid != null && terminalGrid != null
+            return dashboardPage != null && terminalPage != null && aboutPage != null && configurationPage != null && configurationNav != null && aboutGrid != null && dashboardGrid != null && terminalGrid != null
                 && IsValidServiceIndicator(serviceBackendIndicator)
                 && IsValidServiceIndicator(serviceFrontendIndicator)
                 && IsValidServiceIndicator(serviceLimsIndicator)
@@ -1863,6 +1900,8 @@ namespace MESControlCenter
         {
             ShowPage(false);
         }
+
+        internal void ShowConfigurationPageForPreview() { ShowConfigurationPage(); }
 
         internal void ShowAboutPageForPreview()
         {
@@ -1899,6 +1938,74 @@ namespace MESControlCenter
                 origin.Offset(-Left, -Top);
                 graphics.DrawImageUnscaled(progress, origin);
             }
+        }
+    }
+
+    // One GUI per installation and Windows user. Command-line helpers remain
+    // independent so opening clients and packaging self-tests cannot consume
+    // or release the running controller's ownership.
+    internal sealed class ControlCenterInstance : IDisposable
+    {
+        internal const string AlreadyOpenMessage = "控制中心已打开。";
+        private readonly System.Threading.Mutex mutex;
+        private readonly System.Threading.EventWaitHandle activation;
+        internal readonly bool IsPrimary;
+        [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);
+        [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+
+        internal static string InstanceKey(string executable, string user)
+        {
+            string identity = user + "|" + Path.GetFullPath(executable).ToUpperInvariant();
+            using (SHA256 hash = SHA256.Create())
+                return "Local\\MESControlCenter-" + BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(identity))).Replace("-", "");
+        }
+
+        internal ControlCenterInstance(string executable)
+        {
+            string key = InstanceKey(executable, System.Security.Principal.WindowsIdentity.GetCurrent().User.Value);
+            bool created;
+            mutex = new System.Threading.Mutex(true, key, out created);
+            if (created) IsPrimary = true;
+            else
+            {
+                try { IsPrimary = mutex.WaitOne(0); }
+                catch (System.Threading.AbandonedMutexException) { IsPrimary = true; }
+            }
+            activation = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.AutoReset, key + "-Activate");
+        }
+
+        internal int Run(Func<Form> createForm, Action<Form> alreadyOpen)
+        {
+            if (!IsPrimary) { activation.Set(); return 0; }
+            using (Form form = createForm())
+            using (Timer timer = new Timer { Interval = 150 })
+            {
+                bool notifying = false;
+                timer.Tick += delegate
+                {
+                    if (!activation.WaitOne(0) || form.IsDisposed || form.Disposing || notifying) return;
+                    notifying = true;
+                    try
+                    {
+                        if (form.WindowState == FormWindowState.Minimized) ShowWindow(form.Handle, 9);
+                        form.Show();
+                        form.Activate();
+                        SetForegroundWindow(form.Handle);
+                        alreadyOpen(form);
+                    }
+                    finally { notifying = false; }
+                };
+                timer.Start();
+                Application.Run(form);
+            }
+            return 0;
+        }
+
+        public void Dispose()
+        {
+            activation.Dispose();
+            if (IsPrimary) mutex.ReleaseMutex();
+            mutex.Dispose();
         }
     }
 
@@ -1954,6 +2061,7 @@ namespace MESControlCenter
                         Application.DoEvents();
                         if (args.Length > 2 && String.Equals(args[2], "terminal", StringComparison.OrdinalIgnoreCase)) form.ShowTerminalPageForPreview();
                         if (args.Length > 2 && String.Equals(args[2], "about", StringComparison.OrdinalIgnoreCase)) form.ShowAboutPageForPreview();
+                        if (args.Length > 2 && String.Equals(args[2], "configuration", StringComparison.OrdinalIgnoreCase)) form.ShowConfigurationPageForPreview();
                         if (args.Length <= 2 || String.Equals(args[2], "dashboard", StringComparison.OrdinalIgnoreCase)) form.ShowDashboardPageForPreview();
                         if (args.Length > 2 && args[2].StartsWith("progress-", StringComparison.OrdinalIgnoreCase)) form.ShowProgressForPreview(args[2].Substring(9));
                         form.PerformLayout();
@@ -1974,8 +2082,10 @@ namespace MESControlCenter
             }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new ControlCenterForm(scriptPath, true));
-            return 0;
+            using (ControlCenterInstance instance = new ControlCenterInstance(typeof(Program).Assembly.Location))
+                return instance.Run(delegate { return new ControlCenterForm(scriptPath, true); }, delegate(Form form) {
+                    MessageBox.Show(form, ControlCenterInstance.AlreadyOpenMessage, "MES 控制中心", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                });
         }
     }
 }

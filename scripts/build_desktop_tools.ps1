@@ -54,7 +54,15 @@ try {
     $suffix=if($Native) { '原生版' } else { 'Docker版' }
     Compile ('MES工作台设置_'+$suffix+'.exe') @($workstation,$discovery) $launcherIcon @('/reference:System.Management.dll','/reference:System.Xml.dll')
     Compile ('MES终端管理_'+$suffix+'.exe') @($terminal,$discovery) $launcherIcon
-    Compile ('MES控制中心_'+$suffix+'.exe') @($control,$terminalClient,$discovery,(Join-Path $project 'tools/control-center/MESAccessInfo.cs')) (Join-Path $project 'assets/mes-control-center.ico') @('/reference:System.Management.dll')
+    $controlReferences = @('/reference:System.Management.dll',('/resource:'+(Join-Path $project 'tools/control-center/MESConfigurationSchema.json')+',MESConfigurationSchema.json'))
+    if ($Native) {
+        # native.json intentionally grants access only to administrators and
+        # service accounts. Never weaken that ACL to make the editor writable.
+        $controlManifest = Join-Path $temporary 'ControlCenter.manifest'
+        Write-Utf8 $controlManifest '<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1"><trustInfo xmlns="urn:schemas-microsoft-com:asm.v3"><security><requestedPrivileges><requestedExecutionLevel level="requireAdministrator" uiAccess="false" /></requestedPrivileges></security></trustInfo></assembly>'
+        $controlReferences += '/win32manifest:' + $controlManifest
+    }
+    Compile ('MES控制中心_'+$suffix+'.exe') @($control,$terminalClient,$discovery,(Join-Path $project 'tools/control-center/MESAccessInfo.cs'),(Join-Path $project 'tools/control-center/MESConfiguration.cs')) (Join-Path $project 'assets/mes-control-center.ico') $controlReferences
     if ($IncludeCentralClient) {
         & (Join-Path $project 'scripts/build_desktop_client.ps1') -OutputDirectory (Join-Path $output 'central-client') -ServerUrl $ServerUrl `
             -SdkPackagePath $SdkPackagePath -RuntimeInstallerPath $RuntimeInstallerPath -FixedRuntimeDirectory $FixedRuntimeDirectory -Offline:$Offline `
@@ -83,6 +91,8 @@ try {
     Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-v2.8.0.md') -Destination (Join-Path $output 'control-center-v2.8.0.md')
     Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-v2.8.1.md') -Destination (Join-Path $output 'control-center-v2.8.1.md')
     Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-v2.8.2.md') -Destination (Join-Path $output 'control-center-v2.8.2.md')
+    Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-v2.9.0.md') -Destination (Join-Path $output 'control-center-v2.9.0.md')
+    Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-configuration.md') -Destination (Join-Path $output 'control-center-configuration.md')
     Write-Utf8 (Join-Path $output 'mes-desktop-tools.json') ($config | ConvertTo-Json)
     $files = @(foreach($file in Get-ChildItem -LiteralPath $output -File -Recurse) {
         $stream = [IO.File]::OpenRead($file.FullName)
@@ -91,7 +101,7 @@ try {
         finally { $stream.Dispose(); $algorithm.Dispose() }
         [ordered]@{path=$file.FullName.Substring($output.Length+1).Replace('\','/'); bytes=$file.Length; sha256=$hash}
     })
-    $manifest = [ordered]@{format='mes-docker-desktop-tools'; format_version=1; version=$ReleaseVersion; controlCenterVersion='2.8.2';
+    $manifest = [ordered]@{format='mes-docker-desktop-tools'; format_version=1; version=$ReleaseVersion; controlCenterVersion='2.9.0';
         platform='windows-dotnet-framework'; files=$files}
     Write-Utf8 (Join-Path $output 'desktop-tools-manifest.json') ($manifest | ConvertTo-Json -Depth 6)
     Write-Output "Three Windows desktop tools built: $output"

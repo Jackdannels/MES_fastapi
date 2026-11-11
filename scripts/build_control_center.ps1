@@ -1,6 +1,6 @@
 ﻿param(
     [string]$ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path,
-    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.8.2.exe"),
+    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.9.0.exe"),
     [string]$IconPath = (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path "assets\mes-control-center.ico"),
     [switch]$NoAdminManifest
 )
@@ -140,13 +140,15 @@ $terminalText | Set-Content -LiteralPath $temporaryTerminalSource -Encoding UTF8
 try {
     $csc = Resolve-CscPath
     $arguments = @(
-        "/nologo", "/target:winexe", "/platform:anycpu", "/optimize+",
+        "/nologo", "/target:winexe", "/platform:anycpu", "/optimize+", "/codepage:65001",
         "/reference:System.Windows.Forms.dll", "/reference:System.Drawing.dll",
         "/reference:System.Web.Extensions.dll", "/reference:System.Management.dll", "/win32icon:$IconPath",
         "/out:$OutputPath"
     )
     if (-not $NoAdminManifest) { $arguments += "/win32manifest:$temporaryManifest" }
     $arguments += @($temporaryControlSource, $temporaryTerminalSource, $discoverySource, (Join-Path $projectRootPath 'tools/control-center/MESAccessInfo.cs'))
+    $arguments += @((Join-Path $projectRootPath 'tools/control-center/MESConfiguration.cs'),
+        ('/resource:' + (Join-Path $projectRootPath 'tools/control-center/MESConfigurationSchema.json') + ',MESConfigurationSchema.json'))
     & $csc $arguments
     if ($LASTEXITCODE -ne 0) { throw "MES control center compilation failed with exit code $LASTEXITCODE." }
 }

@@ -26,20 +26,31 @@ def finalize(root,version,display_name=None):
         entries.append(dict(path=path.relative_to(root).as_posix(),bytes=path.stat().st_size,sha256=digest(path)))
     manifest=dict(format='mes-portable-click-deployment',format_version=1,version=version,
         created_at_utc=datetime.now(timezone.utc).isoformat(),releaseDirectory='release-'+version,
-        backupDirectory='data-backup-'+version,desktopDirectory='desktop-tools',controlCenterVersion='2.7.2',displayName=display_name,files=entries)
+        backupDirectory='data-backup-'+version,desktopDirectory='desktop-tools',controlCenterVersion='2.9.0',displayName=display_name,files=entries)
+    if (root/'workstations.json').exists():
+        manifest['workstationsDirectory']='workstation-payload'
     (root/'delivery-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
     (root/'SHA256SUMS.txt').write_text(''.join(entry['sha256']+'  '+entry['path']+'\n' for entry in entries),encoding='utf-8')
     return manifest
 
-def assemble(root,release,backup,desktop,version,display_name=None):
+def assemble(root,release,backup,desktop,version,display_name=None,workstations=None,runtime_installer=None):
     root.mkdir(parents=True,exist_ok=True)
     for source,target in ((release,root/('release-'+version)),(backup,root/('data-backup-'+version)),(desktop,root/'desktop-tools')):
         if source.resolve()!=target.resolve():
             shutil.copytree(source,target,dirs_exist_ok=True)
     shutil.copy2(ROOT/'deploy/portable/Deploy-MES.ps1',root/'Deploy-MES.ps1')
-    for name,action in (('01-Deploy.cmd','Install'),('02-Create-Desktop.cmd','Desktop'),('03-Connection-Info.cmd','Info'),('04-Verify.cmd','Verify')):
+    shutil.copy2(ROOT/'deploy/portable/Install-Delivery.ps1',root/'Install-Delivery.ps1')
+    shutil.copy2(ROOT/'deploy/portable/Resume-Install.ps1',root/'Resume-Install.ps1')
+    if workstations is not None:
+        shutil.copytree(workstations,root/'workstation-payload',dirs_exist_ok=True)
+        shutil.copy2(ROOT/'tools/desktop-client/workstations.json',root/'workstations.json')
+    if runtime_installer is not None:
+        (root/'prerequisites').mkdir(exist_ok=True)
+        shutil.copy2(runtime_installer,root/'prerequisites/MicrosoftEdgeWebView2RuntimeInstallerX64.exe')
+    commands=() if workstations is not None else (('01-Deploy.cmd','Install'),('02-Create-Desktop.cmd','Desktop'),('03-Connection-Info.cmd','Info'),('04-Verify.cmd','Verify'))
+    for name,action in commands:
         (root/name).write_text('@echo off\r\ncd /d "%~dp0"\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Deploy-MES.ps1" -Action '+action+'\r\nset "MES_EXIT_CODE=%ERRORLEVEL%"\r\necho.\r\npause\r\nexit /b %MES_EXIT_CODE%\r\n',encoding='ascii',newline='')
-    text=(ROOT/'docs/portable-one-click.md').read_text(encoding='utf-8')
+    text=(ROOT/('docs/docker-delivery-v1.2.md' if workstations else 'docs/portable-one-click.md')).read_text(encoding='utf-8')
     text=text.replace('2026.10.31-v1.1',version).replace('v1.1预交付docker测试版',display_name or root.name)
     (root/'先读我.md').write_text(text,encoding='utf-8')
     return finalize(root,version,display_name)
@@ -52,10 +63,12 @@ if __name__=='__main__':
     parser.add_argument('--release',type=Path)
     parser.add_argument('--backup',type=Path)
     parser.add_argument('--desktop',type=Path)
+    parser.add_argument('--workstations',type=Path)
+    parser.add_argument('--runtime-installer',type=Path)
     parser.add_argument('--finalize-only',action='store_true')
     args=parser.parse_args()
     if args.finalize_only: manifest=finalize(args.output,args.version,args.display_name)
     else:
         if not all((args.release,args.backup,args.desktop)):parser.error('Release, backup and desktop directories are required')
-        manifest=assemble(args.output,args.release,args.backup,args.desktop,args.version,args.display_name)
+        manifest=assemble(args.output,args.release,args.backup,args.desktop,args.version,args.display_name,args.workstations,args.runtime_installer)
     print(json.dumps(dict(output=str(args.output),files=len(manifest['files']),bytes=sum(e['bytes'] for e in manifest['files'])),ensure_ascii=False))

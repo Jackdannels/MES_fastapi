@@ -75,6 +75,11 @@ Describe "MES control center integration" {
         $LASTEXITCODE | Should Be 0
     }
 
+    It "notifies and restores the existing controller instead of opening another GUI" {
+        & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Test-ControlCenterInstance.ps1') -Executable (Join-Path $TestDrive 'MESControlCenter.exe') -TestDirectory (Join-Path $TestDrive 'single-instance')
+        $LASTEXITCODE | Should Be 0
+    }
+
     It "closes persisted MES browser windows on Stop and replaces them on Restart without closing other windows" {
         $script=Join-Path $PSScriptRoot 'Test-ControlCenterBrowser.ps1'
         & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File $script -Executable (Join-Path $TestDrive 'MESControlCenter.exe') -TestDirectory (Join-Path $TestDrive 'browser')
@@ -88,12 +93,12 @@ Describe "MES control center integration" {
         $LASTEXITCODE | Should Be 0
     }
 
-    It "exposes v2.8.2 and four independently visible service states" {
-        $source | Should Match 'AssemblyVersion\("2\.8\.2\.0"\)'
-        $source | Should Match 'AssemblyFileVersion\("2\.8\.2\.0"\)'
-        $source | Should Match 'MES 控制中心 v2\.8\.2'
-        $source | Should Match 'CONTROL CENTER  v2\.8\.2'
-        $build | Should Match 'MES控制中心_v2\.8\.2\.exe'
+    It "exposes v2.9.0 and four independently visible service states" {
+        $source | Should Match 'AssemblyVersion\("2\.9\.0\.0"\)'
+        $source | Should Match 'AssemblyFileVersion\("2\.9\.0\.0"\)'
+        $source | Should Match 'MES 控制中心 v2\.9\.0'
+        $source | Should Match 'CONTROL CENTER  v2\.9\.0'
+        $build | Should Match 'MES控制中心_v2\.9\.0\.exe'
         $source | Should Match 'AddServiceLine\(lines, "后端服务", MESDesktopSettings.PortLabel\("apiUrl"'
         $source | Should Match 'AddServiceLine\(lines, "前端服务", MESDesktopSettings.PortLabel\("serverUrl"'
         $source | Should Match 'AddServiceLine\(lines, "LIMS 模拟器", MESDesktopSettings.PortLabel\("limsUrl"'

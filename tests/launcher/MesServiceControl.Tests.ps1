@@ -43,7 +43,7 @@ Describe "MES service controller" {
         $controllerSource = Get-Content -LiteralPath $controller -Raw
 
         $startScript | Should Match '"MES LIMS Simulator"'
-        $startScript | Should Match 'python -m uvicorn app:app --host \$LimsSimulatorHost --port \$LimsSimulatorPort'
+        $startScript | Should Match 'python scripts\\run_lims_simulator\.py --host \$LimsSimulatorHost --port \$LimsSimulatorPort'
         $startScript | Should Match 'limsSimulatorCommandPid = \$limsSimulatorProcess\.Id'
         $controllerSource | Should Match '\$limsSimulatorPort = 8900'
         $controllerSource | Should Match '\$state\.limsSimulatorCommandPid'
@@ -89,7 +89,7 @@ Describe "MES service controller" {
     It "shows production backend and frontend consoles without exposing the LIMS terminal" {
         $startScript = Get-Content -LiteralPath (Join-Path $projectRoot "start-dev.ps1") -Raw
 
-        $startScript | Should Match '(?s)if \(\$Production\) \{.*?\$backendConsoleCommand = ".*?title MES Backend.*?\$frontendConsoleCommand = "title MES Frontend.*?Start-Process -FilePath \$env:ComSpec -ArgumentList "/d", "/k", \$backendConsoleCommand.*?Start-Process -FilePath \$env:ComSpec -ArgumentList "/d", "/k", \$frontendConsoleCommand.*?Start-Process -FilePath \$condaPython.*?"-m", "uvicorn", "app:app"'
+        $startScript | Should Match '(?s)if \(\$Production\) \{.*?\$backendConsoleCommand = ".*?title MES Backend.*?\$frontendConsoleCommand = "title MES Frontend.*?Start-Process -FilePath \$env:ComSpec -ArgumentList "/d", "/k", \$backendConsoleCommand.*?Start-Process -FilePath \$env:ComSpec -ArgumentList "/d", "/k", \$frontendConsoleCommand.*?Start-Process -FilePath \$condaPython.*?scripts/run_lims_simulator\.py'
         $startScript | Should Match '(?s)\$limsSimulatorProcess = Start-Process -FilePath \$condaPython.*?-WindowStyle Hidden.*?lims\.stderr\.log'
         $startScript | Should Match 'npm run build:production && \$BackendWaitCommand && npm run serve:public'
         $startScript | Should Not Match 'Unable to identify MES backend/frontend/LIMS terminal command processes'

@@ -150,6 +150,8 @@ try {
     if ($Action -in @('Build','Export')) { $Mode = 'demo' }
     if ($Action -eq 'Start') {
         $startClock = [Diagnostics.Stopwatch]::StartNew()
+        $configuredDesktop=Get-MesEnvironmentValue ([IO.File]::ReadAllText($EnvFile)) 'MES_DOCKER_DESKTOP_PATH'
+        if($configuredDesktop){$env:MES_DOCKER_DESKTOP_PATH=$configuredDesktop}
         Wait-MesDockerEngine
         Write-Host ('Docker engine ready after {0:N1}s' -f $startClock.Elapsed.TotalSeconds)
         $network = Update-MesPortableNetwork $EnvFile -ConfigureFirewall

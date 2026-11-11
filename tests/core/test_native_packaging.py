@@ -42,6 +42,7 @@ def test_native_preflight_rejects_ambiguous_or_unsafe_installation(tmp_path, por
 
 def test_simulator_entry_only_injects_its_own_credentials(tmp_path, monkeypatch):
     config = manager.make_config(tmp_path, "MESUnitTest", manager.DEFAULT_PORTS, "http://127.0.0.1:15173", True)
+    config["environment"].update(RABBITMQ_COMMAND_EXCHANGE="custom.commands", RABBITMQ_INTAKE_ROUTING_KEY="custom.intake")
     path = tmp_path / "config.json"
     path.write_text(json.dumps(config))
     for key in config["environment"]:
@@ -49,6 +50,8 @@ def test_simulator_entry_only_injects_its_own_credentials(tmp_path, monkeypatch)
     entry.configure(path, "lims")
     import os
     assert os.environ["LIMS_HTTP_TOKEN"] == config["environment"]["LIMS_HTTP_TOKEN"]
+    assert os.environ["RABBITMQ_COMMAND_EXCHANGE"] == "custom.commands"
+    assert os.environ["RABBITMQ_INTAKE_ROUTING_KEY"] == "custom.intake"
     assert "MYSQL_PASSWORD" not in os.environ
     assert "DEMO_PASSWORD" not in os.environ
     assert "MYSQL_MIGRATION_PASSWORD" not in os.environ
