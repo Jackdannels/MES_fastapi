@@ -115,7 +115,10 @@ try {
 } finally {
     foreach($child in $children){Stop-Process -Id $child -Force -ErrorAction SilentlyContinue}
     foreach($process in Get-Process -Name browser -ErrorAction SilentlyContinue) {
-        if($process.Path -eq $browser) { $process.Kill(); $process.WaitForExit() }
+        if($process.Path -eq $browser) {
+            try { if(-not $process.HasExited){$process.Kill();$null=$process.WaitForExit(5000)} }
+            catch [System.ComponentModel.Win32Exception] { if(-not $process.HasExited){throw} }
+        }
     }
     $form.Dispose()
     $expectedRoot=[IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'MesFastApiLauncher/Browsers')).TrimEnd('\')+'\'

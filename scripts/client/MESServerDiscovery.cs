@@ -18,6 +18,7 @@ namespace MESNetwork
         private static Dictionary<string, object> Load()
         {
             string path = Path.Combine(BaseDirectory, "mes-desktop-tools.json");
+            if (!File.Exists(path)) path=Path.Combine(BaseDirectory,".mes","mes-desktop-tools.json");
             if (!File.Exists(path)) return new Dictionary<string, object>();
             return new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(path))
                 ?? new Dictionary<string, object>();
@@ -38,7 +39,7 @@ namespace MESNetwork
 
         internal static bool IsDocker
         {
-            get { return File.Exists(Path.Combine(BaseDirectory, "scripts", "docker-service-control.ps1")); }
+            get { return File.Exists(Path.Combine(BaseDirectory, "scripts", "docker-service-control.ps1")) || File.Exists(Path.Combine(BaseDirectory,".mes","scripts","docker-service-control.ps1")); }
         }
 
         internal static bool IsNative
@@ -51,7 +52,7 @@ namespace MESNetwork
         {
             get { return !IsNative || !String.Equals(Get("simulatorsEnabled", "true"), "false", StringComparison.OrdinalIgnoreCase); }
         }
-        internal static string ControlRoot(string fallback) { return IsNative || IsDocker ? BaseDirectory : fallback; }
+        internal static string ControlRoot(string fallback) { return IsDocker && File.Exists(Path.Combine(BaseDirectory,".mes","mes-desktop-tools.json")) ? Path.Combine(BaseDirectory,".mes") : IsNative || IsDocker ? BaseDirectory : fallback; }
     }
 
     internal static class MESServerDiscovery

@@ -25,11 +25,18 @@ New-Item -ItemType Directory -Path $clientDirectory | Out-Null
 Add-Type -TypeDefinition @'
 using System;
 using System.IO;
+using System.Threading;
 public static class ExitFixtureClient {
     public static int Main(string[] args) {
         string root=AppDomain.CurrentDomain.BaseDirectory;
+        if(Array.IndexOf(args,"--fixture")>=0) {
+            File.WriteAllText(Path.Combine(root,"ready.flag"),"ready");
+            while(!File.Exists(Path.Combine(root,"exit.flag"))) Thread.Sleep(10);
+            return 0;
+        }
         File.AppendAllText(Path.Combine(root,"close.log"),String.Join(" ",args)+Environment.NewLine);
-        return File.Exists(Path.Combine(root,"fail.flag")) ? 8 : 0;
+        if(File.Exists(Path.Combine(root,"fail.flag")))return 8;
+        File.WriteAllText(Path.Combine(root,"exit.flag"),"exit");Thread.Sleep(100);return 0;
     }
 }
 '@ -OutputAssembly (Join-Path $clientDirectory 'MES中控管理.exe') -OutputType ConsoleApplication
@@ -84,6 +91,12 @@ try {
         [IO.File]::WriteAllText((Join-Path $TestDirectory 'mode.txt'),$mode)
         if($mode -eq 'interface-error') { [IO.File]::WriteAllText((Join-Path $clientDirectory 'fail.flag'),'fail') }
         else { [IO.File]::Delete((Join-Path $clientDirectory 'fail.flag')) }
+        if(-not $clientProcess -or $clientProcess.HasExited){
+            [IO.File]::Delete((Join-Path $clientDirectory 'ready.flag'));[IO.File]::Delete((Join-Path $clientDirectory 'exit.flag'))
+            $clientProcess=Start-Process -FilePath (Join-Path $clientDirectory 'MES中控管理.exe') -ArgumentList '--fixture' -WindowStyle Hidden -PassThru
+            $readyClock=[Diagnostics.Stopwatch]::StartNew()
+            while(-not (Test-Path -LiteralPath (Join-Path $clientDirectory 'ready.flag'))){if($readyClock.Elapsed.TotalSeconds -gt 5){throw 'Managed fixture did not start'};Start-Sleep -Milliseconds 20}
+        }
         AskToClose
         if($mode -eq 'error') { SetField 'automaticRefresh' $true }
         ConfirmAndWait
@@ -102,8 +115,10 @@ try {
         }
     }
     $closes=@(Get-Content -LiteralPath (Join-Path $clientDirectory 'close.log'))
-    if($closes.Count -ne 2 -or @($closes | Where-Object { $_ -ne '--close' }).Count) { throw 'Managed client close routing failed' }
+    if($closes.Count -ne 5 -or @($closes | Where-Object { $_ -ne '--close' }).Count) { throw 'Managed client close routing failed' }
     Write-Output 'Exit checks passed: Cancel, busy guard, service failure, nonzero exit, wrong status, interface failure, retry, native success and single Stop per confirmation.'
 } finally {
     $form.Dispose()
+    [IO.File]::WriteAllText((Join-Path $clientDirectory 'exit.flag'),'exit')
+    if($clientProcess -and -not $clientProcess.HasExited){$null=$clientProcess.WaitForExit(2000)}
 }

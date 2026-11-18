@@ -230,6 +230,25 @@
   display: contents;
 }
 
+.page-header--zoom {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.page-header--zoom .header-actions {
+  flex-wrap: wrap;
+  align-items: stretch;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.page-header--zoom .page-header__copy,
+.page-header--zoom .transfer-system-header__meta {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
 .action-btn {
   display: inline-flex;
   align-items: center;

@@ -100,6 +100,7 @@ def dump_terminal_ticket(terminal: dict, *, now: datetime | None = None) -> str:
     issued_at = (now or current_utc()).astimezone(timezone.utc)
     payload = {
         "terminal_id": str(terminal.get("terminal_id") or "").strip(),
+        "terminal_revision": str(terminal.get("secret_hash") or ""),
         "module": str(terminal.get("module") or "").strip(),
         "lab_name": str(terminal.get("lab_name") or "").strip(),
         "issued_at": format_utc(issued_at),
@@ -149,6 +150,7 @@ def load_auth_session(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid session") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=401, detail="Invalid session")
+    _validate_terminal_session(payload)
     return payload
 
 
@@ -178,6 +180,18 @@ def require_auth_session(request: Request) -> dict:
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return load_auth_session(token)
+
+
+def _validate_terminal_session(session: dict) -> None:
+    if session.get("terminal_auth"):
+        from app.services.fixed_terminal_auth import get_fixed_terminal_auth_service
+        try:
+            terminal = get_fixed_terminal_auth_service().get_active_terminal(str(session.get("terminal_id") or ""))
+        except ValueError as error:
+            raise HTTPException(status_code=401, detail="工位绑定已失效，请重新申请。") from error
+        if (not session.get("terminal_revision") or not hmac.compare_digest(str(session["terminal_revision"]), str(terminal.get("secret_hash") or ""))
+                or session.get("module") != terminal.get("module") or session.get("lab_name", "") != terminal.get("lab_name", "")):
+            raise HTTPException(status_code=401, detail="工位绑定已变更，请重新申请。")
 
 
 def _sign_payload(payload_token: str, *, salt: str = SIGNING_SALT) -> str:

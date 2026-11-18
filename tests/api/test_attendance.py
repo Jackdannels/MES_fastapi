@@ -77,7 +77,11 @@ def test_attendance_numeric_account_321_login_regression(client):
 
     session_response = client.get("/api/attendance/labs/%E5%86%B2%E5%87%BB%E4%B8%80%E5%AE%A4/session")
     assert session_response.status_code == 200
-    assert session_response.json() == payload
+    current=session_response.json()
+    assert {key:value for key,value in current.items() if key != 'lastSeenAt'} == {
+        key:value for key,value in payload.items() if key != 'lastSeenAt'
+    }
+    assert current['lastSeenAt'] >= payload['lastSeenAt']
 
 
 def test_attendance_work_start_is_idempotently_blocked_while_experiment_is_paused(client, monkeypatch):

@@ -84,7 +84,7 @@ try {
             $entries += [pscustomobject]@{path=$file;bytes=(Get-Item -LiteralPath $path).Length;sha256=(Get-Sha256 $path)}
         }
         $releaseManifest.files = $entries
-        $releaseManifest | Add-Member -NotePropertyName control_center_update -NotePropertyValue '2.9.0' -Force
+        $releaseManifest | Add-Member -NotePropertyName control_center_update -NotePropertyValue '2.10.0' -Force
         [IO.File]::WriteAllText($releaseManifestPath, ($releaseManifest | ConvertTo-Json -Depth 15), (New-Object Text.UTF8Encoding($false)))
     }
     if ($nativeManifestPath -and (Test-Path -LiteralPath $nativeManifestPath)) {
@@ -92,7 +92,7 @@ try {
         $entries = @($nativeManifest.files | Where-Object { $_.path -cne 'native/service_entry.py' })
         $entries += [pscustomobject]@{path='native/service_entry.py';bytes=(Get-Item -LiteralPath $entryPath).Length;sha256=(Get-Sha256 $entryPath)}
         $nativeManifest.files = $entries
-        $nativeManifest | Add-Member -NotePropertyName control_center_update -NotePropertyValue '2.9.0' -Force
+        $nativeManifest | Add-Member -NotePropertyName control_center_update -NotePropertyValue '2.10.0' -Force
         [IO.File]::WriteAllText($nativeManifestPath, ($nativeManifest | ConvertTo-Json -Depth 15), (New-Object Text.UTF8Encoding($false)))
     }
 } catch {
@@ -111,13 +111,13 @@ if (Test-Path -LiteralPath (Join-Path $target 'desktop-tools-manifest.json')) {
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'update-manifest.json') -Destination (Join-Path $target 'control-center-update-manifest.json') -Force
 if (-not $NoShortcut) {
     $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) ('MES控制中心_v2.9.0_'+$variant+'.lnk')))
+    $shortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) ('MES控制中心_v2.10.0_'+$variant+'.lnk')))
     $shortcut.TargetPath = $executable
     $shortcut.WorkingDirectory = $target
     $shortcut.IconLocation = $executable + ',0'
     $shortcut.Save()
 }
-Write-Output "MES 控制中心已升级为 v2.9.0（$variant），备份：$backup"
-if (-not $NoShortcut) { Write-Output '桌面已提供 v2.9.0 快捷方式。' }
-Write-Output 'v2.9.0 退出控制中心时确认并关闭系统，失败则保留窗口。需要保留服务时请最小化；单独关闭中控界面仍保留后台服务。'
+Write-Output "MES 控制中心已升级为 v2.10.0（$variant），备份：$backup"
+if (-not $NoShortcut) { Write-Output '桌面已提供 v2.10.0 快捷方式。' }
+Write-Output 'v2.10.0 退出控制中心时确认并关闭系统，失败则保留窗口。需要保留服务时请最小化；单独关闭中控界面仍保留后台服务。'
 Write-Output '本更新包含“系统配置”功能及配套部署入口；业务配置和数据保留在原位置。'

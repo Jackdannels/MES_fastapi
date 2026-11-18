@@ -171,7 +171,8 @@
   <section class="card section">
     <h3 v-app-icon="{ name: 'calendar' }">{{ uiText.ganttTitle }}</h3>
     <p class="helper schedule-drag-hint">拖拽未完成任务比对的排程到同一实验室的目标日期与时段，确认后改期。上午默认 08:00，下午默认 12:00；已有排程时接在其结束 10 分钟后，实验时长保持不变。</p>
-    <AppFeedback v-if="!dragModalOpen" :message="dragMessage" tone="info" @close="dragMessage = ''" />
+    <p v-if="draggingScheduleId" class="helper schedule-drag-lab-notice" role="status" data-testid="schedule-drag-lab-notice">正在调整 {{ draggingLabName }} 的排程，仅可选择同一试验间的时间。</p>
+    <AppFeedback v-if="!dragModalOpen && !dragConflictOpen" :message="dragMessage" tone="info" @close="dragMessage = ''" />
     <div v-if="taskScheduledOverlays.length" class="schedule-task-overlays" data-testid="schedule-task-overlays">
       <div class="schedule-task-overlays__title">{{ uiText.currentTaskScheduledTitle }}</div>
       <div class="schedule-task-overlays__list">
@@ -250,7 +251,7 @@
           <tr v-if="ganttView.rows.length === 0">
             <td class="muted" :colspan="ganttView.days.length * 2 + 1">{{ uiText.noDevices }}</td>
           </tr>
-          <tr v-for="row in ganttView.rows" :key="row.device">
+          <tr v-for="row in ganttView.rows" :key="row.device" :class="{ 'gantt-row--drop-disabled': draggingScheduleId && !canDropScheduleOnLab(row.device) }">
             <td class="gantt-sticky">
               <span class="gantt-lab-name">{{ row.device }}</span>
             </td>
@@ -357,13 +358,16 @@
                   v-for="dropSlot in getGanttDropSlots(row, segmentIndex)"
                   :key="dropSlot.key"
                   class="gantt-drop-target"
-                  :class="{ 'is-hovered': dragHoverKey === dropSlot.key }"
+                  :class="{ 'is-hovered': dragHoverKey === dropSlot.key, 'is-disabled': !canDropScheduleOnLab(row.device) }"
+                  :aria-disabled="!canDropScheduleOnLab(row.device)"
+                  :title="canDropScheduleOnLab(row.device) ? '' : `当前仅可调整 ${draggingLabName} 的排程，此试验间不可选择`"
                   :data-testid="`gantt-drop-${dropSlot.key}`"
                   @dragover="dragOverScheduleSlot($event, row.device, dropSlot)"
                   @dragleave="dragHoverKey === dropSlot.key && (dragHoverKey = '')"
                   @drop.stop="dropSchedule($event, row.device, dropSlot)"
                 >
-                  {{ dropSlot.date.slice(5) }}<br />{{ dropSlot.segment === 'am' ? '上午' : '下午' }}
+                  <template v-if="canDropScheduleOnLab(row.device)">{{ dropSlot.date.slice(5) }}<br />{{ dropSlot.segment === 'am' ? '上午' : '下午' }}</template>
+                  <span v-else aria-hidden="true">—</span>
                 </div>
               </div>
             </td>
@@ -603,6 +607,7 @@
 
   <AppModal
     :open="scheduleConflictOpen"
+    :show-close="!dragSubmitting"
     content-class="schedule-conflict-modal-content"
     :title="scheduleConflictDetail?.level === 'full' ? uiText.fullConflictTitle : uiText.partialConflictTitle"
     @close="cancelScheduleConflict"
@@ -620,6 +625,15 @@
         <strong>{{ scheduleConflictDetail.level === "full" ? uiText.fullConflictTitle : uiText.partialConflictTitle }}</strong>
         <span>{{ uiText.conflictTaskLabel }}{{ scheduleConflictDetail.taskCode }}</span>
         <span>{{ uiText.conflictCandidateLabel }}{{ scheduleConflictDetail.candidateExperimentLabel }}</span>
+      </div>
+      <div v-if="dragConflictOpen && dragPreview" class="schedule-drag-preview schedule-drag-conflict-preview" data-testid="schedule-drag-conflict-preview">
+        <p>{{ dragPreview.device }} · 实验时长 {{ dragPreview.plannedHours }} 小时（保持不变）</p>
+        <dl>
+          <dt>原排程</dt><dd>{{ formatDateTime(dragPreview.source.start_at) }} — {{ formatDateTime(dragPreview.source.end_at) }}</dd>
+          <dt>改期后</dt><dd>{{ formatDateTime(dragPreview.startAt) }} — {{ formatDateTime(dragPreview.endAt) }}</dd>
+        </dl>
+        <p>当前排程存在共用托盘冲突，是否仍按此时间排程？</p>
+        <AppFeedback :message="dragMessage" tone="warning" @close="dragMessage = ''" />
       </div>
       <div class="schedule-conflict-panel__tray-block">
         <div class="schedule-conflict-panel__label">{{ uiText.conflictTrayLabel }}</div>
@@ -649,10 +663,10 @@
       </div>
     </div>
     <template #footer>
-      <button class="action-btn secondary" type="button" data-testid="schedule-conflict-cancel" @click="cancelScheduleConflict">
+      <button class="action-btn secondary" type="button" data-testid="schedule-conflict-cancel" :disabled="dragSubmitting" @click="cancelScheduleConflict">
         {{ uiText.cancelConflictSchedule }}
       </button>
-      <button class="action-btn" type="button" data-testid="schedule-conflict-confirm" @click="confirmScheduleConflict">
+      <button class="action-btn" type="button" data-testid="schedule-conflict-confirm" :disabled="dragSubmitting" :aria-busy="dragSubmitting" @click="confirmScheduleConflict">
         {{ uiText.confirmConflictSchedule }}
       </button>
     </template>
@@ -892,15 +906,18 @@ const resolveDurationControlStep = (form, direction) => {
 
 const {
   canDragSchedule,
+  canDropScheduleOnLab,
   closeDragPreview,
   confirmScheduleDrag,
   dragHoverKey,
+  dragConflictOpen,
   dragMessage,
   dragModalOpen,
   dragOverScheduleSlot,
   dragPreview,
   dragSubmitting,
   draggingScheduleId,
+  draggingLabName,
   dropSchedule,
   endScheduleDrag,
   getGanttDropSlots,

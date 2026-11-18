@@ -26,7 +26,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $output '原生部署更新') | Out-Null
     Copy-Item -LiteralPath (Join-Path $project 'deploy/native/service_entry.py') -Destination (Join-Path $output '原生部署更新/service_entry.py')
     Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-configuration.md') -Destination (Join-Path $output '系统配置说明.md')
-    Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-v2.9.0.md') -Destination (Join-Path $output '使用说明.md')
+    Copy-Item -LiteralPath (Join-Path $project 'docs/control-center-v2.10.0.md') -Destination (Join-Path $output '使用说明.md')
     $files = @(foreach ($file in Get-ChildItem -LiteralPath $output -File -Recurse) {
         $stream = [IO.File]::OpenRead($file.FullName)
         $algorithm = [Security.Cryptography.SHA256]::Create()
@@ -34,7 +34,7 @@ try {
         finally { $stream.Dispose(); $algorithm.Dispose() }
         [ordered]@{path=$file.FullName.Substring($output.Length+1).Replace('\','/');bytes=$file.Length;sha256=$digest}
     })
-    $manifest = [ordered]@{format='mes-control-center-update';format_version=1;version='2.9.0';built_at_utc=[DateTime]::UtcNow.ToString('o');files=$files}
+    $manifest = [ordered]@{format='mes-control-center-update';format_version=1;version='2.10.0';built_at_utc=[DateTime]::UtcNow.ToString('o');files=$files}
     [IO.File]::WriteAllText((Join-Path $output 'update-manifest.json'), ($manifest | ConvertTo-Json -Depth 6), (New-Object Text.UTF8Encoding($false)))
     Write-Output "Control-center update ready: $output"
 } finally {

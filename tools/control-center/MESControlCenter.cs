@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -20,8 +20,8 @@ using MESNetwork;
 [assembly: AssemblyDescription("MES 服务控制与固定工作台终端管理")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Control Center")]
-[assembly: AssemblyVersion("2.9.0.0")]
-[assembly: AssemblyFileVersion("2.9.0.0")]
+[assembly: AssemblyVersion("2.10.0.0")]
+[assembly: AssemblyFileVersion("2.10.0.0")]
 
 namespace MESControlCenter
 {
@@ -59,15 +59,16 @@ namespace MESControlCenter
         private string NativeClientPath(string folder, string name)
         {
             if (executable != null) return null;
-            string candidate = Path.Combine(Path.GetDirectoryName(typeof(MESBrowserSession).Assembly.Location), folder, name);
-            return File.Exists(candidate) ? candidate : null;
+            return ControlCenterPaths.ClientPath(folder,name);
         }
 
         private IEnumerable<string> NativeClientPaths()
         {
             foreach (string path in new[] { CentralClientPath,
-                NativeClientPath("lims-client", "MES_LIMS模拟器.exe"), NativeClientPath("upper-client", "MES上位机模拟器.exe") })
+                NativeClientPath("lims-client", "MES_LIMS模拟器.exe"), NativeClientPath("upper-client", "MES上位机模拟器.exe"),
+                NativeClientPath("test-client", "MES综合测试终端.exe") })
                 if (path != null) yield return path;
+            if (executable == null) foreach (string path in ControlCenterPaths.WorkstationExecutables()) yield return path;
         }
 
         private bool CombinedClientEnabled()
@@ -134,12 +135,20 @@ namespace MESControlCenter
 
         private void CloseNativeClient(string path)
         {
+            bool running=false;
+            foreach (Process candidate in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(path)))
+            using (candidate) {
+                try { if (String.Equals(candidate.MainModule.FileName,path,StringComparison.OrdinalIgnoreCase)) { running=true; break; } }
+                catch (System.ComponentModel.Win32Exception) { }
+                catch (InvalidOperationException) { }
+            }
+            if (!running) return;
             using (Process process = Process.Start(new ProcessStartInfo {
                 FileName = path, Arguments = "--close", WorkingDirectory = Path.GetDirectoryName(path),
                 UseShellExecute = false, CreateNoWindow = true
             }))
             {
-                if (process == null || !process.WaitForExit(20000)) throw new InvalidOperationException("专用客户端关闭超时：" + Path.GetFileNameWithoutExtension(path));
+                if (process == null || !process.WaitForExit(12000)) throw new InvalidOperationException("专用客户端关闭超时：" + Path.GetFileNameWithoutExtension(path));
                 if (process.ExitCode != 0) throw new InvalidOperationException("专用客户端未确认退出：" + Path.GetFileNameWithoutExtension(path));
             }
         }
@@ -316,18 +325,29 @@ namespace MESControlCenter
             return windows;
         }
 
+        internal void CloseNativeClients()
+        {
+            List<Task> tasks=new List<Task>();
+            foreach (string path in NativeClientPaths())
+                tasks.Add(Task.Run(delegate { CloseNativeClient(path); }));
+            try { Task.WaitAll(tasks.ToArray()); }
+            catch (AggregateException error) {
+                List<string> messages=new List<string>();
+                foreach (Exception item in error.Flatten().InnerExceptions) messages.Add(item.Message);
+                throw new InvalidOperationException(String.Join("；",messages.ToArray()));
+            }
+        }
+
         internal void Close()
         {
             List<string> errors = new List<string>();
-            foreach (string path in NativeClientPaths())
-            {
-                try { CloseNativeClient(path); }
-                catch (Exception error) { errors.Add(error.Message); }
-            }
+            try { CloseNativeClients(); } catch (Exception error) { errors.Add(error.Message); }
             try { CloseBrowser(); }
             catch (Exception error) { errors.Add(error.Message); }
             if (errors.Count > 0) throw new InvalidOperationException(String.Join("；", errors));
         }
+
+        internal void CloseBrowserWindows() { CloseBrowser(); }
 
         private void CloseBrowser()
         {
@@ -369,77 +389,35 @@ namespace MESControlCenter
         }
     }
 
-    internal static class Theme
+    internal static class ControlCenterIcon
     {
-        internal static readonly Color Background = Color.FromArgb(7, 16, 20);
-        internal static readonly Color Sidebar = Color.FromArgb(9, 22, 27);
-        internal static readonly Color Surface = Color.FromArgb(12, 25, 31);
-        internal static readonly Color SurfaceStrong = Color.FromArgb(17, 36, 43);
-        internal static readonly Color SurfaceRaised = Color.FromArgb(23, 48, 57);
-        internal static readonly Color Border = Color.FromArgb(36, 67, 75);
-        internal static readonly Color BorderStrong = Color.FromArgb(53, 97, 106);
-        internal static readonly Color Text = Color.FromArgb(237, 247, 246);
-        internal static readonly Color Muted = Color.FromArgb(156, 179, 182);
-        internal static readonly Color Subtle = Color.FromArgb(111, 139, 143);
-        internal static readonly Color Accent = Color.FromArgb(82, 208, 181);
-        internal static readonly Color AccentStrong = Color.FromArgb(44, 169, 137);
-        internal static readonly Color AccentSoft = Color.FromArgb(18, 61, 56);
-        internal static readonly Color Warning = Color.FromArgb(224, 168, 90);
-        internal static readonly Color WarningSoft = Color.FromArgb(59, 44, 25);
-        internal static readonly Color Danger = Color.FromArgb(236, 116, 107);
-        internal static readonly Color DangerSoft = Color.FromArgb(66, 31, 32);
+        internal static Icon Load(int size)
+        {
+            using (Stream stream=typeof(ControlCenterIcon).Assembly.GetManifestResourceStream("MESControlCenter.Icon.ico"))
+            {
+                if (stream == null) throw new InvalidOperationException("控制中心图标资源缺失。");
+                using (Icon icon=new Icon(stream,new Size(size,size))) return (Icon)icon.Clone();
+            }
+        }
     }
 
     internal sealed class BrandIcon : Control
     {
+        private readonly Bitmap logo;
         internal BrandIcon()
         {
-            DoubleBuffered = true;
-            Size = new Size(42, 42);
-            AccessibleName = "MES 控制中枢图标";
+            DoubleBuffered=true; Size=new Size(42,42); AccessibleName="MES控制中心蓝色轨道图标";
+            using (Icon icon=ControlCenterIcon.Load(128)) logo=icon.ToBitmap();
         }
-
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            Graphics graphics = e.Graphics;
-            graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-            Rectangle box = new Rectangle(1, 1, Width - 3, Height - 3);
-            using (SolidBrush background = new SolidBrush(Theme.Accent))
-            using (System.Drawing.Drawing2D.GraphicsPath path = RoundedRectangle(box, 10))
-            {
-                graphics.FillPath(background, path);
-            }
-            using (Pen pen = new Pen(Color.FromArgb(6, 34, 29), Math.Max(2F, Width / 18F)))
-            {
-                pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
-                pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-                float left = Width * .23F;
-                float right = Width * .77F;
-                float top = Height * .35F;
-                float bottom = Height * .72F;
-                graphics.DrawRectangle(pen, left, top, right - left, bottom - top);
-                graphics.DrawLine(pen, Width * .36F, top, Width * .36F, Height * .24F);
-                graphics.DrawLine(pen, Width * .36F, Height * .24F, Width * .64F, Height * .24F);
-                graphics.DrawLine(pen, Width * .64F, Height * .24F, Width * .64F, top);
-                graphics.DrawLine(pen, Width * .31F, Height * .49F, Width * .48F, Height * .49F);
-                graphics.DrawLine(pen, Width * .31F, Height * .61F, Width * .57F, Height * .61F);
-                graphics.DrawLine(pen, Width * .66F, Height * .46F, Width * .66F, Height * .66F);
-                graphics.DrawLine(pen, Width * .58F, Height * .56F, Width * .74F, Height * .56F);
-            }
+            e.Graphics.InterpolationMode=System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            e.Graphics.PixelOffsetMode=System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+            e.Graphics.DrawImage(logo,ClientRectangle);
         }
-
-        private static System.Drawing.Drawing2D.GraphicsPath RoundedRectangle(Rectangle rectangle, int radius)
-        {
-            int diameter = radius * 2;
-            System.Drawing.Drawing2D.GraphicsPath path = new System.Drawing.Drawing2D.GraphicsPath();
-            path.AddArc(rectangle.Left, rectangle.Top, diameter, diameter, 180, 90);
-            path.AddArc(rectangle.Right - diameter, rectangle.Top, diameter, diameter, 270, 90);
-            path.AddArc(rectangle.Right - diameter, rectangle.Bottom - diameter, diameter, diameter, 0, 90);
-            path.AddArc(rectangle.Left, rectangle.Bottom - diameter, diameter, diameter, 90, 90);
-            path.CloseFigure();
-            return path;
-        }
+        protected override void Dispose(bool disposing)
+        { if (disposing) logo.Dispose(); base.Dispose(disposing); }
     }
 
     internal sealed class ServiceProgressBar : Control
@@ -479,7 +457,7 @@ namespace MESControlCenter
         private readonly Stopwatch serviceProgressClock = new Stopwatch();
         private readonly bool automaticRefresh;
         private readonly List<Button> serviceButtons = new List<Button>();
-        private readonly List<Button> terminalButtons = new List<Button>();
+        private Button themeButton;
 
         private Panel dashboardPage;
         private Panel terminalPage;
@@ -489,6 +467,8 @@ namespace MESControlCenter
         private Button terminalNav;
         private Button aboutNav;
         private Button configurationNav;
+        private Button integrityNav;
+        private ComponentIntegrityPage integrityPage;
         private Label aboutBinding;
         private Label aboutGuidance;
         private TextBox aboutLocalUrl;
@@ -523,12 +503,33 @@ namespace MESControlCenter
         private Button openCentralButton;
         private bool openCentralBusy;
         private Button reloadButton;
-        private Button shutdownButton;
-        private Button restartTerminalButton;
-        private Button shutdownAllButton;
-        private Button restartAllButton;
+        private ToolStripMenuItem shutdownButton;
+        private ToolStripMenuItem restartTerminalButton;
+        private ToolStripMenuItem shutdownAllButton;
+        private ToolStripMenuItem restartAllButton;
+        private Button moreTerminalButton;
+        private ContextMenuStrip terminalMenu;
+        private Label selectedTerminalLabel;
+        private Label terminalCountLabel;
+        private TextBox terminalSearch;
+        private ComboBox terminalFilter;
+        private Panel terminalDetails;
+        private TextBox terminalDetailText;
+        private Button terminalDetailButton;
+        private string terminalSort = "TerminalName";
+        private bool terminalSortDescending;
+        private bool bindingTerminals;
+        private Panel connectionCard;
+        private Panel connectionFields;
+        private Panel connectionHead;
+        private Label connectionSummary;
+        private bool connectionExpanded = true;
         private DataGridView dashboardGrid;
         private DataGridView terminalGrid;
+        private TerminalEnrollmentPanel enrollmentPanel;
+        private Button resetBindingButton;
+        private ToolStripMenuItem deleteBindingButton;
+        private ToolStripMenuItem cleanupBindingsButton;
         private Panel modalOverlay;
         private Label modalTitle;
         private Label modalBody;
@@ -553,28 +554,32 @@ namespace MESControlCenter
 
         internal ControlCenterForm(string scriptPath, bool autoStart)
         {
+            Theme.LoadPreference();
             controlScript = scriptPath;
             browserSession = new MESBrowserSession(Program.RuntimeRoot, null);
             automaticRefresh = autoStart;
-            Text = "MES 控制中心 v2.9.0";
+            Text = "MES 控制中心 v2.10.0";
+            Icon = ControlCenterIcon.Load(32);
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(1160, 700);
             ClientSize = new Size(1420, 820);
             BackColor = Theme.Background;
             ForeColor = Theme.Text;
-            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
+            Font = new Font("Microsoft YaHei UI", 9.5F, FontStyle.Regular, GraphicsUnit.Point);
             KeyPreview = true;
 
             BuildShell();
             BuildModal();
             BuildServiceProgress();
+            Theme.Apply(this);
+            Shown+=async delegate { if (integrityPage != null) await integrityPage.CheckAsync(false); };
             refreshTimer.Interval = 5000;
             refreshTimer.Tick += async delegate { if (!serviceBusy) await RefreshTerminals(false); };
             serviceStatusTimer.Interval = 5000;
             serviceStatusTimer.Tick += async delegate { if (!serviceBusy) await RefreshServiceStatus(false); };
             serviceProgressTimer.Interval = 160;
             serviceProgressTimer.Tick += delegate { UpdateServiceProgress(); };
-            FormClosed += delegate { refreshTimer.Dispose(); serviceStatusTimer.Dispose(); serviceProgressTimer.Dispose(); };
+            FormClosed += delegate { refreshTimer.Dispose(); serviceStatusTimer.Dispose(); serviceProgressTimer.Dispose(); if (terminalMenu != null) terminalMenu.Dispose(); };
             FormClosing += HandleControllerClosing;
             if (autoStart)
             {
@@ -607,8 +612,8 @@ namespace MESControlCenter
 
             Panel brand = new Panel { Dock = DockStyle.Top, Height = 70 };
             BrandIcon brandIcon = new BrandIcon { Location = new Point(6, 2) };
-            Label brandTitle = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 11F, FontStyle.Bold), Location = new Point(58, 6), Text = "MES 控制中心" };
-            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font("Segoe UI", 8F), Location = new Point(59, 31), Text = "CONTROL CENTER  v2.9.0" };
+            Label brandTitle = new Label { AutoSize = false, Size = new Size(136, 27), ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), Location = new Point(58, 6), Text = "MES 控制中心" };
+            Label brandVersion = new Label { AutoSize = true, ForeColor = Theme.Accent, BackColor = Theme.AccentSoft, Padding = new Padding(6, 2, 6, 2), Font = new Font("Segoe UI", 9F), Location = new Point(59, 34), Text = "v2.10.0" };
             brand.Controls.AddRange(new Control[] { brandIcon, brandTitle, brandVersion });
             sidebar.Controls.Add(brand);
 
@@ -620,21 +625,30 @@ namespace MESControlCenter
 
             Label systemSection = new Label { AutoSize = true, ForeColor = Theme.Subtle, Font = new Font(Font.FontFamily, 8F, FontStyle.Bold), Location = new Point(24, 210), Text = "SYSTEM" };
             sidebar.Controls.Add(systemSection);
-            Button connectionNav = CreateNavigationButton("连接设置", 232);
-            connectionNav.Click += delegate { ShowPage(false); serverText.Focus(); };
-            sidebar.Controls.Add(connectionNav);
-            aboutNav = CreateNavigationButton("关于与访问地址", 280);
+            aboutNav = CreateNavigationButton("关于与访问地址", 232);
             aboutNav.Click += async delegate { ShowAboutPage(); await RefreshAboutInfo(); };
             sidebar.Controls.Add(aboutNav);
-            configurationNav = CreateNavigationButton("系统配置", 328);
+            configurationNav = CreateNavigationButton("系统配置", 280);
             configurationNav.Click += delegate { ShowConfigurationPage(); };
             sidebar.Controls.Add(configurationNav);
+            integrityNav=CreateNavigationButton("系统完整性",328);
+            integrityNav.Click+=async delegate { ShowIntegrityPage(); await integrityPage.CheckAsync(false); };
+            sidebar.Controls.Add(integrityNav);
 
-            Panel nodeSummary = new Panel { Dock = DockStyle.Bottom, Height = 82, BackColor = Theme.Surface };
+            Panel nodeSummary = new Panel { Dock = DockStyle.Bottom, Height = 140, BackColor = Theme.Surface };
             nodeSummary.Padding = new Padding(13);
             Label nodeTitle = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), Location = new Point(13, 13), Text = "控制节点状态" };
             systemStatusLabel = new Label { AutoSize = false, ForeColor = Theme.Muted, Location = new Point(13, 38), Size = new Size(166, 30), Text = "正在检测……" };
-            nodeSummary.Controls.AddRange(new Control[] { nodeTitle, systemStatusLabel });
+            themeButton = CreateButton(Theme.IsDark ? "切换浅色主题" : "切换深色主题", Theme.SurfaceStrong, Theme.Text, 166);
+            themeButton.Name = "ThemeToggle";
+            themeButton.Location = new Point(13, 84);
+            themeButton.Click += delegate {
+                Theme.Toggle(this);
+                themeButton.Text = Theme.IsDark ? "切换浅色主题" : "切换深色主题";
+                ApplyStartButtonVisual(startServiceButton.Enabled);
+                terminalGrid.Invalidate(); dashboardGrid.Invalidate();
+            };
+            nodeSummary.Controls.AddRange(new Control[] { nodeTitle, systemStatusLabel, themeButton });
             sidebar.Controls.Add(nodeSummary);
 
             Panel main = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background };
@@ -675,6 +689,10 @@ namespace MESControlCenter
             configurationPage.Visible = false;
             if (MESDesktopSettings.IsDocker) configurationPage.ReadDockerTemplates = delegate { return ConfigurationDocument.DockerTemplates(Path.GetDirectoryName(typeof(ControlCenterForm).Assembly.Location)); };
             pageHost.Controls.Add(configurationPage);
+            integrityPage=new ComponentIntegrityPage(ControlCenterPaths.DesktopRoot,delegate { return serviceBusy || openCentralBusy || exitRequested; });
+            integrityPage.Visible=false;
+            integrityPage.FindingsChanged=delegate(int count) { integrityNav.AccessibleDescription=count+" 项组件需要关注"; integrityNav.Text="  系统完整性"+(count > 0 ? "（"+count+"）" : ""); };
+            pageHost.Controls.Add(integrityPage);
             pageHost.Controls.Add(aboutPage);
             pageHost.Controls.Add(terminalPage);
             pageHost.Controls.Add(dashboardPage);
@@ -708,50 +726,46 @@ namespace MESControlCenter
 
             Panel tableCard = CreateCard(new Padding(0, 7, 0, 0));
             layout.SetColumnSpan(tableCard, 2);
-            Panel tableHead = new Panel { Dock = DockStyle.Top, Height = 52, BackColor = Theme.Surface };
-            Label tableTitle = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), Location = new Point(16, 16), Text = "终端概况" };
-            terminalSummaryLabel = new Label { AutoSize = true, Anchor = AnchorStyles.Top | AnchorStyles.Right, ForeColor = Theme.Subtle, Location = new Point(400, 17), Text = "尚未连接" };
+            TableLayoutPanel tableHead = new TableLayoutPanel { Dock = DockStyle.Top, Height = 58, BackColor = Theme.Surface, Padding = new Padding(16, 8, 12, 8), ColumnCount = 3, RowCount = 1 };
+            tableHead.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tableHead.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tableHead.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            Label tableTitle = new Label { AutoSize = true, Anchor = AnchorStyles.Left, ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), Text = "终端概况" };
+            terminalSummaryLabel = new Label { AutoSize = true, Anchor = AnchorStyles.Right, Margin = new Padding(8, 0, 18, 0), ForeColor = Theme.Muted, Text = "尚未连接" };
             Button manageButton = CreateButton("进入终端管理", Theme.AccentSoft, Theme.Accent, 126);
-            manageButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            manageButton.Location = new Point(500, 7);
+            manageButton.Anchor = AnchorStyles.Right;
+            manageButton.Name = "ManageTerminals";
             manageButton.Click += delegate { ShowPage(false); };
-            tableHead.Resize += delegate
-            {
-                manageButton.Left = tableHead.ClientSize.Width - manageButton.Width - 12;
-                terminalSummaryLabel.Left = manageButton.Left - terminalSummaryLabel.Width - 18;
-            };
-            tableHead.Controls.AddRange(new Control[] { tableTitle, terminalSummaryLabel, manageButton });
+            tableHead.Controls.Add(tableTitle, 0, 0);
+            tableHead.Controls.Add(terminalSummaryLabel, 1, 0);
+            tableHead.Controls.Add(manageButton, 2, 0);
             dashboardGrid = CreateTerminalGrid(false);
             tableCard.Controls.Add(dashboardGrid);
             tableCard.Controls.Add(tableHead);
             layout.Controls.Add(tableCard, 0, 1);
-            Panel accessBar = new Panel { Dock = DockStyle.Top, Height = 76, BackColor = Theme.Surface };
-            Label accessTitle = new Label { AutoSize = true, Location = new Point(16, 10), ForeColor = Theme.Muted, Text = "MES 局域网访问地址" };
-            lanAddressLink = new LinkLabel { AutoSize = false, Location = new Point(16, 33), Size = new Size(560, 28), LinkColor = Theme.Accent, ActiveLinkColor = Theme.AccentStrong, VisitedLinkColor = Theme.Accent, Font = new Font("Consolas", 12F, FontStyle.Bold), Text = "正在检测主机地址……", AccessibleName = "MES 局域网访问地址" };
+            TableLayoutPanel accessBar = new TableLayoutPanel { Dock = DockStyle.Top, Height = 98, BackColor = Theme.Surface, Padding = new Padding(16, 8, 16, 8), ColumnCount = 3, RowCount = 1 };
+            accessBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            accessBar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            accessBar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            Panel addressInfo = new Panel { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 16, 0) };
+            Label accessTitle = new Label { Dock = DockStyle.Top, Height = 22, ForeColor = Theme.Muted, Text = "MES 局域网访问地址" };
+            lanAddressLink = new LinkLabel { AutoSize = false, Dock = DockStyle.Top, Height = 30, AutoEllipsis = true, LinkColor = Theme.Accent, ActiveLinkColor = Theme.AccentStrong, VisitedLinkColor = Theme.Accent, Font = new Font("Consolas", 12F, FontStyle.Bold), Text = "正在检测主机地址……", AccessibleName = "MES 局域网访问地址" };
             lanAddressLink.LinkClicked += async delegate { ShowAboutPage(); await RefreshAboutInfo(); };
-            lanAddressStatus = new Label { AutoSize = false, Location = new Point(600, 36), Size = new Size(250, 24), ForeColor = Theme.Muted, Text = "等待服务就绪" };
+            lanAddressStatus = new Label { AutoSize = false, Dock = DockStyle.Top, Height = 24, AutoEllipsis = true, ForeColor = Theme.Muted, Text = "等待服务就绪" };
             Button copyAddress = CreateButton("复制地址", Theme.AccentSoft, Theme.Accent, 108);
             openCentralButton = CreateButton("打开中控管理", Theme.AccentSoft, Theme.Accent, 140);
             openCentralButton.AccessibleName = "打开中控管理";
-            openCentralButton.Anchor = AnchorStyles.Right | AnchorStyles.Top;
-            openCentralButton.Location = new Point(750, 18);
+            openCentralButton.Anchor = AnchorStyles.Right;
             openCentralButton.Click += async delegate { await OpenCentralManagement(); };
-            copyAddress.Anchor = AnchorStyles.Right | AnchorStyles.Top;
-            copyAddress.Location = new Point(900, 18);
+            copyAddress.Anchor = AnchorStyles.Right;
             copyAddress.Click += delegate
             {
                 if (selectedLanUrl.Length == 0) return;
                 try { Clipboard.SetText(selectedLanUrl); footerStatusLabel.Text = "已复制：" + selectedLanUrl + "；请从工作站验证访问"; }
                 catch (Exception exception) { ShowModal("复制失败", exception.Message, false, null, true); }
             };
-            accessBar.Resize += delegate
-            {
-                copyAddress.Left = accessBar.ClientSize.Width - copyAddress.Width - 16;
-                openCentralButton.Left = copyAddress.Left - openCentralButton.Width - 10;
-                lanAddressStatus.Left = Math.Min(600, openCentralButton.Left - 266);
-                lanAddressLink.Width = Math.Max(220, lanAddressStatus.Left - 25);
-            };
-            accessBar.Controls.AddRange(new Control[] { accessTitle, lanAddressLink, lanAddressStatus, openCentralButton, copyAddress });
+            addressInfo.Controls.Add(lanAddressStatus); addressInfo.Controls.Add(lanAddressLink); addressInfo.Controls.Add(accessTitle);
+            accessBar.Controls.Add(addressInfo, 0, 0); accessBar.Controls.Add(openCentralButton, 1, 0); accessBar.Controls.Add(copyAddress, 2, 0);
             page.Controls.Add(accessBar);
             return page;
         }
@@ -761,21 +775,21 @@ namespace MESControlCenter
             Panel head = new Panel { Dock = DockStyle.Top, Height = 52, BackColor = Theme.Surface };
             Label title = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 10F, FontStyle.Bold), Location = new Point(16, 16), Text = "MES 服务组" };
             serviceStateLabel = new Label { AutoSize = true, Anchor = AnchorStyles.Top | AnchorStyles.Right, ForeColor = Theme.Muted, Location = new Point(300, 17), Text = "正在检测" };
-            head.Resize += delegate { serviceStateLabel.Left = head.ClientSize.Width - serviceStateLabel.Width - 16; };
+            EventHandler placeState = delegate { serviceStateLabel.Left = head.ClientSize.Width - serviceStateLabel.Width - 16; };
+            head.Resize += placeState; serviceStateLabel.TextChanged += placeState;
             head.Controls.AddRange(new Control[] { title, serviceStateLabel });
 
-            Panel actionBar = new Panel { Dock = DockStyle.Bottom, Height = 58, BackColor = Theme.Surface, Padding = new Padding(14, 8, 14, 8) };
+            TableLayoutPanel actionBar = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 62, BackColor = Theme.Surface, Padding = new Padding(10, 8, 10, 8), ColumnCount = 3, RowCount = 1 };
+            for (int i = 0; i < 3; i++) actionBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
             Button stop = CreateButton("关闭系统", Theme.DangerSoft, Theme.Danger, 106);
             Button restart = CreateButton("重启系统", Theme.WarningSoft, Theme.Warning, 106);
-            startServiceButton = CreateButton("启动系统", Theme.AccentStrong, Color.FromArgb(4, 27, 23), 106);
-            stop.Location = new Point(14, 8);
-            restart.Location = new Point(128, 8);
-            startServiceButton.Location = new Point(242, 8);
+            startServiceButton = CreateButton("启动系统", Theme.AccentStrong, Theme.OnAccent, 106);
             stop.Click += delegate { RequestServiceAction("Stop"); };
             restart.Click += delegate { RequestServiceAction("Restart"); };
             startServiceButton.Click += delegate { RequestServiceAction("Start"); };
             serviceButtons.AddRange(new Button[] { stop, restart, startServiceButton });
-            actionBar.Controls.AddRange(new Control[] { stop, restart, startServiceButton });
+            int column = 0;
+            foreach (Button button in serviceButtons) { button.Dock = DockStyle.Fill; button.Margin = new Padding(4, 0, 4, 0); actionBar.Controls.Add(button, column++, 0); }
 
             Panel lines = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
             serviceUpperComputerIndicator = AddServiceLine(lines, "上位机服务", MESDesktopSettings.PortLabel("upperComputerUrl", "http://127.0.0.1:8899"));
@@ -799,6 +813,7 @@ namespace MESControlCenter
                 value.Left = line.ClientSize.Width - value.Width - 16;
                 status.Left = value.Left - status.Width - 18;
             };
+            status.TextChanged += delegate { value.Left = line.ClientSize.Width - value.Width - 16; status.Left = value.Left - status.Width - 18; };
             line.Controls.AddRange(new Control[] { dot, label, status, value });
             parent.Controls.Add(line);
             return new ServiceIndicator { Dot = dot, Status = status };
@@ -813,6 +828,7 @@ namespace MESControlCenter
             Label noteLabel = new Label { AutoSize = false, ForeColor = Theme.Subtle, Location = new Point(16, 104), Size = new Size(150, 36), Text = note };
             Panel marker = new Panel { BackColor = color, Location = new Point(16, 150), Size = new Size(28, 3) };
             card.Controls.AddRange(new Control[] { titleLabel, valueLabel, noteLabel, marker });
+            card.Resize += delegate { noteLabel.Width = Math.Max(50, card.ClientSize.Width - 32); };
             wrapper.Controls.Add(card);
             parent.Controls.Add(wrapper, column, 0);
             return valueLabel;
@@ -821,62 +837,111 @@ namespace MESControlCenter
         private Panel BuildTerminalPage()
         {
             Panel page = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Visible = false };
-            Panel connection = new Panel { Dock = DockStyle.Top, Height = 98, BackColor = Theme.Surface, Padding = new Padding(16) };
-            serverText = AddInput(connection, "MES 地址", MESAccessInfo.InitialServerUrl(), 16, 22, 300, false);
-            usernameText = AddInput(connection, "管理员", "admin", 332, 22, 138, false);
-            passwordText = AddInput(connection, "密码", MESDesktopSettings.RequiresAdministratorLogin ? "" : "123", 486, 22, 138, true);
-            connectButton = CreateButton("连接", Theme.AccentStrong, Color.FromArgb(4, 27, 23), 96);
-            connectButton.Location = new Point(642, 36);
+            connectionCard = new Panel { Dock = DockStyle.Top, Height = 142, BackColor = Theme.Surface };
+            TableLayoutPanel head = new TableLayoutPanel { Dock = DockStyle.Top, Height = 50, ColumnCount = 2, Padding = new Padding(12, 5, 12, 5) };
+            connectionHead = head;
+            head.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F)); head.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            connectionSummary = new Label { Dock = DockStyle.Fill, ForeColor = Theme.Muted, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Text = "未连接 · 使用管理员账号管理终端与绑定申请" };
+            Button settings = CreateButton("连接设置", Theme.SurfaceStrong, Theme.Text, 108);
+            head.Controls.Add(connectionSummary, 0, 0); head.Controls.Add(settings, 1, 0);
+            connectionFields = new Panel { Dock = DockStyle.Top, Height = 92, BackColor = Theme.Surface };
+            TableLayoutPanel credentials = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 5, RowCount = 1, Padding = new Padding(12, 0, 12, 10) };
+            credentials.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            credentials.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46F)); credentials.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 27F)); credentials.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 27F));
+            credentials.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); credentials.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            serverText = AddInputField(credentials, "MES 地址", MESAccessInfo.InitialServerUrl(), 0, false);
+            usernameText = AddInputField(credentials, "管理员", "admin", 1, false);
+            passwordText = AddInputField(credentials, "密码", MESDesktopSettings.RequiresAdministratorLogin ? "" : "123", 2, true);
+            connectButton = CreateButton("连接", Theme.AccentStrong, Theme.OnAccent, 88);
+            connectButton.Anchor = AnchorStyles.Bottom;
             connectButton.Click += async delegate { await ConnectAndRefresh(true); };
-            refreshButton = CreateButton("刷新状态", Theme.AccentSoft, Theme.Accent, 112);
-            refreshButton.Location = new Point(748, 36);
+            refreshButton = CreateButton("刷新状态", Theme.AccentSoft, Theme.Accent, 108);
+            refreshButton.Anchor = AnchorStyles.Bottom;
             refreshButton.Click += async delegate { await RefreshTerminals(true); };
-            terminalButtons.AddRange(new Button[] { connectButton, refreshButton });
-            connection.Controls.AddRange(new Control[] { connectButton, refreshButton });
+            credentials.Controls.Add(connectButton, 3, 0); credentials.Controls.Add(refreshButton, 4, 0);
+            connectionFields.Controls.Add(credentials); connectionCard.Controls.Add(connectionFields); connectionCard.Controls.Add(head);
+            settings.Click += delegate { SetConnectionExpanded(!connectionExpanded); };
 
-            Panel actions = new Panel { Dock = DockStyle.Bottom, Height = 66, BackColor = Theme.Surface, Padding = new Padding(14, 11, 14, 11) };
-            reloadButton = CreateButton("刷新选中界面", Theme.AccentSoft, Theme.Accent, 138);
-            shutdownButton = CreateButton("关闭选中终端", Theme.DangerSoft, Theme.Danger, 138);
-            restartTerminalButton = CreateButton("重启选中终端", Theme.WarningSoft, Theme.Warning, 138);
-            shutdownAllButton = CreateButton("关闭全部终端", Theme.DangerSoft, Theme.Danger, 138);
-            restartAllButton = CreateButton("重启全部终端", Theme.WarningSoft, Theme.Warning, 138);
-            Button[] actionButtons = { reloadButton, shutdownButton, restartTerminalButton, shutdownAllButton, restartAllButton };
-            int x = 14;
-            foreach (Button button in actionButtons)
-            {
-                button.Location = new Point(x, 11);
-                actions.Controls.Add(button);
-                terminalButtons.Add(button);
-                x += button.Width + 10;
-            }
-            shutdownAllButton.Left += 22;
-            restartAllButton.Left += 22;
+            TableLayoutPanel actions = new TableLayoutPanel { Dock = DockStyle.Bottom, Height = 106, BackColor = Theme.Surface, Padding = new Padding(12, 8, 12, 8), ColumnCount = 2, RowCount = 2 };
+            actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F)); actions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F)); actions.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            selectedTerminalLabel = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, ForeColor = Theme.Text, Text = "请选择终端" };
+            terminalDetailButton = CreateButton("查看详情", Theme.SurfaceStrong, Theme.Text, 108); terminalDetailButton.Height = 30;
+            terminalDetailButton.Click += delegate { terminalDetails.Visible = !terminalDetails.Visible; terminalDetailButton.Text = terminalDetails.Visible ? "收起详情" : "查看详情"; };
+            actions.Controls.Add(selectedTerminalLabel, 0, 0); actions.Controls.Add(terminalDetailButton, 1, 0);
+            FlowLayoutPanel common = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = new Padding(0), Padding = new Padding(0) };
+            actions.Controls.Add(common, 0, 1); actions.SetColumnSpan(common, 2);
+            reloadButton = CreateButton("刷新界面", Theme.AccentSoft, Theme.Accent, 128);
+            resetBindingButton = CreateButton("重置绑定", Theme.AccentStrong, Theme.OnAccent, 128);
+            moreTerminalButton = CreateButton("更多操作 ▾", Theme.SurfaceStrong, Theme.Text, 136);
+            common.Controls.AddRange(new Control[] { reloadButton, resetBindingButton, moreTerminalButton });
+            terminalMenu = new ContextMenuStrip { ShowImageMargin = false, Font = Font };
+            moreTerminalButton.ContextMenuStrip = terminalMenu;
+            restartTerminalButton = new ToolStripMenuItem("重启终端"); shutdownButton = new ToolStripMenuItem("关闭终端");
+            deleteBindingButton = new ToolStripMenuItem("删除终端") { ForeColor = Theme.Danger };
+            restartAllButton = new ToolStripMenuItem("重启全部"); shutdownAllButton = new ToolStripMenuItem("关闭全部");
+            cleanupBindingsButton = new ToolStripMenuItem("清理历史终端") { ForeColor = Theme.Danger };
+            terminalMenu.Items.AddRange(new ToolStripItem[] { new ToolStripLabel("当前终端") { ForeColor = Theme.Muted }, restartTerminalButton, shutdownButton, deleteBindingButton, new ToolStripSeparator(), new ToolStripLabel("批量与维护") { ForeColor = Theme.Muted }, restartAllButton, shutdownAllButton, cleanupBindingsButton });
+            moreTerminalButton.Click += delegate { terminalMenu.Show(moreTerminalButton, new Point(0, moreTerminalButton.Height)); };
             reloadButton.Click += async delegate { await SendSelectedCommand("reload", "刷新界面"); };
             shutdownButton.Click += delegate { RequestSelectedTerminalCommand("shutdown", "关闭"); };
             restartTerminalButton.Click += delegate { RequestSelectedTerminalCommand("restart", "重启"); };
             shutdownAllButton.Click += delegate { RequestBatchCommand("shutdown", "关闭"); };
             restartAllButton.Click += delegate { RequestBatchCommand("restart", "重启"); };
+            resetBindingButton.Click += delegate { RequestBindingAction(false); };
+            deleteBindingButton.Click += delegate { RequestBindingAction(true); };
+            cleanupBindingsButton.Click += async delegate { await PreviewLegacyCleanup(); };
 
+            terminalDetails = new Panel { Dock = DockStyle.Bottom, Height = 144, BackColor = Theme.Surface, Padding = new Padding(14, 8, 14, 8), Visible = false };
+            terminalDetailText = new ThemeTextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BorderStyle = BorderStyle.None, BackColor = Theme.Surface, ForeColor = Theme.Muted, AccessibleName = "选中终端详细信息" };
+            terminalDetails.Controls.Add(terminalDetailText);
+            TableLayoutPanel filters = new TableLayoutPanel { Dock = DockStyle.Top, Height = 54, ColumnCount = 4, Padding = new Padding(12, 8, 12, 8), BackColor = Theme.Surface };
+            filters.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F)); filters.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140F)); filters.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            Label searchCaption = new Label { AutoSize = true, Anchor = AnchorStyles.Left, Text = "搜索终端 / 工位 / IP", ForeColor = Theme.Muted, Margin = new Padding(0, 0, 10, 0) };
+            terminalSearch = new ThemeTextBox { Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, BackColor = Theme.SurfaceStrong, ForeColor = Theme.Text, AccessibleName = "搜索终端、主机或IP地址", Margin = new Padding(0, 4, 12, 0) };
+            terminalFilter = new ThemeComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList, BackColor = Theme.SurfaceStrong, ForeColor = Theme.Text, Margin = new Padding(0, 4, 12, 0), AccessibleName = "终端在线状态筛选" };
+            terminalFilter.Items.AddRange(new object[] { "全部状态", "在线", "离线" }); terminalFilter.SelectedIndex = 0;
+            terminalCountLabel = new Label { AutoSize = true, Anchor = AnchorStyles.Right, ForeColor = Theme.Muted, Text = "尚未连接" };
+            filters.Controls.Add(searchCaption, 0, 0); filters.Controls.Add(terminalSearch, 1, 0); filters.Controls.Add(terminalFilter, 2, 0); filters.Controls.Add(terminalCountLabel, 3, 0);
             terminalGrid = CreateTerminalGrid(true);
             terminalGrid.SelectionChanged += delegate { UpdateTerminalActionState(); };
-            page.Controls.Add(terminalGrid);
-            page.Controls.Add(actions);
-            page.Controls.Add(connection);
+            terminalSearch.TextChanged += delegate { BindGrid(terminalGrid); }; terminalFilter.SelectedIndexChanged += delegate { BindGrid(terminalGrid); };
+            TabControl tabs = new ThemeTabControl { Dock = DockStyle.Fill };
+            TabPage registered = new TabPage("已绑定终端") { BackColor = Theme.Background };
+            registered.Controls.Add(terminalGrid); registered.Controls.Add(terminalDetails); registered.Controls.Add(actions); registered.Controls.Add(filters);
+            TabPage requests = new TabPage("绑定申请与记录") { BackColor = Theme.Background };
+            enrollmentPanel = new TerminalEnrollmentPanel(terminalClient, async delegate { await LoadRows(); });
+            enrollmentPanel.PendingChanged = delegate(int count) {
+                requests.Text = "绑定申请与记录" + (count > 0 ? "（" + count + "）" : "");
+                terminalNav.Text = "  终端管理" + (count > 0 ? "（" + count + "）" : "");
+                terminalNav.AccessibleDescription = count + " 项终端绑定申请待审批";
+            };
+            requests.Controls.Add(enrollmentPanel); tabs.TabPages.Add(registered); tabs.TabPages.Add(requests);
+            page.Controls.Add(tabs); page.Controls.Add(connectionCard);
+            UpdateTerminalActionState();
             return page;
         }
 
-        private TextBox AddInput(Control parent, string labelText, string value, int x, int y, int width, bool password)
+        private void SetConnectionExpanded(bool expanded)
         {
-            Label label = new Label { AutoSize = true, ForeColor = Theme.Muted, Location = new Point(x, y - 3), Text = labelText };
-            TextBox input = new TextBox { Location = new Point(x, y + 18), Size = new Size(width, 30), BackColor = Theme.SurfaceStrong, ForeColor = Theme.Text, BorderStyle = BorderStyle.FixedSingle, Text = value, UseSystemPasswordChar = password };
-            parent.Controls.AddRange(new Control[] { label, input });
-            return input;
+            connectionExpanded = expanded; connectionFields.Visible = expanded;
+            connectionCard.Height = connectionHead.Height + (expanded ? connectionFields.Height : 0);
+        }
+
+        private TextBox AddInputField(TableLayoutPanel parent, string caption, string value, int column, bool secret)
+        {
+            TableLayoutPanel field = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 0, 12, 0) };
+            field.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F)); field.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            field.Controls.Add(new Label { Dock = DockStyle.Fill, Text = caption, TextAlign = ContentAlignment.BottomLeft, ForeColor = Theme.Muted }, 0, 0);
+            TextBox input = new ThemeTextBox { Dock = DockStyle.Top, BackColor = Theme.SurfaceStrong, ForeColor = Theme.Text, BorderStyle = BorderStyle.FixedSingle, Text = value, UseSystemPasswordChar = secret, AccessibleName = caption };
+            field.Controls.Add(input, 0, 1); parent.Controls.Add(field, column, 0); return input;
         }
 
         private DataGridView CreateTerminalGrid(bool detailed)
         {
             DataGridView grid = new DataGridView
             {
+                Font = new Font(Font.FontFamily, 10F),
                 Dock = DockStyle.Fill,
                 BackgroundColor = Theme.Surface,
                 BorderStyle = BorderStyle.None,
@@ -892,37 +957,68 @@ namespace MESControlCenter
                 ColumnHeadersHeight = 42,
                 RowTemplate = { Height = 48 }
             };
-            grid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle { BackColor = Theme.SurfaceStrong, ForeColor = Theme.Text, Font = new Font(Font, FontStyle.Bold), SelectionBackColor = Theme.SurfaceStrong, Alignment = DataGridViewContentAlignment.MiddleLeft };
+            grid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle { BackColor = Theme.SurfaceStrong, ForeColor = Theme.Text, Font = new Font(grid.Font, FontStyle.Bold), SelectionBackColor = Theme.SurfaceStrong, Alignment = DataGridViewContentAlignment.MiddleLeft, Padding = new Padding(8, 0, 0, 0) };
             grid.DefaultCellStyle = new DataGridViewCellStyle { BackColor = Theme.Surface, ForeColor = Theme.Text, SelectionBackColor = Theme.AccentSoft, SelectionForeColor = Theme.Text, Padding = new Padding(5), WrapMode = DataGridViewTriState.False };
-            grid.AlternatingRowsDefaultCellStyle = new DataGridViewCellStyle { BackColor = Color.FromArgb(10, 28, 33) };
+            grid.AlternatingRowsDefaultCellStyle = new DataGridViewCellStyle { BackColor = Theme.AlternateSurface };
             grid.GridColor = Theme.Border;
-            AddColumn(grid, "状态", "Online", 70);
-            AddColumn(grid, "终端", "TerminalName", 158);
-            AddColumn(grid, "IP 地址", "IpAddress", 124);
-            if (detailed) AddColumn(grid, "主机名", "MachineName", 145);
-            AddColumn(grid, "当前页面", "CurrentPage", detailed ? 195 : 230);
-            if (detailed) AddColumn(grid, "页面路径", "CurrentPath", 220);
-            AddColumn(grid, "最后心跳", "LastSeenAt", 150);
-            if (detailed) AddColumn(grid, "终端权限", "PermissionLabel", 175);
-            AddColumn(grid, "最近命令", "CommandLabel", 120);
+            AddColumn(grid, "状态", "Online", 80);
+            AddColumn(grid, "终端 / 工位", "TerminalName", 200);
+            AddColumn(grid, "IP 地址", "IpAddress", 140);
+            AddColumn(grid, "当前页面", "CurrentPage", 170);
+            AddColumn(grid, "最后心跳", "LastSeenAt", 140);
+            AddColumn(grid, "最近命令", "CommandLabel", 160);
+            grid.Columns["IpAddress"].DefaultCellStyle.Font = new Font("Consolas", 9F);
+            grid.Columns["TerminalName"].DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+            grid.RowTemplate.Height = 52;
+            Theme.StyleGrid(grid);
             grid.CellFormatting += GridCellFormatting;
+            grid.CellToolTipTextNeeded += delegate(object sender, DataGridViewCellToolTipTextNeededEventArgs args) {
+                if (args.RowIndex < 0 || args.ColumnIndex < 0) return;
+                TerminalRow row = grid.Rows[args.RowIndex].DataBoundItem as TerminalRow;
+                if (row != null) args.ToolTipText = row.TerminalName + "\n主机：" + row.MachineName + "\n路径：" + row.CurrentPath + "\n心跳：" + row.LastSeenAt + "\n权限：" + row.PermissionLabel + "\n命令：" + row.CommandLabel;
+            };
+            grid.Paint += delegate(object sender, PaintEventArgs args) {
+                if (grid.Rows.Count > 0) return;
+                string message = grid.Tag as string;
+                if (String.IsNullOrEmpty(message)) message = !terminalConnected ? "尚未连接终端服务，请在终端管理中使用管理员账号连接。" : rows.Count == 0 ? "暂无已绑定终端。工作机提交申请后，请在“绑定申请与记录”中审批。" : "没有符合筛选条件的终端，请调整搜索或在线状态。";
+                Rectangle area = new Rectangle(24, grid.ColumnHeadersHeight + 24, Math.Max(1, grid.ClientSize.Width - 48), Math.Max(1, grid.ClientSize.Height - grid.ColumnHeadersHeight - 48));
+                TextRenderer.DrawText(args.Graphics, message, grid.Font, area, Theme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+            };
+            if (detailed) grid.ColumnHeaderMouseClick += delegate(object sender, DataGridViewCellMouseEventArgs args) {
+                if (args.ColumnIndex < 0) return;
+                string property = grid.Columns[args.ColumnIndex].Name;
+                terminalSortDescending = property == terminalSort && !terminalSortDescending;
+                terminalSort = property; BindGrid(grid);
+            };
             return grid;
         }
 
         private void AddColumn(DataGridView grid, string header, string property, int width)
         {
-            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = header, DataPropertyName = property, Name = property, Width = width, MinimumWidth = Math.Min(width, 70), SortMode = DataGridViewColumnSortMode.NotSortable });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = header, DataPropertyName = property, Name = property, Width = width, FillWeight = width, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = property == "Online" ? 70 : property == "TerminalName" ? 130 : 110, SortMode = DataGridViewColumnSortMode.Programmatic });
         }
 
         private void GridCellFormatting(object sender, DataGridViewCellFormattingEventArgs args)
         {
             DataGridView grid = sender as DataGridView;
-            if (grid == null || args.RowIndex < 0 || grid.Columns[args.ColumnIndex].Name != "Online") return;
+            if (grid == null || args.RowIndex < 0) return;
             TerminalRow row = grid.Rows[args.RowIndex].DataBoundItem as TerminalRow;
             if (row == null) return;
-            args.Value = row.Online ? "●  在线" : "○  离线";
-            args.CellStyle.ForeColor = row.Online ? Theme.Accent : Theme.Muted;
-            args.FormattingApplied = true;
+            string column = grid.Columns[args.ColumnIndex].Name;
+            if (column == "Online") { args.Value = row.Online ? "● 在线" : "○ 离线"; args.CellStyle.ForeColor = row.Online ? Theme.Accent : Theme.Muted; args.FormattingApplied = true; }
+            else if (column == "TerminalName") { args.Value = row.TerminalName + (String.IsNullOrEmpty(row.MachineName) ? "" : "\n" + row.MachineName); args.FormattingApplied = true; }
+            else if (column == "LastSeenAt") {
+                DateTimeOffset timestamp;
+                if (DateTimeOffset.TryParse(row.LastSeenAt, out timestamp)) {
+                    double seconds = Math.Max(0, (DateTimeOffset.UtcNow - timestamp).TotalSeconds);
+                    args.Value = seconds < 60 ? Math.Max(1, (int)seconds) + " 秒前" : seconds < 3600 ? (int)(seconds / 60) + " 分钟前" : timestamp.ToLocalTime().ToString("MM-dd HH:mm");
+                } else args.Value = String.IsNullOrEmpty(row.LastSeenAt) ? "未上报" : row.LastSeenAt;
+                args.FormattingApplied = true;
+            }
+            else if (column == "CommandLabel") {
+                string value = row.CommandLabel ?? "";
+                args.CellStyle.ForeColor = value.Contains("失败") || value.Contains("拒绝") ? Theme.Danger : value.Contains("执行中") || value.Contains("待领取") ? Theme.Warning : value.Contains("完成") ? Theme.Accent : Theme.Muted;
+            }
         }
 
         private Panel CreateCard(Padding marginPadding)
@@ -932,13 +1028,15 @@ namespace MESControlCenter
 
         private Button CreateNavigationButton(string text, int top)
         {
-            Button button = new Button { FlatStyle = FlatStyle.Flat, FlatAppearance = { BorderSize = 0 }, BackColor = Theme.Sidebar, ForeColor = Theme.Muted, Location = new Point(14, top), Size = new Size(192, 44), Text = "  " + text, TextAlign = ContentAlignment.MiddleLeft, Cursor = Cursors.Hand };
+            Button button = new ThemeButton { FlatStyle = FlatStyle.Flat, FlatAppearance = { BorderSize = 0 }, BackColor = Theme.Sidebar, ForeColor = Theme.Muted, Location = new Point(14, top), Size = new Size(192, 44), Text = "  " + text, TextAlign = ContentAlignment.MiddleLeft, Cursor = Cursors.Hand };
             return button;
         }
 
         private Button CreateButton(string text, Color background, Color foreground, int width)
         {
-            Button button = new Button { Text = text, Size = new Size(width, 40), FlatStyle = FlatStyle.Flat, BackColor = background, ForeColor = foreground, Cursor = Cursors.Hand, Font = new Font(Font.FontFamily, 9F, FontStyle.Bold), UseVisualStyleBackColor = false };
+            Font font = new Font(Font.FontFamily, 9F, FontStyle.Bold);
+            width = Math.Max(width, TextRenderer.MeasureText(text, font).Width + 32);
+            Button button = new ThemeButton { Text = text, Size = new Size(width, 40), Margin = new Padding(0, 0, 10, 0), FlatStyle = FlatStyle.Flat, BackColor = background, ForeColor = foreground, Cursor = Cursors.Hand, Font = font, UseVisualStyleBackColor = false };
             button.FlatAppearance.BorderColor = background == Theme.AccentStrong ? Theme.AccentStrong : Theme.BorderStrong;
             button.FlatAppearance.BorderSize = 1;
             return button;
@@ -949,7 +1047,7 @@ namespace MESControlCenter
             Panel page = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Visible = false };
             Panel header = new Panel { Dock = DockStyle.Top, Height = 144, BackColor = Theme.Surface };
             string mode = MESDesktopSettings.IsNative ? "Windows 原生服务" : MESDesktopSettings.IsDocker ? "Docker 容器" : "本机开发服务";
-            Label title = new Label { AutoSize = true, Text = "MES 控制中心  v2.9.0", ForeColor = Theme.Text, Font = new Font(Font, FontStyle.Bold), Location = new Point(18, 16) };
+            Label title = new Label { AutoSize = true, Text = "MES 控制中心  v2.10.0", ForeColor = Theme.Text, Font = new Font(Font, FontStyle.Bold), Location = new Point(18, 16) };
             Label deployment = new Label { AutoSize = true, Text = "部署方式：" + mode + "    ·    Web、API、LIMS 与上位机服务管理", ForeColor = Theme.Muted, Location = new Point(18, 43) };
             Label local = new Label { AutoSize = true, Text = "本机访问", ForeColor = Theme.Muted, Location = new Point(18, 78) };
             aboutLocalUrl = new TextBox { ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, BackColor = Theme.SurfaceStrong, ForeColor = Theme.Accent, Location = new Point(90, 74), Size = new Size(320, 28), Font = new Font("Consolas", 10F), AccessibleName = "MES 本机访问地址" };
@@ -960,7 +1058,7 @@ namespace MESControlCenter
             Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = 174, BackColor = Theme.Surface };
             aboutGuidance = new Label { AutoSize = false, Location = new Point(18, 14), Size = new Size(900, 86), ForeColor = Theme.Muted, Text = "请在 MES 主机运行本程序。局域网地址不使用容器 IP 或 127.0.0.1。" };
             aboutRefreshButton = CreateButton("刷新地址", Theme.AccentSoft, Theme.Accent, 112);
-            aboutCopyButton = CreateButton("复制选中地址", Theme.AccentStrong, Color.FromArgb(4, 27, 23), 140);
+            aboutCopyButton = CreateButton("复制选中地址", Theme.AccentStrong, Theme.OnAccent, 140);
             aboutOpenButton = CreateButton("打开界面", Theme.SurfaceStrong, Theme.Text, 126);
             aboutRefreshButton.Location = new Point(18, 114);
             aboutCopyButton.Location = new Point(142, 114);
@@ -1096,6 +1194,7 @@ namespace MESControlCenter
 
         private async Task OpenCentralManagement()
         {
+            if (integrityPage != null && integrityPage.Repairing) { footerStatusLabel.Text="正在补全组件，请完成后打开界面。"; return; }
             if (serviceBusy || openCentralBusy) return;
             openCentralBusy = true;
             openCentralButton.Enabled = false;
@@ -1136,6 +1235,7 @@ namespace MESControlCenter
         private async void RefreshAll()
         {
             if (serviceBusy) return;
+            if (integrityPage.Visible) { await integrityPage.CheckAsync(false); return; }
             if (configurationPage.Visible) { configurationPage.Reload(true); return; }
             if (aboutPage.Visible) { await RefreshAboutInfo(); return; }
             await RefreshServiceStatus(true);
@@ -1146,6 +1246,7 @@ namespace MESControlCenter
 
         private void HideConfigurationPage()
         {
+            if (integrityPage != null) { integrityPage.Visible=false; integrityNav.BackColor=Theme.Sidebar; integrityNav.ForeColor=Theme.Muted; }
             configurationPage.Visible = false;
             configurationNav.BackColor = Theme.Sidebar;
             configurationNav.ForeColor = Theme.Muted;
@@ -1153,6 +1254,7 @@ namespace MESControlCenter
 
         private void ShowConfigurationPage()
         {
+            if (integrityPage != null) { integrityPage.Visible=false; integrityNav.BackColor=Theme.Sidebar; integrityNav.ForeColor=Theme.Muted; }
             dashboardPage.Visible = terminalPage.Visible = aboutPage.Visible = false;
             dashboardNav.BackColor = terminalNav.BackColor = aboutNav.BackColor = Theme.Sidebar;
             dashboardNav.ForeColor = terminalNav.ForeColor = aboutNav.ForeColor = Theme.Muted;
@@ -1163,6 +1265,17 @@ namespace MESControlCenter
             configurationPage.EnsureLoaded();
             pageTitle.Text = "系统配置";
             pageDescription.Text = "重要连接参数 · 读取实际配置文件，保存后重启生效";
+        }
+
+        private void ShowIntegrityPage()
+        {
+            HideConfigurationPage();
+            dashboardPage.Visible=terminalPage.Visible=aboutPage.Visible=false;
+            dashboardNav.BackColor=terminalNav.BackColor=aboutNav.BackColor=Theme.Sidebar;
+            dashboardNav.ForeColor=terminalNav.ForeColor=aboutNav.ForeColor=Theme.Muted;
+            integrityNav.BackColor=Theme.AccentSoft; integrityNav.ForeColor=Theme.Accent;
+            integrityPage.Visible=true; integrityPage.BringToFront();
+            pageTitle.Text="系统完整性"; pageDescription.Text="检测运行组件 · 勾选补全 · 保留原配置与绑定";
         }
 
         private async Task RefreshServiceStatus(bool showErrors)
@@ -1309,6 +1422,7 @@ namespace MESControlCenter
 
         private void RequestServiceAction(string action)
         {
+            if (integrityPage != null && integrityPage.Repairing) { footerStatusLabel.Text="正在补全组件，请完成后操作服务。"; return; }
             if (serviceBusy || modalOverlay.Visible) return;
             if (action == "Start" && systemRunning) return;
             if (action == "Stop")
@@ -1335,7 +1449,7 @@ namespace MESControlCenter
         {
             if (exitAllowed) return;
             args.Cancel = true;
-            if (serviceBusy || openCentralBusy || exitRequested)
+            if (serviceBusy || openCentralBusy || exitRequested || (integrityPage != null && integrityPage.Repairing))
             {
                 footerStatusLabel.Text = "正在执行界面或服务操作，请完成后再关闭控制中心。";
                 return;
@@ -1371,6 +1485,14 @@ namespace MESControlCenter
             }
         }
 
+        internal bool CloseForMaintenance()
+        {
+            if (serviceBusy || openCentralBusy || (integrityPage != null && integrityPage.Repairing)) return false;
+            // Only the explicit local maintenance command takes this route.
+            // The uninstaller owns service shutdown; regular window close keeps its confirmation.
+            exitAllowed=true; Hide(); Close(); return true;
+        }
+
         private async Task<bool> RunServiceOperation(string action)
         {
             if (serviceBusy) return false;
@@ -1389,13 +1511,14 @@ namespace MESControlCenter
                 if (IsDisposed) return false;
                 string status = ReadResultValue(result, "status");
                 string message = ReadResultValue(result, "message");
-                bool success = ServiceActionSucceeded(action, status);
+                bool serviceSucceeded = ServiceActionSucceeded(action, status);
+                bool success = serviceSucceeded;
                 Dictionary<string, object> operationResult = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(result);
                 object interfaceResult;
                 if (operationResult.TryGetValue("interfaceOperationSucceeded", out interfaceResult)
                     && interfaceResult is bool && !(bool)interfaceResult) success = false;
                 successful = success;
-                if (success)
+                if (serviceSucceeded)
                 {
                     systemRunning = action != "Stop" && status != "stopped" && status != "not_running";
                     if (!systemRunning)
@@ -1403,9 +1526,8 @@ namespace MESControlCenter
                         terminalConnected = false;
                         UpdateTerminalActionState();
                     }
-                    await CompleteServiceProgress();
                 }
-                else HideServiceProgress();
+                if (success) await CompleteServiceProgress(); else HideServiceProgress();
                 if (IsDisposed) return false;
                 footerStatusLabel.Text = message;
                 if (!success) ShowModal("操作失败", message, false, null, true);
@@ -1480,9 +1602,10 @@ namespace MESControlCenter
         {
             if (startServiceButton == null) return;
             startServiceButton.BackColor = enabled ? Theme.AccentStrong : Theme.SurfaceStrong;
-            startServiceButton.ForeColor = enabled ? Color.FromArgb(4, 27, 23) : Theme.Subtle;
+            startServiceButton.ForeColor = enabled ? Theme.OnAccent : Theme.DisabledText;
             startServiceButton.FlatAppearance.BorderColor = enabled ? Theme.AccentStrong : Theme.Border;
             startServiceButton.Cursor = enabled ? Cursors.Hand : Cursors.Default;
+            startServiceButton.Text = systemRunning ? "系统已运行" : "启动系统";
         }
 
         private async Task ConnectAndRefresh(bool showErrors)
@@ -1500,6 +1623,9 @@ namespace MESControlCenter
                     terminalClient.Login(user, password);
                 });
                 terminalConnected = true;
+                connectionSummary.Text = "已连接 · " + user + " · " + server;
+                connectionSummary.ForeColor = Theme.Accent;
+                SetConnectionExpanded(false);
                 refreshTimer.Start();
                 await LoadRows();
                 footerStatusLabel.Text = "终端管理已连接；状态每 5 秒自动刷新";
@@ -1507,8 +1633,13 @@ namespace MESControlCenter
             catch (Exception exception)
             {
                 terminalConnected = false;
+                connectionSummary.Text = "连接失败 · 请检查地址与管理员账号";
+                connectionSummary.ForeColor = Theme.Danger;
+                SetConnectionExpanded(true);
                 refreshTimer.Stop();
                 footerStatusLabel.Text = "终端连接失败：" + exception.Message;
+                dashboardGrid.Tag = terminalGrid.Tag = "终端连接失败，请检查地址与管理员账号后重新连接。";
+                dashboardGrid.Invalidate(); terminalGrid.Invalidate();
                 if (showErrors) ShowModal("终端连接失败", exception.Message, false, null, true);
             }
             finally
@@ -1529,6 +1660,8 @@ namespace MESControlCenter
             catch (Exception exception)
             {
                 footerStatusLabel.Text = "终端状态刷新失败：" + exception.Message;
+                dashboardGrid.Tag = terminalGrid.Tag = "终端状态读取失败，按 F5 重试。";
+                dashboardGrid.Invalidate(); terminalGrid.Invalidate();
                 if (showErrors) ShowModal("刷新失败", exception.Message, false, null, true);
             }
             finally
@@ -1541,6 +1674,7 @@ namespace MESControlCenter
         {
             List<TerminalRow> loaded = await Task.Run(delegate { return terminalClient.ListTerminals(); });
             rows = loaded;
+            dashboardGrid.Tag = terminalGrid.Tag = null;
             BindGrid(dashboardGrid);
             BindGrid(terminalGrid);
             int online = rows.FindAll(delegate(TerminalRow row) { return row.Online; }).Count;
@@ -1551,32 +1685,103 @@ namespace MESControlCenter
             offlineMetricLabel.Text = offline.ToString();
             terminalSummaryLabel.Text = "在线 " + online + " / 共 " + rows.Count + " 台";
             UpdateTerminalActionState();
+            if (enrollmentPanel != null) await enrollmentPanel.RefreshRequests();
         }
 
         private void BindGrid(DataGridView grid)
         {
-            grid.DataSource = null;
-            grid.DataSource = rows;
+            TerminalRow previous = grid.CurrentRow == null ? null : grid.CurrentRow.DataBoundItem as TerminalRow;
+            string selectedId = previous == null ? "" : previous.TerminalId;
+            int first = grid.FirstDisplayedScrollingRowIndex;
+            TerminalRow top = first >= 0 ? grid.Rows[first].DataBoundItem as TerminalRow : null;
+            string topId = top == null ? "" : top.TerminalId;
+            List<TerminalRow> visible = new List<TerminalRow>(rows);
+            if (grid == terminalGrid) {
+                string query = terminalSearch.Text.Trim();
+                visible = visible.FindAll(delegate(TerminalRow row) {
+                    return (terminalFilter.SelectedIndex != 1 || row.Online) && (terminalFilter.SelectedIndex != 2 || !row.Online)
+                        && (query.Length == 0 || ((row.TerminalName ?? "") + " " + row.MachineName + " " + row.IpAddress + " " + row.CurrentPage).IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
+                });
+                PropertyInfo property = typeof(TerminalRow).GetProperty(terminalSort);
+                visible.Sort(delegate(TerminalRow left, TerminalRow right) {
+                    int result = StringComparer.CurrentCultureIgnoreCase.Compare(Convert.ToString(property.GetValue(left, null)), Convert.ToString(property.GetValue(right, null)));
+                    return terminalSortDescending ? -result : result;
+                });
+                terminalCountLabel.Text = "在线 " + rows.FindAll(delegate(TerminalRow row) { return row.Online; }).Count + " / 共 " + rows.Count + " 台";
+                if (visible.Count != rows.Count) terminalCountLabel.Text += " · 筛选 " + visible.Count;
+            }
+            bindingTerminals = true;
+            try {
+                grid.DataSource = null; grid.DataSource = visible;
+                if (grid == terminalGrid) foreach (DataGridViewColumn column in grid.Columns) column.HeaderCell.SortGlyphDirection = column.Name == terminalSort ? (terminalSortDescending ? SortOrder.Descending : SortOrder.Ascending) : SortOrder.None;
+                foreach (DataGridViewRow row in grid.Rows) {
+                    TerminalRow item = row.DataBoundItem as TerminalRow;
+                    if (item != null && item.TerminalId == selectedId) { grid.CurrentCell = row.Cells[0]; row.Selected = true; break; }
+                }
+                if (grid.Visible && grid.Rows.Count > 0 && first >= 0) {
+                    int restore = visible.FindIndex(delegate(TerminalRow row) { return row.TerminalId == topId; });
+                    grid.FirstDisplayedScrollingRowIndex = Math.Min(restore >= 0 ? restore : first, grid.Rows.Count - 1);
+                }
+            } finally { bindingTerminals = false; }
+            grid.Invalidate();
+            if (grid == terminalGrid) UpdateTerminalActionState();
         }
 
         private TerminalRow SelectedTerminal()
         {
-            if (terminalGrid.SelectedRows.Count == 0) return null;
+            if (terminalGrid == null || terminalGrid.SelectedRows.Count == 0) return null;
             return terminalGrid.SelectedRows[0].DataBoundItem as TerminalRow;
         }
 
         private void UpdateTerminalActionState()
         {
-            if (reloadButton == null) return;
+            if (reloadButton == null || bindingTerminals) return;
             TerminalRow selected = SelectedTerminal();
-            reloadButton.Enabled = !terminalBusy && selected != null && selected.Online && selected.AllowReload;
-            shutdownButton.Enabled = !terminalBusy && selected != null && selected.Online && selected.AllowPower;
+            reloadButton.Enabled = !terminalBusy && terminalConnected && selected != null && selected.Online && selected.AllowReload;
+            shutdownButton.Enabled = !terminalBusy && terminalConnected && selected != null && selected.Online && selected.AllowPower;
             restartTerminalButton.Enabled = shutdownButton.Enabled;
             bool anyPower = terminalConnected && rows.Exists(delegate(TerminalRow row) { return row.Online && row.AllowPower; });
             shutdownAllButton.Enabled = !terminalBusy && anyPower;
             restartAllButton.Enabled = !terminalBusy && anyPower;
             refreshButton.Enabled = !terminalBusy && terminalConnected;
             connectButton.Enabled = !terminalBusy;
+            if (resetBindingButton != null) resetBindingButton.Enabled = deleteBindingButton.Enabled = !terminalBusy && terminalConnected && selected != null;
+            if (cleanupBindingsButton != null) cleanupBindingsButton.Enabled = !terminalBusy && terminalConnected;
+            if (moreTerminalButton != null) moreTerminalButton.Enabled = !terminalBusy && terminalConnected;
+            if (terminalDetailButton != null) terminalDetailButton.Enabled = selected != null;
+            if (selectedTerminalLabel != null) selectedTerminalLabel.Text = selected == null ? "请选择终端" : "已选：" + selected.TerminalName + " · " + (selected.Online ? "在线" : "离线") + (!terminalConnected ? " · 服务未连接" : "");
+            if (terminalDetailText != null) terminalDetailText.Text = selected == null ? "请选择终端查看详情。" : "终端：" + selected.TerminalName + "\r\n主机：" + selected.MachineName + "    IP：" + selected.IpAddress + "\r\n标识：" + selected.TerminalId + "\r\n页面路径：" + selected.CurrentPath + "\r\n最后心跳：" + selected.LastSeenAt + "\r\n权限：" + selected.PermissionLabel + "\r\n最近命令：" + selected.CommandLabel;
+        }
+
+        private void RequestBindingAction(bool delete)
+        {
+            TerminalRow selected = SelectedTerminal();
+            if (selected == null || terminalBusy || !terminalConnected) return;
+            string label = delete ? "删除终端" : "重置绑定";
+            ShowModal("确认" + label, "终端：" + selected.TerminalName + "\n旧工位凭据及登录会话将失效，需要重新申请并经管理员批准。任务、样品和报告保留。", true, async delegate {
+                SetTerminalBusy(true, "正在" + label + "……");
+                try { await Task.Run(delegate { terminalClient.EnrollmentAction("terminals/" + Uri.EscapeDataString(selected.TerminalId) + (delete ? "" : "/reset"), null, delete); }); await LoadRows(); }
+                catch (Exception error) { ShowModal(label + "失败", error.Message, false, null, true); }
+                finally { SetTerminalBusy(false, label + "操作结束"); }
+            }, false);
+        }
+
+        private async Task PreviewLegacyCleanup()
+        {
+            if (terminalBusy || !terminalConnected) return;
+            try {
+                List<Dictionary<string, object>> preview = await Task.Run(delegate { return terminalClient.EnrollmentItems("legacy-preview"); });
+                if (preview.Count == 0) { ShowModal("清理历史终端", "没有符合条件的历史离线终端。", false, null, false); return; }
+                List<string> identifiers = new List<string>();
+                List<string> names = new List<string>();
+                foreach (Dictionary<string, object> row in preview) { identifiers.Add(Convert.ToString(row["terminalId"])); names.Add(Convert.ToString(row["terminalName"])); }
+                ShowModal("确认清理 " + preview.Count + " 个历史终端", String.Join("、", names.GetRange(0, Math.Min(3, names.Count))) + "\n仅清理未通过新流程接入且当前离线的终端。业务数据保留。", true, async delegate {
+                    SetTerminalBusy(true, "正在清理历史终端……");
+                    try { await Task.Run(delegate { terminalClient.EnrollmentAction("legacy-cleanup", new Dictionary<string, object> { { "terminalIds", identifiers.ToArray() } }); }); await LoadRows(); }
+                    catch (Exception error) { ShowModal("清理失败", error.Message, false, null, true); }
+                    finally { SetTerminalBusy(false, "历史终端清理结束"); }
+                }, false);
+            } catch (Exception error) { ShowModal("读取清理预览失败", error.Message, false, null, true); }
         }
 
         private void RequestSelectedTerminalCommand(string action, string label)
@@ -1639,6 +1844,7 @@ namespace MESControlCenter
         private void SetTerminalBusy(bool value, string message)
         {
             terminalBusy = value;
+            if (value && rows.Count == 0) { dashboardGrid.Tag = terminalGrid.Tag = message; dashboardGrid.Invalidate(); terminalGrid.Invalidate(); }
             if (!String.IsNullOrWhiteSpace(message)) footerStatusLabel.Text = message;
             ResetWaitCursor();
             UpdateTerminalActionState();
@@ -1725,13 +1931,13 @@ namespace MESControlCenter
 
         private void BuildModal()
         {
-            modalOverlay = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(7, 14, 19), Visible = false };
+            modalOverlay = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Background, Visible = false };
             Panel border = new Panel { BackColor = Theme.BorderStrong, Size = new Size(480, 242) };
             Panel card = new Panel { BackColor = Theme.Surface, Location = new Point(1, 1), Size = new Size(478, 240) };
             modalTitle = new Label { AutoSize = false, ForeColor = Theme.Text, Font = new Font(Font.FontFamily, 13F, FontStyle.Bold), Location = new Point(24, 22), Size = new Size(428, 32) };
             modalBody = new Label { AutoSize = false, ForeColor = Theme.Muted, Location = new Point(24, 65), Size = new Size(428, 78) };
             modalCancelButton = CreateButton("取消", Theme.SurfaceStrong, Theme.Text, 92);
-            modalConfirmButton = CreateButton("确认", Theme.AccentStrong, Color.FromArgb(4, 27, 23), 92);
+            modalConfirmButton = CreateButton("确认", Theme.AccentStrong, Theme.OnAccent, 92);
             modalCancelButton.Location = new Point(260, 172);
             modalConfirmButton.Location = new Point(362, 172);
             modalCancelButton.Click += delegate { HideModal(); };
@@ -1756,7 +1962,7 @@ namespace MESControlCenter
             modalCancelButton.Visible = confirmation;
             modalConfirmButton.Text = confirmation ? "确认" : "知道了";
             modalConfirmButton.BackColor = error ? Theme.DangerSoft : Theme.AccentStrong;
-            modalConfirmButton.ForeColor = error ? Theme.Danger : Color.FromArgb(4, 27, 23);
+            modalConfirmButton.ForeColor = error ? Theme.Danger : Theme.OnAccent;
             modalConfirmButton.Left = confirmation ? 362 : 362;
             modalOverlay.Visible = true;
             modalOverlay.BringToFront();
@@ -1779,6 +1985,15 @@ namespace MESControlCenter
             string resultFile = Path.Combine(Path.GetTempPath(), "mes-control-center-result-" + Guid.NewGuid().ToString("N") + ".json");
             try
             {
+                string clientCloseError="";
+                Stopwatch operationClock=Stopwatch.StartNew();
+                if (manageBrowser && (action == "Stop" || action == "Restart")) {
+                    ReportOperationStage("正在关闭本机受管界面……");
+                    try { browserSession.CloseNativeClients(); } catch (Exception error) { clientCloseError=error.Message; }
+                    LogOperationStage(action,"clients.close",operationClock.ElapsedMilliseconds);
+                    operationClock.Restart();
+                }
+                ReportOperationStage("正在"+ActionLabel(action)+"服务组，等待实际执行结果……");
                 ProcessStartInfo info = new ProcessStartInfo
                 {
                     FileName = "powershell.exe",
@@ -1798,6 +2013,7 @@ namespace MESControlCenter
                     object diagnosticsLock = new object();
                     Task stderrTask = DrainDiagnostics(process.StandardError, diagnostics, diagnosticsLock);
                     process.WaitForExit();
+                    LogOperationStage(action,"services.execute",operationClock.ElapsedMilliseconds);
                     string result = File.Exists(resultFile) ? File.ReadAllText(resultFile) : "";
                     stderrTask.Wait(200);
                     string stderr;
@@ -1817,7 +2033,7 @@ namespace MESControlCenter
                         payload["interfaceOperationSucceeded"] = true;
                         try
                         {
-                            if (action == "Stop" || action == "Restart") browserSession.Close();
+                            if (action == "Stop" || action == "Restart") browserSession.CloseBrowserWindows();
                             object pages;
                             if ((action == "Start" || action == "Restart") && payload.TryGetValue("pageUrls", out pages))
                             {
@@ -1832,6 +2048,11 @@ namespace MESControlCenter
                             payload["message"] = Convert.ToString(payload["message"]) + "；界面：" + exception.Message;
                         }
                         result = new JavaScriptSerializer().Serialize(payload);
+                        if (clientCloseError.Length > 0) {
+                            payload["interfaceOperationSucceeded"]=false;
+                            payload["message"]=Convert.ToString(payload["message"])+"；本机界面："+clientCloseError;
+                            result=new JavaScriptSerializer().Serialize(payload);
+                        }
                     }
                     return result;
                 }
@@ -1840,6 +2061,22 @@ namespace MESControlCenter
             {
                 if (File.Exists(resultFile)) File.Delete(resultFile);
             }
+        }
+
+        private void ReportOperationStage(string message)
+        {
+            if (!IsHandleCreated || IsDisposed) return;
+            try { BeginInvoke(new Action(delegate { if (!IsDisposed && serviceBusy) { serviceProgressTitle.Text=message; footerStatusLabel.Text=message; } })); }
+            catch (InvalidOperationException) { }
+        }
+
+        private static void LogOperationStage(string action, string stage, long milliseconds)
+        {
+            try {
+                string directory=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"MesFastApiLauncher","logs");
+                Directory.CreateDirectory(directory);
+                File.AppendAllText(Path.Combine(directory,"control-center-operations.log"),DateTimeOffset.Now.ToString("o")+" "+action+" "+stage+" "+milliseconds+"ms"+Environment.NewLine,Encoding.UTF8);
+            } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
 
         private static Task DrainDiagnostics(StreamReader reader, StringBuilder text, object textLock)
@@ -1902,6 +2139,7 @@ namespace MESControlCenter
         }
 
         internal void ShowConfigurationPageForPreview() { ShowConfigurationPage(); }
+        internal void ShowIntegrityPageForPreview() { ShowIntegrityPage(); }
 
         internal void ShowAboutPageForPreview()
         {
@@ -1949,6 +2187,8 @@ namespace MESControlCenter
         internal const string AlreadyOpenMessage = "控制中心已打开。";
         private readonly System.Threading.Mutex mutex;
         private readonly System.Threading.EventWaitHandle activation;
+        private readonly System.Threading.EventWaitHandle maintenance;
+        private readonly System.Threading.EventWaitHandle maintenanceAck;
         internal readonly bool IsPrimary;
         [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
@@ -1972,6 +2212,18 @@ namespace MESControlCenter
                 catch (System.Threading.AbandonedMutexException) { IsPrimary = true; }
             }
             activation = new System.Threading.EventWaitHandle(false, System.Threading.EventResetMode.AutoReset, key + "-Activate");
+            maintenance=new System.Threading.EventWaitHandle(false,System.Threading.EventResetMode.AutoReset,key+"-Maintenance");
+            maintenanceAck=new System.Threading.EventWaitHandle(false,System.Threading.EventResetMode.AutoReset,key+"-MaintenanceAck");
+        }
+
+        internal static int RequestMaintenanceClose(string executable)
+        {
+            string key=InstanceKey(executable,System.Security.Principal.WindowsIdentity.GetCurrent().User.Value);
+            try {
+                using (System.Threading.EventWaitHandle request=System.Threading.EventWaitHandle.OpenExisting(key+"-Maintenance"))
+                using (System.Threading.EventWaitHandle ack=System.Threading.EventWaitHandle.OpenExisting(key+"-MaintenanceAck"))
+                { ack.Reset(); request.Set(); return ack.WaitOne(5000) ? 0 : 6; }
+            } catch (System.Threading.WaitHandleCannotBeOpenedException) { return 0; }
         }
 
         internal int Run(Func<Form> createForm, Action<Form> alreadyOpen)
@@ -1983,6 +2235,11 @@ namespace MESControlCenter
                 bool notifying = false;
                 timer.Tick += delegate
                 {
+                    if (maintenance.WaitOne(0) && !form.IsDisposed && !form.Disposing) {
+                        ControlCenterForm center=form as ControlCenterForm;
+                        if (center != null && center.CloseForMaintenance()) maintenanceAck.Set();
+                        return;
+                    }
                     if (!activation.WaitOne(0) || form.IsDisposed || form.Disposing || notifying) return;
                     notifying = true;
                     try
@@ -2004,6 +2261,7 @@ namespace MESControlCenter
         public void Dispose()
         {
             activation.Dispose();
+            maintenance.Dispose();maintenanceAck.Dispose();
             if (IsPrimary) mutex.ReleaseMutex();
             mutex.Dispose();
         }
@@ -2017,6 +2275,7 @@ namespace MESControlCenter
         [STAThread]
         private static int Main(string[] args)
         {
+            if (args.Length > 0 && args[0] == "--close-controller") return ControlCenterInstance.RequestMaintenanceClose(typeof(Program).Assembly.Location);
             string scriptPath = Path.Combine(RuntimeRoot, "scripts", MESDesktopSettings.IsNative ? "native-service-control.ps1" : MESDesktopSettings.IsDocker ? "docker-service-control.ps1" : "mes-service-control.ps1");
             if (args.Length > 1 && String.Equals(args[0], "--open-pages", StringComparison.OrdinalIgnoreCase))
             {

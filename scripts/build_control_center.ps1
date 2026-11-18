@@ -1,7 +1,7 @@
 ﻿param(
     [string]$ProjectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path,
-    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.9.0.exe"),
-    [string]$IconPath = (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path "assets\mes-control-center.ico"),
+    [string]$OutputPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "MES控制中心_v2.10.0.exe"),
+    [string]$IconPath = (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path "assets\mes-control-center-blue.ico"),
     [switch]$NoAdminManifest
 )
 
@@ -18,90 +18,24 @@ function Resolve-CscPath {
     throw "Cannot find csc.exe. Install .NET Framework build tools or Visual Studio Build Tools."
 }
 
-function New-RoundedRectanglePath {
-    param([System.Drawing.RectangleF]$Rectangle, [float]$Radius)
-    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $diameter = $Radius * 2
-    $arc = New-Object System.Drawing.RectangleF($Rectangle.X, $Rectangle.Y, $diameter, $diameter)
-    $path.AddArc($arc, 180, 90)
-    $arc.X = $Rectangle.Right - $diameter
-    $path.AddArc($arc, 270, 90)
-    $arc.Y = $Rectangle.Bottom - $diameter
-    $path.AddArc($arc, 0, 90)
-    $arc.X = $Rectangle.X
-    $path.AddArc($arc, 90, 90)
-    $path.CloseFigure()
-    return $path
-}
-
 function New-ControlCenterIcon {
     param([string]$Path)
-    Add-Type -AssemblyName System.Drawing
-    $directory = Split-Path -Parent $Path
-    if ($directory) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
-
-    $bitmap = New-Object System.Drawing.Bitmap(256, 256)
-    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-    $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $graphics.Clear([System.Drawing.Color]::Transparent)
-    $outer = New-Object System.Drawing.RectangleF(12, 12, 232, 232)
-    $outerPath = New-RoundedRectanglePath -Rectangle $outer -Radius 52
-    $outerBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(16, 40, 45))
-    $graphics.FillPath($outerBrush, $outerPath)
-    $borderPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(72, 128, 129), 5)
-    $graphics.DrawPath($borderPen, $outerPath)
-
-    $accent = [System.Drawing.Color]::FromArgb(82, 208, 181)
-    $linePen = New-Object System.Drawing.Pen($accent, 15)
-    $linePen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $linePen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $graphics.DrawRectangle($linePen, 53, 83, 150, 105)
-    $graphics.DrawLine($linePen, 91, 83, 91, 55)
-    $graphics.DrawLine($linePen, 91, 55, 165, 55)
-    $graphics.DrawLine($linePen, 165, 55, 165, 83)
-    $graphics.DrawLine($linePen, 76, 119, 121, 119)
-    $graphics.DrawLine($linePen, 76, 153, 142, 153)
-    $graphics.DrawLine($linePen, 172, 111, 172, 163)
-    $graphics.DrawLine($linePen, 151, 137, 193, 137)
-
-    $graphics.Flush()
-    $pngStream = New-Object System.IO.MemoryStream
-    $bitmap.Save($pngStream, [System.Drawing.Imaging.ImageFormat]::Png)
-    $pngBytes = $pngStream.ToArray()
-    $stream = [System.IO.File]::Create($Path)
-    $writer = New-Object System.IO.BinaryWriter($stream)
-    try {
-        $writer.Write([uint16]0)
-        $writer.Write([uint16]1)
-        $writer.Write([uint16]1)
-        $writer.Write([byte]0)
-        $writer.Write([byte]0)
-        $writer.Write([byte]0)
-        $writer.Write([byte]0)
-        $writer.Write([uint16]1)
-        $writer.Write([uint16]32)
-        $writer.Write([uint32]$pngBytes.Length)
-        $writer.Write([uint32]22)
-        $writer.Write($pngBytes)
-    }
-    finally {
-        $writer.Dispose()
-        $pngStream.Dispose()
-        $linePen.Dispose()
-        $borderPen.Dispose()
-        $outerBrush.Dispose()
-        $outerPath.Dispose()
-        $graphics.Dispose()
-        $bitmap.Dispose()
+    $source=Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path 'assets/mes-control-center-blue.ico'
+    if(-not (Test-Path -LiteralPath $source)){throw 'Control-center icon asset is missing.'}
+    $destination=[IO.Path]::GetFullPath($Path)
+    if(-not [string]::Equals([IO.Path]::GetFullPath($source),$destination,[StringComparison]::OrdinalIgnoreCase)){
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $destination))|Out-Null
+        Copy-Item -LiteralPath $source -Destination $destination -Force
     }
 }
 
 $projectRootPath = (Resolve-Path -LiteralPath $ProjectRoot).Path
 $controlCenterSource = Join-Path $projectRootPath "tools\control-center\MESControlCenter.cs"
+$themeSource = Join-Path $projectRootPath "tools\control-center\ControlCenterTheme.cs"
 $terminalSource = Join-Path $projectRootPath "scripts\client\MESTerminalManager.cs"
 $discoverySource = Join-Path $projectRootPath "scripts\client\MESServerDiscovery.cs"
 $controlScript = Join-Path $projectRootPath "scripts\mes-service-control.ps1"
-foreach ($requiredPath in @($controlCenterSource, $terminalSource, $discoverySource, $controlScript,
+foreach ($requiredPath in @($controlCenterSource, $themeSource, $terminalSource, $discoverySource, $controlScript,
     (Join-Path $projectRootPath 'scripts/MesHttpProbes.cs'), (Join-Path $projectRootPath 'scripts/MesTcpListeners.cs'))) {
     if (-not (Test-Path -LiteralPath $requiredPath)) { throw "Cannot find required control-center input: $requiredPath" }
 }
@@ -143,11 +77,15 @@ try {
         "/nologo", "/target:winexe", "/platform:anycpu", "/optimize+", "/codepage:65001",
         "/reference:System.Windows.Forms.dll", "/reference:System.Drawing.dll",
         "/reference:System.Web.Extensions.dll", "/reference:System.Management.dll", "/win32icon:$IconPath",
+        "/reference:System.IO.Compression.dll", "/reference:System.IO.Compression.FileSystem.dll",
+        ("/resource:" + [IO.Path]::GetFullPath($IconPath) + ",MESControlCenter.Icon.ico"),
         "/out:$OutputPath"
     )
     if (-not $NoAdminManifest) { $arguments += "/win32manifest:$temporaryManifest" }
-    $arguments += @($temporaryControlSource, $temporaryTerminalSource, $discoverySource, (Join-Path $projectRootPath 'tools/control-center/MESAccessInfo.cs'))
+    $arguments += @($temporaryControlSource, $themeSource, $temporaryTerminalSource, $discoverySource, (Join-Path $projectRootPath 'tools/control-center/MESAccessInfo.cs'), (Join-Path $projectRootPath 'tools/control-center/ControlCenterPaths.cs'))
     $arguments += @((Join-Path $projectRootPath 'tools/control-center/MESConfiguration.cs'),
+        (Join-Path $projectRootPath 'tools/control-center/ComponentIntegrity.cs'),
+        (Join-Path $projectRootPath 'tools/control-center/TerminalEnrollmentPanel.cs'),
         ('/resource:' + (Join-Path $projectRootPath 'tools/control-center/MESConfigurationSchema.json') + ',MESConfigurationSchema.json'))
     & $csc $arguments
     if ($LASTEXITCODE -ne 0) { throw "MES control center compilation failed with exit code $LASTEXITCODE." }

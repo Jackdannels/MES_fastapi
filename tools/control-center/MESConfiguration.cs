@@ -104,6 +104,7 @@ namespace MESControlCenter
         {
             if (mode == "development") return Path.Combine(runtimeRoot, ".env");
             string settingsPath = Path.Combine(desktopRoot, "mes-desktop-tools.json");
+            if (!File.Exists(settingsPath)) settingsPath=Path.Combine(desktopRoot,".mes","mes-desktop-tools.json");
             Dictionary<string, object> settings = Serializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(settingsPath, Utf8));
             if (mode == "native") return Resolve(desktopRoot, Required(settings, "nativeConfig"));
             string deployment = Resolve(desktopRoot, Required(settings, "deploymentDirectory"));
@@ -123,7 +124,9 @@ namespace MESControlCenter
 
         internal static string DockerTemplates(string desktopRoot)
         {
-            Dictionary<string, object> settings = Serializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(desktopRoot, "mes-desktop-tools.json"), Utf8));
+            string path=Path.Combine(desktopRoot,"mes-desktop-tools.json");
+            if (!File.Exists(path)) path=Path.Combine(desktopRoot,".mes","mes-desktop-tools.json");
+            Dictionary<string, object> settings = Serializer().Deserialize<Dictionary<string, object>>(File.ReadAllText(path, Utf8));
             string root = Resolve(desktopRoot, Required(settings, "deploymentDirectory"));
             string result = File.ReadAllText(Path.Combine(root, "compose.portable.yml"), Utf8);
             object mode;
@@ -354,10 +357,10 @@ namespace MESControlCenter
         private List<ConfigurationField> fields;
         private readonly Dictionary<string, string> changes = new Dictionary<string, string>();
         private readonly DataGridView grid = new DataGridView();
-        private readonly ComboBox group = new ComboBox();
-        private readonly TextBox search = new TextBox();
-        private readonly TextBox editor = new TextBox();
-        private readonly ComboBox booleanEditor = new ComboBox();
+        private readonly ComboBox group = new ThemeComboBox();
+        private readonly TextBox search = new ThemeTextBox();
+        private readonly TextBox editor = new ThemeTextBox();
+        private readonly ComboBox booleanEditor = new ThemeComboBox();
         private readonly CheckBox reveal = new CheckBox();
         private readonly CheckBox showUnconfigured = new CheckBox();
         private readonly Label detail = new Label();
@@ -374,59 +377,108 @@ namespace MESControlCenter
         {
             mode = deploymentMode; locate = location; serviceBusy = busy; restart = restartAction;
             Dock = DockStyle.Fill; BackColor = Theme.Background; ForeColor = Theme.Text;
-            Panel header = new Panel { Dock = DockStyle.Top, Height = 128, BackColor = Theme.Surface };
-            source.SetBounds(16, 12, 800, 25); source.ForeColor = Theme.Muted; source.AutoEllipsis = true;
-            Label scope = new Label { Text = "默认显示文件中已有的重要配置；选择一项查看中文说明并修改。", AutoSize = true, ForeColor = Theme.Muted, Location = new Point(16, 43) };
-            group.SetBounds(16, 82, 180, 30); group.DropDownStyle = ComboBoxStyle.DropDownList;
-            search.SetBounds(210, 82, 260, 30); search.BackColor = Theme.SurfaceStrong; search.ForeColor = Theme.Text;
-            search.AccessibleName = "搜索配置名称或配置键";
-            Label searchLabel = new Label { Text = "搜索名称 / 用途", AutoSize = true, ForeColor = Theme.Muted, Location = new Point(484, 86) };
-            showUnconfigured.SetBounds(630, 80, 230, 32); showUnconfigured.Text = "显示未配置项"; showUnconfigured.ForeColor = Theme.Muted;
-            header.Controls.AddRange(new Control[] { source, scope, group, search, searchLabel, showUnconfigured });
-            header.Resize += delegate { source.Width = header.Width - 32; };
+            TableLayoutPanel layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(0), BackColor = Theme.Background };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            Controls.Add(layout);
 
-            Panel bottom = new Panel { Dock = DockStyle.Bottom, Height = 226, BackColor = Theme.Surface };
-            detail.SetBounds(16, 12, 800, 38); detail.ForeColor = Theme.Text; detail.AutoEllipsis = true;
-            editor.SetBounds(16, 56, 650, 28); editor.BackColor = Theme.SurfaceStrong; editor.ForeColor = Theme.Text; editor.Font = new Font("Consolas", 10F); editor.AccessibleName = "所选配置值";
-            booleanEditor.SetBounds(16, 56, 210, 28); booleanEditor.DropDownStyle = ComboBoxStyle.DropDownList; booleanEditor.Items.AddRange(new object[] { "启用（true）", "停用（false）" }); booleanEditor.Visible = false;
-            reveal.Text = "显示密码"; reveal.ForeColor = Theme.Muted; reveal.SetBounds(684, 56, 110, 28);
-            Label note = new Label { Text = "仅保存实际修改的值；重启后生效。连接密码须与目标服务一致。", ForeColor = Theme.Muted, AutoEllipsis = true, Bounds = new Rectangle(16, 94, 900, 30) };
-            save = Button("保存配置", 16, Theme.AccentStrong, Color.FromArgb(4, 27, 23));
-            saveRestart = Button("保存并重启", 144, Theme.AccentSoft, Theme.Accent);
-            Button reload = Button("重新读取", 272, Theme.SurfaceStrong, Theme.Text);
+            TableLayoutPanel header = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 3, BackColor = Theme.Surface, Padding = new Padding(16, 12, 16, 12), Margin = new Padding(0, 0, 0, 10) };
+            header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            for (int row = 0; row < 3; row++) header.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            source.Dock = DockStyle.Fill; source.Height = Font.Height + 8; source.Margin = new Padding(0, 0, 0, 4); source.ForeColor = Theme.Muted; source.AutoEllipsis = true;
+            source.AccessibleName = "当前配置文件路径";
+            Label scope = new Label { Text = "默认显示文件中已有的重要配置；选择一项查看中文说明并修改。", AutoSize = true, Dock = DockStyle.Fill, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 10) };
+            TableLayoutPanel filters = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 3, RowCount = 2, Margin = new Padding(0) };
+            filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26F));
+            filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48F));
+            filters.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26F));
+            filters.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            filters.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
+            Label groupLabel = new Label { Text = "配置分组", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 12, 5) };
+            Label searchLabel = new Label { Text = "搜索名称 / 用途", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 12, 5) };
+            Label optionsLabel = new Label { Text = "显示范围", AutoSize = true, ForeColor = Theme.Muted, Margin = new Padding(0, 0, 0, 5) };
+            group.Dock = DockStyle.Fill; group.Margin = new Padding(0, 0, 12, 0); group.DropDownStyle = ComboBoxStyle.DropDownList;
+            group.AccessibleName = "按配置分组筛选";
+            search.Dock = DockStyle.Fill; search.Margin = new Padding(0, 0, 12, 0); search.BackColor = Theme.SurfaceStrong; search.ForeColor = Theme.Text;
+            search.AccessibleName = "搜索配置名称或配置键";
+            showUnconfigured.Text = "显示未配置项"; showUnconfigured.ForeColor = Theme.Muted; showUnconfigured.AutoSize = true; showUnconfigured.Anchor = AnchorStyles.Left; showUnconfigured.Margin = new Padding(0);
+            filters.Controls.Add(groupLabel, 0, 0); filters.Controls.Add(searchLabel, 1, 0); filters.Controls.Add(optionsLabel, 2, 0);
+            filters.Controls.Add(group, 0, 1); filters.Controls.Add(search, 1, 1); filters.Controls.Add(showUnconfigured, 2, 1);
+            header.Controls.Add(source, 0, 0); header.Controls.Add(scope, 0, 1); header.Controls.Add(filters, 0, 2);
+
+            TableLayoutPanel bottom = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, RowCount = 5, BackColor = Theme.Surface, Padding = new Padding(16, 12, 16, 10), Margin = new Padding(0, 10, 0, 0) };
+            bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            for (int row = 0; row < 5; row++) bottom.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            detail.Dock = DockStyle.Fill; detail.AutoSize = true; detail.MinimumSize = new Size(0, Font.Height * 2 + 6); detail.ForeColor = Theme.Text; detail.Margin = new Padding(0, 0, 0, 8);
+            detail.AccessibleName = "所选配置项及中文释义";
+            TableLayoutPanel editRow = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 1, Margin = new Padding(0) };
+            editRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            editRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            editRow.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
+            Panel editorHost = new Panel { Dock = DockStyle.Fill, Height = Math.Max(32, Font.Height + 14), Margin = new Padding(0) };
+            editor.Dock = DockStyle.Fill; editor.BackColor = Theme.SurfaceStrong; editor.ForeColor = Theme.Text; editor.Font = new Font("Consolas", 10F); editor.AccessibleName = "所选配置值";
+            booleanEditor.Dock = DockStyle.Left; booleanEditor.Width = 240; booleanEditor.DropDownStyle = ComboBoxStyle.DropDownList; booleanEditor.Items.AddRange(new object[] { "启用（true）", "停用（false）" }); booleanEditor.Visible = false; booleanEditor.AccessibleName = "所选布尔配置值";
+            editorHost.Controls.Add(editor); editorHost.Controls.Add(booleanEditor);
+            reveal.Text = "显示密码"; reveal.ForeColor = Theme.Muted; reveal.AutoSize = true; reveal.Anchor = AnchorStyles.Left; reveal.Margin = new Padding(14, 0, 0, 0);
+            editRow.Controls.Add(editorHost, 0, 0); editRow.Controls.Add(reveal, 1, 0);
+            Label note = new Label { Text = "仅保存实际修改的值；重启后生效。连接密码须与目标服务一致。", ForeColor = Theme.Muted, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 7, 0, 10) };
+            FlowLayoutPanel actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, Margin = new Padding(0), Padding = new Padding(0) };
+            save = Button("保存配置", Theme.AccentStrong, Theme.OnAccent);
+            saveRestart = Button("保存并重启", Theme.AccentSoft, Theme.Accent);
+            Button reload = Button("重新读取", Theme.SurfaceStrong, Theme.Text);
             save.Click += delegate { SaveChanges(false); };
             saveRestart.Click += delegate { SaveChanges(true); };
             reload.Click += delegate { Reload(true); };
-            status.SetBounds(16, 181, 900, 36); status.ForeColor = Theme.Muted; status.AutoEllipsis = true;
-            bottom.Controls.AddRange(new Control[] { detail, editor, booleanEditor, reveal, note, save, saveRestart, reload, status });
-            bottom.Resize += delegate { detail.Width = status.Width = note.Width = bottom.Width - 32; editor.Width = Math.Max(250, bottom.Width - 164); reveal.Left = bottom.Width - 132; };
+            reload.AccessibleDescription = "重新读取配置文件；有未保存修改时会先确认。";
+            actions.Controls.AddRange(new Control[] { save, saveRestart, reload });
+            status.Dock = DockStyle.Fill; status.Height = Font.Height * 2 + 8; status.ForeColor = Theme.Muted; status.AutoEllipsis = true; status.Margin = new Padding(0, 6, 0, 0); status.AccessibleName = "配置编辑与保存状态";
+            bottom.Controls.Add(detail, 0, 0); bottom.Controls.Add(editRow, 0, 1); bottom.Controls.Add(note, 0, 2); bottom.Controls.Add(actions, 0, 3); bottom.Controls.Add(status, 0, 4);
 
             grid.Dock = DockStyle.Fill; grid.BackgroundColor = Theme.Surface; grid.BorderStyle = BorderStyle.None;
             grid.ReadOnly = true; grid.AllowUserToAddRows = false; grid.AllowUserToDeleteRows = false; grid.AllowUserToResizeRows = false;
             grid.RowHeadersVisible = false; grid.MultiSelect = false; grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             grid.AutoGenerateColumns = false; grid.EnableHeadersVisualStyles = false;
-            grid.ColumnHeadersDefaultCellStyle.BackColor = Theme.SurfaceStrong; grid.ColumnHeadersDefaultCellStyle.ForeColor = Theme.Muted;
-            grid.DefaultCellStyle.BackColor = Theme.Surface; grid.DefaultCellStyle.ForeColor = Theme.Text;
-            grid.DefaultCellStyle.SelectionBackColor = Theme.AccentSoft; grid.DefaultCellStyle.SelectionForeColor = Theme.Text;
-            grid.GridColor = Theme.BorderStrong; grid.RowTemplate.Height = 54;
-            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Label", HeaderText = "配置项", Width = 210 });
+            grid.ColumnHeadersHeight = 40; grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+            grid.ColumnHeadersDefaultCellStyle.Padding = new Padding(10, 0, 10, 0);
+            grid.DefaultCellStyle.Padding = new Padding(10, 6, 10, 6);
+            grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            grid.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCells;
+            grid.RowTemplate.Height = 48; grid.RowTemplate.MinimumHeight = 48;
+            grid.AccessibleName = "重要系统配置列表";
+            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Label", HeaderText = "配置项", FillWeight = 23F, MinimumWidth = 140 });
             grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Key", HeaderText = "配置键", Visible = false });
-            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Value", HeaderText = "文件中的值", Width = 220 });
-            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Description", HeaderText = "中文释义", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, MinimumWidth = 240, DefaultCellStyle = new DataGridViewCellStyle { WrapMode = DataGridViewTriState.True } });
-            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "State", HeaderText = "状态", Width = 105 });
-            Controls.Add(grid); Controls.Add(bottom); Controls.Add(header);
+            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Value", HeaderText = "文件中的值", FillWeight = 25F, MinimumWidth = 150 });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Description", HeaderText = "中文释义", FillWeight = 39F, MinimumWidth = 200, DefaultCellStyle = new DataGridViewCellStyle { WrapMode = DataGridViewTriState.True } });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "State", HeaderText = "状态", FillWeight = 13F, MinimumWidth = 92, DefaultCellStyle = new DataGridViewCellStyle { WrapMode = DataGridViewTriState.True } });
+            Theme.StyleGrid(grid);
+            grid.Margin = new Padding(0);
+            layout.Controls.Add(header, 0, 0); layout.Controls.Add(grid, 0, 1); layout.Controls.Add(bottom, 0, 2);
             group.SelectedIndexChanged += delegate { Filter(); }; search.TextChanged += delegate { Filter(); }; showUnconfigured.CheckedChanged += delegate { Filter(); };
             grid.SelectionChanged += delegate { SelectField(); };
             editor.TextChanged += delegate { Edit(editor.Text); };
             booleanEditor.SelectedIndexChanged += delegate { if (booleanEditor.SelectedIndex >= 0) Edit(booleanEditor.SelectedIndex == 0 ? "true" : "false"); };
             reveal.CheckedChanged += delegate { editor.UseSystemPasswordChar = selected != null && selected.Secret && !reveal.Checked; };
+            // ComboBox has a native fixed height and ignores MinimumSize.Height.
+            // Reserve its actual height in the parent row after font/DPI changes.
+            Action sizeEditors = delegate {
+                int filterHeight = Math.Max(group.Height, Math.Max(search.PreferredHeight, showUnconfigured.PreferredSize.Height)) + 4;
+                if (filters.RowStyles[1].Height != filterHeight) filters.RowStyles[1].Height = filterHeight;
+                int editHeight = Math.Max(editor.PreferredHeight, booleanEditor.Height) + 4;
+                if (editRow.RowStyles[0].Height != editHeight) editRow.RowStyles[0].Height = editHeight;
+            };
+            group.FontChanged += delegate { sizeEditors(); }; group.SizeChanged += delegate { sizeEditors(); };
+            search.FontChanged += delegate { sizeEditors(); }; showUnconfigured.FontChanged += delegate { sizeEditors(); };
+            editor.FontChanged += delegate { sizeEditors(); }; booleanEditor.FontChanged += delegate { sizeEditors(); }; booleanEditor.SizeChanged += delegate { sizeEditors(); };
             UpdateButtons();
+            Theme.Apply(this);
+            sizeEditors();
         }
 
-        private Button Button(string label, int left, Color background, Color foreground)
+        private Button Button(string label, Color background, Color foreground)
         {
-            Button result = new Button { Text = label, Bounds = new Rectangle(left, 133, 116, 36), FlatStyle = FlatStyle.Flat, BackColor = background, ForeColor = foreground, Cursor = Cursors.Hand };
-            result.FlatAppearance.BorderColor = Theme.BorderStrong;
+            Button result = new ThemeButton { Text = label, Size = new Size(132, 40), MinimumSize = new Size(132, 40), Padding = new Padding(16, 0, 16, 0), Margin = new Padding(0, 0, 10, 0), BackColor = background, ForeColor = foreground, Cursor = Cursors.Hand, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
             return result;
         }
 
@@ -434,7 +486,7 @@ namespace MESControlCenter
 
         internal void Reload(bool confirm)
         {
-            if (confirm && Dirty && MessageBox.Show(this, "重新读取会丢弃尚未保存的配置修改。是否继续？", "重新读取配置", MessageBoxButtons.OKCancel, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.OK) return;
+            if (confirm && Dirty && Theme.ShowMessage(this, "重新读取会丢弃尚未保存的配置修改。是否继续？", "重新读取配置", true, false) != DialogResult.OK) return;
             try
             {
                 ConfigurationDocument loaded = new ConfigurationDocument(locate(), mode);
@@ -510,7 +562,13 @@ namespace MESControlCenter
             UpdateButtons();
         }
 
-        private void UpdateButtons() { save.Enabled = saveRestart.Enabled = document != null && Dirty; }
+        private void UpdateButtons()
+        {
+            save.Enabled = saveRestart.Enabled = document != null && Dirty;
+            string explanation = document == null ? "配置文件尚未读取成功。" : !Dirty ? "修改配置后可保存。" : "保存当前修改，重启系统后生效。";
+            save.AccessibleDescription = explanation;
+            saveRestart.AccessibleDescription = save.Enabled ? "保存当前修改并重启系统。" : explanation;
+        }
 
         private void SaveChanges(bool andRestart)
         {
@@ -523,7 +581,7 @@ namespace MESControlCenter
                 status.Text = "已保存，重启系统后生效。" + (backup.Length > 0 ? "备份：" + backup : "");
                 if (andRestart) restart();
             }
-            catch (Exception exception) { status.Text = "保存失败：" + exception.Message; MessageBox.Show(this, status.Text, "系统配置", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            catch (Exception exception) { status.Text = "保存失败：" + exception.Message; Theme.ShowMessage(this, status.Text, "系统配置", false, true); }
         }
     }
 }

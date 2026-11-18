@@ -6,10 +6,12 @@ const devServerProxy = {
   "/auth": {
     target: backendTarget,
     changeOrigin: true,
+    xfwd: true,
   },
   "/api": {
     target: backendTarget,
     changeOrigin: true,
+    xfwd: true,
   },
 };
 

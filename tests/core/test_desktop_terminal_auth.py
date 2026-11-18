@@ -100,7 +100,9 @@ def test_all_workstations_automatically_consume_bound_terminal_tickets(workstati
         state = wait_ready(exe, config, "authenticated-workstation", process=process)
         assert state["currentPath"] == terminal_server.entry_path.split("?")[0]
         assert state["autoLogin"] is True and not state["headerVisible"]
-    assert terminal_server.actions[:3] == ["/auth/terminal/register", "/auth/terminal/ticket", "/auth/terminal/consume"]
+    # Heartbeats may run while WebView2 follows the one-use ticket redirect.
+    auth_actions=[action for action in terminal_server.actions if action.startswith('/auth/')]
+    assert auth_actions[:3] == ["/auth/terminal/register", "/auth/terminal/ticket", "/auth/terminal/consume"]
     assert "/auth/login" not in terminal_server.actions
     assert "fixture-password" not in config.read_text()
     with opened(exe, config) as process:

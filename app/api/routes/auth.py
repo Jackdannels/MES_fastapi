@@ -164,6 +164,7 @@ def consume_fixed_terminal_ticket(ticket: str):
     if (
         str(terminal.get("module") or "") != str(ticket_payload.get("module") or "")
         or str(terminal.get("lab_name") or "") != str(ticket_payload.get("lab_name") or "")
+        or str(terminal.get("secret_hash") or "") != str(ticket_payload.get("terminal_revision") or "")
     ):
         raise HTTPException(status_code=401, detail="Terminal binding changed")
     target = fixed_terminal_target(str(terminal.get("module") or ""), str(terminal.get("lab_name") or ""))
@@ -173,6 +174,7 @@ def consume_fixed_terminal_ticket(ticket: str):
         **build_auth_session(username=f"terminal:{terminal['terminal_id']}", module=terminal["module"]),
         "terminal_auth": True,
         "terminal_id": terminal["terminal_id"],
+        "terminal_revision": terminal["secret_hash"],
         "terminal_name": terminal["terminal_name"],
         "lab_name": terminal["lab_name"],
     }

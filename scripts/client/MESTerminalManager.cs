@@ -91,6 +91,22 @@ namespace MESTerminalManager
             return response.TryGetValue("queuedCount", out count) ? Convert.ToInt32(count) : 0;
         }
 
+        internal List<Dictionary<string, object>> EnrollmentItems(string suffix)
+        {
+            Dictionary<string, object> payload = Request("GET", "/api/terminal-control/enrollment/" + suffix, null);
+            List<Dictionary<string, object>> result = new List<Dictionary<string, object>>();
+            object items;
+            if (payload.TryGetValue("items", out items) && items is IEnumerable)
+                foreach (object value in (IEnumerable)items)
+                    if (value is Dictionary<string, object>) result.Add((Dictionary<string, object>)value);
+            return result;
+        }
+
+        internal void EnrollmentAction(string suffix, Dictionary<string, object> body, bool delete = false)
+        {
+            Request(delete ? "DELETE" : "POST", "/api/terminal-control/enrollment/" + suffix, body);
+        }
+
         private Dictionary<string, object> Post(string path, Dictionary<string, object> body)
         {
             return Request("POST", path, body);

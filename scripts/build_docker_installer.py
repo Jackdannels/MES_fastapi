@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME = "交付版5826信息化管理系统v1.2"
+NAME = "5826信息化交付v1.4"
 
 
 def verify_delivery(root):
@@ -26,7 +26,7 @@ def verify_delivery(root):
     return manifest
 
 
-def includes(catalog, temporary):
+def includes(catalog, temporary, v14=False):
     components, files, selections = [], [], []
     for station in catalog:
         identifier = station["labCode"] or station["module"]
@@ -37,7 +37,8 @@ def includes(catalog, temporary):
             raise ValueError("Invalid workstation folder")
         component = "workstations\\" + identifier.lower()
         components.append(f'Name: "{component}"; Description: "{folder}"; Types: workstation')
-        files.append('Source: "{#SourceRoot}\\workstation-payload\\' + folder + '\\*"; DestDir: "{app}\\package\\workstation-payload\\' + folder + f'"; Components: {component}; Flags: ignoreversion recursesubdirs createallsubdirs')
+        prefix='{app}\\.mes\\package' if v14 else '{app}\\package'
+        files.append('Source: "{#SourceRoot}\\workstation-payload\\' + folder + '\\*"; DestDir: "'+prefix+'\\workstation-payload\\' + folder + f'"; Components: {component}; Flags: ignoreversion recursesubdirs createallsubdirs')
         selections.append("if WizardIsComponentSelected('" + component + "') then begin if Result <> '' then Result := Result + ','; Result := Result + '" + identifier + "'; end;")
     paths = []
     for name, lines in (("Components.iss", components), ("Files.iss", files), ("Selections.iss", selections)):
@@ -52,14 +53,17 @@ def build(delivery, output, compiler):
     output.mkdir(parents=True, exist_ok=True)
     catalog = json.loads((delivery / "workstations.json").read_text(encoding="utf-8-sig"))
     with tempfile.TemporaryDirectory(prefix="MES5826Installer-") as directory:
-        paths = includes(catalog, Path(directory))
+        v14=manifest['version'].endswith('v1.4')
+        name=manifest.get('displayName',NAME)
+        paths = includes(catalog, Path(directory),v14)
         arguments = [str(compiler), "/Qp", "/DSourceRoot=" + str(delivery.resolve()),
                      "/DOutputRoot=" + str(output.resolve()), "/DProjectRoot=" + str(ROOT),
-                     "/DReleaseVersion=" + manifest["version"]]
-        for name, path in zip(("WorkstationComponents", "WorkstationFiles", "WorkstationSelections"), paths):
-            arguments.append("/D" + name + "=" + str(path))
-        subprocess.run(arguments + [str(ROOT / "deploy/portable/setup.iss")], check=True)
-    executable = output / (NAME + "_安装程序.exe")
+                     "/DReleaseVersion=" + manifest["version"], "/DDeliveryName=" + name,
+                     "/DDeliveryVersion="+('1.4' if v14 else '1.3'), "/DControlCenterVersion=" + manifest.get("controlCenterVersion", "2.10.0")]
+        for definition, path in zip(("WorkstationComponents", "WorkstationFiles", "WorkstationSelections"), paths):
+            arguments.append("/D" + definition + "=" + str(path))
+        subprocess.run(arguments + [str(ROOT / ("deploy/portable/setup-v14.iss" if v14 else "deploy/portable/setup.iss"))], check=True)
+    executable = output / (name + "_安装程序.exe")
     with executable.open("rb") as stream:
         checksum = hashlib.file_digest(stream, "sha256").hexdigest()
     (output / "SHA256SUMS.txt").write_text(checksum + "  " + executable.name + "\n", encoding="utf-8")

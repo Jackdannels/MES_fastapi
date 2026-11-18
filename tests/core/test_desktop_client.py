@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import threading
 import time
+import xml.etree.ElementTree as ET
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -135,6 +136,18 @@ def test_exit_confirmation_uses_both_themes_and_defaults_to_cancel(bundle, tmp_p
     assert (tmp_path / "exit-dark.png").is_file()
 
 
+def test_confirmed_close_hides_window_and_bounds_missing_browser_exit_event(bundle, site, tmp_path):
+    config=tmp_path/'fast-close.json'
+    config.write_text(json.dumps({'module':'central','serverUrl':site}),encoding='utf-8')
+    output=tmp_path/'close-result.json'
+    result=subprocess.run([PS,'-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',str(ROOT/'tests/desktop-client/Test-ClientFastClose.ps1'),
+                           '-Executable',str(bundle/'MES中控管理.exe'),'-Config',str(config),'-OutputFile',str(output)],
+                          capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=35)
+    assert result.returncode==0,result.stdout+result.stderr
+    measurement=json.loads(output.read_text(encoding='utf-8'))
+    assert measurement['cancelPreservesPage'] and measurement['pendingBrowserExitBounded']
+
+
 def test_close_and_status_are_idempotent_without_an_instance_or_valid_settings(bundle, tmp_path):
     config = tmp_path / "broken.json"
     config.write_text("broken JSON", encoding="utf-8")
@@ -148,6 +161,8 @@ def test_real_webview_starts_maximized_with_native_controls_and_injects_role(bun
     process, config = client
     state = ready(bundle, process, config)
     assert state["module"] == "central"
+    assert state["display"]["dpiAwareness"] == "PerMonitorV2"
+    assert state["pageZoom"] == 1.0
     assert state["fullScreen"] is False
     assert state["borderless"] is False
     assert state["windowState"] == "Maximized"
@@ -155,6 +170,14 @@ def test_real_webview_starts_maximized_with_native_controls_and_injects_role(bun
     assert state["browserPid"] > 0
     assert state["statusVisible"] is False
     assert state["statusText"] == ""
+
+
+def test_build_declares_framework_high_dpi_without_conflicting_manifest_override(bundle):
+    settings=ET.parse(bundle/'MES中控管理.exe.config').getroot()
+    assert settings.find('./System.Windows.Forms.ApplicationConfigurationSection/add[@key="DpiAwareness"]').get('value')=='PerMonitorV2'
+    manifest=ET.parse(ROOT/'tools/desktop-client/app.manifest').getroot()
+    assert manifest.find('.//{urn:schemas-microsoft-com:compatibility.v1}supportedOS').get('Id')=='{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}'
+    assert manifest.find('.//{http://schemas.microsoft.com/SMI/2005/WindowsSettings}dpiAware') is None
 
 
 def test_native_navigation_tracks_document_theme_and_has_no_persistent_footer(bundle, client, site_server):
@@ -185,10 +208,10 @@ def test_native_bridge_supplies_the_current_version_and_ip_list(bundle, client, 
     state = {}
     while time.monotonic() < deadline:
         state = json.loads(command(bundle, config, "--status").stdout)
-        if state.get("documentTitle") == "1.7.0:true":
+        if state.get("documentTitle") == "1.8.0:true":
             break
         time.sleep(0.1)
-    assert state["documentTitle"] == "1.7.0:true"
+    assert state["documentTitle"] == "1.8.0:true"
 
 
 def test_cancelled_window_close_keeps_webview_and_confirmed_close_exits(bundle, site, tmp_path):

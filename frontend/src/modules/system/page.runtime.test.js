@@ -1,9 +1,11 @@
-import { mount } from "@vue/test-utils";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import SystemPage from "./page.vue";
 import PickerOnlyInput from "@/components/shared/PickerOnlyInput.vue";
+
+enableAutoUnmount(afterEach);
 
 describe("SystemPage runtime", () => {
   afterEach(() => {

@@ -14,4 +14,9 @@ describe("devServerProxy", () => {
     });
     expect(devServerProxy).not.toHaveProperty("/static");
   });
+
+  it("forwards workstation peer addresses for LAN enrollment and terminal status", () => {
+    expect(devServerProxy["/auth"].xfwd).toBe(true);
+    expect(devServerProxy["/api"].xfwd).toBe(true);
+  });
 });

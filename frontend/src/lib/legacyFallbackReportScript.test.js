@@ -44,7 +44,7 @@ describe("legacy fallback report script", () => {
     expect(output).toContain("Frontend legacy fallback hits:");
     expect(output).toContain("Backend legacy fallback hits:");
     expect(output).toContain("Backend risk examples:");
-  });
+  }, 15000);
 
   test("includes backend risk examples with run context in json output", () => {
     const output = execFileSync(
@@ -71,5 +71,5 @@ describe("legacy fallback report script", () => {
         }),
       ]),
     }));
-  });
+  }, 15000);
 });

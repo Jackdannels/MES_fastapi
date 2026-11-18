@@ -1,0 +1,596 @@
+{
+  "before": {
+    "status": "盐雾试验进行中",
+    "steps": [
+      {
+        "key": "in_transit",
+        "label": "样品运输中",
+        "active": false,
+        "reached": true,
+        "time": "",
+        "tone": "inferred"
+      },
+      {
+        "key": "arrival",
+        "label": "到货",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:06:00",
+        "tone": "done"
+      },
+      {
+        "key": "experiment-completed-0",
+        "label": "四综合试验已完成",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:34",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-0",
+        "label": "送至暂存间",
+        "active": false,
+        "reached": true,
+        "time": "",
+        "tone": "inferred"
+      },
+      {
+        "key": "route-1-1",
+        "label": "已到达暂存间",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:40",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-2",
+        "label": "送至盐雾试验室",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:55",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-3",
+        "label": "已到达实验室",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:09:06",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-4",
+        "label": "工装夹具安装",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:09:08",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-5",
+        "label": "实验准备就绪",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:09:11",
+        "tone": "done"
+      },
+      {
+        "key": "experiment-current-1",
+        "label": "盐雾试验进行中",
+        "active": true,
+        "reached": false,
+        "time": "2026-11-12 20:09:11",
+        "tone": "active"
+      },
+      {
+        "key": "route-returned-1",
+        "label": "厂家收回",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      }
+    ]
+  },
+  "pausedEngine": {
+    "status": "盐雾试验进行中（暂停）",
+    "steps": [
+      {
+        "key": "in_transit",
+        "label": "样品运输中",
+        "active": false,
+        "reached": true,
+        "time": "",
+        "tone": "inferred"
+      },
+      {
+        "key": "arrival",
+        "label": "到货",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:06:00",
+        "tone": "done"
+      },
+      {
+        "key": "experiment-completed-0",
+        "label": "四综合试验已完成",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:34",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-0",
+        "label": "送至暂存间",
+        "active": false,
+        "reached": true,
+        "time": "",
+        "tone": "inferred"
+      },
+      {
+        "key": "route-1-1",
+        "label": "已到达暂存间",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:40",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-2",
+        "label": "送至盐雾试验室",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:08:55",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "route-1-3",
+        "label": "已到达实验室",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:06",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "route-1-4",
+        "label": "工装夹具安装",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:08",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "route-1-5",
+        "label": "实验准备就绪",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:11",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "experiment-current-1",
+        "label": "盐雾试验进行中（暂停）",
+        "active": true,
+        "reached": false,
+        "time": "2026-11-12 20:09:11",
+        "tone": "active"
+      },
+      {
+        "key": "route-returned-1",
+        "label": "厂家收回",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      }
+    ]
+  },
+  "paused": {
+    "status": "盐雾试验进行中（暂停）",
+    "steps": [
+      {
+        "key": "in_transit",
+        "label": "样品运输中",
+        "active": false,
+        "reached": true,
+        "time": "",
+        "tone": "inferred"
+      },
+      {
+        "key": "arrival",
+        "label": "到货",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:06:00",
+        "tone": "done"
+      },
+      {
+        "key": "experiment-completed-0",
+        "label": "四综合试验已完成",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:34",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-0",
+        "label": "送至暂存间",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      },
+      {
+        "key": "route-1-1",
+        "label": "已到达暂存间",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:40",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-2",
+        "label": "送至盐雾试验室",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:08:55",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "route-1-3",
+        "label": "已到达实验室",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:06",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "route-1-4",
+        "label": "工装夹具安装",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:08",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "route-1-5",
+        "label": "实验准备就绪",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:11",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "experiment-current-1",
+        "label": "盐雾试验进行中（暂停）",
+        "active": true,
+        "reached": false,
+        "time": "2026-11-12 20:09:11",
+        "tone": "active"
+      },
+      {
+        "key": "route-returned-1",
+        "label": "厂家收回",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      }
+    ]
+  },
+  "explicitDispatchControl": {
+    "status": "盐雾试验进行中（暂停）",
+    "steps": [
+      {
+        "key": "in_transit",
+        "label": "样品运输中",
+        "active": false,
+        "reached": true,
+        "time": "",
+        "tone": "inferred"
+      },
+      {
+        "key": "arrival",
+        "label": "到货",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:06:00",
+        "tone": "done"
+      },
+      {
+        "key": "experiment-completed-0",
+        "label": "四综合试验已完成",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:34",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-0",
+        "label": "送至暂存间",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:36",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-1",
+        "label": "已到达暂存间",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:40",
+        "tone": "done"
+      },
+      {
+        "key": "route-1-2",
+        "label": "送至盐雾试验室",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:08:55",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "route-1-3",
+        "label": "已到达实验室",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:06",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "route-1-4",
+        "label": "工装夹具安装",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:08",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "route-1-5",
+        "label": "实验准备就绪",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:11",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "experiment-current-1",
+        "label": "盐雾试验进行中（暂停）",
+        "active": true,
+        "reached": false,
+        "time": "2026-11-12 20:09:11",
+        "tone": "active"
+      },
+      {
+        "key": "route-returned-1",
+        "label": "厂家收回",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      }
+    ]
+  },
+  "saltFirstWithDispatchControl": {
+    "status": "盐雾试验进行中（暂停）",
+    "steps": [
+      {
+        "key": "in_transit",
+        "label": "样品运输中",
+        "active": false,
+        "reached": true,
+        "time": "",
+        "tone": "inferred"
+      },
+      {
+        "key": "arrived",
+        "label": "到货",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:06:00",
+        "tone": "done"
+      },
+      {
+        "key": "sent_to_staging",
+        "label": "送至暂存间",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:36",
+        "tone": "done"
+      },
+      {
+        "key": "arrived_staging",
+        "label": "已到达暂存间",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:40",
+        "tone": "done"
+      },
+      {
+        "key": "sent_to_lab",
+        "label": "送至盐雾试验室",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:08:55",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "arrived_lab",
+        "label": "已到达实验室",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:06",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "fixture_install",
+        "label": "工装夹具安装",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:08",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "ready",
+        "label": "实验准备就绪",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:11",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "running",
+        "label": "盐雾试验进行中（暂停）",
+        "active": true,
+        "reached": false,
+        "time": "2026-11-12 20:09:11",
+        "tone": "active"
+      },
+      {
+        "key": "completed",
+        "label": "盐雾试验已完成",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      },
+      {
+        "key": "post_test_staging",
+        "label": "实验后暂存间存放",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      },
+      {
+        "key": "returned",
+        "label": "厂家收回",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      }
+    ]
+  },
+  "saltFirstWithoutDispatchControl": {
+    "status": "盐雾试验进行中（暂停）",
+    "steps": [
+      {
+        "key": "in_transit",
+        "label": "样品运输中",
+        "active": false,
+        "reached": true,
+        "time": "",
+        "tone": "inferred"
+      },
+      {
+        "key": "arrived",
+        "label": "到货",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:06:00",
+        "tone": "done"
+      },
+      {
+        "key": "sent_to_staging",
+        "label": "送至暂存间",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      },
+      {
+        "key": "arrived_staging",
+        "label": "已到达暂存间",
+        "active": false,
+        "reached": true,
+        "time": "2026-11-12 20:08:40",
+        "tone": "done"
+      },
+      {
+        "key": "sent_to_lab",
+        "label": "送至盐雾试验室",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:08:55",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "arrived_lab",
+        "label": "已到达实验室",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:06",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "fixture_install",
+        "label": "工装夹具安装",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:08",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "ready",
+        "label": "实验准备就绪",
+        "active": false,
+        "reached": false,
+        "time": "2026-11-12 20:09:11",
+        "tone": "pause-reset",
+        "pauseResetState": "historical"
+      },
+      {
+        "key": "running",
+        "label": "盐雾试验进行中（暂停）",
+        "active": true,
+        "reached": false,
+        "time": "2026-11-12 20:09:11",
+        "tone": "active"
+      },
+      {
+        "key": "completed",
+        "label": "盐雾试验已完成",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      },
+      {
+        "key": "post_test_staging",
+        "label": "实验后暂存间存放",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      },
+      {
+        "key": "returned",
+        "label": "厂家收回",
+        "active": false,
+        "reached": false,
+        "time": "",
+        "tone": "waiting"
+      }
+    ]
+  }
+}

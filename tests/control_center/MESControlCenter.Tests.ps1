@@ -32,7 +32,7 @@ Describe "MES control center integration" {
         $build | Should Match 'MESControlCenter\.cs'
         $build | Should Match 'requestedExecutionLevel level="requireAdministrator"'
         $build | Should Match 'New-ControlCenterIcon'
-        $build | Should Match 'mes-control-center\.ico'
+        $build | Should Match 'mes-control-center-blue\.ico'
     }
 
     It "keeps service operations asynchronous and provides a deterministic self-test" {
@@ -93,12 +93,12 @@ Describe "MES control center integration" {
         $LASTEXITCODE | Should Be 0
     }
 
-    It "exposes v2.9.0 and four independently visible service states" {
-        $source | Should Match 'AssemblyVersion\("2\.9\.0\.0"\)'
-        $source | Should Match 'AssemblyFileVersion\("2\.9\.0\.0"\)'
-        $source | Should Match 'MES 控制中心 v2\.9\.0'
-        $source | Should Match 'CONTROL CENTER  v2\.9\.0'
-        $build | Should Match 'MES控制中心_v2\.9\.0\.exe'
+    It "exposes v2.10.0 and four independently visible service states" {
+        $source | Should Match 'AssemblyVersion\("2\.10\.0\.0"\)'
+        $source | Should Match 'AssemblyFileVersion\("2\.10\.0\.0"\)'
+        $source | Should Match 'MES 控制中心 v2\.10\.0'
+        $source.Contains('Text = "v2.10.0"') | Should Be $true
+        $build | Should Match 'MES控制中心_v2\.10\.0\.exe'
         $source | Should Match 'AddServiceLine\(lines, "后端服务", MESDesktopSettings.PortLabel\("apiUrl"'
         $source | Should Match 'AddServiceLine\(lines, "前端服务", MESDesktopSettings.PortLabel\("serverUrl"'
         $source | Should Match 'AddServiceLine\(lines, "LIMS 模拟器", MESDesktopSettings.PortLabel\("limsUrl"'
@@ -142,5 +142,13 @@ Describe "MES control center integration" {
         $source | Should Match 'UseWaitCursor = false;'
         $source | Should Match 'dashboardGrid\.Cursor = Cursors\.Default;'
         $source | Should Not Match 'UseWaitCursor = value \|\| serviceBusy;'
+    }
+
+    It "preserves themed table colours, layout B and selection across refresh and scaled windows" {
+        $executable = Join-Path $TestDrive 'MESControlCenter.exe'
+        foreach ($name in @('Test-ControlCenterTheme.ps1', 'Test-ThemeGridStyles.ps1')) {
+            & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot $name) -Executable $executable
+            $LASTEXITCODE | Should Be 0
+        }
     }
 }

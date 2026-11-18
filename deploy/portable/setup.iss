@@ -1,21 +1,30 @@
 #ifndef SourceRoot
   #error SourceRoot must identify the verified Docker delivery folder
 #endif
+#ifndef DeliveryName
+  #define DeliveryName "5826信息化交付v1.3"
+#endif
+#ifndef DeliveryVersion
+  #define DeliveryVersion "1.3"
+#endif
+#ifndef ControlCenterVersion
+  #define ControlCenterVersion "2.10.0"
+#endif
 [Setup]
 AppId={{BC651AD6-D418-4899-A2D6-5826B0129010}
 AppName=交付版5826信息化管理系统
-AppVersion=1.2
-AppVerName=交付版5826信息化管理系统v1.2
-VersionInfoVersion=1.2.0.0
+AppVersion={#DeliveryVersion}
+AppVerName={#DeliveryName}
+VersionInfoVersion={#DeliveryVersion}.0.0
 AppPublisher=5826
-DefaultDirName=C:\5826MES\v1.2
+DefaultDirName=C:\5826MES\v{#DeliveryVersion}
 DisableDirPage=no
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputDir={#OutputRoot}
-OutputBaseFilename=交付版5826信息化管理系统v1.2_安装程序
+OutputBaseFilename={#DeliveryName}_安装程序
 Compression=lzma2/fast
 SolidCompression=yes
 WizardStyle=modern
@@ -63,21 +72,21 @@ CannotContinue=当前安装条件尚未满足。请按上面的提示处理后�
 ReadyMemoDir=安装目录：
 ReadyMemoType=安装类型：
 ReadyMemoComponents=已选组件：
-WelcomeLabel1=欢迎安装交付版5826信息化管理系统v1.2
+WelcomeLabel1=欢迎安装{#DeliveryName}
 WelcomeLabel2=本向导将解压离线部署文件、配置现场网络，并生成选中的客户端。%n%n主机安装需要已安装并初始化的 Docker Desktop Linux 引擎。工位客户端可连接已有 MES 主机。
 WizardSelectDir=选择安装目录
 SelectDirDesc=将系统安装到哪个文件夹？
 SelectDirLabel3=请选择新的或空的安装文件夹。部署文件、配置、日志及所选工位程序均保存在该目录中。
 WizardSelectComponents=选择安装内容
 SelectComponentsDesc=选择本机需要的服务与工位客户端。
-SelectComponentsLabel2=主机安装包括 Docker 服务、控制中心 v2.9.0 与独立中控管理。可按需勾选试验间和其他工位，每个工位生成独立文件夹。
+SelectComponentsLabel2=主机安装包括 Docker 服务、控制中心 v{#ControlCenterVersion} 与独立中控管理。可按需勾选试验间和其他工位，每个工位包含专用接入入口。
 WizardReady=准备安装
 ReadyLabel1=配置已就绪，点击“安装”开始解压和部署。
 ReadyLabel2a=可返回检查安装目录、网络地址和选中的工位。
 WizardInstalling=正在安装
 InstallingLabel=正在解压文件，请稍候...
-FinishedHeadingLabel=交付版5826信息化管理系统v1.2 安装完成
-FinishedLabelNoIcons=部署文件与所选客户端已准备完成，可通过桌面快捷方式启动。%n%n工位客户端首次使用时需在本机完成管理员绑定。
+FinishedHeadingLabel={#DeliveryName} 安装完成
+FinishedLabelNoIcons=部署文件与所选客户端已准备完成，可通过桌面快捷方式启动。%n%n工位客户端首次使用时提交对应工位申请，经控制中心批准后进入。
 
 [Types]
 Name: "server"; Description: "MES 主机（服务、控制中心和中控管理）"
@@ -85,7 +94,7 @@ Name: "workstation"; Description: "工位电脑（连接已有 MES 主机）"
 Name: "custom"; Description: "自定义安装内容"; Flags: iscustom
 
 [Components]
-Name: "server"; Description: "MES Docker 服务、两个模拟器及控制中心 v2.9.0"; Types: server
+Name: "server"; Description: "MES Docker 服务、两个模拟器及控制中心 v{#ControlCenterVersion}"; Types: server
 Name: "central"; Description: "独立中控管理客户端（可双击启动）"; Types: server
 Name: "workstations"; Description: "试验间及其他工位客户端（按需选择）"; Types: workstation
 #include WorkstationComponents

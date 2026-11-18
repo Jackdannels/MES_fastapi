@@ -37,8 +37,8 @@ namespace MESDesktopClient
                 {
                     int status = (int)response.StatusCode;
                     response.Dispose();
-                    throw new InvalidOperationException(status == 401 || status == 403
-                        ? "工位认证未通过，请重新绑定此电脑的工位。" : "工位认证服务暂时不可用（" + status + "）。");
+                    if (status == 401 || status == 403) throw new UnauthorizedAccessException("工位绑定已失效，请重新申请并等待控制中心审批。");
+                    throw new InvalidOperationException("工位认证服务暂时不可用（" + status + "）。");
                 }
                 throw new InvalidOperationException("无法连接工位认证服务，请检查服务器和网络。", error);
             }
@@ -68,10 +68,15 @@ namespace MESDesktopClient
                 || Text(result, "target") != config.EntryPath || Text(result, "terminalId") != terminalId
                 || String.IsNullOrWhiteSpace(Text(result, "terminalSecret")))
                 throw new InvalidOperationException("服务器返回的工位绑定与此程序不匹配。");
-            byte[] identity = Encoding.UTF8.GetBytes(new JavaScriptSerializer().Serialize(new {
-                server = config.Server.AbsoluteUri, module = config.Module, labName = config.LabName,
-                terminalId = terminalId, terminalSecret = Text(result, "terminalSecret")
-            }));
+            SaveIdentity(new Dictionary<string, object> {
+                { "server", config.Server.AbsoluteUri }, { "module", config.Module }, { "labName", config.LabName },
+                { "terminalId", terminalId }, { "terminalSecret", Text(result, "terminalSecret") }
+            });
+        }
+
+        private void SaveIdentity(Dictionary<string, object> value)
+        {
+            byte[] identity = Encoding.UTF8.GetBytes(new JavaScriptSerializer().Serialize(value));
             Directory.CreateDirectory(config.DataDirectory);
             byte[] protectedData = ProtectedData.Protect(identity, Entropy, DataProtectionScope.CurrentUser);
             string temporary = IdentityPath + ".new";
@@ -80,19 +85,51 @@ namespace MESDesktopClient
             else File.Move(temporary, IdentityPath);
         }
 
+        internal void ImportApproval()
+        {
+            string directory = Path.GetDirectoryName(config.ConfigurationPath);
+            string path = Path.Combine(directory, ".enrollment.bin");
+            if (!File.Exists(path)) return;
+            Dictionary<string, object> value = EnrollmentHandoff.Read(path);
+            string expected = Text(value, "targetDirectory");
+            if (!String.Equals(Path.GetFullPath(directory), expected, StringComparison.OrdinalIgnoreCase)
+                || Text(value, "server") != config.Server.AbsoluteUri || Text(value, "module") != config.Module
+                || Text(value, "labName") != config.LabName || Text(value, "terminalId").Length == 0 || Text(value, "terminalSecret").Length == 0)
+                throw new InvalidOperationException("审批凭据与此工位或目录不匹配，请重新申请。");
+            SaveIdentity(value);
+            File.Delete(path);
+        }
+
+        internal bool HasIdentity { get { return File.Exists(IdentityPath); } }
+
+        internal Dictionary<string, object> Heartbeat()
+        {
+            Dictionary<string, object> identity = ReadIdentity();
+            string[] addresses = ClientHostInfo.LocalIpAddresses();
+            return Post("/api/terminal-control/heartbeat", new { terminalId = Text(identity, "terminalId"), terminalSecret = Text(identity, "terminalSecret"),
+                machineName = Environment.MachineName, ipAddress = addresses.Length == 0 ? "" : addresses[0], configuredPath = config.EntryPath,
+                agentVersion = ClientConfiguration.Version, allowReload = true, allowPower = false });
+        }
+
+        internal void CompleteCommand(int id, bool success, string message)
+        {
+            Dictionary<string, object> identity = ReadIdentity();
+            Post("/api/terminal-control/commands/" + id + "/complete", new { terminalId = Text(identity, "terminalId"), terminalSecret = Text(identity, "terminalSecret"), success = success, message = message });
+        }
+
         private Dictionary<string, object> ReadIdentity()
         {
-            if (!File.Exists(IdentityPath)) throw new InvalidOperationException("此电脑尚未绑定工位，请先由管理员执行一次工位绑定。");
+            if (!File.Exists(IdentityPath)) throw new InvalidOperationException("此电脑尚未绑定工位，请点击“申请绑定 / 重新绑定”，提交申请后等待控制中心审批。");
             Dictionary<string, object> identity;
             try
             {
                 identity = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(Encoding.UTF8.GetString(
                     ProtectedData.Unprotect(File.ReadAllBytes(IdentityPath), Entropy, DataProtectionScope.CurrentUser)));
             }
-            catch (CryptographicException) { throw new InvalidOperationException("工位凭据不能在此 Windows 用户使用，请重新绑定工位。"); }
+            catch (CryptographicException) { throw new InvalidOperationException("工位凭据不能在此 Windows 用户使用，请重新申请绑定。"); }
             if (Text(identity, "server") != config.Server.AbsoluteUri || Text(identity, "module") != config.Module
                 || Text(identity, "labName") != config.LabName || Text(identity, "terminalId").Length == 0)
-                throw new InvalidOperationException("服务器地址或工位绑定已变化，请重新绑定工位。");
+                throw new InvalidOperationException("服务器地址或工位绑定已变化，请重新申请绑定。");
             return identity;
         }
 

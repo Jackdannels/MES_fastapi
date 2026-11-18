@@ -132,7 +132,15 @@ try {
         $manifest = Read-VerifiedBundle $OutputDirectory
         if ($Action -eq 'Import') {
             foreach ($package in $manifest.packages) {
-                Invoke-Docker @('load','--input',(Join-Path $OutputDirectory $package.archive))
+                $available=$true
+                foreach($image in $package.images){
+                    $inspectionPreference=$ErrorActionPreference
+                    try{$ErrorActionPreference='Continue';$raw=& docker image inspect ([string]$image.reference) --format '{{json .}}' 2>$null;$inspectionExit=$LASTEXITCODE}finally{$ErrorActionPreference=$inspectionPreference}
+                    if($inspectionExit -ne 0){$available=$false;break}
+                    $existing=$raw|ConvertFrom-Json
+                    if($existing.Id -cne $image.image_id -or $existing.Os -cne $image.os -or $existing.Architecture -cne $image.architecture){$available=$false;break}
+                }
+                if(-not $available){Invoke-Docker @('load','--input',(Join-Path $OutputDirectory $package.archive))}else{Write-Host ('Matching images already present: '+$package.name)}
                 foreach ($image in $package.images) {
                     $actual = & docker image inspect ([string]$image.reference) --format '{{json .}}'
                     if ($LASTEXITCODE -ne 0) { throw 'Imported image is unavailable' }

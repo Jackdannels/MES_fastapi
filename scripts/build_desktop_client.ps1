@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
     [string]$ServerUrl = '',
-    [ValidateSet('central','lims','upper-computer','laboratory','visual','handover','staging','appearance')][string]$Module = 'central',
+    [ValidateSet('central','lims','upper-computer','laboratory','visual','handover','staging','appearance','enrollment','test')][string]$Module = 'central',
     [string]$LaboratoryCode = '',
     [switch]$CombineSimulators,
     [string]$LimsUrl = 'http://127.0.0.1:8900',
@@ -16,6 +16,8 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $project = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $roles = @{
+    'test' = @{Title='MES 综合测试终端'; Executable='MES综合测试终端.exe'; Server='http://127.0.0.1:5173'; Entry='/login'}
+    'enrollment' = @{Title='MES 终端接入'; Executable='MES终端接入.exe'; Server='http://127.0.0.1:5173'}
     'central' = @{Title='MES 中控管理'; Executable='MES中控管理.exe'; Server='http://127.0.0.1:15173'}
     'lims' = @{Title='MES LIMS 模拟器'; Executable='MES_LIMS模拟器.exe'; Server='http://127.0.0.1:8900'}
     'upper-computer' = @{Title='MES 上位机模拟器'; Executable='MES上位机模拟器.exe'; Server='http://127.0.0.1:8899'}
@@ -88,19 +90,46 @@ try {
     $buildText = 'namespace MESDesktopClient { internal static class ClientBuild { internal const string Module = "' + $Module + '"; internal const string Title = "' + $role.Title + '"; internal const string DefaultServer = "' + $role.Server + '"; internal const string LabCode = "' + $LaboratoryCode + '"; internal const string LabName = "' + $labName + '"; internal const string EntryPath = "' + $entryPath + '"; } }'
     [IO.File]::WriteAllText($buildSource, $buildText, (New-Object Text.UTF8Encoding($true)))
     $arguments = @('/nologo','/target:winexe','/platform:x64','/optimize+','/codepage:65001',
-        '/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.Web.Extensions.dll','/reference:System.Core.dll','/reference:System.Security.dll',
+        ('/win32manifest:' + (Join-Path $project 'tools/desktop-client/app.manifest')),
+        '/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.Web.Extensions.dll','/reference:System.Core.dll','/reference:System.Security.dll','/reference:System.IO.Compression.dll','/reference:System.IO.Compression.FileSystem.dll',
         ('/reference:' + $core),('/reference:' + $forms),('/win32icon:' + (Join-Path $project 'assets/mes-control-center.ico')),('/out:' + $executable))
-    $arguments += @('ClientConfiguration.cs','ClientHostInfo.cs','ClientInstance.cs','ClientTerminalAuth.cs','ExitConfirmationDialog.cs','ClientForm.cs','Program.cs') | ForEach-Object { Join-Path $project ('tools/desktop-client/' + $_) }
+    $arguments += @('ClientConfiguration.cs','ClientHostInfo.cs','ClientDisplayInfo.cs','ClientPageZoom.cs','ClientInstance.cs','ClientTerminalAuth.cs','ClientEnrollment.cs','ClientTestNavigation.cs','ExitConfirmationDialog.cs','ClientForm.cs','Program.cs') | ForEach-Object { Join-Path $project ('tools/desktop-client/' + $_) }
+    $arguments += ('/resource:' + (Join-Path $project 'tools/desktop-client/workstations.json') + ',MESWorkstations.json')
+    $arguments += (Join-Path $project 'tools/control-center/ControlCenterTheme.cs')
     $arguments += $buildSource
     & $csc @arguments
     if ($LASTEXITCODE -ne 0) { throw 'MES desktop client compilation failed.' }
+    if ($Module -notin @('central','lims','upper-computer','enrollment','test')) {
+        $launcher = Join-Path $output 'MES终端接入.exe'
+        $launcherSource = Join-Path $staging 'EnrollmentLauncher.cs'
+        $launcherText = @'
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Windows.Forms;
+internal static class EnrollmentLauncher {
+    [STAThread] private static int Main(string[] args) {
+        try {
+            string root = AppDomain.CurrentDomain.BaseDirectory;
+            string executable = Path.Combine(root, "__EXECUTABLE__");
+            if (!File.Exists(executable)) throw new FileNotFoundException("请保留完整工位文件夹，缺少对应的工位程序。");
+            Process.Start(new ProcessStartInfo { FileName=executable, Arguments="--request-binding", WorkingDirectory=root, UseShellExecute=true });
+            return 0;
+        } catch (Exception error) { MessageBox.Show(error.Message,"工位接入启动失败",MessageBoxButtons.OK,MessageBoxIcon.Error); return 1; }
+    }
+}
+'@
+        [IO.File]::WriteAllText($launcherSource,$launcherText.Replace('__EXECUTABLE__',$role.Executable),(New-Object Text.UTF8Encoding($true)))
+        & $csc /nologo /target:winexe /platform:x64 /codepage:65001 /reference:System.Windows.Forms.dll ('/win32icon:'+(Join-Path $project 'assets/mes-control-center.ico')) ('/out:'+$launcher) $launcherSource
+        if($LASTEXITCODE -ne 0){throw 'Workstation enrollment launcher compilation failed.'}
+    }
     foreach ($path in @($core,$forms,(Join-Path $staging 'runtimes/win-x64/native/WebView2Loader.dll'))) {
         Copy-Item -LiteralPath $path -Destination $output
     }
     $encoding = New-Object Text.UTF8Encoding($false)
-    [IO.File]::WriteAllText(($executable + '.config'), '<?xml version="1.0" encoding="utf-8"?><configuration><startup><supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.8" /></startup></configuration>', $encoding)
+    Copy-Item -LiteralPath (Join-Path $project 'tools/desktop-client/app.config') -Destination ($executable + '.config')
     $config = [ordered]@{serverUrl=$ServerUrl.TrimEnd('/'); module=$Module; title=$role.Title; startMaximized=$true}
-    if ($Module -notin @('central','lims','upper-computer')) { $config.autoLogin=$true }
+    if ($Module -notin @('central','lims','upper-computer','enrollment','test')) { $config.autoLogin=$true }
     if ($labName) { $config.labCode=$LaboratoryCode; $config.labName=$labName }
     if ($CombineSimulators) {
         $config.simulatorsEnabled = $true
@@ -116,13 +145,14 @@ try {
         Copy-Item -LiteralPath $RuntimeInstallerPath -Destination (Join-Path $output 'prerequisites/MicrosoftEdgeWebView2RuntimeInstallerX64.exe')
     }
     [IO.File]::WriteAllText((Join-Path $output 'mes-client.json'), ($config | ConvertTo-Json), $encoding)
-    Copy-Item -LiteralPath (Join-Path $project 'docs/desktop-client.md') -Destination (Join-Path $output '使用说明.md')
+    $guidePath=if($Module -eq 'test'){'docs/desktop-test-terminal.md'}else{'docs/desktop-client.md'}
+    Copy-Item -LiteralPath (Join-Path $project $guidePath) -Destination (Join-Path $output '使用说明.md')
     $license = Join-Path $staging 'LICENSE.txt'
     if (Test-Path -LiteralPath $license) { Copy-Item -LiteralPath $license -Destination (Join-Path $output 'WebView2-LICENSE.txt') }
     $inventory = @(foreach ($file in Get-ChildItem -LiteralPath $output -File -Recurse) {
         [ordered]@{path=$file.FullName.Substring($output.Length + 1).Replace('\','/'); bytes=$file.Length; sha256=(Get-Sha256 $file.FullName)}
     })
-    $manifest = [ordered]@{format='mes-desktop-client'; version='1.7.0'; platform='windows-x64-net48'; module=$Module; labCode=$LaboratoryCode; labName=$labName; executable=$role.Executable; entryPath=$entryPath; simulatorsEnabled=[bool]$CombineSimulators; sdkVersion=$sdk.version; runtimeBundled=[bool]($RuntimeInstallerPath -or $FixedRuntimeDirectory); files=$inventory}
+    $manifest = [ordered]@{format='mes-desktop-client'; version='1.8.0'; platform='windows-x64-net48'; module=$Module; labCode=$LaboratoryCode; labName=$labName; executable=$role.Executable; entryPath=$entryPath; simulatorsEnabled=[bool]$CombineSimulators; sdkVersion=$sdk.version; runtimeBundled=[bool]($RuntimeInstallerPath -or $FixedRuntimeDirectory); files=$inventory}
     [IO.File]::WriteAllText((Join-Path $output 'client-manifest.json'), ($manifest | ConvertTo-Json -Depth 5), $encoding)
     Write-Output ('MES ' + $Module + ' client built: ' + $output)
 } finally {

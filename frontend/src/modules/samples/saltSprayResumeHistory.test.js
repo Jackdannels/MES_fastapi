@@ -45,6 +45,30 @@ function snapshot(historyType, phase = "returned") {
   };
 }
 
+function arrivalOnlySnapshot(source, phase = "paused") {
+  const input = snapshot("none", phase === "paused" ? "resumed" : phase);
+  input.experiments.unshift({ task_code: "T", experiment_code: "V", experiment_name: "四综合试验", required_device: "四综合实验室", status: "实验已完成" });
+  input.experimentTrays.unshift({ task_code: "T", experiment_code: "V", tray_code: "TP" });
+  input.experimentRuns.unshift({ task_code: "T", experiment_code: "V", run_no: "R-V", device: "四综合实验室", status: "实验已完成", started_at: "2026-11-08 07:40:00", ended_at: "2026-11-08 08:00:00" });
+  input.experimentRunTrays.unshift({ task_code: "T", experiment_code: "V", run_no: "R-V", tray_code: "TP", run_tray_status: "实验已完成", ended_at: "2026-11-08 08:00:00" });
+  input.samples[0].history.push(
+    { action: "实验完成", status: "实验已完成", detail: "T / 四综合试验 / 实验已完成", tray_code: "TP", location: "四综合实验室", time: "2026-11-08 08:00:00" },
+    { action: "暂存间扫码出库", status: "送至实验室", detail: "TP 送至盐雾试验室", tray_code: "TP", location: "盐雾试验室", time: "2026-11-08 08:30:00" },
+  );
+  if (phase === "paused") {
+    input.experimentRuns.find((run) => run.run_no === "R").status = "实验暂停";
+    Object.assign(input.experimentRunPauses[0], { status: "实验暂停", resumed_at: "" });
+    input.stagingEvents = [];
+  }
+  const arrival = { status: "已到达暂存间", location: "恒温恒湿间（暂存间）", time: source === "untimed" ? "" : "2026-11-08 08:20:00" };
+  if (source === "events") {
+    input.stagingEvents.push({ ...arrival, task_code: "T", tray_code: "TP", room: "staging", action: "stock_in" });
+  } else {
+    input.samples[0].history.push({ ...arrival, action: "暂存间扫码入库", detail: "TP 已到达暂存间", tray_code: "TP" });
+  }
+  return input;
+}
+
 function views(input, trayCode = "TP") {
   const row = buildSamplesTrayOverviewView(input).rows.find((row) => row.trayCode === trayCode);
   const detail = buildTrayFlowView({ ...input, taskCode: "T", trayCode, status: row.status, location: "" });
@@ -88,6 +112,78 @@ describe("B-ISSUE-02 salt recovery preserves actual staging history", () => {
       expect(input).toEqual(before);
     });
   }
+
+  for (const source of ["history", "events", "untimed"]) {
+    test.each(["paused", "returned", "compared", "installed", "fixture", "ready", "resumed"])(`${source}: %s keeps staging dispatch inferred after direct stock-in from a completed experiment`, (phase) => {
+      const input = arrivalOnlySnapshot(source, phase);
+      const before = structuredClone(input);
+      const { detail, visual } = views(input);
+      expect(detail.steps.map(state)).toEqual(visual.steps.map(state));
+      expect(detail.steps.filter((step) => step.active)).toHaveLength(1);
+      for (const flow of [detail, visual]) {
+        const [sent, arrived] = staging(flow);
+        expect(sent).toMatchObject({ active: false, reached: true, inferred: true, time: "" });
+        expect(resolveVisualFlowStepTone(sent)).toBe("inferred");
+        expect(arrived).toMatchObject({ active: false, reached: true, time: source === "untimed" ? "" : "2026-11-08 08:20:00" });
+        expect(staging(flow).every((step) => !step.pauseResetRequired && !step.pauseResetState)).toBe(true);
+        if (phase === "paused") {
+          expect(flow.steps.find((step) => step.active).label).toBe("盐雾试验进行中（暂停）");
+          expect(flow.steps.find((step) => step.label === "送至盐雾试验室").pauseResetState).toBe("historical");
+        }
+      }
+      expect(input).toEqual(before);
+    });
+  }
+
+  test.each(["history", "events"])("%s: real staging dispatch time takes precedence over stock-in inference", (source) => {
+    const input = arrivalOnlySnapshot(source);
+    input.samples[0].history.push({ status: "送至暂存间", location: "恒温恒湿间（暂存间）", tray_code: "TP", time: "2026-11-08 08:10:00" });
+    const { detail, visual } = views(input);
+    for (const flow of [detail, visual]) {
+      expect(staging(flow)[0]).toMatchObject({ reached: true, inferred: false, time: "2026-11-08 08:10:00" });
+      expect(resolveVisualFlowStepTone(staging(flow)[0])).toBe("done");
+    }
+  });
+
+  test.each(["history", "events"])("%s: pausing does not change completed staging nodes after direct stock-in", (source) => {
+    const paused = arrivalOnlySnapshot(source);
+    const running = structuredClone(paused);
+    running.experimentRunPauses = [];
+    running.experimentRuns.find((run) => run.run_no === "R").status = "实验进行中";
+    for (const consumer of ["detail", "visual"]) {
+      const before = staging(views(running)[consumer]), after = staging(views(paused)[consumer]);
+      expect(state(after[0])).toEqual(state(before[0]));
+      expect(after.map((step) => ({ label: step.label, active: step.active, reached: step.reached })))
+        .toEqual(before.map((step) => ({ label: step.label, active: step.active, reached: step.reached })));
+    }
+  });
+
+  test.each(["history", "events"])("%s: arrival outside the original salt route cannot infer its staging dispatch", (source) => {
+    for (const phase of ["paused", "returned", "resumed"]) {
+      for (const time of ["2026-11-08 07:30:00", "2026-11-08 08:00:00", "2026-11-08 08:45:00", "2026-11-08 09:30:00", "2026-11-08 12:00:00"]) {
+        const input = arrivalOnlySnapshot(source, phase);
+        const arrival = source === "events" ? input.stagingEvents.at(-1) : input.samples[0].history.at(-1);
+        arrival.time = time;
+        const { detail, visual } = views(input);
+        for (const flow of [detail, visual]) expect(staging(flow).every((step) => !step.reached && !step.time)).toBe(true);
+      }
+    }
+  });
+
+  test.each(["history", "events"])("%s: original salt stock-out event bounds staging history after an appearance return", (source) => {
+    for (const time of ["2026-11-08 08:20:00", "2026-11-08 08:45:00"]) {
+      const input = arrivalOnlySnapshot(source, "returned");
+      input.samples[0].history = input.samples[0].history.filter((entry) => entry.action !== "暂存间扫码出库");
+      const arrival = source === "events" ? input.stagingEvents.at(-1) : input.samples[0].history.at(-1);
+      arrival.time = time;
+      input.stagingEvents.push({ task_code: "T", tray_code: "TP", room: "staging", action: "stock_out", target_lab_code: "LAB_SALT", time: "2026-11-08 08:30:00" });
+      const { detail, visual } = views(input);
+      for (const flow of [detail, visual]) {
+        expect(staging(flow).map((step) => step.reached)).toEqual(time.endsWith("08:20:00") ? [true, true] : [false, false]);
+        expect(staging(flow)[0].time).toBe("");
+      }
+    }
+  });
 
   test("does not borrow staging facts from another task, tray or after the current pause", () => {
     const input = snapshot("none");
@@ -164,6 +260,27 @@ describe("B-ISSUE-02 salt recovery preserves actual staging history", () => {
       expect(detail.findAll('[data-testid="samples-tray-flow"] li').find((li) => li.text().includes(label)).classes()).not.toContain("reached");
       expect(visual.findAll(".visual-flow-step").find((li) => li.text().includes(label)).classes()).toContain("is-waiting");
     }
+    detail.unmount();
+    visual.unmount();
+  });
+
+  test("real components keep direct stock-in staging dispatch green without inventing its time", () => {
+    const input = arrivalOnlySnapshot("events");
+    const { panel } = views(input);
+    const detail = mount(TrayManagementPanel, { props: { samplesFlow: {
+      rawTasks: input.tasks, rawSamples: input.samples, rawExperiments: input.experiments, rawSchedules: input.schedules,
+      rawExperimentRuns: input.experimentRuns, rawExperimentRunTrays: input.experimentRunTrays, rawExperimentTrays: input.experimentTrays,
+      rawExperimentRunPauses: input.experimentRunPauses, rawStagingEvents: input.stagingEvents,
+      trayRows: buildSamplesTrayOverviewView(input).rows, trayStatusOptions: [], warning: "",
+    } } });
+    const visual = mount(LabProcessScreen, { props: { labs: [panel] } });
+    const sentDetail = detail.findAll('[data-testid="samples-tray-flow"] li').find((li) => li.text().includes("送至暂存间"));
+    expect(sentDetail.classes()).toContain("reached");
+    expect(sentDetail.text()).toContain("-");
+    expect(sentDetail.text()).not.toContain("08:20:00");
+    const sentVisual = visual.findAll(".visual-flow-step").find((li) => li.text().includes("送至暂存间"));
+    expect(sentVisual.classes()).toContain("is-inferred");
+    expect(sentVisual.classes()).not.toContain("is-waiting");
     detail.unmount();
     visual.unmount();
   });

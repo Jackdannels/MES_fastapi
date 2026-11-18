@@ -35,6 +35,10 @@ foreach($station in $stations) {
     $note=@"
 # $($station.folder)专用客户端 v$($manifest.version)
 
+首次双击工位 EXE 会打开接入窗口，也可单独运行同目录的“MES终端接入.exe”。申请默认并固定对应本工位，填写服务器与电脑名称后提交；控制中心审批通过且文件校验成功后，可直接激活当前文件夹。工作机无需输入管理员密码。
+
+重置绑定、改派工位或预置包不匹配时，审批后仍生成新的桌面工位目录；旧授权由控制中心撤销，入口会提示重新申请。
+
 本机完成一次工位绑定后，双击 ``$($manifest.executable)`` 即可自动进入$($station.folder)，无需每次输入登录账号。程序固定对应此工位，不提供切换入口。实验间内部员工签到仍按原流程使用。
 
 当前服务器：``$($ServerUrl.TrimEnd('/'))``（本机测试）。可视化使用普通最大化窗口，其余工位启动直接无边框全屏；均不显示顶部单页页签、浏览器地址或收藏。页面与退出提示随深浅主题显示。
@@ -56,7 +60,7 @@ foreach($station in $stations) {
     $rows.Add('| '+$station.folder+' | '+$manifest.executable+' |')
 }
 $readme=@"
-# MES 工位专用客户端 v1.7.0
+# MES 工位专用客户端 v1.8.0
 
 共 11 个实验间和可视化、接驳区、暂存间、外观检测间 4 个独立页面，共 15 个文件夹。每个文件夹均可独立运行，不依赖总文件夹中的其他工位。
 
@@ -64,9 +68,9 @@ $readme=@"
 |---|---|
 $($rows -join "`n")
 
-当前按本机测试连接 ``$($ServerUrl.TrimEnd('/'))``，需先保持现有 MES 服务运行。本机工位绑定完成后，打开对应文件夹并双击 EXE 自动进入；新电脑需由管理员先执行一次绑定，不会使用匿名认证。
+当前按本机测试连接 ``$($ServerUrl.TrimEnd('/'))``，需先保持 MES 服务运行。每个文件夹包含独立的 MES终端接入.exe，默认对应本工位；首次审批可激活当前文件夹，重置或改派工位时生成新的桌面工位目录。已绑定时双击工位 EXE 自动进入。
 
-中控三合一保留页签与登录，可视化保留普通窗口；其余工位直接无边框全屏。非中控客户端不显示单页页签，页面“退出登录”改为“关闭”，与 Alt+F4 共用一次二次确认。关闭单个工位只关闭该客户端；控制中心 v2.9.0 仍按“关闭系统并退出”执行。
+中控三合一保留页签与登录，可视化保留普通窗口；其余工位直接无边框全屏。未绑定提示页可提交申请并等待控制中心 v2.10.0 审批。关闭单个工位只关闭该客户端；控制中心仍按“关闭系统并退出”执行。
 
 后续复制到其他电脑时，保留整个文件夹，配置正确的 ``serverUrl`` 并由管理员重新绑定。已有工位凭据存储在本机 Windows 用户目录，不随文件夹复制。本次仅配置本机，未迁移其他电脑或操作实验流程。
 
@@ -77,6 +81,6 @@ $($rows -join "`n")
 $files=@(foreach($file in Get-ChildItem -LiteralPath $output -File -Recurse) {
     [ordered]@{path=$file.FullName.Substring($output.Length+1).Replace('\','/');bytes=$file.Length;sha256=(Get-Sha256 $file.FullName)}
 })
-$manifest=[ordered]@{format='mes-workstation-clients';format_version=1;version='1.7.0';serverUrl=$ServerUrl.TrimEnd('/');workstations=$inventory.ToArray();files=$files}
+$manifest=[ordered]@{format='mes-workstation-clients';format_version=1;version='1.8.0';serverUrl=$ServerUrl.TrimEnd('/');workstations=$inventory.ToArray();files=$files}
 [IO.File]::WriteAllText((Join-Path $output 'workstations-manifest.json'),($manifest | ConvertTo-Json -Depth 8),$encoding)
 Write-Output ('Workstation clients built: '+$output)

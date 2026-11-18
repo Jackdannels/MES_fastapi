@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Request, status
 
 from app.api.auth_session import refresh_auth_session, require_auth_session
+from app.api.routes.terminal_enrollment import router as enrollment_router
 from app.services.terminal_control import format_utc, get_terminal_control_service
 
 
@@ -137,3 +138,6 @@ def complete_terminal_command(command_id: int, payload: TerminalCommandCompletio
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True}
+
+
+router.include_router(enrollment_router)

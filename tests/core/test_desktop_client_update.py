@@ -47,7 +47,7 @@ def test_in_place_update_preserves_configuration_and_backs_up_original_executabl
     assert len(backups) == 1
     assert (backups[0] / "central-client" / exe.name).read_bytes() == original_executable
     record = json.loads((backups[0] / "update.json").read_text(encoding="utf-8"))
-    assert record["version"] == "1.7.0" and record["configPreserved"] is True
+    assert record["version"] == "1.8.0" and record["configPreserved"] is True
     manifest = json.loads((target / "central-client/client-manifest.json").read_text(encoding="utf-8"))
     assert all(hashlib.sha256((target / "central-client" / entry["path"]).read_bytes()).hexdigest() == entry["sha256"] for entry in manifest["files"])
     assert note.read_text() == "keep this"
@@ -93,7 +93,7 @@ def test_control_center_component_requires_a_hash_and_keeps_its_original_backup(
     compiler = Path(os.environ["WINDIR"]) / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
     compiled = subprocess.run([str(compiler), "/nologo", "/target:winexe", f"/out:{source / controller}", str(code)], capture_output=True, timeout=15)
     assert compiled.returncode == 0, compiled.stderr
-    inventory = {"version": "1.7.0", "files": [{"path": controller, "sha256": hashlib.sha256((source / controller).read_bytes()).hexdigest()}]}
+    inventory = {"version": "1.8.0", "files": [{"path": controller, "sha256": hashlib.sha256((source / controller).read_bytes()).hexdigest()}]}
     (source / "combined-manifest.json").write_text(json.dumps(inventory), encoding="utf-8")
     result = update(source, target)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -128,7 +128,7 @@ def test_update_can_close_and_restart_only_the_selected_running_client(bundle, t
             time.sleep(0.1)
         assert after.get("state") == "ready", after
         assert before["pid"] != after["pid"]
-        assert after["version"] == "1.7.0"
+        assert after["version"] == "1.8.0"
     finally:
         command(client_directory, config, "--close")
         process.wait(timeout=15)

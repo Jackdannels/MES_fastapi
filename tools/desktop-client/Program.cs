@@ -6,8 +6,9 @@ using System.Windows.Forms;
 [assembly: AssemblyDescription("MES 固定角色 WebView2 客户端")]
 [assembly: AssemblyCompany("MES")]
 [assembly: AssemblyProduct("MES Desktop Client")]
-[assembly: AssemblyVersion("1.7.0.0")]
-[assembly: AssemblyFileVersion("1.7.0.0")]
+[assembly: AssemblyVersion("1.8.0.0")]
+[assembly: AssemblyFileVersion("1.8.0.0")]
+[assembly: System.Runtime.Versioning.TargetFramework(".NETFramework,Version=v4.8", FrameworkDisplayName=".NET Framework 4.8")]
 
 namespace MESDesktopClient
 {
@@ -16,12 +17,16 @@ namespace MESDesktopClient
         [STAThread]
         private static int Main(string[] args)
         {
+            // Read the Framework 4.8 PerMonitorV2 opt-in before creating any HWND.
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
             // GUI executables may have pipe handles but no Windows console.
             // Replacing writers avoids SetConsoleOutputCP on an invalid console.
             Console.SetOut(new System.IO.StreamWriter(Console.OpenStandardOutput(), new System.Text.UTF8Encoding(false)) { AutoFlush = true });
             Console.SetError(new System.IO.StreamWriter(Console.OpenStandardError(), new System.Text.UTF8Encoding(false)) { AutoFlush = true });
             bool validate = Array.IndexOf(args, "--validate-config") >= 0;
             bool enroll = Array.IndexOf(args, "--enroll-terminal") >= 0;
+            bool requestBinding = Array.IndexOf(args, "--request-binding") >= 0;
             string command = "";
             foreach (string action in new[] { "close", "status", "reload", "minimize", "maximize", "restore", "select-tab" })
                 if (Array.IndexOf(args, "--" + action) >= 0) { command = action; break; }
@@ -30,6 +35,8 @@ namespace MESDesktopClient
             try
             {
                 ClientConfiguration config = ClientConfiguration.Load(args, control);
+                if (requestBinding && !config.IsWorkstation) throw new ArgumentException("此程序没有固定工位接入入口。");
+                if (!control && !validate && config.IsWorkstation) new ClientTerminalAuth(config).ImportApproval();
                 if (enroll)
                 {
                     Console.SetIn(new System.IO.StreamReader(Console.OpenStandardInput(), System.Text.Encoding.UTF8));
@@ -49,13 +56,13 @@ namespace MESDesktopClient
                     }));
                     return 0;
                 }
+                if (requestBinding) config.InstanceKey += "-Enrollment";
                 using (ClientInstance instance = new ClientInstance(config, control))
                 {
                     if (cli) return ClientInstance.RunCommand(config, instance, command, args);
                     if (!instance.IsPrimary) return ClientInstance.RunCommand(config, instance, "activate", args);
-                    Application.EnableVisualStyles();
-                    Application.SetCompatibleTextRenderingDefault(false);
-                    Application.Run(new ClientForm(config, instance));
+                    if (config.Module == "enrollment" || requestBinding) Application.Run(new EnrollmentForm(config, instance));
+                    else Application.Run(new ClientForm(config, instance));
                     return 0;
                 }
             }

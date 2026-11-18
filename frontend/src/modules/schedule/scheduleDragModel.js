@@ -68,7 +68,6 @@ function buildScheduleDragPreview(context, { scheduleId, date, slot, lab }) {
   if (result.error) return result;
   const moved = result.schedules.find(row => normalizeText(row.id) === normalizeText(source.id));
   const trayConflict = analyzeTaskTrayConflict({ ...context, candidate: moved });
-  if (trayConflict) return { error: `移动后与 ${trayConflict.conflictSchedules.map(row => row.experimentLabel).join("、")} 共用托盘且时间重叠，请选择其他时段。` };
   // 手动确认的新时间成为后续自动顺延的基准，移除上一次延期的派生字段。
   for (const field of [
     "original_start_at", "original_end_at", "originalStartAt", "originalEndAt",
@@ -82,6 +81,7 @@ function buildScheduleDragPreview(context, { scheduleId, date, slot, lab }) {
   }
   return {
     result,
+    taskConflict: trayConflict,
     source: { ...source },
     target: { scheduleId, date, slot, lab },
     startAt: formatLocalDateTime(nextStart), endAt: formatLocalDateTime(nextEnd),

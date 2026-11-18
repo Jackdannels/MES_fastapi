@@ -84,6 +84,7 @@ function proxyRequest(clientRequest, clientResponse) {
       headers: {
         ...clientRequest.headers,
         host: target.host,
+        "x-forwarded-for": String(clientRequest.socket.remoteAddress || "").replace(/^::ffff:/, ""),
       },
     },
     (proxyResponse) => {

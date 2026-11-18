@@ -2,6 +2,7 @@
 
 # Project Rules
 
+- Desktop v2.10 client updates must be applied in place under `C:\Users\12051\Desktop\MES开发环境_v2.10.0`. Keep delivery builds and verification artifacts under that directory's `.mes` folder; do not generate separate client delivery directories or release ZIPs in the main project.
 - Do not create git commits, push branches, or submit git changes unless the user explicitly asks for that exact git operation.
 - The project uses MQTT for experiment-ready, experiment-started, experiment-end-request, and experiment-ended in every laboratory.
 - 高低温湿热二室 is a deliberate hybrid exception: sample installation and fixture-ready remain hostless local simulation, while experiment ready/start/end use MQTT through the upper-computer interface. Do not remove or broaden the local fixture exception.

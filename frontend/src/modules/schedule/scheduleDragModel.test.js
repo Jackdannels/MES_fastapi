@@ -79,14 +79,31 @@ describe("schedule drag preview", () => {
     expect(canDragSchedule(context(), "move", ["move", "second"])).toBe(false);
   });
 
-  test("rejects device maintenance and overlapping use of a shared tray", () => {
+  test("rejects device maintenance and exposes shared-tray conflicts for explicit confirmation", () => {
     const maintenance = context({ devices: [{ code: "冲击一室", maintenance_type: "维修", maintenance_start_at: "2099-03-21T08:00:00", maintenance_end_at: "2099-03-21T12:00:00", status: "维修中" }] });
     expect(buildScheduleDragPreview(maintenance, target).error).toBeTruthy();
     const shared = context({
       schedules: [source, other("shared", "2099-03-21T08:00:00", "2099-03-21T10:00:00", { device: "冲击二室", task_code: "TASK-1", experiment_code: "TASK-1-B" })],
       experimentTrays: [{ task_code: "TASK-1", experiment_code: "TASK-1-A", tray_code: "TRAY-1" }, { task_code: "TASK-1", experiment_code: "TASK-1-B", tray_code: "TRAY-1" }],
     });
-    expect(buildScheduleDragPreview(shared, target).error).toContain("共用托盘");
+    const preview = buildScheduleDragPreview(shared, target);
+    expect(preview.error).toBeUndefined();
+    expect(preview.taskConflict).toMatchObject({ level: "full", taskCode: "TASK-1", conflictTrayNos: ["TRAY-1"] });
+    expect(preview.result.schedules.find(row => row.id === "move").id).toBe("move");
+  });
+
+  test("classifies partial tray overlap using the same details as manual scheduling", () => {
+    const preview = buildScheduleDragPreview(context({
+      schedules: [source, other("shared", "2099-03-21T08:00:00", "2099-03-21T10:00:00", { device: "冲击二室", task_code: "TASK-1", experiment_code: "TASK-1-B" })],
+      experimentTrays: [
+        { task_code: "TASK-1", experiment_code: "TASK-1-A", tray_code: "TRAY-1" },
+        { task_code: "TASK-1", experiment_code: "TASK-1-A", tray_code: "TRAY-2" },
+        { task_code: "TASK-1", experiment_code: "TASK-1-B", tray_code: "TRAY-2" },
+      ],
+    }), target);
+    expect(preview.error).toBeUndefined();
+    expect(preview.taskConflict).toMatchObject({ level: "partial", candidateTrayNos: ["TRAY-1", "TRAY-2"], conflictTrayNos: ["TRAY-2"] });
+    expect(preview.taskConflict.conflictSchedules[0]).toMatchObject({ scheduleId: "shared", device: "冲击二室" });
   });
 
   test("resets old delay metadata so automatic delay calculations use the moved time", () => {

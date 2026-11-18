@@ -10,7 +10,7 @@ namespace MESDesktopClient
 {
     internal sealed class ClientConfiguration
     {
-        internal const string Version = "1.7.0";
+        internal const string Version = "1.8.0";
         internal string ConfigurationPath;
         internal Uri Server;
         internal string Title = ClientBuild.Title;
@@ -20,7 +20,8 @@ namespace MESDesktopClient
         internal string EntryPath = ClientBuild.EntryPath;
         internal bool StartMaximized = true;
         internal bool AutoLogin;
-        internal bool IsWorkstation { get { return Module != "central" && Module != "lims" && Module != "upper-computer"; } }
+        internal bool IsTestClient { get { return Module == "test"; } }
+        internal bool IsWorkstation { get { return Module != "central" && Module != "lims" && Module != "upper-computer" && Module != "enrollment" && Module != "test"; } }
         internal bool FullScreen { get { return IsWorkstation && Module != "visual"; } }
         internal bool HiddenTest;
         internal string FixedRuntime;
@@ -119,7 +120,7 @@ namespace MESDesktopClient
         {
             string json = new JavaScriptSerializer().Serialize(new { module = Module, labCode = LabCode, labName = LabName,
                 autoLogin = AutoLogin, canCloseWindow = IsWorkstation, fullScreen = FullScreen,
-                version = Version, localIpAddresses = ClientHostInfo.LocalIpAddresses() });
+                testClient = IsTestClient, pageZoomSupported = IsTestClient, version = Version, localIpAddresses = ClientHostInfo.LocalIpAddresses() });
             return "Object.defineProperty(window, '__MES_DESKTOP__', {value: Object.freeze(" + json + "), writable: false, configurable: false});";
         }
 

@@ -90,8 +90,10 @@ def test_every_workstation_starts_real_webview_with_its_compiled_room(workstatio
         title = f"{station['module']}:{station['labCode']}:{station['labName']}"
         state = wait_ready(exe, config, title=title, process=process)
         assert state["module"] == station["module"]
+        assert state["display"]["dpiAwareness"] == "PerMonitorV2"
+        assert state["pageZoom"] == 1.0
         assert state["labCode"] == station["labCode"] and state["labName"] == station["labName"]
-        assert state["version"] == "1.7.0"
+        assert state["version"] == "1.8.0"
         assert state["fullScreen"] is (station["module"] != "visual")
         assert state["borderless"] is state["fullScreen"]
         if state["fullScreen"]:

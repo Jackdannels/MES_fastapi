@@ -20,7 +20,10 @@ namespace MESDesktopClient
         private readonly Label status = new Label();
         private readonly Timer statusTimer = new Timer();
         private readonly Timer retry = new Timer();
+        private readonly Timer terminalHeartbeat = new Timer { Interval = 5000 };
+        private bool heartbeatBusy;
         private WebView2 web;
+        private readonly ClientPageZoom pageZoom;
         private CoreWebView2Environment environment;
         private TaskCompletionSource<bool> browserExited;
         private bool initializing;
@@ -50,12 +53,18 @@ namespace MESDesktopClient
         private Func<bool> confirmExit;
         private bool confirmationShowing;
         private bool authenticationBusy;
+        private readonly Timer testNavigationTimer = new Timer { Interval = 10000 };
+        private List<ClientTestPage> testPages;
+        private string activeTestPage = "central";
+        private string pendingTestPage = "";
+        private string testRequestId = "";
 
         internal ClientForm(ClientConfiguration configuration, ClientInstance owner) : this(configuration, owner, false) { }
 
         private ClientForm(ClientConfiguration configuration, ClientInstance owner, bool isEmbedded)
         {
             config = configuration;
+            pageZoom = config.IsTestClient ? new ClientPageZoom(config) : null;
             instance = owner;
             embedded = isEmbedded;
             themeChanged = ApplyNavigationTheme;
@@ -66,6 +75,7 @@ namespace MESDesktopClient
             StartPosition = FormStartPosition.CenterScreen;
             MinimumSize = new Size(800, 600);
             Size = new Size(1280, 800);
+            AutoScaleDimensions = new SizeF(96F, 96F);
             AutoScaleMode = AutoScaleMode.Dpi;
             Font = new Font("Microsoft YaHei UI", 10F);
             BackColor = Color.FromArgb(19, 26, 34);
@@ -90,6 +100,10 @@ namespace MESDesktopClient
             notice.Controls.Add(message); notice.Controls.Add(reconnect);
             if (config.IsWorkstation)
             {
+                Button apply = new Button { Text = "申请绑定 / 重新绑定", Dock = DockStyle.Bottom, Height = 52,
+                    BackColor = Color.FromArgb(45, 123, 107), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+                apply.Click += async delegate { await RequestWorkstationBinding(); };
+                notice.Controls.Add(apply);
                 Button closeNotice = new Button { Text = "关闭", AccessibleName = "关闭", Dock = DockStyle.Bottom, Height = 48,
                     BackColor = Color.FromArgb(30, 44, 52), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
                 closeNotice.Click += delegate { Close(); };
@@ -97,6 +111,7 @@ namespace MESDesktopClient
             }
             surface.Controls.Add(notice);
             Controls.Add(surface); Controls.Add(status); Controls.Add(header);
+            if (config.IsTestClient) InitializeTestNavigation();
             if (config.SimulatorsEnabled && !embedded)
             {
                 pageHost = new Panel { Dock = DockStyle.Fill };
@@ -120,6 +135,7 @@ namespace MESDesktopClient
             }
             retry.Interval = 10000;
             retry.Tick += async delegate { retry.Stop(); await ConnectAsync(); };
+            terminalHeartbeat.Tick += async delegate { await SendTerminalHeartbeat(); };
             Shown += async delegate
             {
                 if (!embedded)
@@ -128,15 +144,41 @@ namespace MESDesktopClient
                     SelectTab(config.InitialTab);
                     instance.Listen(Dispatch, AfterCommand);
                 }
+                if (config.IsWorkstation && config.AutoLogin && !config.HiddenTest && !new ClientTerminalAuth(config).HasIdentity)
+                    await RequestWorkstationBinding();
+                if (closing || closeRequested) return;
                 await ConnectAsync();
+                if (config.IsWorkstation && config.AutoLogin) { terminalHeartbeat.Start(); await SendTerminalHeartbeat(); }
             };
             FormClosing += HandleClosing;
             FormClosed += delegate { closed.TrySetResult(true); };
+            DpiChanged += delegate { if (web != null && web.CoreWebView2 != null) LogDisplayState("monitor-dpi-changed"); };
         }
 
         private ClientForm ActivePage()
         {
             return simulatorPages.Find(page => page.config.Module == activeModule) ?? this;
+        }
+
+        private async Task SendTerminalHeartbeat()
+        {
+            if (heartbeatBusy || closing || closeRequested || !config.IsWorkstation || !config.AutoLogin) return;
+            ClientTerminalAuth auth = new ClientTerminalAuth(config);
+            if (!auth.HasIdentity) return;
+            heartbeatBusy = true;
+            try {
+                Dictionary<string, object> result = await Task.Run(delegate { return auth.Heartbeat(); });
+                object command;
+                if (result.TryGetValue("command", out command) && command is Dictionary<string, object>) {
+                    Dictionary<string, object> action = (Dictionary<string, object>)command;
+                    bool success = EnrollmentNetwork.Text(action, "action") == "reload";
+                    if (success && !closing) await NavigateHomeAsync(false);
+                    await Task.Run(delegate { auth.CompleteCommand(Convert.ToInt32(action["commandId"]), success, success ? "界面已刷新" : "此客户端不支持该命令"); });
+                }
+            }
+            catch (UnauthorizedAccessException error) { if (!closing && !closeRequested) { state = "binding-revoked"; ShowNotice(error.Message, false); } }
+            catch (Exception) { if (!closing && !closeRequested) ShowStatus("终端状态暂未上报，正在等待网络恢复。"); }
+            finally { heartbeatBusy = false; }
         }
 
         private void ApplyWindowMode()
@@ -154,6 +196,11 @@ namespace MESDesktopClient
         private bool SelectTab(string module)
         {
             if (String.IsNullOrEmpty(module)) module = config.Module;
+            if (config.IsTestClient) {
+                if (module == "test") return true;
+                if (testPages.Find(page => page.Key == module) == null || testRequestId.Length > 0 || web == null || web.CoreWebView2 == null) return false;
+                NavigateTestPage(module); return true;
+            }
             if (module != config.Module && !pages.ContainsKey(module)) return false;
             activeModule = module;
             foreach (KeyValuePair<string, Panel> page in pages) page.Value.Visible = page.Key == module;
@@ -182,12 +229,56 @@ namespace MESDesktopClient
             header.BackColor = light ? Color.White : Color.FromArgb(19, 26, 34);
             foreach (KeyValuePair<string, Button> item in navigation)
             {
-                bool active = item.Key == activeModule;
+                bool active = item.Key == (config.IsTestClient ? activeTestPage : activeModule);
                 item.Value.BackColor = active ? (light ? Color.FromArgb(237, 243, 252) : Color.FromArgb(27, 54, 56)) : header.BackColor;
                 item.Value.ForeColor = active ? (light ? Color.FromArgb(37, 99, 235) : Color.FromArgb(99, 230, 190))
                     : (light ? Color.FromArgb(82, 100, 125) : Color.FromArgb(139, 169, 164));
                 item.Value.FlatAppearance.MouseOverBackColor = light ? Color.FromArgb(225, 235, 252) : Color.FromArgb(35, 65, 68);
                 item.Value.AccessibleDescription = active ? "当前页面" : "切换页面";
+            }
+        }
+
+        private void InitializeTestNavigation()
+        {
+            // Reuse the web page's upper-right exit/switch dialog. The host must
+            // not add a sidebar or banner that changes the normal page viewport.
+            // Keep the native command bridge for diagnostics/automated checks.
+            testPages = ClientTestNavigation.Pages();
+            testNavigationTimer.Tick += delegate { testNavigationTimer.Stop(); testRequestId=""; pendingTestPage=""; ShowStatus("页面切换未完成，请确认已登录且前端为当前开发版本。"); };
+        }
+
+        private async void NavigateTestPage(string key) { await NavigateTestPageAsync(key); }
+
+        private async Task NavigateTestPageAsync(string key)
+        {
+            ClientTestPage page = testPages.Find(item => item.Key == key);
+            if (page == null || closing || closeRequested) return;
+            if (web == null || web.CoreWebView2 == null || state != "ready") { ShowStatus("请等待系统连接完成并登录账号。"); return; }
+            if (testRequestId.Length > 0) { ShowStatus("正在切换页面，请稍候。"); return; }
+            pendingTestPage=key; testRequestId=Guid.NewGuid().ToString("N"); testNavigationTimer.Start();
+            try { await web.CoreWebView2.ExecuteScriptAsync(ClientTestNavigation.NavigationScript(page,testRequestId)); }
+            catch (Exception) { testNavigationTimer.Stop(); testRequestId=""; pendingTestPage=""; ShowStatus("页面暂时无法切换，请重新连接。"); }
+        }
+
+        private void CompleteTestNavigation(string value)
+        {
+            Dictionary<string,object> result = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<Dictionary<string,object>>(value.Substring(ClientTestNavigation.ResultPrefix.Length));
+            if (testRequestId.Length == 0 || EnrollmentNetwork.Text(result,"requestId") != testRequestId || EnrollmentNetwork.Text(result,"key") != pendingTestPage) return;
+            testNavigationTimer.Stop();
+            object ok;
+            if (result.TryGetValue("ok",out ok) && ok is bool && (bool)ok) {
+                activeTestPage=pendingTestPage;
+            } else ShowStatus(EnrollmentNetwork.Text(result,"message"));
+            testRequestId=""; pendingTestPage=""; ApplyNavigationTheme();
+        }
+
+        private async Task RequestWorkstationBinding()
+        {
+            using (EnrollmentForm form = new EnrollmentForm(config)) {
+                form.ShowDialog(this);
+                if (!form.Provisioned) return;
+                if (form.ActivatedCurrentDirectory) { new ClientTerminalAuth(config).ImportApproval(); if (web != null) await NavigateHomeAsync(true); }
+                else { closeRequested=true; Close(); }
             }
         }
 
@@ -219,7 +310,7 @@ namespace MESDesktopClient
             {
                 if (web == null || recreate)
                 {
-                    if (web != null) { web.Dispose(); web = null; }
+                    if (web != null) { if (pageZoom != null) pageZoom.Detach(); web.Dispose(); web = null; }
                     if (browserExited != null && recreate) await Task.WhenAny(browserExited.Task, Task.Delay(3000));
                     if (closing || closeRequested) return;
                     recreate = false;
@@ -229,17 +320,20 @@ namespace MESDesktopClient
                     TaskCompletionSource<bool> exited = browserExited;
                     environment.BrowserProcessExited += delegate { exited.TrySetResult(true); };
                     if (closing || closeRequested) return;
-                    web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.White };
+                    web = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.White, ZoomFactor = 1.0 };
                     surface.Controls.Add(web); web.BringToFront(); notice.BringToFront();
                     await web.EnsureCoreWebView2Async(environment);
                     if (closing || closeRequested) return;
                     browserPid = Convert.ToInt32(web.CoreWebView2.BrowserProcessId);
+                    LogDisplayState("webview-created");
                     web.CoreWebView2.Settings.AreDevToolsEnabled = false;
                     web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
                     web.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
+                    web.CoreWebView2.Settings.IsZoomControlEnabled = false;
                     web.CoreWebView2.Settings.IsStatusBarEnabled = false;
                     web.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
                     web.CoreWebView2.Settings.IsGeneralAutofillEnabled = false;
+                    if (pageZoom != null) pageZoom.Attach(web);
                     Directory.CreateDirectory(config.DownloadDirectory);
                     web.CoreWebView2.Profile.DefaultDownloadFolderPath = config.DownloadDirectory;
                     web.CoreWebView2.DownloadStarting += delegate(object sender, CoreWebView2DownloadStartingEventArgs args)
@@ -262,11 +356,21 @@ namespace MESDesktopClient
                         };
                     };
                     await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(config.BootstrapScript());
+                    if (pageZoom != null) await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(ClientPageZoom.InputScript());
                     await web.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(config.DiagnosticsScript());
                     web.CoreWebView2.WebMessageReceived += async delegate(object sender, CoreWebView2WebMessageReceivedEventArgs args)
                     {
                         if (closing || closeRequested || !config.AllowsNavigation(args.Source)) return;
                         string value = args.WebMessageAsJson;
+                        if (config.IsTestClient) {
+                            string response = null;
+                            try { response = new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<string>(value); } catch (ArgumentException) { }
+                            if (pageZoom != null && pageZoom.HandleRequest(response)) return;
+                            if (response != null && response.Length <= 16384 && response.StartsWith(ClientTestNavigation.ResultPrefix,StringComparison.Ordinal)) {
+                                try { CompleteTestNavigation(response); } catch (ArgumentException) { } catch (InvalidOperationException) { }
+                                return;
+                            }
+                        }
                         if (value == "\"mes-client-page-error\"") pageErrors++;
                         else if (value == "\"mes-client-close-request\"" && config.IsWorkstation && !embedded)
                             BeginInvoke(new Action(Close));
@@ -311,6 +415,8 @@ namespace MESDesktopClient
                         if (closing || closeRequested) return;
                         if (args.IsSuccess && args.HttpStatusCode < 400)
                         {
+                            if (pageZoom != null) pageZoom.Restore();
+                            else web.ZoomFactor = 1.0;
                             state = "ready"; notice.Visible = false; retry.Stop();
                             statusTimer.Stop(); status.Visible = false; status.Text = "";
                         }
@@ -390,6 +496,7 @@ namespace MESDesktopClient
                     config.Server = next;
                     NavigateHome(true);
                 }
+                else if (config.IsWorkstation && config.AutoLogin && state != "ready") NavigateHome(true);
                 string tab = command.ContainsKey("tab") ? Convert.ToString(command["tab"]) : "";
                 if (!String.IsNullOrEmpty(tab) && !SelectTab(tab)) return new Dictionary<string, object> { { "ok", false }, { "state", "unknown-tab" } };
                 if (WindowState == FormWindowState.Minimized) ApplyWindowMode();
@@ -409,14 +516,20 @@ namespace MESDesktopClient
             List<Dictionary<string, object>> pages = new List<Dictionary<string, object>> { PageStatus() };
             foreach (ClientForm page in simulatorPages) pages.Add(page.PageStatus());
             result["tabs"] = pages;
-            result["activeTab"] = ActivePage().config.Module;
+            result["activeTab"] = config.IsTestClient ? activeTestPage : ActivePage().config.Module;
+            result["testClient"] = config.IsTestClient;
+            result["navigationPending"] = testRequestId.Length > 0;
             result["windowState"] = WindowState.ToString();
             result["tabsVisible"] = config.SimulatorsEnabled && header.Visible && pageHost.Top >= header.Bottom;
             List<string> labels = new List<string>();
             List<int[]> positions = new List<int[]>();
             foreach (Button button in navigation.Values) { labels.Add(button.Text); positions.Add(new[] { button.Left, button.Top, button.Width, button.Height }); }
+            if (config.IsTestClient) foreach (ClientTestPage page in testPages) labels.Add(page.Title);
             result["navigationLabels"] = labels;
             result["navigationBounds"] = positions;
+            result["testNavigationPlacement"] = config.IsTestClient ? "page-top-right" : "";
+            result["hostPageBounds"] = new[] { surface.Left,surface.Top,surface.Width,surface.Height };
+            result["clientAreaSize"] = new[] { ClientSize.Width,ClientSize.Height };
             result["headerControlCount"] = header.Controls.Count;
             result["headerVisible"] = header.Visible;
             result["autoLogin"] = config.AutoLogin;
@@ -429,6 +542,7 @@ namespace MESDesktopClient
         private Dictionary<string, object> PageStatus()
         {
             return new Dictionary<string, object> {
+                { "display", ClientDisplayInfo.Read(this) }, { "pageZoom", web == null ? 1.0 : web.ZoomFactor },
                 { "ok", true }, { "pid", Process.GetCurrentProcess().Id }, { "browserPid", browserPid },
                 { "state", closeRequested || closing ? "closing" : state }, { "currentPath", currentPath },
                 { "fullScreen", config.FullScreen }, { "version", ClientConfiguration.Version }, { "module", config.Module },
@@ -441,6 +555,13 @@ namespace MESDesktopClient
                 { "pageErrors", pageErrors }, { "apiSuccessCount", apiSuccessCount }, { "apiFailureCount", apiFailureCount },
                 { "statusVisible", status.Visible }, { "statusText", status.Text }
             };
+        }
+
+        private void LogDisplayState(string reason)
+        {
+            Dictionary<string,object> data=ClientDisplayInfo.Read(this);
+            data["reason"]=reason; data["pageZoom"]=web == null ? 1.0 : web.ZoomFactor;
+            config.Log("display "+new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(data));
         }
 
         private void AfterCommand(Dictionary<string, object> request)
@@ -464,8 +585,13 @@ namespace MESDesktopClient
                 if (!accepted) return;
             }
             closing = true; closeRequested = true; state = "closing";
+            Stopwatch shutdownClock=Stopwatch.StartNew();
+            if (!embedded) { Hide(); ShowInTaskbar=false; }
+            config.Log("shutdown.begin; window hidden after confirmation");
             retry.Stop(); retry.Dispose();
+            terminalHeartbeat.Stop(); terminalHeartbeat.Dispose();
             statusTimer.Stop(); statusTimer.Dispose();
+            testNavigationTimer.Stop(); testNavigationTimer.Dispose();
             status.Text = "正在退出" + config.Title + "…";
             List<Task> shutdown = new List<Task>();
             foreach (ClientForm page in simulatorPages)
@@ -473,15 +599,17 @@ namespace MESDesktopClient
                 if (page.IsHandleCreated) { page.Close(); shutdown.Add(page.closed.Task); }
                 else { page.Dispose(); page.closed.TrySetResult(true); }
             }
-            if (web != null) { web.Dispose(); web = null; }
+            if (web != null) { if (pageZoom != null) pageZoom.Detach(); web.Dispose(); web = null; }
+            config.Log("shutdown.dispose="+shutdownClock.ElapsedMilliseconds+"ms");
             if (browserExited != null) shutdown.Add(browserExited.Task);
             if (shutdown.Count > 0)
             {
                 Task all = Task.WhenAll(shutdown);
-                Task finished = await Task.WhenAny(all, Task.Delay(6000));
-                if (finished != all) config.Log("WebView2 shutdown exceeded six seconds; host is exiting without killing unrelated processes.");
+                Task finished = await Task.WhenAny(all, Task.Delay(1200));
+                if (finished != all) config.Log("WebView2 disposal completed; background browser exit continues without killing unrelated processes.");
             }
             config.Log("Client closed intentionally; recovery disabled.");
+            config.Log("shutdown.total="+shutdownClock.ElapsedMilliseconds+"ms");
             closeReady = true;
             Close();
         }

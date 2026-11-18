@@ -76,7 +76,11 @@ def test_invalid_employee_edits_are_not_persisted(client, changes, expected):
     response = client.put(f"/api/attendance/users/{user['id']}", json={**ADMIN, **changes})
     assert response.status_code in {400, 409}
     assert response.json()["detail"] == expected
-    assert client.get("/api/attendance/work-times").json()[0] == user
+    current = client.get("/api/attendance/work-times").json()[0]
+    # calculatedAt is generated for each response, not persisted employee state.
+    assert {key: value for key, value in current.items() if key != "calculatedAt"} == {
+        key: value for key, value in user.items() if key != "calculatedAt"
+    }
 
 
 def test_password_and_log_errors_are_chinese(client):

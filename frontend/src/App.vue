@@ -50,7 +50,7 @@
       </div>
     </AppSidebar>
     <main class="main">
-      <header class="page-header page-header--central">
+      <header class="page-header page-header--central" :class="{ 'page-header--zoom': desktopZoomAvailable }">
         <div class="page-header__copy">
           <h1 v-app-icon="{ name: centralPageIcons[pageTitle], placement: 'title' }" tabindex="-1">{{ pageTitle }}</h1>
         </div>
@@ -84,6 +84,7 @@
           >
             新建任务
           </button>
+          <DesktopZoomControls />
           <button v-app-icon="{ name: 'refresh', placement: 'button' }" class="action-btn secondary" type="button" @click="refreshPage">刷新</button>
           <span class="header-actions-before-logout"></span>
           <template v-if="!isFixedTerminal">
@@ -117,7 +118,7 @@
       </nav>
     </AppSidebar>
     <main class="main" :class="{ 'main--laboratory': isLaboratoryModule }">
-      <header class="page-header" :class="{ 'page-header--laboratory': isLaboratoryModule }">
+      <header class="page-header" :class="{ 'page-header--laboratory': isLaboratoryModule, 'page-header--zoom': desktopZoomAvailable }">
         <div class="page-header__copy">
           <div v-if="!isLaboratoryModule" class="eyebrow">{{ moduleLabel }}</div>
           <h1 v-app-icon="{ name: moduleHeaderIcon, placement: 'title' }">{{ pageTitle }}</h1>
@@ -135,6 +136,8 @@
           >
             出错样品处理
           </button>
+          <DesktopZoomControls />
+          <button v-if="desktopZoomAvailable" v-app-icon="{ name: 'refresh', placement: 'button' }" class="action-btn secondary" type="button" @click="refreshPage">刷新</button>
           <template v-if="desktopCloseAvailable || !isFixedTerminal">
             <button v-app-icon="{ name: desktopCloseAvailable ? 'close' : 'logout', placement: 'button' }" class="action-btn secondary" data-testid="app-logout" type="button" @click="handleLogout">{{ desktopCloseAvailable ? "关闭" : "退出登录" }}</button>
           </template>
@@ -166,6 +169,7 @@ import { vAppIcon } from "@/directives/appIcon";
 import { useRoute, useRouter } from "vue-router";
 import ModuleExitDialog from "@/components/shared/ModuleExitDialog.vue";
 import AppSidebar from "@/components/shared/AppSidebar.vue";
+import DesktopZoomControls from "@/components/shared/DesktopZoomControls.vue";
 import SidebarSystemInfo from "@/components/shared/SidebarSystemInfo.vue";
 import IntegrationConnectionStatus from "@/components/shared/IntegrationConnectionStatus.vue";
 import CriticalAlarmIndicator from "@/components/shared/CriticalAlarmIndicator.vue";
@@ -176,6 +180,8 @@ import { useTrayErrorSampleHandling } from "@/composables/useTrayErrorSampleHand
 import { useTerminalPresence } from "@/composables/useTerminalPresence";
 import { useTheme } from "@/composables/useTheme";
 import { canCloseDesktopWindow, getDesktopModule, requestDesktopClose } from "@/lib/desktopClient";
+import { installTestClientNavigation } from "@/lib/testClientNavigation";
+import { isDesktopZoomAvailable } from "@/lib/desktopZoom";
 import { findFirstOverdueWaitingTaskCode, hasOverdueWaitingExperiment } from "@/lib/taskOverviewAlerts";
 import { serverNowMs } from "@/lib/serverClock";
 import { STORAGE_KEYS } from "@/lib/storageKeys";
@@ -197,6 +203,7 @@ const NAV_ALERT_FALLBACK_REFRESH_MS = 60 * 1000;
 
 const route = useRoute();
 const desktopModule = getDesktopModule();
+const desktopZoomAvailable = isDesktopZoomAvailable();
 const desktopCloseAvailable = canCloseDesktopWindow();
 const router = useRouter();
 const { loadSnapshot } = useStorageSnapshot([STORAGE_KEYS.tasks, STORAGE_KEYS.experiments, STORAGE_KEYS.schedules, STORAGE_KEYS.samples, STORAGE_KEYS.conflicts]);
@@ -377,12 +384,15 @@ const switchModule = async (targetModule) => {
   await router.push(resolveModuleHome(module));
 };
 
+let removeTestClientNavigation;
 onMounted(() => {
+  removeTestClientNavigation = installTestClientNavigation({ readSession: readAuthSession, switchSessionModule, router });
   void refreshTaskOverviewAlert();
   navAlertFallbackTimer = window.setInterval(refreshTaskOverviewAlertFallback, NAV_ALERT_FALLBACK_REFRESH_MS);
 });
 
 onBeforeUnmount(() => {
+  removeTestClientNavigation?.();
   if (navAlertFallbackTimer) {
     window.clearInterval(navAlertFallbackTimer);
     navAlertFallbackTimer = null;

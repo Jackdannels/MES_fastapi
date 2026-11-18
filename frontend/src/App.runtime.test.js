@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import App from "./App.vue";
 import { getNavigationModules } from "@/modules";
+import workstations from "../../tools/desktop-client/workstations.json";
 
 const { authSessionState, routeState, routerPush, routerReplace, logoutSessionMock, switchSessionModuleMock, loadSnapshotMock, storageRefreshOptions } = vi.hoisted(() => ({
   authSessionState: { current: { module: "central" } },
@@ -104,6 +105,26 @@ const mountApp = () => {
 };
 
 describe("App runtime boundary", () => {
+  test("places test-terminal zoom immediately before refresh across shared business headers", async () => {
+    window.__MES_DESKTOP__ = { module: "test", testClient: true, pageZoomSupported: true, version: "1.8.0" };
+    const bridge = new EventTarget();
+    bridge.postMessage = vi.fn();
+    window.chrome = { webview: bridge };
+    mountApp();
+    for (const module of ["central", "laboratory", "staging", "appearance", "visual"]) {
+      reactiveRoute.meta = { module, title: module };
+      authSessionState.current = { module };
+      await nextTick();
+      const zoom = wrapper.findAll('[data-testid="desktop-zoom-controls"]');
+      expect(zoom).toHaveLength(1);
+      expect(zoom[0].element.nextElementSibling.textContent.trim()).toBe("刷新");
+      expect(wrapper.get(".page-header").classes()).toContain("page-header--zoom");
+    }
+    reactiveRoute.meta = { module: "central", layout: "auth", title: "登录" };
+    await nextTick();
+    expect(wrapper.find('[data-testid="desktop-zoom-controls"]').exists()).toBe(false);
+  });
+
   test("keeps the real severe alarm entry in the header across central pages", async () => {
     mountApp();
     wrapper.findComponent({ name: "IntegrationConnectionStatus" }).vm.$emit("update", { lims: { state: "offline", alert_severity: "critical" } });
@@ -565,6 +586,32 @@ describe("App runtime boundary", () => {
     expect(wrapper.text()).toContain("切换其他界面");
     expect(logoutSessionMock).not.toHaveBeenCalled();
     expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    { module: "central", labCode: "", labName: "", folder: "中控管理" },
+    ...workstations.filter((station) => station.module !== "handover"),
+  ])("test terminal uses the existing upper-right switching flow on $folder", async (station) => {
+    window.__MES_DESKTOP__ = { module: "test", version: "1.8.0", testClient: true };
+    authSessionState.current = { username: "test-admin", module: station.module };
+    reactiveRoute.meta = { module: station.module, title: station.folder };
+    reactiveRoute.path = station.module === "central" ? "/" : "/" + station.module;
+    reactiveRoute.query = station.labCode ? { lab: station.labCode } : {};
+    mountApp();
+    await nextTick();
+    const entry = wrapper.get('.header-actions [data-testid="app-logout"]');
+    await entry.trigger("click");
+    const options = wrapper.findAll('[data-testid="module-exit-select"] option').map((option) => option.element.value);
+    expect(options.sort()).toEqual(["appearance", "central", "handover", "laboratory", "staging", "visual"]);
+    expect(wrapper.findAll('[data-testid="module-exit-lab-select"] option')).toHaveLength(station.module === "laboratory" ? 11 : 0);
+    const target = station.module === "visual" ? "central" : "visual";
+    await wrapper.get('[data-testid="module-exit-select"]').setValue(target);
+    await wrapper.get('[data-testid="module-exit-switch"]').trigger("click");
+    await Promise.resolve();
+    expect(switchSessionModuleMock).toHaveBeenCalledWith(target);
+    expect(routerPush).toHaveBeenCalledWith(target === "central" ? "/" : "/visualization");
+    expect(logoutSessionMock).not.toHaveBeenCalled();
+    if (station.module === "laboratory") expect(wrapper.find(".sidebar").exists()).toBe(false);
   });
 
   test("switches to another module without clearing the current session", async () => {

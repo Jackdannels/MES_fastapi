@@ -237,6 +237,8 @@ describe("TransferAreaPage runtime", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    delete window.__MES_DESKTOP__;
+    delete window.chrome;
     delete globalThis.__transferAreaAllocateCount;
     routerPush.mockReset();
     routerReplace.mockReset();
@@ -247,6 +249,20 @@ describe("TransferAreaPage runtime", () => {
     printFramePrintMock.mockClear();
     printFrameFocusMock.mockClear();
     vi.restoreAllMocks();
+  });
+
+  test("test-terminal handover header keeps zoom beside refresh", async () => {
+    window.__MES_DESKTOP__ = { module: "test", testClient: true, pageZoomSupported: true, version: "1.8.0" };
+    const bridge = new EventTarget();
+    bridge.postMessage = vi.fn();
+    window.chrome = { webview: bridge };
+    const wrapper = mount(TransferAreaPage);
+    try {
+      await settle(wrapper);
+      const zoom = wrapper.get('[data-testid="desktop-zoom-controls"]');
+      expect(zoom.element.nextElementSibling.textContent.trim()).toBe("刷新");
+      expect(wrapper.get(".transfer-system-header").classes()).toContain("page-header--zoom");
+    } finally { wrapper.unmount(); }
   });
 
   test("detail page shows compact task info", async () => {
@@ -401,6 +417,25 @@ describe("TransferAreaPage runtime", () => {
     expect(logoutSessionMock).not.toHaveBeenCalled();
     expect(switchSessionModuleMock).toHaveBeenCalledWith("central");
     expect(routerPush).toHaveBeenCalledWith("/");
+  });
+
+  test("test terminal switches from the existing upper-right handover action", async () => {
+    window.__MES_DESKTOP__ = { module: "test", version: "1.8.0", testClient: true };
+    const wrapper = mount(TransferAreaPage);
+    try {
+      await settle(wrapper);
+      await wrapper.get('.transfer-system-actions [data-testid="handover-logout"]').trigger("click");
+      expect(wrapper.findAll('[data-testid="module-exit-select"] option')).toHaveLength(6);
+      await wrapper.get('[data-testid="module-exit-select"]').setValue("central");
+      await wrapper.get('[data-testid="module-exit-switch"]').trigger("click");
+      await Promise.resolve();
+      expect(switchSessionModuleMock).toHaveBeenCalledWith("central");
+      expect(routerPush).toHaveBeenCalledWith("/");
+      expect(logoutSessionMock).not.toHaveBeenCalled();
+    } finally {
+      delete window.__MES_DESKTOP__;
+      wrapper.unmount();
+    }
   });
 
   test("full logout from the exit dialog routes back to login after logout", async () => {

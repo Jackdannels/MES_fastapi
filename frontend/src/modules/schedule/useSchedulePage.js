@@ -615,6 +615,10 @@ function useSchedulePage(options = {}) {
   };
 
   const confirmScheduleConflict = async () => {
+    if (scheduleDrag.dragConflictOpen.value) {
+      await scheduleDrag.confirmDragConflict();
+      return;
+    }
     const draft = pendingScheduleDraft.value;
     if (!draft) {
       scheduleConflictModal.close();
@@ -669,6 +673,10 @@ function useSchedulePage(options = {}) {
   };
 
   const cancelScheduleConflict = () => {
+    if (scheduleDrag.dragConflictOpen.value) {
+      scheduleDrag.closeDragPreview();
+      return;
+    }
     pendingScheduleDraft.value = null;
     scheduleConflictModal.close();
     flushPendingRealtimeRefresh();
@@ -1066,8 +1074,8 @@ function useSchedulePage(options = {}) {
     saveSchedule,
     setEditDurationUnit,
     setScheduleDurationUnit,
-    scheduleConflictDetail: scheduleConflictModal.payload,
-    scheduleConflictOpen: scheduleConflictModal.open,
+    scheduleConflictDetail: computed(() => scheduleDrag.dragConflictOpen.value ? scheduleDrag.dragPreview.value?.taskConflict : scheduleConflictModal.payload.value),
+    scheduleConflictOpen: computed(() => scheduleConflictModal.open.value || scheduleDrag.dragConflictOpen.value),
     scheduleDeleteWithdrawalDetail: scheduleDeleteWithdrawalModal.payload,
     scheduleDeleteWithdrawalOpen: scheduleDeleteWithdrawalModal.open,
     scheduleDrawerOpen: scheduleDrawer.open,

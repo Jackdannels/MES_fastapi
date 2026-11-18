@@ -1,6 +1,6 @@
 <template>
   <div class="transfer-area-screen" :class="{ 'is-embedded': embedded, 'is-terminal': terminal, 'is-pre-allocation': mode === 'pre-allocation', 'is-handover': mode === 'handover' }">
-    <header v-if="showModeHeader" class="page-header transfer-system-header">
+    <header v-if="showModeHeader" class="page-header transfer-system-header" :class="{ 'page-header--zoom': desktopZoomAvailable }">
       <div class="transfer-system-header__meta">
         <h1 v-app-icon="{ name: mode === 'handover' ? 'truck' : '' }" class="transfer-system-title">{{ modeConfig.headerTitle }}</h1>
       </div>
@@ -38,6 +38,8 @@
         >
           出错样品处理
         </button>
+        <DesktopZoomControls />
+        <button v-if="desktopZoomAvailable" v-app-icon="{ name: 'refresh', placement: 'button' }" class="action-btn secondary" type="button" :disabled="storageOperationPending" @click="refreshPage">刷新</button>
         <button v-app-icon="{ name: desktopCloseAvailable ? 'close' : mode === 'handover' ? 'logout' : '', placement: 'button' }" class="action-btn secondary" data-testid="handover-logout" type="button" :disabled="storageOperationPending" @click="handleLogout">{{ desktopCloseAvailable ? "关闭" : "退出登录" }}</button>
       </div>
     </header>
@@ -587,6 +589,8 @@ import { vAppIcon } from "@/directives/appIcon";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
+import DesktopZoomControls from "@/components/shared/DesktopZoomControls.vue";
+import { isDesktopZoomAvailable } from "@/lib/desktopZoom";
 import AppIcon from "@/components/shared/AppIcon.vue";
 import AppNumberInput from "@/components/shared/AppNumberInput.vue";
 import AppPagination from "@/components/shared/AppPagination.vue";
@@ -613,6 +617,9 @@ import {
   resolveOverviewSampleCodes,
   visibleOverviewSampleCodes,
 } from "./model";
+
+const desktopZoomAvailable = isDesktopZoomAvailable();
+const refreshPage = () => window.location.reload();
 
 const props = defineProps({
   embedded: {

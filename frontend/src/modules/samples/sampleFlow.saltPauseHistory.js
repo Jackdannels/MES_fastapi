@@ -36,6 +36,18 @@ function presentSaltSprayPauseHistory(flow, input = {}) {
       || (prefix ? text(step.key).startsWith(prefix) : ["sent_to_staging", "arrived_staging"].includes(step.key)));
   const cutoff = at(context.pause.paused_at || context.pause.pausedAt);
   const floor = Math.max(0, ...steps.slice(0, dispatchIndex).filter((step) => /(?:试验|实验)已完成$/.test(step.label)).map((step) => at(step.time)));
+  const routeBounds = [cutoff, at(context.run.started_at || context.run.startedAt)].filter(Boolean);
+  const originalRouteCutoff = routeBounds.length ? Math.min(...routeBounds) : 0;
+  let saltDispatchCutoff = 0;
+  const recordSaltDispatch = (time) => {
+    const timestamp = at(time);
+    if (timestamp > floor && (!originalRouteCutoff || timestamp <= originalRouteCutoff)) {
+      saltDispatchCutoff = Math.max(saltDispatchCutoff, timestamp);
+    }
+  };
+  // The displayed dispatch may be a later appearance return. Only the original
+  // pre-run dispatch can bound the staging history before this salt experiment.
+  recordSaltDispatch(steps[dispatchIndex].time);
   const evidence = new Map();
   const record = (label, time) => {
     if (!predecessorLabels.has(label)) return;
@@ -52,8 +64,13 @@ function presentSaltSprayPauseHistory(flow, input = {}) {
       if ((trayCode(entry) && trayCode(entry) !== tray)
         || (rows(entry.tray_codes).length && !entry.tray_codes.includes(tray))
         || !historyEntryAppliesToTray(entry, sample, tray)) continue;
-      for (const value of [entry.status, entry.action, entry.detail]) {
-        const label = normalizeHistoryFlowLabel(value, entry.location, { allowLocationFallback: false });
+      const values = [entry.status, entry.action, entry.detail];
+      const labels = values.map((value) => normalizeHistoryFlowLabel(value, entry.location, { allowLocationFallback: false }));
+      if ((labels.includes("送至实验室") && text(entry.location).includes("盐雾"))
+        || values.some((value) => text(value).includes("送至盐雾试验室"))) {
+        recordSaltDispatch(entry.time || entry.updated_at);
+      }
+      for (const label of labels) {
         record(label === "到货" && normalStaging(entry.location) ? "已到达暂存间" : label, entry.time || entry.updated_at);
       }
     }
@@ -63,15 +80,22 @@ function presentSaltSprayPauseHistory(flow, input = {}) {
     const time = event.time || event.updated_at;
     const location = text(event.location), status = text(event.status);
     if (location.includes("实验后") || status.includes("实验后")) continue;
+    if (text(event.action) === "stock_out" && (text(event.target_lab_code || event.targetLabCode) === "LAB_SALT"
+      || text(event.target_lab || event.targetLab).includes("盐雾"))) recordSaltDispatch(time);
     if (text(event.room) === "staging" && ["stock_in", "stock_out_withdraw"].includes(text(event.action))) record("已到达暂存间", time);
     if (text(event.action) === "stock_out" && normalStaging(event.target_lab || event.targetLab)) record("送至暂存间", time);
   }
+  const stagingCutoff = saltDispatchCutoff || originalRouteCutoff;
+  const stagingTimes = (label) => (evidence.get(label) || []).filter((time) => !time || !stagingCutoff || at(time) <= stagingCutoff);
+  const hasStagingArrival = stagingTimes("已到达暂存间").length > 0;
   return { ...flow, steps: steps.map((step, index) => {
     if (!isPredecessor(step, index)) return step;
-    const times = evidence.get(step.label);
-    const actualTimes = (times || []).filter(Boolean).sort((a, b) => at(a) - at(b));
+    const times = step.label === "到货" ? evidence.get(step.label) || [] : stagingTimes(step.label);
+    const actualTimes = times.filter(Boolean).sort((a, b) => at(a) - at(b));
     const time = (step.label === "到货" ? actualTimes[0] : actualTimes.at(-1)) || "";
-    return { ...step, active: false, reached: Boolean(times), time, inferred: Boolean(times) && !time };
+    // A real stock-in proves the preceding dispatch, without supplying its time.
+    const reached = times.length > 0 || (step.label === "送至暂存间" && hasStagingArrival);
+    return { ...step, active: false, reached, time, inferred: reached && !time };
   }) };
 }
 
