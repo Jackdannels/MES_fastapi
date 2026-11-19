@@ -581,6 +581,27 @@
   overflow-y: auto;
 }
 
+.modal-content.schedule-edit-modal-content {
+  width: min(760px, 92vw);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+
+.schedule-edit-form {
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+}
+
+.schedule-edit-form #schedule-edit-device:disabled {
+  background: var(--surface-disabled);
+  border-color: var(--border);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.schedule-edit-form .schedule-axis-chip:disabled {
+  opacity: 0.62;
+}
+
 .schedule-drag-preview dl {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -598,8 +619,7 @@
 }
 
 .gantt-wrap {
-  overflow: auto;
-  max-height: min(70vh, 760px);
+  overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
   background: var(--bg-card-raised);

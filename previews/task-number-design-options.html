@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>任务号显示方案</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: light-dark(#f2f5fb, #0b1218);
+      --paper: light-dark(#fff, #121e27);
+      --ink: light-dark(#172b4d, #edf5fa);
+      --muted: light-dark(#52647d, #a6b9c7);
+      --line: light-dark(#c9d8fb, #344b58);
+      --accent: light-dark(#1d4ed8, #78e9cb);
+      --chip: light-dark(#ecf2fd, #243746);
+      --chip-border: light-dark(#b8caed, #49687f);
+      --chip-ink: light-dark(#263f66, #e1effe);
+      --reached: light-dark(#e1f5e9, #112a24);
+      --reached-border: light-dark(#5bc385, #367c5b);
+      --reached-ink: light-dark(#176039, #a1deba);
+      --current: light-dark(#fcf1dc, #382816);
+      --current-border: light-dark(#dc9a32, #ad7732);
+      --current-ink: light-dark(#80440a, #ffda96);
+      --idle: light-dark(#eff4fc, #18252f);
+    }
+    :root:has(#dark:checked) { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--ink);
+      font: 14px/1.5 "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+    }
+    main { width: min(990px, 100%); margin: 0 auto; padding: clamp(16px, 4vw, 44px); }
+    .page-title {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 28px;
+    }
+    h1 { margin: 0; font-size: 24px; }
+    .appearance {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 5px 10px;
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--paper);
+    }
+    .appearance label { display: flex; align-items: center; gap: 4px; }
+    .appearance input { accent-color: var(--accent); }
+    .proposal + .proposal { margin-top: 22px; }
+    .proposal h2 { margin: 0 0 7px; font-size: 15px; }
+    .flow {
+      padding: 12px 14px 14px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--paper);
+    }
+    .flow-heading {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 3px 12px;
+      min-height: 30px;
+      margin-bottom: 7px;
+    }
+    .flow-heading h3 { margin: 0; font-size: 15px; }
+    .context { min-width: 0; color: var(--muted); font-size: 13px; }
+    .task-number {
+      display: inline-block;
+      max-width: 100%;
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+    .accent .task-number { color: var(--accent); }
+    .tag .task-number {
+      padding: 1px 7px;
+      border: 1px solid var(--chip-border);
+      border-radius: 5px;
+      background: var(--chip);
+      color: var(--chip-ink);
+      font-size: 14px;
+    }
+    .flow-status {
+      margin-inline-start: auto;
+      color: var(--current-ink);
+      font-size: 13px;
+    }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+      padding: 0;
+      margin: 0;
+      list-style: none;
+    }
+    .steps li {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 44px;
+      padding: 7px 9px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--idle);
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    .steps li::before {
+      content: "";
+      flex: 0 0 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .steps li:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 100%;
+      width: 10px;
+      border-top: 1px solid var(--line);
+    }
+    .steps .reached {
+      background: var(--reached);
+      border-color: var(--reached-border);
+      color: var(--reached-ink);
+    }
+    .steps [aria-current="step"] {
+      background: var(--current);
+      border-color: var(--current-border);
+      color: var(--current-ink);
+      font-weight: 700;
+    }
+    @media (max-width: 580px) {
+      .steps { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+      .steps li { min-height: 34px; }
+      .steps li:not(:last-child)::after { display: none; }
+    }
+    @media (max-width: 425px) {
+      .flow-status { margin-inline-start: 0; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="page-title">
+      <h1>任务号显示方案</h1>
+      <fieldset class="appearance" aria-label="预览主题">
+        <label><input type="radio" name="theme" checked> 浅色</label>
+        <label><input type="radio" name="theme" id="dark"> 深色</label>
+      </fieldset>
+    </header>
+
+    <section class="proposal" aria-labelledby="same-color">
+      <h2 id="same-color">同色粗体</h2>
+      <div class="flow">
+        <header class="flow-heading">
+          <h3>任务流程图</h3>
+          <span class="context">任务号 <span class="task-number">SYLUN-2026-11-011</span></span>
+          <strong class="flow-status">任务已完成</strong>
+        </header>
+        <ol class="steps" role="list">
+          <li class="reached">待排程</li>
+          <li class="reached">已排程</li>
+          <li class="reached">任务进行中</li>
+          <li aria-current="step">任务已完成</li>
+          <li>厂家收回</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="proposal accent" aria-labelledby="accent-color">
+      <h2 id="accent-color">强调色编号</h2>
+      <div class="flow">
+        <header class="flow-heading">
+          <h3>任务流程图</h3>
+          <span class="context">任务号 <span class="task-number">SYLUN-2026-11-011</span></span>
+          <strong class="flow-status">任务已完成</strong>
+        </header>
+        <ol class="steps" role="list">
+          <li class="reached">待排程</li>
+          <li class="reached">已排程</li>
+          <li class="reached">任务进行中</li>
+          <li aria-current="step">任务已完成</li>
+          <li>厂家收回</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="proposal tag" aria-labelledby="soft-tag">
+      <h2 id="soft-tag">浅底标签</h2>
+      <div class="flow">
+        <header class="flow-heading">
+          <h3>任务流程图</h3>
+          <span class="context">任务号 <span class="task-number">SYLUN-2026-11-011</span></span>
+          <strong class="flow-status">任务已完成</strong>
+        </header>
+        <ol class="steps" role="list">
+          <li class="reached">待排程</li>
+          <li class="reached">已排程</li>
+          <li class="reached">任务进行中</li>
+          <li aria-current="step">任务已完成</li>
+          <li>厂家收回</li>
+        </ol>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

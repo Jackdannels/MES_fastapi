@@ -226,11 +226,14 @@ const buildAxisExperimentLabel = (experimentLabel, axisCodes) => {
   return axisLabel ? `${normalizedLabel} ${axisLabel}`.trim() : normalizedLabel;
 };
 
-const scheduledAxisCodesForExperiment = ({ experimentCode, schedules }) => {
+const scheduledAxisCodesForExperiment = ({ experimentCode, schedules, taskCode = "", ignoreId = "" }) => {
   const normalizedExperimentCode = normalizeText(experimentCode);
   const seen = new Set();
   return (Array.isArray(schedules) ? schedules : [])
-    .filter((schedule) => !isRetentionDevice(schedule) && normalizeText(schedule?.experiment_code) === normalizedExperimentCode)
+    .filter((schedule) => !isRetentionDevice(schedule)
+      && normalizeText(schedule?.experiment_code) === normalizedExperimentCode
+      && (!taskCode || normalizeText(schedule?.task_code) === taskCode)
+      && (!ignoreId || normalizeText(schedule?.id) !== ignoreId))
     .flatMap((schedule) => normalizeAxisCodes(schedule?.axis_codes ?? schedule?.axisCodes))
     .filter((axisCode) => {
       if (!axisCode || seen.has(axisCode)) {
@@ -268,10 +271,7 @@ const completedAxisCodesForExperiment = ({ experimentCode, experimentRunSteps = 
     });
 };
 
-const resolveScheduledAxisSelection = ({ experimentCode, experiments = [], experimentRunSteps = [], form, schedules = [] }) => {
-  const explicitAxisCodes = normalizeAxisCodes(form?.axis_codes ?? form?.axisCodes);
-  const hasExplicitAxisSelection = explicitAxisCodes.length > 0;
-
+const resolveScheduleAxisAvailability = ({ experimentCode, experiments = [], experimentRunSteps = [], form, schedules = [], ignoreId = "" }) => {
   const normalizedTaskCode = normalizeText(form?.task_code);
   const normalizedExperimentCode = normalizeText(experimentCode ?? form?.experiment_code);
   const experiment = (Array.isArray(experiments) ? experiments : []).find(
@@ -280,29 +280,43 @@ const resolveScheduledAxisSelection = ({ experimentCode, experiments = [], exper
       (!normalizedTaskCode || normalizeText(entry?.task_code) === normalizedTaskCode),
   );
   if (!experiment || !experimentSupportsAxisScheduling(experiment)) {
-    return { axisCodes: [] };
+    return { supportsAxes: false, required: [], available: [] };
   }
   const axisCodes = resolveExperimentAxisCodes(experiment);
-  if (axisCodes.length === 0) {
-    return { axisCodes: [], error: "当前实验缺少任务下发的轴向信息" };
-  }
   const completedAxisCodes = completedAxisCodesForExperiment({
     experimentCode: normalizedExperimentCode,
     experimentRunSteps,
     taskCode: normalizedTaskCode,
   });
   const unavailableAxisCodes = new Set([
-    ...scheduledAxisCodesForExperiment({ experimentCode: normalizedExperimentCode, schedules }),
+    ...scheduledAxisCodesForExperiment({
+      experimentCode: normalizedExperimentCode, schedules, taskCode: normalizedTaskCode, ignoreId,
+    }),
     ...completedAxisCodes,
   ]);
-  const remainingAxisCodes = axisCodes.filter((axisCode) => !unavailableAxisCodes.has(axisCode));
+  return {
+    supportsAxes: true,
+    required: axisCodes,
+    available: axisCodes.filter((axisCode) => !unavailableAxisCodes.has(axisCode)),
+  };
+};
+
+const resolveScheduledAxisSelection = (options) => {
+  const { supportsAxes, required, available } = resolveScheduleAxisAvailability(options);
+  if (!supportsAxes) return { axisCodes: [] };
+  if (required.length === 0) return { axisCodes: [], error: "当前实验缺少任务下发的轴向信息" };
+  const explicitAxisCodes = normalizeAxisCodes(options.form?.axis_codes ?? options.form?.axisCodes);
+  const remainingAxisCodes = available;
   if (remainingAxisCodes.length === 0) {
     return { axisCodes: [], error: "当前实验的轴向已全部排程" };
   }
-  if (!hasExplicitAxisSelection) {
+  if (explicitAxisCodes.length === 0) {
     return { axisCodes: [], error: "请选择轴向" };
   }
   const selectedAxisCodes = explicitAxisCodes.filter((axisCode) => remainingAxisCodes.includes(axisCode));
+  if (options.ignoreId && selectedAxisCodes.length !== explicitAxisCodes.length) {
+    return { axisCodes: [], error: "所选轴向不在试验要求中、已完成或已排入其他批次" };
+  }
   if (selectedAxisCodes.length === 0) {
     return { axisCodes: [], error: "请选择轴向" };
   }
@@ -535,6 +549,7 @@ export {
   resolveMaintenanceConflictSlotMeta,
   resolveNextAxisBatchNo,
   resolveScheduleMaintenanceSlotMeta,
+  resolveScheduleAxisAvailability,
   resolveScheduledAxisSelection,
   resolveSubExperimentCode,
   resolveUnavailableSlotMeta,

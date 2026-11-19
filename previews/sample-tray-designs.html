@@ -1,0 +1,760 @@
+<style>
+  #mes-sample-designs [hidden] { display: none !important; }
+  #mes-sample-designs .mes-demo {
+    --canvas: light-dark(#edf3f5, #0e171d);
+    --sidebar: light-dark(#f6fafb, #101e26);
+    --surface: light-dark(#ffffff, #15232c);
+    --layer: light-dark(#f3f7f9, #1a2a34);
+    --line: light-dark(#d5e1e6, #2c424d);
+    --ink: light-dark(#14272e, #eef7fa);
+    --subtle: light-dark(#4e6872, #a8bdc7);
+    --accent: light-dark(#086756, #72e4c7);
+    --accent-soft: light-dark(#e3f4ef, #173e39);
+    --arrived: light-dark(#156548, #98e4b8);
+    --arrival-bg: light-dark(#e4f4eb, #1b3b2d);
+    --return: light-dark(#69429b, #dfc4ff);
+    --return-bg: light-dark(#f1e9f9, #342747);
+    --transit: light-dark(#795013, #ffd390);
+    --transit-bg: light-dark(#fff0d6, #402e1a);
+    display: grid;
+    grid-template-columns: 155px minmax(0, 1fr);
+    box-sizing: border-box;
+    min-height: 656px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--canvas);
+    color: var(--ink);
+    font: 13px/1.48 "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    font-synthesis: none;
+    overflow: clip;
+  }
+  #mes-sample-designs .mes-demo[data-layout="trays"] {
+    --canvas: light-dark(#f2efe9, #191715);
+    --sidebar: light-dark(#faf7f1, #231e19);
+    --surface: light-dark(#fffdf8, #24211d);
+    --layer: light-dark(#f5f1e8, #2c2822);
+    --line: light-dark(#e4dbcd, #443a2e);
+    --ink: light-dark(#2f2419, #faefe0);
+    --subtle: light-dark(#65584b, #c9b9a6);
+    --accent: light-dark(#875013, #f9c181);
+    --accent-soft: light-dark(#faead2, #46311e);
+  }
+  #mes-sample-designs .mes-demo[data-layout="inspector"] {
+    --canvas: light-dark(#eef1f8, #121827);
+    --sidebar: light-dark(#f7f8fd, #171f32);
+    --surface: light-dark(#ffffff, #1b2539);
+    --layer: light-dark(#f1f3fb, #222e47);
+    --line: light-dark(#dbe2f0, #354461);
+    --ink: light-dark(#202c4c, #eff3ff);
+    --subtle: light-dark(#576785, #afbedb);
+    --accent: light-dark(#344bb3, #bed0ff);
+    --accent-soft: light-dark(#e9eeff, #283962);
+  }
+  #mes-sample-designs .mes-demo *, #mes-sample-designs .mes-demo *::after,
+  #mes-sample-designs .mes-demo *::before { box-sizing: border-box; }
+  #mes-sample-designs .mes-demo h2, #mes-sample-designs .mes-demo h3,
+  #mes-sample-designs .mes-demo h4, #mes-sample-designs .mes-demo p,
+  #mes-sample-designs .mes-demo dl, #mes-sample-designs .mes-demo dd { margin: 0; }
+  #mes-sample-designs .mes-demo button, #mes-sample-designs .mes-demo input,
+  #mes-sample-designs .mes-demo select { font: inherit; color: inherit; }
+  #mes-sample-designs .mes-demo button { cursor: pointer; }
+  #mes-sample-designs .mes-demo button:disabled { cursor: default; opacity: .55; }
+  #mes-sample-designs .mes-demo :is(button, input, select):focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  #mes-sample-designs .mes-demo :is(.sidebar, .workspace, .panel, .toolbar, .split, .split > *) { min-width: 0; }
+  #mes-sample-designs .mes-demo .sidebar {
+    display: flex; flex-direction: column; gap: 20px; padding: 19px 10px 14px;
+    background: var(--sidebar); border-right: 1px solid var(--line);
+  }
+  #mes-sample-designs .mes-demo .brand { display: flex; align-items: center; gap: 7px; margin: 0 3px; }
+  #mes-sample-designs .mes-demo .brand-mark {
+    display: grid; place-items: center; flex: 0 0 28px; height: 28px;
+    color: var(--accent); background: var(--accent-soft); border-radius: 7px;
+  }
+  #mes-sample-designs .mes-demo .brand-name { display: block; font-size: 13px; font-weight: 700; }
+  #mes-sample-designs .mes-demo .brand-area { display: block; color: var(--subtle); font-size: 10px; }
+  #mes-sample-designs .mes-demo .brand-fallback { position: absolute; font-size: 13px; font-weight: 700; }
+  #mes-sample-designs .mes-demo .brand-mark:has(svg) .brand-fallback { display: none; }
+  #mes-sample-designs .mes-demo .navlist { list-style: none; display: grid; gap: 2px; margin: 0; padding: 0; }
+  #mes-sample-designs .mes-demo .navitem {
+    display: flex; align-items: center; gap: 7px; min-height: 33px; padding: 5px 7px;
+    border-radius: 6px; color: var(--subtle); font-size: 11px;
+  }
+  #mes-sample-designs .mes-demo .navitem[aria-current="page"] {
+    color: var(--accent); background: var(--accent-soft); font-weight: 700;
+  }
+  #mes-sample-designs .mes-demo [data-lucide] { width: 14px; height: 14px; flex: 0 0 14px; }
+  #mes-sample-designs .mes-demo .connections {
+    padding: 10px 5px 0; border-top: 1px solid var(--line); margin-top: auto;
+    display: grid; gap: 6px; font-size: 11px; color: var(--subtle);
+  }
+  #mes-sample-designs .mes-demo .connection { display: flex; justify-content: space-between; gap: 4px; }
+  #mes-sample-designs .mes-demo .online { color: var(--arrived); white-space: nowrap; }
+  #mes-sample-designs .mes-demo .online::before, #mes-sample-designs .mes-demo .state::before {
+    content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    margin-right: 5px; vertical-align: .12em; background: currentColor;
+  }
+  #mes-sample-designs .mes-demo .workspace { padding: 18px; }
+  #mes-sample-designs .mes-demo .titlebar {
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px;
+  }
+  #mes-sample-designs .mes-demo h2 { font-size: 24px; letter-spacing: -.02em; font-weight: 700; }
+  #mes-sample-designs .mes-demo h3 { font-size: 15px; font-weight: 700; }
+  #mes-sample-designs .mes-demo h4 { font-size: 13px; font-weight: 700; }
+  #mes-sample-designs .mes-demo .demo-label { color: var(--subtle); font-size: 11px; }
+  #mes-sample-designs .mes-demo .views {
+    display: flex; flex-wrap: wrap; gap: 4px 10px; border-bottom: 1px solid var(--line); margin-bottom: 12px;
+  }
+  #mes-sample-designs .mes-demo .view {
+    border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    background: transparent; min-height: 36px; padding: 6px 8px; color: var(--subtle);
+  }
+  #mes-sample-designs .mes-demo .view[aria-pressed="true"] {
+    color: var(--accent); border-bottom-color: var(--accent); font-weight: 700;
+  }
+  #mes-sample-designs .mes-demo .panel {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 9px;
+  }
+  #mes-sample-designs .mes-demo .toolbar {
+    display: flex; flex-wrap: wrap; align-items: end; gap: 8px; padding: 10px 12px 11px;
+  }
+  #mes-sample-designs .mes-demo .filter { min-width: 0; display: grid; gap: 4px; color: var(--subtle); font-size: 11px; }
+  #mes-sample-designs .mes-demo .search-field { flex: 1 1 155px; }
+  #mes-sample-designs .mes-demo :is(.field, .control) {
+    padding: 5px 8px; min-height: 34px; max-width: 100%; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 6px; font-size: 12px;
+  }
+  #mes-sample-designs .mes-demo .field { color: var(--ink); }
+  #mes-sample-designs .mes-demo .field::placeholder { color: var(--subtle); opacity: 1; }
+  #mes-sample-designs .mes-demo .control { white-space: nowrap; }
+  #mes-sample-designs .mes-demo .control:hover:not(:disabled) { background: var(--layer); }
+  #mes-sample-designs .mes-demo .small-controls { display: flex; flex-wrap: wrap; gap: 6px; }
+  #mes-sample-designs .mes-demo .status-strip { padding: 0 12px 11px; display: flex; gap: 6px; flex-wrap: wrap; }
+  #mes-sample-designs .mes-demo .status-filter[aria-pressed="true"] {
+    color: var(--accent); background: var(--accent-soft); border-color: var(--accent); font-weight: 650;
+  }
+  #mes-sample-designs .mes-demo .status-filter { min-height: 30px; }
+  #mes-sample-designs .mes-demo .table-shell { overflow-x: auto; }
+  #mes-sample-designs .mes-demo table { width: 100%; border-collapse: collapse; }
+  #mes-sample-designs .mes-demo :is(th, td) {
+    text-align: left; padding: var(--row-pad, 8px) 9px;
+    border-bottom: 1px solid var(--line); vertical-align: middle;
+  }
+  #mes-sample-designs .mes-demo th {
+    background: var(--layer); color: var(--subtle); font-size: 11px; font-weight: 650; white-space: nowrap;
+  }
+  #mes-sample-designs .mes-demo .sort {
+    background: transparent; border: 0; padding: 0; color: inherit; min-height: 20px;
+  }
+  #mes-sample-designs .mes-demo .sort-symbol { margin-left: 3px; }
+  #mes-sample-designs .mes-demo .id {
+    font: 11.5px/1.5 "Cascadia Mono", Consolas, ui-monospace, monospace; overflow-wrap: anywhere;
+  }
+  #mes-sample-designs .mes-demo .primary-id { font-weight: 700; }
+  #mes-sample-designs .mes-demo .muted { color: var(--subtle); }
+  #mes-sample-designs .mes-demo .location { white-space: nowrap; font-size: 12px; }
+  #mes-sample-designs .mes-demo .state {
+    display: inline-block; padding: 3px 7px; border-radius: 999px; white-space: nowrap;
+    font-size: 11px; font-weight: 650;
+  }
+  #mes-sample-designs .mes-demo .returned { color: var(--return); background: var(--return-bg); }
+  #mes-sample-designs .mes-demo .arrived { color: var(--arrived); background: var(--arrival-bg); }
+  #mes-sample-designs .mes-demo .transit { color: var(--transit); background: var(--transit-bg); }
+  #mes-sample-designs .mes-demo .text-action {
+    border: 0; padding: 4px 2px; min-height: 25px; background: transparent;
+    color: var(--accent); white-space: nowrap; font-weight: 650; font-size: 12px;
+  }
+  #mes-sample-designs .mes-demo .text-action:hover { text-decoration: underline; text-underline-offset: 3px; }
+  #mes-sample-designs .mes-demo .result-footer {
+    min-height: 47px; padding: 6px 12px; display: flex; gap: 7px;
+    justify-content: space-between; align-items: center; flex-wrap: wrap; font-size: 11px; color: var(--subtle);
+  }
+  #mes-sample-designs .mes-demo .pagination { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  #mes-sample-designs .mes-demo .pagination .control { min-height: 28px; font-size: 11px; }
+  #mes-sample-designs .mes-demo .panel-head {
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 7px;
+    padding: 12px; border-bottom: 1px solid var(--line);
+  }
+  #mes-sample-designs .mes-demo .panel-head p { margin-top: 2px; font-size: 11px; color: var(--subtle); }
+  #mes-sample-designs .mes-demo .split { display: grid; gap: 10px; align-items: start; }
+  #mes-sample-designs .mes-demo[data-layout="trays"] .split {
+    grid-template-columns: minmax(155px, var(--tray-size, 32%)) minmax(0, 1fr);
+  }
+  #mes-sample-designs .mes-demo[data-layout="inspector"] .split {
+    grid-template-columns: minmax(0, 1fr) minmax(212px, var(--inspector-size, 41%));
+  }
+  #mes-sample-designs .mes-demo .tray-flow {
+    container-type: inline-size;
+    padding: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  #mes-sample-designs .mes-demo .tray-flow-head,
+  #mes-sample-designs .mes-demo .tray-flow-title {
+    display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px 8px;
+  }
+  #mes-sample-designs .mes-demo .tray-flow-head { justify-content: space-between; }
+  #mes-sample-designs .mes-demo .tray-flow-context { color: var(--subtle); font-size: 11px; }
+  #mes-sample-designs .mes-demo .tray-flow-context strong { color: var(--ink); }
+  #mes-sample-designs .mes-demo .tray-flow-steps {
+    display: flex; margin: 11px 0 0; padding: 0; list-style: none;
+  }
+  #mes-sample-designs .mes-demo .tray-flow-step {
+    flex: 1 1 0; min-width: 0; position: relative;
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    padding-inline: 2px; text-align: center; color: var(--subtle); font-size: 11px;
+  }
+  #mes-sample-designs .mes-demo .tray-flow-dot {
+    display: grid; place-items: center; width: 15px; height: 15px;
+    border-radius: 50%; border: 1px solid var(--subtle); background: var(--surface);
+  }
+  #mes-sample-designs .mes-demo .tray-flow-step:not(:last-child)::after,
+  #mes-sample-designs .mes-demo .tray-flow-step:not(:last-child)::before {
+    content: ""; position: absolute; pointer-events: none;
+  }
+  #mes-sample-designs .mes-demo .tray-flow-step:not(:last-child)::after {
+    top: 7px; left: calc(50% + 12px); width: calc(100% - 24px); border-top: 1px solid var(--line);
+  }
+  #mes-sample-designs .mes-demo .tray-flow-step:not(:last-child)::before {
+    top: 5px; left: calc(150% - 17px); width: 5px; height: 5px;
+    border-top: 1px solid var(--subtle); border-right: 1px solid var(--subtle); transform: rotate(45deg);
+  }
+  #mes-sample-designs .mes-demo .tray-flow-step[aria-current="step"] {
+    color: var(--accent); font-weight: 700;
+  }
+  #mes-sample-designs .mes-demo .tray-flow-step[aria-current="step"] .tray-flow-dot {
+    border-color: var(--accent); background: var(--accent-soft);
+  }
+  #mes-sample-designs .mes-demo .tray-flow-step[aria-current="step"] .tray-flow-dot::after {
+    content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+  }
+  #mes-sample-designs .mes-demo .tray-flow-current {
+    padding: 1px 5px; border-radius: 4px; background: var(--accent-soft); font-size: 11px;
+  }
+  @container (max-width: 345px) {
+    #mes-sample-designs .mes-demo .tray-flow-steps { flex-direction: column; gap: 4px; }
+    #mes-sample-designs .mes-demo .tray-flow-step {
+      flex: none; flex-direction: row; gap: 8px; min-height: 25px; padding-inline: 0; text-align: left;
+    }
+    #mes-sample-designs .mes-demo .tray-flow-step:not(:last-child)::after {
+      top: calc(50% + 9px); left: 7px; width: 0; height: 11px;
+      border-top: 0; border-left: 1px solid var(--line);
+    }
+    #mes-sample-designs .mes-demo .tray-flow-step:not(:last-child)::before {
+      top: calc(50% + 14px); left: 5px; transform: rotate(135deg);
+    }
+  }
+  #mes-sample-designs .mes-demo .catalog {
+    display: grid; gap: 7px; padding: 10px;
+    max-block-size: 309px; overflow-y: auto; scrollbar-gutter: stable;
+  }
+  #mes-sample-designs .mes-demo .tray-samples {
+    --sample-header-height: 36px;
+    --sample-row-height: 44px;
+    max-block-size: calc(var(--sample-header-height) + 5 * var(--sample-row-height));
+    overflow-y: auto; scrollbar-gutter: stable;
+    scroll-snap-type: y mandatory; scroll-padding-block-start: var(--sample-header-height);
+  }
+  #mes-sample-designs .mes-demo .tray-samples table {
+    border-collapse: separate; border-spacing: 0;
+  }
+  #mes-sample-designs .mes-demo .tray-samples th {
+    height: var(--sample-header-height); padding-block: 0;
+    position: sticky; top: 0; z-index: 1;
+  }
+  #mes-sample-designs .mes-demo .tray-samples td {
+    height: var(--sample-row-height); padding-block: 3px;
+  }
+  #mes-sample-designs .mes-demo .tray-samples tbody tr { scroll-snap-align: start; }
+  #mes-sample-designs .mes-demo .tray-samples tr:last-child td { border-bottom: 0; }
+  #mes-sample-designs .mes-demo .tray-choice {
+    display: grid; gap: 3px; position: relative; min-width: 0; min-height: 67px; padding: 8px 9px;
+    text-align: left; border: 1px solid var(--line); border-radius: 7px; background: var(--layer);
+  }
+  #mes-sample-designs .mes-demo :is(.tray-choice,.sample-choice):hover { background: var(--accent-soft); }
+  #mes-sample-designs .mes-demo .tray-choice[aria-pressed="true"] {
+    background: var(--accent-soft); border-color: var(--accent);
+  }
+  #mes-sample-designs .mes-demo .tray-choice b { color: var(--accent); font-size: 13px; }
+  #mes-sample-designs .mes-demo .tray-title { display: flex; align-items: center; justify-content: space-between; gap: 5px; }
+  #mes-sample-designs .mes-demo .tray-count { white-space: nowrap; color: var(--subtle); font-size: 11px; }
+  #mes-sample-designs .mes-demo .tray-meta { color: var(--subtle); font-size: 11px; }
+  #mes-sample-designs .mes-demo .record-list { list-style: none; margin: 0; padding: 0; }
+  #mes-sample-designs .mes-demo .record-picker { display: none; }
+  #mes-sample-designs .mes-demo .record-list li + li { border-top: 1px solid var(--line); }
+  #mes-sample-designs .mes-demo .sample-choice {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 7px;
+    width: 100%; text-align: left; min-height: 45px; padding: 5px 10px 5px 9px;
+    background: transparent; border: 0; border-left: 3px solid transparent;
+  }
+  #mes-sample-designs .mes-demo .sample-choice[aria-pressed="true"] {
+    background: var(--accent-soft); border-left-color: var(--accent);
+  }
+  #mes-sample-designs .mes-demo .sample-choice:focus-visible { outline-offset: -3px; }
+  #mes-sample-designs .mes-demo .record-id { display: grid; gap: 0; }
+  #mes-sample-designs .mes-demo .record-id .primary-id { font-size: 12px; }
+  #mes-sample-designs .mes-demo .record-id .id:not(.primary-id) { font-size: 10px; color: var(--subtle); }
+  #mes-sample-designs .mes-demo .inspect-body { padding: 13px; }
+  #mes-sample-designs .mes-demo .detail-id { display: block; font-size: 13px; margin: 3px 0 9px; }
+  #mes-sample-designs .mes-demo .facts { display: grid; gap: 9px; }
+  #mes-sample-designs .mes-demo .facts > div { padding-top: 8px; border-top: 1px solid var(--line); }
+  #mes-sample-designs .mes-demo .facts dt { color: var(--subtle); font-size: 11px; }
+  #mes-sample-designs .mes-demo .facts dd { margin-top: 2px; overflow-wrap: anywhere; }
+  #mes-sample-designs .mes-demo .inspect-body .facts { margin-top: 13px; }
+  #mes-sample-designs .mes-demo .empty { padding: 23px 12px; text-align: center; color: var(--subtle); }
+  #mes-sample-designs .mes-demo dialog {
+    width: min(375px, calc(100% - 24px)); max-height: calc(100% - 24px); padding: 0;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 9px;
+  }
+  #mes-sample-designs .mes-demo dialog::backdrop { background: rgb(17 24 38 / .52); }
+  #mes-sample-designs .mes-demo .context-list { margin: 7px 0 0; padding-left: 17px; }
+  #mes-sample-designs .mes-demo .sr {
+    position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden;
+    white-space: nowrap; clip-path: inset(50%);
+  }
+  @media (max-width: 850px) {
+    #mes-sample-designs .mes-demo { grid-template-columns: 128px minmax(0, 1fr); min-height: 676px; }
+    #mes-sample-designs .mes-demo .workspace { padding: 13px; }
+    #mes-sample-designs .mes-demo .sidebar { padding-inline: 7px; }
+    #mes-sample-designs .mes-demo :is(th, td) { padding-inline: 6px; }
+    #mes-sample-designs .mes-demo .full-table .task-cell { display: none; }
+  }
+  @media (max-width: 700px) {
+    #mes-sample-designs .mes-demo { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+    #mes-sample-designs .mes-demo .sidebar {
+      flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap;
+      gap: 5px 10px; padding: 9px 12px; border-right: 0; border-bottom: 1px solid var(--line);
+    }
+    #mes-sample-designs .mes-demo .navlist { display: none; }
+    #mes-sample-designs .mes-demo .connections { display: none; }
+  }
+  @media (max-width: 600px) {
+    #mes-sample-designs .mes-demo { min-height: 700px; }
+    #mes-sample-designs .mes-demo .full-table .secondary-cell { display: none; }
+  }
+  @media (max-width: 540px) {
+    #mes-sample-designs .mes-demo { min-height: 836px; }
+    #mes-sample-designs .mes-demo h2 { font-size: 20px; }
+    #mes-sample-designs .mes-demo .workspace { padding: 10px; }
+    #mes-sample-designs .mes-demo[data-layout] .split { grid-template-columns: minmax(0, 1fr); }
+    #mes-sample-designs .mes-demo .toolbar { padding-inline: 8px; }
+    #mes-sample-designs .mes-demo .filter { flex: 1 1 100px; }
+    #mes-sample-designs .mes-demo .search-field { flex-basis: 100%; }
+    #mes-sample-designs .mes-demo th { white-space: normal; }
+    #mes-sample-designs .mes-demo .state { white-space: normal; }
+    #mes-sample-designs .mes-demo .catalog {
+      grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); max-block-size: 161px;
+    }
+    #mes-sample-designs .mes-demo .tray-location { display: none; }
+    #mes-sample-designs .mes-demo .record-list { display: none; }
+    #mes-sample-designs .mes-demo .record-picker { display: grid; padding: 9px; }
+  }
+  @media (pointer: coarse) {
+    #mes-sample-designs .mes-demo .tray-samples { --sample-row-height: 52px; }
+    #mes-sample-designs .mes-demo :is(button, .field) { min-height: 44px; }
+    #mes-sample-designs .mes-demo .field { font-size: 16px; }
+  }
+</style>
+
+<div id="mes-sample-designs" class="viz-carousel" aria-label="样品与托盘页面设计" data-previous-label="上一版" data-next-label="下一版">
+  <section data-variant="紧凑查询台" aria-label="紧凑查询台"></section>
+  <section data-variant="托盘分组台" aria-label="托盘分组台" hidden></section>
+  <section data-variant="样品核对台" aria-label="样品核对台" hidden></section>
+</div>
+
+<script>
+(() => {
+  const root = document.getElementById('mes-sample-designs');
+  const prefix = 'SYLUN-2026-11';
+  const firstTask = prefix + '-001';
+  const secondTask = prefix + '-002';
+  const formatNumber = number => String(number).padStart(3, '0');
+  const trayCode = (task, number) => task + '-TP-' + formatNumber(number);
+  const traySamples = (task, trayNumber, sampleNumbers, status, location) =>
+    sampleNumbers.map(number => ({
+      task, tray: trayCode(task, trayNumber), sample: task + '-SP-' + formatNumber(number), status, location
+    }));
+  const unassignedSample = { task: secondTask, sample: secondTask + '-SP-001', tray: '', status: 'transit', location: '' };
+  const baseTraySamples = [
+    ...traySamples(firstTask, 1, [1, 2, 3, 4], 'returned', '厂家收回'),
+    ...traySamples(firstTask, 2, [5, 6, 7], 'arrived', '接驳区')
+  ];
+  const records = [...baseTraySamples, unassignedSample];
+  const additionalTrays = [3, 4, 5, 6, 7];
+  const groupedRecords = [
+    ...baseTraySamples,
+    ...traySamples(firstTask, 2, [8, 9, 10, 11], 'arrived', '接驳区'),
+    ...additionalTrays.flatMap((number, index) => traySamples(firstTask, number, [12 + index], 'arrived', '接驳区')),
+    ...traySamples(secondTask, 1, [2], 'arrived', '接驳区'),
+    unassignedSample
+  ];
+  const statuses = { arrived: '到货', transit: '样品运输中', returned: '厂家收回' };
+  const taskFlowStages = [
+    ['waiting', '待排程'],
+    ['scheduled', '已排程'],
+    ['running', '任务进行中'],
+    ['completed', '任务已完成'],
+    ['returned', '厂家收回']
+  ];
+  const taskFlowSnapshots = new Map([[firstTask, 'scheduled'], [secondTask, 'waiting']]);
+  const trayFlowStages = [
+    ['transit', '样品运输中'],
+    ['arrived', '到货'],
+    ['pre-storage', '实验前暂存'],
+    ['experiment', '实验室试验'],
+    ['post-storage', '实验后暂存'],
+    ['returned', '厂家收回']
+  ];
+  const arrivalSnapshot = { stage: 'arrived', location: '接驳区' };
+  const trayFlowSnapshots = new Map([
+    [trayCode(firstTask, 1), { stage: 'returned', location: '厂家收回' }],
+    ...[2, ...additionalTrays].map(number => [trayCode(firstTask, number), arrivalSnapshot]),
+    [trayCode(secondTask, 1), arrivalSnapshot]
+  ]);
+  const views = { samples: '样品流转', storage: '暂存间', trays: '托盘信息' };
+  const destinations = [
+    ['layout-dashboard', '中控总览'], ['clipboard-list', '任务受理'], ['layers', '任务/托盘总览'],
+    ['inbox', '样品预接驳'], ['calendar-days', '排程看板'], ['package-search', '样品/托盘信息'],
+    ['flask-conical', '试验过程管控'], ['cpu', '设备资源'], ['database', '试验数据'],
+    ['users', '人员信息'], ['history', '历史任务数据']
+  ];
+  const byKey = new Map(groupedRecords.map(record => [record.sample, record]));
+  const variants = ['table', 'trays', 'inspector'];
+  const icon = name => '<i data-lucide="' + name + '" aria-hidden="true"></i>';
+  const mono = (value, extra = '') => '<span class="id ' + extra + '">' + value + '</span>';
+  const stateBadge = status => '<span class="state ' + status + '">' + statuses[status] + '</span>';
+  const placeholder = text => '<p class="empty">' + text + '</p>';
+  const trayName = tray => tray ? tray.slice(-6) : '未关联托盘';
+  const locationName = location => location || '未记录';
+  const rowButton = (kind, key, readableKey) =>
+    '<button type="button" class="text-action" data-' + kind + '="' + key +
+    '" aria-label="查看 ' + readableKey + ' 详情">详情</button>';
+  const fact = (label, value) => '<div><dt>' + label + '</dt><dd>' + value + '</dd></div>';
+  const panelHead = (heading, context, action = '') =>
+    '<div class="panel-head"><div><h3>' + heading + '</h3>' +
+    (context ? '<p>' + context + '</p>' : '') + '</div>' + action + '</div>';
+  const option = (value, label) => '<option value="' + value + '">' + label + '</option>';
+  const trayGroups = (data, includeUnassigned) => {
+    const groups = new Map();
+    for (const sample of data) {
+      if (!sample.tray && !includeUnassigned) continue;
+      if (!groups.has(sample.tray)) groups.set(sample.tray, []);
+      groups.get(sample.tray).push(sample);
+    }
+    return Array.from(groups, ([tray, samples]) => ({ tray, samples }));
+  };
+  const sampleFacts = record =>
+    '<dl class="facts">' + fact('当前状态', stateBadge(record.status)) +
+    fact('当前位置', locationName(record.location)) + fact('任务编号', mono(record.task)) +
+    fact('托盘编号', record.tray ? mono(record.tray) : '未关联托盘') + '</dl>';
+  const tableHeading = (label, column, state, extra = '') => {
+    const direction = state.sort === column ? (state.desc ? 'descending' : 'ascending') : '';
+    return '<th scope="col" class="' + extra + '"' + (direction ? ' aria-sort="' + direction + '"' : '') + '>' +
+      '<button type="button" class="sort" data-sort="' + column + '">' + label +
+      '<span class="sort-symbol" aria-hidden="true">' + (direction ? (state.desc ? '↓' : '↑') : '↕') +
+      '</span></button></th>';
+  };
+  const toolbar = layout => {
+    const trayMode = layout === 'trays';
+    return '<div class="toolbar"><label class="filter search-field">关键词' +
+      '<input class="field" type="search" data-filter="query" placeholder="样品号、托盘号、任务号或位置"></label>' +
+      '<label class="filter">任务<select class="field" data-filter="task">' +
+      option('', '全部任务') + option(firstTask, firstTask) + option(secondTask, secondTask) +
+      '</select></label>' + (trayMode ? '' :
+        '<label class="filter">样品状态<select class="field" data-filter="status">' +
+        option('', '全部状态') + Object.entries(statuses).map(([key, value]) => option(key, value)).join('') +
+        '</select></label>') + '</div>' +
+      (trayMode ? '<div class="status-strip" aria-label="样品状态">' +
+        [['', '全部状态'], ...Object.entries(statuses)].map(([key, label]) =>
+          '<button type="button" class="control status-filter" data-status="' + key +
+          '" aria-pressed="' + (key === '') + '">' + label + '</button>').join('') + '</div>' : '');
+  };
+  const markup = (layout, label) => `
+    <div class="mes-demo" data-layout="${layout}" aria-label="${label}">
+      <aside class="sidebar" aria-label="中控系统">
+        <div class="brand">
+          <div class="brand-mark">${icon('boxes')}<span class="brand-fallback" aria-hidden="true">控</span></div>
+          <div><span class="brand-name">实验室中控</span><span class="brand-area">七二四新火工区</span></div>
+        </div>
+        <ul class="navlist">
+          ${destinations.map(([glyph, name]) => '<li class="navitem"' +
+            (name === '样品/托盘信息' ? ' aria-current="page"' : '') + '>' + icon(glyph) + name + '</li>').join('')}
+        </ul>
+        <div class="connections">
+          <div class="connection"><span>LIMS</span><span class="online">已连接</span></div>
+          <div class="connection"><span>上位机系统</span><span class="online">已连接</span></div>
+        </div>
+      </aside>
+      <div class="workspace">
+        <div class="titlebar"><h2>样品 / 托盘信息</h2><span class="demo-label">示例数据</span></div>
+        <nav class="views" aria-label="页面视图">
+          ${Object.entries(views).map(([key, text]) =>
+            '<button type="button" class="view" data-view="' + key + '" aria-pressed="' +
+            (key === 'samples') + '">' + text + '</button>').join('')}
+        </nav>
+        <div class="panel" data-toolbar>${toolbar(layout)}</div>
+        <div data-content style="margin-top:10px"></div>
+        <p class="sr" data-announcement role="status"></p>
+      </div>
+      <dialog aria-label="记录详情">
+        <div class="panel-head"><h3 data-dialog-heading></h3>
+          <form method="dialog"><button type="submit" class="control" autofocus>关闭</button></form>
+        </div>
+        <div class="inspect-body" data-dialog-body></div>
+      </dialog>
+    </div>`;
+
+  function mount(section, layout) {
+    section.innerHTML = markup(layout, section.dataset.variant);
+    const demo = section.querySelector('.mes-demo');
+    const filters = demo.querySelector('[data-toolbar]');
+    const content = demo.querySelector('[data-content]');
+    const dialog = demo.querySelector('dialog');
+    const announcement = demo.querySelector('[data-announcement]');
+    const state = {
+      view: 'samples', query: '', task: '', status: '', sort: 'sample', desc: false,
+      page: 1, pageSize: 8, tray: firstTask + '-TP-002', sample: records[2].sample
+    };
+    const design = { rowPadding: 8, trayWidth: 32, inspectorWidth: 41 };
+
+    function getMatches() {
+      const query = state.query.trim().toUpperCase();
+      const data = layout === 'trays' ? groupedRecords : records;
+      return data.filter(record =>
+        (!state.task || record.task === state.task) && (!state.status || record.status === state.status) &&
+        (!query || [record.sample, record.task, record.tray, record.location, statuses[record.status]]
+          .some(field => field.toUpperCase().includes(query))));
+    }
+
+    function renderTable(data) {
+      const trayView = state.view === 'trays';
+      const list = trayView ? trayGroups(data, false) : data.slice();
+      const labels = { sample: '样品编号', tray: '托盘编号', task: '任务编号', location: '当前位置', status: '状态' };
+      const currentSort = trayView ? 'tray' : state.sort;
+      const sortKey = record => record[currentSort] || '';
+      list.sort((left, right) =>
+        (state.desc ? -1 : 1) * sortKey(left).localeCompare(sortKey(right), 'zh-CN'));
+      const pages = Math.max(1, Math.ceil(list.length / state.pageSize));
+      state.page = Math.min(state.page, pages);
+      const from = (state.page - 1) * state.pageSize;
+      const shown = list.slice(from, from + state.pageSize);
+      const resultLabel = list.length + (trayView ? ' 个托盘' : ' 条样品');
+      const headings = trayView
+        ? tableHeading(labels.tray, 'tray', { ...state, sort: currentSort }) + '<th scope="col">关联样品</th>'
+        : tableHeading(labels.sample, 'sample', state) + tableHeading(labels.task, 'task', state, 'task-cell secondary-cell') +
+          tableHeading(labels.tray, 'tray', state, 'secondary-cell') +
+          tableHeading(labels.location, 'location', state, 'secondary-cell') + tableHeading(labels.status, 'status', state);
+      const rows = shown.map(row => trayView
+        ? '<tr><td>' + mono(row.tray, 'primary-id') + '</td><td>' + row.samples.length + ' 件</td><td>' +
+          rowButton('tray-detail', row.tray, row.tray) + '</td></tr>'
+        : '<tr><td>' + mono(row.sample, 'primary-id') + '</td><td class="task-cell secondary-cell">' + mono(row.task) +
+          '</td><td class="secondary-cell">' + (row.tray ? mono(row.tray) : '<span class="muted">未关联</span>') +
+          '</td><td class="location secondary-cell">' + locationName(row.location) +
+          '</td><td>' + stateBadge(row.status) + '</td><td>' +
+          rowButton('sample-detail', row.sample, row.sample) + '</td></tr>');
+      return '<section class="panel" aria-label="' + views[state.view] + '">' +
+        (rows.length ? '<div class="table-shell"><table class="full-table"><thead><tr>' + headings +
+          '<th scope="col">操作</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>'
+          : placeholder('没有匹配的' + (trayView ? '托盘' : '样品'))) +
+        '<div class="result-footer"><span>共 ' + resultLabel + '</span>' +
+        '<div class="pagination"><label><span class="sr">每页条数</span><select class="control" data-page-size>' +
+        [4, 8].map(size => '<option value="' + size + '"' + (size === state.pageSize ? ' selected' : '') +
+          '>每页 ' + size + ' 条</option>').join('') + '</select></label>' +
+        '<button type="button" class="control" data-page="-1"' + (state.page === 1 ? ' disabled' : '') +
+        ' aria-label="上一页">‹</button><span>第 ' + state.page + ' / ' + pages + ' 页</span>' +
+        '<button type="button" class="control" data-page="1"' + (state.page === pages ? ' disabled' : '') +
+        ' aria-label="下一页">›</button></div></div></section>';
+    }
+
+    function renderFlow(title, caption, stages, activeStage) {
+      const steps = stages.map(([key, label]) => {
+        const current = key === activeStage;
+        return '<li class="tray-flow-step"' + (current ? ' aria-current="step"' : '') + '>' +
+          '<span class="tray-flow-dot" aria-hidden="true"></span><span>' + label + '</span>' +
+          (current ? '<span class="tray-flow-current">当前</span>' : '') + '</li>';
+      }).join('');
+      return '<section class="tray-flow" aria-label="' + title + '">' +
+        '<div class="tray-flow-head"><div class="tray-flow-title"><h4>' + title + '</h4>' +
+        '<span class="tray-flow-context">流程示意</span></div>' +
+        '<span class="tray-flow-context">' + caption + '</span></div>' +
+        '<ol class="tray-flow-steps">' + steps + '</ol></section>';
+    }
+
+    function renderTrays(data) {
+      const groups = trayGroups(data, state.view !== 'trays');
+      if (!groups.length) return '<section class="panel">' + placeholder('没有匹配的记录') + '</section>';
+      const selected = groups.find(group => group.tray === state.tray) || groups[0];
+      const task = selected.samples[0].task;
+      const taskFlow = renderFlow('任务流程图', '所属任务 ' + mono(task), taskFlowStages, taskFlowSnapshots.get(task));
+      const traySnapshot = trayFlowSnapshots.get(selected.tray);
+      const trayFlow = traySnapshot
+        ? renderFlow('托盘流程图', '当前位置 <strong>' + traySnapshot.location + '</strong>', trayFlowStages, traySnapshot.stage)
+        : '';
+      state.tray = selected.tray;
+      const catalog = groups.map(({ tray, samples }) => {
+        const caption = tray ? mono(samples[0].task) : '等待分配托盘';
+        return '<button type="button" class="tray-choice" data-tray="' + tray +
+          '" aria-pressed="' + (tray === state.tray) + '"><span class="tray-title"><b>' + trayName(tray) +
+          '</b><span class="tray-count">' + samples.length + ' 件</span></span><span class="tray-meta">' +
+          caption + '</span></button>';
+      }).join('');
+      const rows = selected.samples.map(record =>
+        '<tr><td>' + mono(record.sample, 'primary-id') + '</td><td class="location tray-location">' +
+        locationName(record.location) + '</td><td>' + stateBadge(record.status) + '</td><td>' +
+        rowButton('sample-detail', record.sample, record.sample) + '</td></tr>').join('');
+      return '<div class="split"><section class="panel">' +
+        panelHead('托盘分组', groups.filter(group => group.tray).length + ' 个托盘') +
+        '<div class="catalog" data-tray-scroll>' + catalog + '</div></section><section class="panel">' +
+        panelHead(selected.tray || '未关联托盘', '匹配样品 ' + selected.samples.length + ' 件') +
+        taskFlow + trayFlow +
+        '<div class="table-shell tray-samples" role="region" aria-label="关联样品">' +
+        '<table><thead><tr><th scope="col">样品编号</th><th scope="col" class="tray-location">位置</th>' +
+        '<th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody>' + rows +
+        '</tbody></table></div></section></div>';
+    }
+
+    function renderInspector(data) {
+      if (!data.length) return '<section class="panel">' + placeholder('没有匹配的样品') + '</section>';
+      const selected = data.find(record => record.sample === state.sample) || data[0];
+      state.sample = selected.sample;
+      const list = data.map(record =>
+        '<li><button type="button" class="sample-choice" data-sample="' + record.sample +
+        '" aria-pressed="' + (record === selected) + '" aria-label="' + record.sample + '，' +
+        statuses[record.status] + '"><span class="record-id">' + mono(record.sample.slice(-6), 'primary-id') +
+        mono(record.task) + '</span>' + stateBadge(record.status) + '</button></li>').join('');
+      const picker = '<label class="filter record-picker">查阅样品<select class="field id" data-record-picker>' +
+        data.map(record => '<option value="' + record.sample + '"' + (record === selected ? ' selected' : '') +
+          '>' + record.sample + '</option>').join('') + '</select></label>';
+      const navigation = '<div class="small-controls">' +
+        '<button type="button" class="control" data-step="-1" aria-label="上一条样品"' +
+        (data[0] === selected ? ' disabled' : '') + '>‹</button>' +
+        '<button type="button" class="control" data-step="1" aria-label="下一条样品"' +
+        (data.at(-1) === selected ? ' disabled' : '') + '>›</button></div>';
+      return '<div class="split"><section class="panel" aria-label="样品列表">' +
+        panelHead('样品列表', '共 ' + data.length + ' 条') + picker + '<ul class="record-list">' + list +
+        '</ul></section><section class="panel" aria-label="样品详情">' +
+        panelHead('样品详情', '第 ' + (data.indexOf(selected) + 1) + ' / ' + data.length + ' 条', navigation) +
+        '<div class="inspect-body"><h4>样品编号</h4>' + mono(selected.sample, 'primary-id detail-id') +
+        sampleFacts(selected) + '</div></section></div>';
+    }
+
+    function render(focusTarget = '', fallbackTarget = '[aria-pressed="true"]') {
+      const data = getMatches();
+      const trayScroll = content.querySelector('[data-tray-scroll]')?.scrollTop ?? 0;
+      filters.hidden = state.view === 'storage';
+      for (const button of demo.querySelectorAll('[data-view], [data-status]')) {
+        const selected = button.hasAttribute('data-view')
+          ? button.dataset.view === state.view : button.dataset.status === state.status;
+        button.setAttribute('aria-pressed', selected);
+      }
+      if (state.view === 'storage') {
+        content.innerHTML = '<section class="panel">' + panelHead('暂存间', '') + placeholder('示例中暂无暂存记录') + '</section>';
+      } else if (layout === 'trays') {
+        content.innerHTML = renderTrays(data);
+      } else if (layout === 'inspector' && state.view === 'samples') {
+        content.innerHTML = renderInspector(data);
+      } else {
+        content.innerHTML = renderTable(data);
+      }
+      const trayCatalog = content.querySelector('[data-tray-scroll]');
+      if (trayCatalog) trayCatalog.scrollTop = trayScroll;
+      announcement.textContent = state.view === 'storage' ? '示例中暂无暂存记录' :
+        state.view === 'trays' ? '匹配 ' + trayGroups(data, false).length + ' 个托盘' :
+        '匹配 ' + data.length + ' 条样品';
+      if (focusTarget) (content.querySelector(focusTarget) ||
+        content.querySelector(fallbackTarget) || demo.querySelector('[data-view][aria-pressed="true"]')).focus({ preventScroll: true });
+    }
+
+    function detail(kind, key) {
+      const heading = dialog.querySelector('[data-dialog-heading]');
+      const body = dialog.querySelector('[data-dialog-body]');
+      if (kind === 'sample') {
+        heading.textContent = '样品详情';
+        body.innerHTML = mono(key, 'primary-id detail-id') + sampleFacts(byKey.get(key));
+      } else {
+        heading.textContent = '托盘详情';
+        const samples = records.filter(record => record.tray === key);
+        body.innerHTML = mono(key, 'primary-id detail-id') + '<dl class="facts">' +
+          fact('任务编号', mono(samples[0].task)) + fact('关联样品', samples.length + ' 件') + '</dl>' +
+          '<ul class="context-list">' + samples.map(item => '<li>' + mono(item.sample) + '</li>').join('') + '</ul>';
+      }
+      dialog.showModal();
+    }
+
+    demo.addEventListener('input', event => {
+      const field = event.target.dataset.filter;
+      if (!field) return;
+      state[field] = event.target.value;
+      state.page = 1;
+      render();
+    });
+    demo.addEventListener('change', event => {
+      if (event.target.hasAttribute('data-record-picker')) {
+        state.sample = event.target.value;
+        return render('[data-record-picker]');
+      }
+      if (!event.target.hasAttribute('data-page-size')) return;
+      state.pageSize = Number(event.target.value);
+      state.page = 1;
+      render('[data-page-size]');
+    });
+    demo.addEventListener('click', event => {
+      const button = event.target.closest('button');
+      if (!button || dialog.contains(button)) return;
+      const action = button.dataset;
+      if (action.sampleDetail) return detail('sample', action.sampleDetail);
+      if (action.trayDetail) return detail('tray', action.trayDetail);
+      if (action.view) {
+        if (state.view === action.view) return;
+        state.view = action.view;
+        state.page = 1;
+        state.sort = action.view === 'trays' ? 'tray' : 'sample';
+        state.desc = false;
+        return render();
+      }
+      if (action.status !== undefined) {
+        state.status = action.status;
+        state.page = 1;
+        return render();
+      }
+      if (action.step) {
+        const matches = getMatches();
+        const position = matches.findIndex(record => record.sample === state.sample);
+        state.sample = matches[position + Number(action.step)].sample;
+        return render('[data-step="' + action.step + '"]:not(:disabled)', '[data-step]:not(:disabled)');
+      }
+      if (action.sort) {
+        state.desc = state.sort === action.sort && !state.desc;
+        state.sort = action.sort;
+        state.page = 1;
+      } else if (action.tray !== undefined) {
+        if (state.tray === action.tray) return;
+        state.tray = action.tray;
+      } else if (action.sample) {
+        state.sample = action.sample;
+      } else if (action.page) {
+        state.page += Number(action.page);
+        return render('[data-page="' + action.page + '"]:not(:disabled)', '[data-page]:not(:disabled)');
+      } else {
+        return;
+      }
+      const attribute = Object.keys(action)[0];
+      render('[data-' + attribute + '="' + action[attribute] + '"]');
+    });
+
+    render();
+    if (globalThis.Tweak) {
+      const tweak = new Tweak({ container: demo, onChange: () => {
+        demo.style.setProperty('--row-pad', design.rowPadding + 'px');
+        demo.style.setProperty('--tray-size', design.trayWidth + '%');
+        demo.style.setProperty('--inspector-size', design.inspectorWidth + '%');
+      } });
+      if (layout === 'table') tweak.addSlider(design, 'rowPadding', { label: '表格行内边距', min: 5, max: 12, unit: 'px' });
+      if (layout === 'trays') tweak.addSlider(design, 'trayWidth', { label: '托盘分组栏宽度', min: 28, max: 40, unit: '%' });
+      if (layout === 'inspector') tweak.addSlider(design, 'inspectorWidth', { label: '详情栏宽度', min: 36, max: 50, unit: '%' });
+    }
+  }
+
+  Array.from(root.children).forEach((section, index) => mount(section, variants[index]));
+})();
+</script>

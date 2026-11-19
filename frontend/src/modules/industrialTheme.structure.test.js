@@ -24,8 +24,8 @@ describe("industrial blackbox module theme coverage", () => {
     const process = readModuleStyle("src/modules/process/styles.css");
     const overview = readModuleStyle("src/modules/task-overview/styles.css");
 
-    expect(samples).toContain(".samples-wide-head");
-    expect(samples).toContain(".samples-module-card");
+    expect(samples).toContain(".samples-page-tabs");
+    expect(samples).toContain(".sample-group-choice");
     expect(samples).toContain(".sample-flow-card");
     expect(login).toContain(".login-card");
     expect(login).toContain(".login-submit");

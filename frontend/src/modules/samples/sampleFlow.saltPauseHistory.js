@@ -10,8 +10,8 @@ const trayCode = (row) => text(row?.tray_code || row?.trayCode || row?.tray_no);
 const normalStaging = (location) => text(location).includes("暂存间") && !text(location).includes("实验后");
 const predecessorLabels = new Set(["到货", "送至暂存间", "已到达暂存间"]);
 
-// A salt pause changes preparation inside the original experiment. It supplies
-// no evidence of an earlier staging visit. Both consumers use this projection.
+// Preserve the base flow's progress through optional staging. Attribute actual
+// timestamps only to matching records in the original transport segment.
 function presentSaltSprayPauseHistory(flow, input = {}) {
   const task = text(input.taskCode), tray = text(input.trayCode || flow.trayCode);
   const runs = rows(input.experimentRuns || input.experiment_runs);
@@ -90,11 +90,13 @@ function presentSaltSprayPauseHistory(flow, input = {}) {
   const hasStagingArrival = stagingTimes("已到达暂存间").length > 0;
   return { ...flow, steps: steps.map((step, index) => {
     if (!isPredecessor(step, index)) return step;
-    const times = step.label === "到货" ? evidence.get(step.label) || [] : stagingTimes(step.label);
+    const isIntakeArrival = step.label === "到货";
+    const times = isIntakeArrival ? evidence.get(step.label) || [] : stagingTimes(step.label);
     const actualTimes = times.filter(Boolean).sort((a, b) => at(a) - at(b));
-    const time = (step.label === "到货" ? actualTimes[0] : actualTimes.at(-1)) || "";
+    const time = (isIntakeArrival ? actualTimes[0] : actualTimes.at(-1)) || "";
     // A real stock-in proves the preceding dispatch, without supplying its time.
-    const reached = times.length > 0 || (step.label === "送至暂存间" && hasStagingArrival);
+    const reached = times.length > 0 || (!isIntakeArrival && step.reached)
+      || (step.label === "送至暂存间" && hasStagingArrival);
     return { ...step, active: false, reached, time, inferred: reached && !time };
   }) };
 }

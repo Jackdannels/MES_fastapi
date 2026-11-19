@@ -2,6 +2,7 @@ import { computed, nextTick, ref, watch } from "vue";
 
 import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { LAB_CODE_BY_NAME } from "@/lib/labs";
+import { resolveScheduleAxisAvailability } from "./scheduleFoundationModel";
 import {
   AXIS_CODE_OPTIONS,
   buildExperimentOptions,
@@ -100,6 +101,30 @@ function useScheduleFormState({
     .map((code) => normalizeText(code).toUpperCase())
     .filter(Boolean)
     .join(" / "));
+
+  const editAxisAvailability = computed(() => resolveScheduleAxisAvailability({
+    form: editForm.value,
+    experiments: rawExperiments.value,
+    experimentRunSteps: rawExperimentRunSteps.value,
+    schedules: activeSchedules.value,
+    ignoreId: editForm.value.id,
+  }));
+  const editAxisCodes = computed(() => normalizeAxisCodes(editForm.value.axis_codes));
+  const editAxisOptions = computed(() => normalizeAxisCodes([
+    ...editAxisAvailability.value.required,
+    ...editAxisCodes.value,
+  ]).map((code) => ({
+    ...buildScheduleAxisOption(code),
+    disabled: !editAxisAvailability.value.available.includes(code),
+  })));
+  const isEditAxisSelected = (code) => editAxisCodes.value.includes(code);
+  const toggleEditAxis = (code) => {
+    if (!editAxisAvailability.value.available.includes(code)) return;
+    editForm.value.axis_codes = isEditAxisSelected(code)
+      ? editAxisCodes.value.filter((axis) => axis !== code)
+      : normalizeAxisCodes([...editAxisCodes.value, code]);
+    editWarning.value = "";
+  };
 
   const findDevice = (deviceCode) => rawDevices.value.find(
     (entry) => normalizeText(entry?.code) === normalizeText(deviceCode),
@@ -449,6 +474,9 @@ function useScheduleFormState({
   );
 
   return {
+    editAxisOptions,
+    isEditAxisSelected,
+    toggleEditAxis,
     buildLabOptionItems,
     editCustomStartMinTime,
     editForm,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { buildTrayFlowView } from "./sampleFlow.trayFlowView";
 import { mount } from "@vue/test-utils";
-import TrayManagementPanel from "./TrayManagementPanel.vue";
+import TrayFlowDialog from "./TrayFlowDialog.vue";
 
 const taskCode = "SYLUN-2026-09-012", trayCode = `${taskCode}-TP-001`, moldCode = `${taskCode}-A`, otherCode = `${taskCode}-B`;
 const canceledAt = "2026-09-18 16:24:16";
@@ -120,13 +120,7 @@ describe("mold cancellation next-attempt route", () => {
 
   test("tray panel displays the fresh route without exposing old times", () => {
     const input = inputFor();
-    const wrapper = mount(TrayManagementPanel, { props: { samplesFlow: {
-      rawTasks: [{ code: taskCode, status: "待排程" }], rawSamples: input.samples,
-      rawExperiments: input.experiments, rawExperimentTrays: input.experimentTrays,
-      rawExperimentRuns: input.experimentRuns, rawExperimentRunTrays: input.experimentRunTrays,
-      rawSchedules: [], rawStagingEvents: [], trayStatusOptions: [], warning: "",
-      trayRows: [{ taskCode, trayCode, status: "实验已取消", sampleCount: 1, sampleCodes: [`${taskCode}-SP-001`] }],
-    } } });
+    const wrapper = mount(TrayFlowDialog, { props: { open: true, trayCode, flow: buildTrayFlowView(input) } });
     for (const label of ["待重新排程", ...preparation]) {
       const node = wrapper.findAll(".sample-flow-unified--timed li").find((entry) => entry.get(".sample-flow-label").text() === label);
       expect(node).toBeDefined();

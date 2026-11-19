@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>托盘分组底色方案</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: light-dark(#f2f5fb, #0b1218);
+      --surface: light-dark(#ffffff, #121e27);
+      --text: light-dark(#172b4d, #edf5fa);
+      --muted: light-dark(#52647d, #a6b9c7);
+      --line: light-dark(#d2dfff, #344b58);
+      --focus: light-dark(#2563eb, #78e9cb);
+      --selected-border: light-dark(#c38416, #e7af58);
+      --selected-text: light-dark(#80440a, #ffda96);
+    }
+    :root:has(#dark:checked) { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--page);
+      color: var(--text);
+      font: 14px/1.45 "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+    }
+    main { max-width: 1320px; margin: 0 auto; padding: clamp(14px, 4vw, 48px); }
+    .page-heading {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    h1 { margin: 0; font-size: 24px; }
+    .appearance {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 10px;
+      margin: 0;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+    }
+    .appearance label { display: flex; align-items: center; gap: 4px; }
+    .appearance input { accent-color: var(--focus); }
+    .comparison {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr));
+      gap: 12px;
+      align-items: stretch;
+    }
+    .option {
+      min-width: 0;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .option h2 { margin: 0 0 7px; font-size: 16px; }
+    .option--a {
+      --assigned: light-dark(#e4f5ed, #18352e);
+      --assigned-line: light-dark(#b5dccc, #365b50);
+      --unassigned: light-dark(#eef3fa, #202c3c);
+      --unassigned-line: light-dark(#c8d6eb, #3e516b);
+    }
+    .option--b {
+      --assigned: light-dark(#e7f0ff, #1c314d);
+      --assigned-line: light-dark(#b9cff5, #405d83);
+      --unassigned: light-dark(#fff2df, #372e21);
+      --unassigned-line: light-dark(#e8cf9e, #655337);
+    }
+    .option--c {
+      --assigned: light-dark(#e4f6f8, #18353c);
+      --assigned-line: light-dark(#b4dce4, #385e69);
+      --unassigned: light-dark(#f2edf8, #30283d);
+      --unassigned-line: light-dark(#d7c9e8, #574865);
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .legend i {
+      width: 12px;
+      height: 12px;
+      border: 1px solid;
+      border-radius: 3px;
+    }
+    .legend .assigned { background: var(--assigned); border-color: var(--assigned-line); }
+    .legend .unassigned { background: var(--unassigned); border-color: var(--unassigned-line); }
+    .cards { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+    .group {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-content: center;
+      gap: 6px 8px;
+      width: 100%;
+      min-height: 73px;
+      padding: 8px 10px;
+      border: 1px solid var(--group-border);
+      border-radius: 5px;
+      background: var(--group-fill);
+      color: var(--text);
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
+    }
+    .group[data-assigned="true"] { --group-fill: var(--assigned); --group-border: var(--assigned-line); }
+    .group[data-assigned="false"] { --group-fill: var(--unassigned); --group-border: var(--unassigned-line); }
+    .group strong { overflow-wrap: anywhere; font-size: 15px; }
+    .group .count { color: var(--muted); white-space: nowrap; font-size: 13px; }
+    .group .tray { grid-column: 1 / -1; color: var(--muted); overflow-wrap: anywhere; font-size: 13px; }
+    .group[aria-pressed="true"] {
+      border-color: var(--selected-border);
+      box-shadow: inset 0 0 0 1px var(--selected-border);
+    }
+    .group[aria-pressed="true"] strong { color: var(--selected-text); }
+    .group:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    @media (max-width: 970px) {
+      .comparison { grid-template-columns: minmax(0, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="page-heading">
+      <h1>托盘分组底色方案</h1>
+      <fieldset class="appearance" aria-label="预览主题">
+        <label><input type="radio" name="theme" checked> 浅色</label>
+        <label><input type="radio" name="theme" id="dark"> 深色</label>
+      </fieldset>
+    </header>
+    <div class="comparison" id="comparison">
+      <section class="option option--a" aria-labelledby="option-a">
+        <h2 id="option-a">方案 A · 青绿与蓝灰</h2>
+      </section>
+      <section class="option option--b" aria-labelledby="option-b">
+        <h2 id="option-b">方案 B · 浅蓝与米黄</h2>
+      </section>
+      <section class="option option--c" aria-labelledby="option-c">
+        <h2 id="option-c">方案 C · 浅青与灰紫</h2>
+      </section>
+    </div>
+  </main>
+  <template id="card-list">
+    <p class="legend">
+      <span><i class="assigned" aria-hidden="true"></i>已分配托盘</span>
+      <span><i class="unassigned" aria-hidden="true"></i>未分配托盘</span>
+    </p>
+    <ul class="cards" role="list">
+      <li>
+        <button class="group" type="button" data-task="001" data-assigned="true" aria-pressed="false">
+          <strong>SYLUN-2026-11-001</strong><span class="count">11 件</span>
+          <span class="tray">SYLUN-2026-11-001-TP-001</span>
+        </button>
+      </li>
+      <li>
+        <button class="group" type="button" data-task="011" data-assigned="true" aria-pressed="true">
+          <strong>SYLUN-2026-11-011</strong><span class="count">4 件</span>
+          <span class="tray">SYLUN-2026-11-011-TP-001</span>
+        </button>
+      </li>
+      <li>
+        <button class="group" type="button" data-task="002" data-assigned="false" aria-pressed="false">
+          <strong>SYLUN-2026-11-002</strong><span class="count">5 件</span>
+          <span class="tray">未关联托盘</span>
+        </button>
+      </li>
+      <li>
+        <button class="group" type="button" data-task="003" data-assigned="false" aria-pressed="false">
+          <strong>SYLUN-2026-11-003</strong><span class="count">7 件</span>
+          <span class="tray">未关联托盘</span>
+        </button>
+      </li>
+    </ul>
+  </template>
+  <script>
+    const comparison = document.getElementById("comparison");
+    const cardList = document.getElementById("card-list");
+    for (const option of comparison.children) {
+      option.append(cardList.content.cloneNode(true));
+    }
+    comparison.addEventListener("click", (event) => {
+      const selected = event.target.closest("button[data-task]");
+      if (!selected) return;
+      for (const option of comparison.querySelectorAll("button[data-task]")) {
+        option.setAttribute("aria-pressed", option.dataset.task === selected.dataset.task);
+      }
+    });
+  </script>
+</body>
+</html>

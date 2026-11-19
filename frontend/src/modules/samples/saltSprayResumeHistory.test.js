@@ -4,7 +4,7 @@ import { buildTrayFlowView, buildSamplesTrayOverviewView, normalizeLifecycleStat
 import { buildLabProcessPanels } from "../visualization/model";
 import { resolveVisualFlowStepTone } from "../visualization/flowStepState";
 import { LabProcessScreen } from "../visualization/screens/labProcessScreen";
-import TrayManagementPanel from "./TrayManagementPanel.vue";
+import TrayFlowDialog from "./TrayFlowDialog.vue";
 
 const originalArrival = "2026-11-08 07:00:00";
 const originalSent = "2026-11-08 07:20:00";
@@ -78,6 +78,14 @@ function views(input, trayCode = "TP") {
 
 const state = (step) => ({ label: step.label, active: Boolean(step.active), reached: Boolean(step.reached), time: step.time || "", tone: resolveVisualFlowStepTone(step) });
 const staging = (flow) => flow.steps.filter((step) => ["送至暂存间", "已到达暂存间"].includes(step.label));
+const expectInferredStaging = (flow) => {
+  const steps = staging(flow);
+  expect(steps).toHaveLength(2);
+  for (const step of steps) {
+    expect(step).toMatchObject({ active: false, reached: true, inferred: true, time: "" });
+    expect(resolveVisualFlowStepTone(step)).toBe("inferred");
+  }
+};
 
 describe("B-ISSUE-02 salt recovery preserves actual staging history", () => {
   test("recognizes the existing backend waiting state without making it an editable state", () => {
@@ -105,13 +113,32 @@ describe("B-ISSUE-02 salt recovery preserves actual staging history", () => {
       expect(detail.steps.find((step) => step.active).label).not.toBe("样品运输中");
       expect(detail.steps.find((step) => step.label === "到货")).toMatchObject({ reached: true, time: originalArrival });
       for (const flow of [detail, visual]) {
-        expect(staging(flow).map((step) => Boolean(step.reached))).toEqual(historyType === "none" ? [false, false] : [true, true]);
+        expect(staging(flow).map((step) => Boolean(step.reached))).toEqual([true, true]);
+        if (historyType === "none") expectInferredStaging(flow);
         expect(staging(flow).map((step) => step.time || "")).toEqual(["history", "events"].includes(historyType) ? [originalSent, originalStored] : ["", ""]);
         expect(staging(flow).every((step) => !step.active && !step.pauseResetRequired && !step.pauseResetState)).toBe(true);
       }
       expect(input).toEqual(before);
     });
   }
+
+  test("pausing salt spray with no appearance visit preserves the regular inferred staging nodes", () => {
+    const paused = snapshot("none", "resumed");
+    Object.assign(paused.experimentRunPauses[0], { status: "实验暂停", resumed_at: "" });
+    paused.experimentRuns[0].status = "实验暂停";
+    paused.stagingEvents = [];
+    const running = structuredClone(paused);
+    running.experimentRunPauses = [];
+    running.experimentRuns[0].status = "实验进行中";
+
+    for (const consumer of ["detail", "visual"]) {
+      const beforePause = views(running)[consumer];
+      const duringPause = views(paused)[consumer];
+      expect(duringPause.steps.find((step) => step.active).label).toBe("盐雾试验进行中（暂停）");
+      expectInferredStaging(duringPause);
+      expect(staging(duringPause).map(state)).toEqual(staging(beforePause).map(state));
+    }
+  });
 
   for (const source of ["history", "events", "untimed"]) {
     test.each(["paused", "returned", "compared", "installed", "fixture", "ready", "resumed"])(`${source}: %s keeps staging dispatch inferred after direct stock-in from a completed experiment`, (phase) => {
@@ -165,7 +192,7 @@ describe("B-ISSUE-02 salt recovery preserves actual staging history", () => {
         const arrival = source === "events" ? input.stagingEvents.at(-1) : input.samples[0].history.at(-1);
         arrival.time = time;
         const { detail, visual } = views(input);
-        for (const flow of [detail, visual]) expect(staging(flow).every((step) => !step.reached && !step.time)).toBe(true);
+        for (const flow of [detail, visual]) expectInferredStaging(flow);
       }
     }
   });
@@ -179,7 +206,11 @@ describe("B-ISSUE-02 salt recovery preserves actual staging history", () => {
       input.stagingEvents.push({ task_code: "T", tray_code: "TP", room: "staging", action: "stock_out", target_lab_code: "LAB_SALT", time: "2026-11-08 08:30:00" });
       const { detail, visual } = views(input);
       for (const flow of [detail, visual]) {
-        expect(staging(flow).map((step) => step.reached)).toEqual(time.endsWith("08:20:00") ? [true, true] : [false, false]);
+        if (time.endsWith("08:20:00")) {
+          expect(staging(flow)[1]).toMatchObject({ reached: true, inferred: false, time });
+        } else {
+          expectInferredStaging(flow);
+        }
         expect(staging(flow)[0].time).toBe("");
       }
     }
@@ -194,7 +225,7 @@ describe("B-ISSUE-02 salt recovery preserves actual staging history", () => {
       { task_code: "T", tray_code: "TP", room: "staging", action: "stock_in", time: "2026-11-08 12:00:00" },
       { task_code: "T", tray_code: "OTHER", room: "staging", action: "stock_in", time: originalStored },
     );
-    for (const flow of [views(input).detail, views(input).visual]) expect(staging(flow).every((step) => !step.reached && !step.time)).toBe(true);
+    for (const flow of [views(input).detail, views(input).visual]) expectInferredStaging(flow);
   });
 
   test("second pause uses current recovery evidence without replacing earlier staging times", () => {
@@ -216,7 +247,7 @@ describe("B-ISSUE-02 salt recovery preserves actual staging history", () => {
     input.samples[0].history.push({ action: "实验完成", status: "实验已完成", detail: "T / 振动试验 / 实验已完成", tray_code: "TP", location: "振动一室", time: "2026-11-08 08:00:00" });
     let result = views(input);
     expect(result.detail.steps.map(state)).toEqual(result.visual.steps.map(state));
-    expect(staging(result.detail).every((step) => !step.reached && !step.time)).toBe(true);
+    expectInferredStaging(result.detail);
     input.samples[0].history.push(
       { status: "送至暂存间", location: "恒温恒湿间（暂存间）", tray_code: "TP", time: "2026-11-08 08:10:00" },
       { status: "已到达暂存间", location: "恒温恒湿间（暂存间）", tray_code: "TP", time: "2026-11-08 08:20:00" },
@@ -229,7 +260,7 @@ describe("B-ISSUE-02 salt recovery preserves actual staging history", () => {
   test("post-experiment storage events do not prove a normal staging visit", () => {
     const input = snapshot("none");
     input.stagingEvents.push({ task_code: "T", tray_code: "TP", room: "staging", action: "stock_in", status: "实验后暂存间存放", location: "恒温恒湿间（实验后暂存间）", time: originalStored });
-    for (const flow of [views(input).detail, views(input).visual]) expect(staging(flow).every((step) => !step.reached && !step.time)).toBe(true);
+    for (const flow of [views(input).detail, views(input).visual]) expectInferredStaging(flow);
   });
 
   test("two returned trays preserve their own staging history", () => {
@@ -242,23 +273,25 @@ describe("B-ISSUE-02 salt recovery preserves actual staging history", () => {
     for (const trayCode of ["TP", "TP2"]) {
       const { detail, visual } = views(input, trayCode);
       expect(detail.steps.map(state)).toEqual(visual.steps.map(state));
-      expect(staging(detail).map((step) => Boolean(step.reached))).toEqual(trayCode === "TP" ? [true, true] : [false, false]);
+      if (trayCode === "TP") {
+        expect(staging(detail).map((step) => step.time)).toEqual([originalSent, originalStored]);
+      } else {
+        expectInferredStaging(detail);
+      }
     }
   });
 
   test("real detail and visualization components render matching prior node tones", () => {
     const input = snapshot("none");
-    const { panel } = views(input);
-    const detail = mount(TrayManagementPanel, { props: { samplesFlow: {
-      rawTasks: input.tasks, rawSamples: input.samples, rawExperiments: input.experiments, rawSchedules: input.schedules,
-      rawExperimentRuns: input.experimentRuns, rawExperimentRunTrays: input.experimentRunTrays, rawExperimentTrays: input.experimentTrays,
-      rawExperimentRunPauses: input.experimentRunPauses, rawStagingEvents: input.stagingEvents,
-      trayRows: buildSamplesTrayOverviewView(input).rows, trayStatusOptions: [], warning: "",
-    } } });
+    const { detail: flow, panel } = views(input);
+    const detail = mount(TrayFlowDialog, { props: { open: true, trayCode: "TP", flow } });
     const visual = mount(LabProcessScreen, { props: { labs: [panel] } });
     for (const label of ["送至暂存间", "已到达暂存间"]) {
-      expect(detail.findAll('[data-testid="samples-tray-flow"] li').find((li) => li.text().includes(label)).classes()).not.toContain("reached");
-      expect(visual.findAll(".visual-flow-step").find((li) => li.text().includes(label)).classes()).toContain("is-waiting");
+      const detailNode = detail.findAll('.sample-flow-unified--timed li').find((li) => li.text().includes(label));
+      const visualNode = visual.findAll(".visual-flow-step").find((li) => li.text().includes(label));
+      expect(detailNode.classes()).toContain("reached");
+      expect(detailNode.get(".sample-flow-time").text()).toBe("-");
+      expect(visualNode.classes()).toContain("is-inferred");
     }
     detail.unmount();
     visual.unmount();
@@ -266,15 +299,10 @@ describe("B-ISSUE-02 salt recovery preserves actual staging history", () => {
 
   test("real components keep direct stock-in staging dispatch green without inventing its time", () => {
     const input = arrivalOnlySnapshot("events");
-    const { panel } = views(input);
-    const detail = mount(TrayManagementPanel, { props: { samplesFlow: {
-      rawTasks: input.tasks, rawSamples: input.samples, rawExperiments: input.experiments, rawSchedules: input.schedules,
-      rawExperimentRuns: input.experimentRuns, rawExperimentRunTrays: input.experimentRunTrays, rawExperimentTrays: input.experimentTrays,
-      rawExperimentRunPauses: input.experimentRunPauses, rawStagingEvents: input.stagingEvents,
-      trayRows: buildSamplesTrayOverviewView(input).rows, trayStatusOptions: [], warning: "",
-    } } });
+    const { detail: flow, panel } = views(input);
+    const detail = mount(TrayFlowDialog, { props: { open: true, trayCode: "TP", flow } });
     const visual = mount(LabProcessScreen, { props: { labs: [panel] } });
-    const sentDetail = detail.findAll('[data-testid="samples-tray-flow"] li').find((li) => li.text().includes("送至暂存间"));
+    const sentDetail = detail.findAll('.sample-flow-unified--timed li').find((li) => li.text().includes("送至暂存间"));
     expect(sentDetail.classes()).toContain("reached");
     expect(sentDetail.text()).toContain("-");
     expect(sentDetail.text()).not.toContain("08:20:00");

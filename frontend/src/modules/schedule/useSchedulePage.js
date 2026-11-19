@@ -154,10 +154,12 @@ function useSchedulePage(options = {}) {
 
   const {
     buildLabOptionItems,
+    editAxisOptions,
     editCustomStartMinTime,
     editForm,
     editWarning,
     experimentOptions,
+    isEditAxisSelected,
     isScheduleAxisSelected,
     maintenanceLabNotice,
     manualLabOptionItems,
@@ -183,6 +185,7 @@ function useSchedulePage(options = {}) {
     syncLabIdentityToForm,
     syncManualScheduleLegality,
     taskOptions,
+    toggleEditAxis,
     toggleScheduleAxis,
   } = useScheduleFormState({
     activeSchedules,
@@ -687,7 +690,7 @@ function useSchedulePage(options = {}) {
     if (!schedule) {
       return;
     }
-    // 编辑抽屉字段通过 model 层统一反向映射，避免页面手拼时间字段。
+    // 编辑字段通过 model 层统一反向映射，避免页面手拼时间字段。
     editForm.value = buildScheduleEditForm(schedule);
     editWarning.value = "";
     scheduleDrawer.openWith({ id: scheduleId });
@@ -763,7 +766,6 @@ function useSchedulePage(options = {}) {
   };
 
   const saveSchedule = async () => {
-    syncLabIdentityToForm(editForm.value, buildEditLabOptionItems(editForm.value.device, editForm.value.task_code));
     const result = updateScheduleRecord({
       devices: rawDevices.value,
       experiments: rawExperiments.value,
@@ -783,14 +785,18 @@ function useSchedulePage(options = {}) {
       return;
     }
 
-    // 编辑成功后沿用与新建相同的快照同步路径。
     editWarning.value = "";
-    await persistAll({
-      [STORAGE_KEYS.experiments]: result.experiments,
-      [STORAGE_KEYS.schedules]: result.schedules,
-      [STORAGE_KEYS.streams]: result.streams,
-      [STORAGE_KEYS.tasks]: result.tasks,
-    });
+    try {
+      await persistAll({
+        [STORAGE_KEYS.experiments]: result.experiments,
+        [STORAGE_KEYS.schedules]: result.schedules,
+        [STORAGE_KEYS.streams]: result.streams,
+        [STORAGE_KEYS.tasks]: result.tasks,
+      });
+    } catch (error) {
+      editWarning.value = buildFailureMessage("排程保存失败，请稍后重试", error);
+      return;
+    }
     closeScheduleDrawer();
   };
 
@@ -1006,30 +1012,8 @@ function useSchedulePage(options = {}) {
     }
   });
 
-  const buildEditLabOptions = (selectedDevice, taskCode) => {
-    const schedule = rawSchedules.value.find((item) => normalizeText(item?.id) === normalizeText(editForm.value.id));
-    const task = rawTasks.value.find((item) => normalizeText(item?.code) === normalizeText(taskCode));
-    const experiment = rawExperiments.value.find(
-      (item) =>
-        normalizeText(item?.task_code) === normalizeText(taskCode) &&
-        normalizeText(item?.experiment_code) === normalizeText(schedule?.experiment_code || editForm.value.experiment_code),
-    );
-    return buildLabOptions({
-      masterLabs: masterLabs.value,
-      selectedDevice,
-      testType: normalizeText(experiment?.required_device) || normalizeText(task?.test_type),
-    });
-  };
-  const buildEditLabOptionItems = (selectedDevice, taskCode) =>
-    buildLabOptionItems({
-      options: buildEditLabOptions(selectedDevice, taskCode),
-      selectedDevice,
-    });
-
   return {
     ...scheduleDrag,
-    buildEditLabOptions,
-    buildEditLabOptionItems,
     acknowledgeException,
     cancelScheduleConflict,
     canResetGanttWindow,
@@ -1037,6 +1021,9 @@ function useSchedulePage(options = {}) {
     closeExceptionModal,
     closeScheduleDeleteWithdrawalConfirm,
     closeScheduleDrawer,
+    editAxisOptions,
+    isEditAxisSelected,
+    toggleEditAxis,
     closeTaskDetailModal,
     confirmScheduleConflict,
     confirmScheduleDeleteWithdrawal,

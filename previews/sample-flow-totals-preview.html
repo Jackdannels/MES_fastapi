@@ -1,0 +1,57 @@
+<style>
+  #sample-flow-totals-preview {
+    --summary-surface: light-dark(#ffffff, #121e27);
+    --summary-line: light-dark(#d2dfff, #334956);
+    --summary-heading: light-dark(#172b4d, #edf5fa);
+    --summary-label: light-dark(#52647d, #a6b9c7);
+    --summary-accent: light-dark(#1d4ed8, #78e9cb);
+    box-sizing: border-box;
+    padding: 12px;
+  }
+  #sample-flow-totals-preview .sample-summary {
+    box-sizing: border-box;
+    max-width: 654px;
+    margin-inline: auto;
+    padding: 14px 16px 16px;
+    border: 1px solid var(--summary-line);
+    border-radius: 8px;
+    background: var(--summary-surface);
+    color: var(--summary-heading);
+    font: 13px/1.45 "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+  }
+  #sample-flow-totals-preview h2 { margin: 0 0 13px; font-size: 18px; font-weight: 700; }
+  #sample-flow-totals-preview .summary-values {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 1.35fr) minmax(0, 1fr);
+    margin: 0;
+  }
+  #sample-flow-totals-preview .summary-values > div { min-width: 0; }
+  #sample-flow-totals-preview .summary-values > div + div {
+    border-inline-start: 1px solid var(--summary-line);
+    padding-inline-start: clamp(8px, 2vw, 16px);
+  }
+  #sample-flow-totals-preview dt { color: var(--summary-label); font-size: 12px; }
+  #sample-flow-totals-preview dd {
+    margin: 3px 0 0;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+  }
+  #sample-flow-totals-preview .assigned { color: var(--summary-accent); }
+  @media (max-width: 365px) {
+    #sample-flow-totals-preview { padding: 8px; }
+    #sample-flow-totals-preview .sample-summary { padding-inline: 12px; }
+    #sample-flow-totals-preview .summary-values { grid-template-columns: minmax(0, 1fr) minmax(108px, 1.4fr) minmax(0, 1fr); }
+  }
+</style>
+<div id="sample-flow-totals-preview" class="viz-dotted-background">
+  <section class="sample-summary" aria-labelledby="sample-flow-totals-title">
+    <h2 id="sample-flow-totals-title">样品流转与状态</h2>
+    <dl class="summary-values">
+      <div><dt>任务总数</dt><dd>12</dd></div>
+      <div><dt>已分配托盘任务数</dt><dd class="assigned">7</dd></div>
+      <div><dt>样品总数</dt><dd>157</dd></div>
+    </dl>
+  </section>
+</div>

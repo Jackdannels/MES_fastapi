@@ -329,7 +329,7 @@ const createTasksPageFetchMock = ({
       const previousTaskCode = String(previousTask?.code ?? "").trim();
       const nextTaskCode = String(nextTask?.code ?? previousTaskCode).trim();
       const explicitSampleCodes = Array.isArray(nextTask.sample_codes) ? [...nextTask.sample_codes] : null;
-      const savedTask = { ...nextTask };
+      const savedTask = { ...previousTask, ...nextTask };
       delete savedTask.sample_codes;
       const existingTaskExperiments = state.experiments.filter(
         (experiment) => String(experiment?.task_code ?? "").trim() === previousTaskCode,
@@ -678,6 +678,46 @@ describe("TasksPage runtime", () => {
     expect(wrapper.get('[data-testid="task-edit-test-types-summary"]').text()).toContain("冲击试验（X+、Y+）");
   });
 
+  test.each([1, 2])("keeps the server's row order on page %i when editing task details", async (page) => {
+    const { state } = installApiFetchMock({
+      tasks: Array.from({ length: 12 }, (_, index) => {
+        const number = index + 1;
+        return createTask({
+          id: `task-${number}`,
+          code: `SYLU-2026-03-${String(number).padStart(3, "0")}`,
+          sample_count: number,
+        });
+      }),
+    });
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+    if (page === 2) {
+      const sort = wrapper.get(".tasks-table__col--sample-count button");
+      await sort.trigger("click");
+      await settle(wrapper);
+      await sort.trigger("click");
+      await settle(wrapper);
+      await wrapper.get('[data-page="next"]').trigger("click");
+      await settle(wrapper);
+    }
+
+    const visibleCodes = () => wrapper.findAll("#task-table-body .tasks-table__cell--code").map((cell) => cell.text());
+    const orderBefore = visibleCodes();
+    const editedTask = state.tasks.find((task) => task.code === orderBefore[1]);
+    editedTask.name = "详情加载后的任务名称";
+    await wrapper.get('[data-testid="open-task-drawer-1"]').trigger("click");
+    await settle(wrapper);
+
+    const detail = wrapper.get('[data-testid="task-detail-modal"]');
+    expect(detail.get('input[name="name"]').element.value).toBe(editedTask.name);
+    expect(visibleCodes()).toEqual(orderBefore);
+    expect(wrapper.get('[data-testid="pagination-status"]').text()).toContain(`第 ${page} / 2 页`);
+
+    await detail.get(".modal-close").trigger("click");
+    await settle(wrapper);
+    expect(visibleCodes()).toEqual(orderBefore);
+  });
+
   test("keeps an open task detail out of the paged table when a search excludes it", async () => {
     installApiFetchMock({
       tasks: [
@@ -884,6 +924,54 @@ describe("TasksPage runtime", () => {
 
     expect(wrapper.text()).toContain("共 99 个，显示前 5 个");
     expect(wrapper.get('[data-testid="task-detail-sample-code-preview"]').text()).toContain("SYLU-2026-03-001-SP-005");
+  });
+
+  test.each([99, 3])("saves a draft sample count of %i together with edited sample codes", async (count) => {
+    const taskCode = "SYLU-2026-03-001";
+    const task = createTask({ sample_count: 6, remark: "已保存的备注" });
+    const { state, fetchMock } = installApiFetchMock({
+      tasks: [task],
+      samples: Array.from({ length: 6 }, (_, index) => ({
+        id: "sample-" + index,
+        code: taskCode + "-SP-" + String(index + 1).padStart(3, "0"),
+        task_code: taskCode,
+        status: "运输中",
+      })),
+    });
+    const wrapper = mount(TasksPage);
+    await settle(wrapper);
+    await wrapper.get('[data-testid="open-task-drawer-0"]').trigger("click");
+    await settle(wrapper);
+
+    const detail = wrapper.get('[data-testid="task-detail-modal"]');
+    const quantity = detail.get('input[name="sample_count"]');
+    const remark = detail.get('textarea[name="remark"]');
+    await quantity.setValue(String(count));
+    await remark.setValue("尚未保存的备注");
+    await detail.get('[data-testid="open-sample-codes-editor"]').trigger("click");
+
+    const textarea = wrapper.get('[data-testid="task-sample-codes-textarea"]');
+    const codes = textarea.element.value.split("\n");
+    expect(codes).toHaveLength(count);
+    expect(wrapper.get('[data-testid="task-sample-codes-count-hint"]').text())
+      .toContain(`请填写 ${count} 个样品编号。保存时会一并更新样品数量。`);
+    codes[0] = taskCode + "-CUSTOM-001";
+    await textarea.setValue(codes.join("\n"));
+    const confirm = wrapper.get('[data-testid="task-sample-codes-confirm"]');
+    expect(confirm.text()).toBe("保存数量和编号");
+    await confirm.trigger("click");
+    await settle(wrapper);
+
+    const writes = fetchMock.mock.calls.filter(
+      ([url, options]) => url === buildTaskEndpoint(task.id) && options?.method === "PUT",
+    );
+    expect(writes).toHaveLength(1);
+    expect(JSON.parse(writes[0][1].body)).toMatchObject({ sample_count: count, sample_codes: codes });
+    expect(state.tasks[0]).toMatchObject({ sample_count: count, remark: "已保存的备注" });
+    expect(state.samples.filter((sample) => sample.task_code === taskCode).map((sample) => sample.code)).toEqual(codes);
+    expect(quantity.element.value).toBe(String(count));
+    expect(remark.element.value).toBe("尚未保存的备注");
+    expect(wrapper.find('[data-testid="task-sample-codes-modal"].modal.is-open').exists()).toBe(false);
   });
 
   test("shows, sanitizes, and saves contact details in the task detail modal", async () => {

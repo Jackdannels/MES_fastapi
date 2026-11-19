@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>样品流转 · 任务分组方案</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --canvas: #0a1117;
+      --surface: #111a22;
+      --inset: #17232d;
+      --line: #30434e;
+      --text: #edf5f5;
+      --muted: #a6bac2;
+      --accent: #78e5c4;
+      --accent-fill: #19372f;
+      --unassigned: #202e40;
+      --selected: #efba66;
+      --done: #8ad7a7;
+      --done-fill: #18352b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--text);
+      font: 14px/1.5 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    }
+    main { max-width: 1390px; margin: auto; padding: clamp(12px, 3vw, 36px); }
+    h1, h2, h3, p, ol { margin: 0; }
+    h1 { font-size: 23px; }
+    h2 { font-size: 17px; }
+    h3 { font-size: 14px; }
+    button, input { color: inherit; font: inherit; }
+    button {
+      min-height: 38px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--inset);
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); }
+    :is(button, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    [hidden] { display: none !important; }
+    .page-header, .panel-heading, .dialog-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 7px 12px;
+    }
+    .page-header { margin-bottom: 14px; }
+    .muted, .task-meta { color: var(--muted); font-size: 12px; }
+    .variants { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .variants [aria-pressed="true"] { color: var(--accent); background: var(--accent-fill); border-color: var(--accent); }
+    .search {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .search input { min-width: 0; min-height: 38px; padding: 5px 10px; background: var(--inset); border: 1px solid var(--line); border-radius: 6px; }
+    .search input::placeholder { color: var(--muted); }
+    .split { display: grid; grid-template-columns: minmax(265px, 0.9fr) minmax(0, 1.65fr); align-items: start; gap: 12px; }
+    .panel { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+    .panel-heading { min-height: 49px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    .catalog { padding: 9px; display: grid; gap: 7px; }
+    .task { position: relative; min-width: 0; background: var(--accent-fill); border: 1px solid #34584d; border-radius: 6px; }
+    .task[data-assigned="false"] { background: var(--unassigned); border-color: #425872; }
+    .task:has(.task-button[aria-current="true"]) { border-color: var(--selected); }
+    .task-button {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 2px 8px;
+      width: 100%;
+      padding: 9px 10px;
+      background: transparent;
+      border: 0;
+      text-align: left;
+    }
+    .task-button:hover { background: rgb(255 255 255 / 5%); }
+    .task-button[aria-current="true"] .identifier { color: var(--selected); }
+    .identifier { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    .task-meta { grid-column: 1 / -1; }
+    .chevron { align-self: center; color: var(--muted); font-size: 17px; line-height: 1; }
+    .children { display: grid; gap: 5px; margin: 0; padding: 4px 7px 8px 15px; list-style: none; }
+    .tray-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--inset);
+    }
+    .tray-row:has([aria-pressed="true"]) { border-color: var(--selected); }
+    .tray-row button { border-color: transparent; background: transparent; }
+    .tray-row button:hover { border-color: var(--accent); }
+    .tray-select { min-width: 0; text-align: left; }
+    .tray-select .muted { display: block; }
+    .flow-button { color: var(--accent); white-space: nowrap; font-size: 12px; }
+    .task[data-single-tray="true"] .task-button { padding-inline-end: 78px; }
+    .single-flow { position: absolute; inset-inline-end: 6px; inset-block-end: 6px; background: transparent; }
+    .status {
+      display: inline-block;
+      padding: 2px 6px;
+      border: 1px solid #3c715e;
+      border-radius: 4px;
+      background: var(--accent-fill);
+      color: var(--accent);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .detail-block { padding: 12px; border-bottom: 1px solid var(--line); }
+    .detail-block:last-child { border-bottom: 0; }
+    .tray-switch { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+    .tray-switch [aria-pressed="true"] { border-color: var(--selected); color: var(--selected); }
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 6px; margin-top: 8px; padding: 0; list-style: none; }
+    .steps li { min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .steps .done { color: var(--done); background: var(--done-fill); border-color: #3d7359; }
+    .steps [aria-current="step"] { color: var(--selected); background: #32271b; border-color: #9a6e3d; font-weight: 700; }
+    .table-wrap { overflow: auto; }
+    table { width: 100%; margin-top: 5px; border-collapse: collapse; table-layout: fixed; }
+    th, td { padding: 8px 5px; border-bottom: 1px solid var(--line); text-align: center; overflow-wrap: anywhere; }
+    th { font-size: 12px; color: var(--muted); }
+    th:first-child { width: 49%; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .sample-code { font-weight: 700; }
+    .empty { padding: 15px 12px; color: var(--muted); }
+    dialog { width: min(640px, calc(100% - 24px)); max-height: calc(100dvh - 24px); overflow: auto; padding: 14px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 8px; }
+    dialog::backdrop { background: rgb(0 0 0 / 68%); }
+    .dialog-timeline { grid-template-columns: 1fr; }
+    .dialog-timeline li { min-height: 40px; display: flex; flex-wrap: wrap; gap: 4px 10px; justify-content: space-between; align-items: center; }
+    .dialog-timeline time { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+    @media (max-width: 720px) { .split { grid-template-columns: minmax(0, 1fr); } }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <h1>样品流转 · 按任务浏览托盘</h1>
+      <span class="muted">示例数据</span>
+    </header>
+    <nav class="variants" aria-label="分组方案">
+      <button type="button" data-mode="accordion" aria-pressed="true">A · 单任务折叠</button>
+      <button type="button" data-mode="multiple" aria-pressed="false">B · 多任务独立展开</button>
+      <button type="button" data-mode="tabs" aria-pressed="false">C · 右侧切换托盘</button>
+    </nav>
+    <label class="search">关键词 <input id="search" type="search" placeholder="搜索任务号、托盘号或样品编号"></label>
+    <div class="split">
+      <section class="panel" aria-label="任务列表">
+        <header class="panel-heading"><h2>样品流转与状态</h2><span class="muted" id="counts"></span></header>
+        <div class="catalog" id="catalog"></div>
+      </section>
+      <section class="panel" id="detail" aria-label="当前任务详情"></section>
+    </div>
+    <span class="sr-only" id="feedback" role="status"></span>
+  </main>
+  <dialog id="flow" aria-labelledby="dialog-title">
+    <header class="dialog-heading"><h2 id="dialog-title"></h2><form method="dialog"><button type="submit">关闭</button></form></header>
+    <ol class="steps dialog-timeline" id="timeline"></ol>
+  </dialog>
+  <script>
+    (() => {
+      const prefix = "SYLUN-2026-11-";
+      const rooms = ["样品运输中", "到货", "送至暂存间", "已到达暂存间", "送至实验室", "已到达实验室", "工装夹具安装", "实验准备就绪", "试验进行中", "试验已完成", "厂家收回"];
+      const taskSteps = ["待排程", "已排程", "任务进行中", "任务已完成", "厂家收回"];
+      const fixtures = [
+        ["001", 1, [[1, 0, 1, 6]]],
+        ["002", 1, [[1, 1, 1, 6]]],
+        ["003", 0, [[1, 0, 1, 4], [2, 1, 5, 4]]],
+        ["004", 0, [[0, 0, 1, 7]]],
+        ["005", 0, [[1, 3, 1, 3], [2, 1, 4, 3], [0, 0, 7, 2]]],
+        ["006", 0, [[0, 0, 1, 11]]],
+      ];
+      const idPart = (number) => String(number).padStart(3, "0");
+      const tasks = fixtures.map(([key, stage, specs]) => ({
+        key, stage, code: prefix + key,
+        groups: specs.map(([tray, position, first, count]) => ({
+          key: key + "-" + tray, tray, position,
+          code: tray ? prefix + key + "-TP-" + idPart(tray) : "未关联托盘",
+          samples: Array.from({length: count}, (_, i) => prefix + key + "-SP-" + idPart(first + i)),
+        })),
+      }));
+      const catalog = document.getElementById("catalog");
+      const detail = document.getElementById("detail");
+      const field = document.getElementById("search");
+      const dialog = document.getElementById("flow");
+      const modeBar = document.querySelector(".variants");
+      const states = new Map([...modeBar.querySelectorAll("button")].map((button) => [
+        button.dataset.mode, { task: "003", group: "003-1", expanded: new Set(["003"]) },
+      ]));
+      let mode = "accordion";
+      let flowReturn = "";
+      const match = (value) => value.toUpperCase().includes(field.value.trim().toUpperCase());
+
+      function results() {
+        return tasks.flatMap((task) => {
+          const groups = task.groups.filter((group) => match(task.code) || match(group.code) || group.samples.some(match));
+          return groups.length ? [{ ...task, groups }] : [];
+        });
+      }
+
+      function openGroup(state, task, group) {
+        state.task = task.key;
+        state.group = group.key;
+      }
+
+      function normalizeSelection(state, visible) {
+        const task = visible.find((entry) => entry.key === state.task) || visible[0];
+        if (!task) return [null, null];
+        const group = task.groups.find((entry) => entry.key === state.group) || task.groups[0];
+        openGroup(state, task, group);
+        return [task, group];
+      }
+
+      function renderSteps(labels, active, showTimes = false) {
+        return labels.map((label, index) => {
+          const attributes = index === active ? ' aria-current="step"' : index < active ? ' class="done"' : "";
+          const time = showTimes ? "<time>" + (index <= active ? ["2026-11-19 09:05", "2026-11-19 09:20", "2026-11-19 09:31", "2026-11-19 09:38"][index] : "—") + "</time>" : "";
+          return "<li" + attributes + "><span>" + label + "</span>" + time + "</li>";
+        }).join("");
+      }
+
+      function renderCatalog(state, visible, selected) {
+        const hierarchy = mode !== "tabs";
+        catalog.innerHTML = visible.map((task) => {
+          const count = new Set(task.groups.flatMap((group) => group.samples)).size;
+          const trays = task.groups.filter((group) => group.tray).length;
+          const expanded = state.expanded.has(task.key);
+          const expandable = hierarchy && task.groups.length > 1;
+          const singleGroup = task.groups[0];
+          const singleTray = hierarchy && !expandable && Boolean(singleGroup.tray);
+          const secondary = expandable || mode === "tabs"
+            ? (trays ? trays + " 个托盘" + (trays < task.groups.length ? " · 有未分配样品" : "") : "未关联托盘")
+            : singleGroup.code;
+          const meta = secondary + " · " + count + " 件样品";
+          return '<article class="task" data-assigned="' + Boolean(trays) + '" data-single-tray="' + singleTray + '">' +
+            '<button type="button" class="task-button" data-task="' + task.key + '" aria-current="' + (selected?.key === task.key) + '"' +
+            (expandable ? ' aria-expanded="' + expanded + '" aria-controls="children-' + task.key + '"' : "") +
+            '><strong class="identifier">' + task.code + '</strong>' +
+            (expandable ? '<span class="chevron" aria-hidden="true">' + (expanded ? "⌄" : "›") + "</span>" : "") +
+            '<span class="task-meta">' + meta + "</span></button>" +
+            (singleTray ? '<button type="button" class="flow-button single-flow" data-flow="' + singleGroup.key +
+              '" aria-label="查看 ' + singleGroup.code + ' 流程图">流程图</button>' : "") +
+            (expandable ? '<ul class="children" id="children-' + task.key + '"' + (expanded ? "" : " hidden") + ">" +
+              task.groups.map((group) => '<li class="tray-row"><button type="button" class="tray-select" data-group="' + group.key +
+                '" aria-pressed="' + (group.key === state.group) + '"><span class="identifier">' + group.code +
+                '</span><span class="muted">' + group.samples.length + ' 件样品</span></button>' +
+                (group.tray ? '<button type="button" class="flow-button" data-flow="' + group.key + '" aria-label="查看 ' + group.code + ' 流程图">流程图</button>' : "") +
+                '</li>').join("") + "</ul>" : "") + "</article>";
+        }).join("") || '<p class="empty">暂无匹配任务</p>';
+      }
+
+      function renderDetail(task, group) {
+        if (!task) {
+          detail.innerHTML = '<p class="empty">暂无可查看的样品</p>';
+          return;
+        }
+        const location = group.position >= 3 ? "恒温恒湿间（暂存间）" : group.position === 1 ? "接驳区" : "—";
+        const status = rooms[group.position];
+        detail.innerHTML = '<header class="panel-heading"><h2 class="identifier">' + task.code + "</h2></header>" +
+          '<section class="detail-block"><h3>任务流程图</h3><ol class="steps">' + renderSteps(taskSteps, task.stage) + "</ol></section>" +
+          (mode === "tabs" ? '<section class="detail-block"><h3>托盘</h3><div class="tray-switch" role="group" aria-label="切换托盘">' +
+            task.groups.map((entry) => '<button type="button" data-group="' + entry.key + '" aria-pressed="' + (entry.key === group.key) +
+              '" aria-label="' + entry.code + '">' + (entry.tray ? "TP-" + idPart(entry.tray) : entry.code) + " · " + entry.samples.length + " 件</button>").join("") +
+            '</div></section>' : "") +
+          '<section class="detail-block"><div class="dialog-heading"><h3 class="identifier">' + group.code + '</h3>' +
+          (group.tray ? '<button type="button" class="flow-button" data-flow="' + group.key + '">查看流程图</button>' : "") +
+          '</div>' + (group.tray ? '<ol class="steps" aria-label="托盘流程">' + renderSteps(rooms.slice(0, 6), group.position) + "</ol>" : "") +
+          '</section><section class="detail-block"><div class="dialog-heading"><h3>关联样品</h3><span class="muted">共 ' + group.samples.length +
+          ' 条</span></div><div class="table-wrap"><table><thead><tr><th scope="col">样品编号</th><th scope="col">当前位置</th><th scope="col">状态</th></tr></thead><tbody>' +
+          group.samples.map((code) => '<tr><td class="sample-code">' + code + "</td><td>" + location +
+            '</td><td><span class="status">' + status + "</span></td></tr>").join("") + "</tbody></table></div></section>";
+      }
+
+      function render(focus) {
+        const state = states.get(mode);
+        const visible = results();
+        const [task, group] = normalizeSelection(state, visible);
+        document.getElementById("counts").textContent = visible.length + " 个任务";
+        renderCatalog(state, visible, task);
+        renderDetail(task, group);
+        if (focus) document.querySelector(focus)?.focus();
+      }
+
+      modeBar.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-mode]");
+        if (!button) return;
+        mode = button.dataset.mode;
+        for (const variant of modeBar.querySelectorAll("button")) variant.setAttribute("aria-pressed", variant === button);
+        if (field.value.trim()) revealSearchMatches();
+        render();
+      });
+
+      function revealSearchMatches() {
+        const visible = results();
+        const state = states.get(mode);
+        const [task] = normalizeSelection(state, visible);
+        if (!field.value.trim() || !task) return;
+        state.expanded = new Set(mode === "multiple" ? visible.map((entry) => entry.key) : [task.key]);
+      }
+      field.addEventListener("input", () => {
+        revealSearchMatches();
+        render();
+      });
+
+      document.querySelector(".split").addEventListener("click", (event) => {
+        const button = event.target.closest("button");
+        if (!button) return;
+        const state = states.get(mode);
+        const visible = results();
+        const { task: selectedTask, group: selectedGroup, flow } = button.dataset;
+        if (flow) {
+          const task = visible.find((entry) => entry.groups.some((group) => group.key === flow));
+          if (!task) return;
+          const tray = task.groups.find((group) => group.key === flow);
+          flowReturn = (button.closest("#catalog") ? "#catalog" : "#detail") + ' [data-flow="' + flow + '"]';
+          if (mode === "accordion" && state.task !== task.key) state.expanded = new Set([task.key]);
+          openGroup(state, task, tray);
+          render(flowReturn);
+          document.getElementById("dialog-title").textContent = "统一托盘流程图 · " + tray.code;
+          document.getElementById("timeline").innerHTML = renderSteps(rooms, tray.position, true);
+          dialog.showModal();
+          return;
+        }
+        if (selectedTask) {
+          const task = visible.find((entry) => entry.key === selectedTask);
+          const isExpanded = state.expanded.has(task.key);
+          const isCurrent = state.task === task.key;
+          if (mode === "accordion") state.expanded.clear();
+          if (mode !== "tabs" && task.groups.length > 1) {
+            if (isExpanded && (mode === "multiple" || isCurrent)) state.expanded.delete(task.key);
+            else state.expanded.add(task.key);
+          }
+          if (mode !== "multiple" || !isExpanded || task.groups.length === 1) {
+            openGroup(state, task, task.groups.find((group) => group.key === state.group) || task.groups[0]);
+          }
+          render('[data-task="' + selectedTask + '"]');
+          return;
+        }
+        if (selectedGroup) {
+          const task = visible.find((entry) => entry.groups.some((group) => group.key === selectedGroup));
+          const group = task.groups.find((entry) => entry.key === selectedGroup);
+          openGroup(state, task, group);
+          render((mode === "tabs" ? "#detail" : "#catalog") + ' [data-group="' + selectedGroup + '"]');
+          document.getElementById("feedback").textContent = "已选中 " + group.code;
+        }
+      });
+      dialog.addEventListener("close", () => document.querySelector(flowReturn)?.focus());
+      render();
+    })();
+  </script>
+</body>
+</html>

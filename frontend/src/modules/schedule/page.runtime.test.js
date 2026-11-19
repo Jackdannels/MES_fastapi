@@ -563,17 +563,20 @@ describe("SchedulePage runtime", () => {
     await wrapper.get('[data-testid="open-schedule-drawer-0"]').trigger("click");
     await settle(wrapper);
 
-    expect(wrapper.find(".drawer.is-open").exists()).toBe(true);
+    expect(wrapper.find(".drawer.is-open").exists()).toBe(false);
 
-    const editDrawer = wrapper.get(".drawer.is-open");
-    await editDrawer.get('[data-testid="schedule-edit-device"]').setValue(SECONDARY_LAB);
-    await editDrawer.get('select[name="time_slot"]').setValue("custom");
-    await editDrawer.get('input[name="edit_custom_start_hour"]').setValue("09");
-    await editDrawer.get('input[name="edit_custom_start_minute"]').setValue("30");
+    const editor = wrapper.get('[data-testid="schedule-edit-modal"] .modal-content');
+    const laboratory = editor.get('input[data-testid="schedule-edit-device"]');
+    expect(laboratory.element.disabled).toBe(true);
+    expect(laboratory.element.value).toBe(PRIMARY_LAB);
+    expect(editor.find('select[name="device"]').exists()).toBe(false);
+    await editor.get('select[name="time_slot"]').setValue("custom");
+    await editor.get('input[name="edit_custom_start_hour"]').setValue("09");
+    await editor.get('input[name="edit_custom_start_minute"]').setValue("30");
     await wrapper.get('[data-testid="schedule-update"]').trigger("click");
     await settle(wrapper);
 
-    expect(getStorage(SCHEDULES_KEY)[0].device).toBe(SECONDARY_LAB);
+    expect(getStorage(SCHEDULES_KEY)[0].device).toBe(PRIMARY_LAB);
     expect(getStorage(SCHEDULES_KEY)[0].start_at).toContain(`${future.isoDate} 09:30`);
 
     await wrapper.get('[data-testid="open-schedule-drawer-0"]').trigger("click");
@@ -583,6 +586,66 @@ describe("SchedulePage runtime", () => {
 
     expect(getStorage(SCHEDULES_KEY)).toHaveLength(0);
     expect(getStorage(TASKS_KEY)[0].status).toBe(STATUS_WAITING);
+  });
+
+  test("edits available axes in the centered schedule editor while preserving time and batch", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2099-03-20T11:00:00"));
+    try {
+      const taskCode = "SYLU-2026-01-001";
+      const experimentCode = taskCode + "-A";
+      const { isoDate } = buildDateParts();
+      const edited = {
+        id: "schedule-axis-edit",
+        task_code: taskCode,
+        experiment_code: experimentCode,
+        sub_experiment_code: experimentCode + "-AXIS-001",
+        axis_batch_no: "001",
+        axis_codes: ["x+"],
+        device: PRIMARY_LAB,
+        status: STATUS_SCHEDULED,
+        planned_hours: 1,
+        start_at: isoDate + " 10:38:00",
+        end_at: isoDate + " 11:38:00",
+      };
+      const sibling = {
+        ...edited, id: "schedule-axis-sibling", axis_codes: ["z+"], axis_batch_no: "002",
+        sub_experiment_code: experimentCode + "-AXIS-002",
+        start_at: isoDate + " 12:00:00", end_at: isoDate + " 13:00:00",
+      };
+      setStorage(TASKS_KEY, [{ code: taskCode, test_type: "冲击试验", status: STATUS_SCHEDULED }]);
+      setStorage(EXPERIMENTS_KEY, [{
+        task_code: taskCode, experiment_code: experimentCode, experiment_name: "冲击试验",
+        axis_codes: ["x+", "y+", "y-", "z+"],
+      }]);
+      setStorage(EXPERIMENT_RUN_STEPS_KEY, [{
+        task_code: taskCode, experiment_code: experimentCode, axis_code: "y-", status: "实验已完成",
+        schedule_id: "completed-schedule",
+      }]);
+      setStorage(SCHEDULES_KEY, [edited, sibling]);
+      const wrapper = mount(SchedulePage);
+      await settle(wrapper);
+      await wrapper.get('[data-testid="open-schedule-drawer-0"]').trigger("click");
+      const modal = wrapper.get('[data-testid="schedule-edit-modal"].modal.is-open [role="dialog"]');
+      const editAxis = (axis) => modal.get('[data-testid="schedule-edit-axis-' + axis + '"]');
+      expect(editAxis("x-plus").attributes("aria-pressed")).toBe("true");
+      expect(editAxis("z-plus").attributes("disabled")).toBeDefined();
+      expect(editAxis("y-minus").attributes("disabled")).toBeDefined();
+      await editAxis("x-plus").trigger("click");
+      await modal.get('[data-testid="schedule-update"]').trigger("click");
+      expect(modal.text()).toContain("请选择轴向");
+      expect(getStorage(SCHEDULES_KEY)).toEqual([edited, sibling]);
+
+      await editAxis("y-plus").trigger("click");
+      await modal.get('[data-testid="schedule-update"]').trigger("click");
+      await settle(wrapper);
+
+      expect(getStorage(SCHEDULES_KEY)).toEqual([expect.objectContaining({ ...edited, axis_codes: ["y+"] }), sibling]);
+      expect(wrapper.find("#schedule-table tbody tr").text()).toContain("Y+");
+      expect(wrapper.find('[data-testid="schedule-edit-modal"].modal.is-open').exists()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("shows affected in-transit trays and confirms delete with automatic withdrawal", async () => {
@@ -1752,11 +1815,11 @@ describe("SchedulePage runtime", () => {
     expect(wrapper.get('input[name="edit_planned_hours"]').attributes("min")).toBe("0.1");
     expect(wrapper.get('input[name="edit_planned_hours"]').attributes("step")).toBe("0.1");
     await wrapper.get('input[name="edit_planned_hours"]').setValue("1.5");
-    await wrapper.get('[data-testid="schedule-edit-device"]').setValue(SECONDARY_LAB);
     await wrapper.get('[data-testid="schedule-update"]').trigger("click");
     await settle(wrapper);
 
     expect(getStorage(SCHEDULES_KEY)[0].planned_hours).toBe(1.5);
+    expect(getStorage(SCHEDULES_KEY)[0].device).toBe(PRIMARY_LAB);
   });
 
   test("supports saving half-day durations from the duration toggle", async () => {

@@ -194,7 +194,7 @@
         </article>
       </div>
     </div>
-    <div class="gantt-wrap" tabindex="0" role="region" aria-label="设备排程甘特图，可滚动查看日期和实验室" @click.capture="suppressDragClick">
+    <div class="gantt-wrap" tabindex="0" role="region" :aria-label="uiText.ganttTitle" @click.capture="suppressDragClick">
       <table class="gantt" id="gantt-table">
         <thead>
           <tr>
@@ -571,41 +571,6 @@
   </AppModal>
 
   <AppModal
-    :open="scheduleDeleteWithdrawalOpen"
-    title="确认删除排程"
-    data-testid="schedule-delete-withdrawal-confirm"
-    @close="closeScheduleDeleteWithdrawalConfirm"
-  >
-    <div class="schedule-danger-confirmation">
-      <strong>托盘正在送往该排程的目标试验间</strong>
-      <p>
-        删除排程后，系统将立即撤回运输中的托盘并恢复到发货点。
-      </p>
-      <p v-if="scheduleDeleteWithdrawalDetail?.affectedTrays?.length" data-testid="schedule-delete-withdrawal-trays">
-        涉及托盘：{{ scheduleDeleteWithdrawalDetail.affectedTrays.map((item) => item.trayCode).join("、") }}
-      </p>
-    </div>
-    <template #footer>
-      <button
-        class="action-btn secondary"
-        data-testid="schedule-delete-withdrawal-cancel"
-        type="button"
-        @click="closeScheduleDeleteWithdrawalConfirm"
-      >
-        取消
-      </button>
-      <button
-        class="action-btn danger"
-        data-testid="schedule-delete-withdrawal-confirm-ok"
-        type="button"
-        @click="confirmScheduleDeleteWithdrawal"
-      >
-        删除并撤回
-      </button>
-    </template>
-  </AppModal>
-
-  <AppModal
     :open="scheduleConflictOpen"
     :show-close="!dragSubmitting"
     content-class="schedule-conflict-modal-content"
@@ -704,30 +669,44 @@
     </div>
   </AppModal>
 
-  <AppDrawer :open="scheduleDrawerOpen" :title="uiText.editScheduleTitle" @close="closeScheduleDrawer">
-    <form class="form-grid" @submit.prevent="saveSchedule">
+  <AppModal
+    :open="scheduleDrawerOpen"
+    :title="uiText.editScheduleTitle"
+    content-class="schedule-edit-modal-content"
+    data-testid="schedule-edit-modal"
+    @close="closeScheduleDrawer"
+  >
+    <form class="form-grid schedule-edit-form" @submit.prevent="saveSchedule">
       <div class="form-field">
         <label>{{ uiText.taskCode }}</label>
         <input v-model="editForm.task_code" type="text" name="task_code" readonly />
       </div>
       <div class="form-field">
-        <label>{{ uiText.experimentCode }}</label>
+        <label>实验编号</label>
         <input v-model="editForm.experiment_code" type="text" name="experiment_code" readonly />
       </div>
-      <div class="form-field">
-        <label>{{ uiText.lab }}</label>
-        <select v-model="editForm.device" name="device" data-testid="schedule-edit-device">
-          <option value="">{{ uiText.selectLab }}</option>
-          <option
-            v-for="option in buildEditLabOptionItems(editForm.device, editForm.task_code)"
-            :key="option.value"
+      <div v-if="editAxisOptions.length" class="form-field schedule-axis-selector">
+        <label>本次排程轴向</label>
+        <div class="schedule-axis-options" role="group" aria-label="本次排程轴向">
+          <button
+            v-for="option in editAxisOptions"
+            :key="option.code"
+            type="button"
+            class="schedule-axis-chip"
+            :class="{ 'is-active': isEditAxisSelected(option.code), 'is-readonly': option.disabled }"
             :disabled="option.disabled"
-            :title="option.title"
-            :value="option.value"
-          >
-            {{ option.label }}
-          </option>
-        </select>
+            :aria-pressed="isEditAxisSelected(option.code)"
+            :data-testid="`schedule-edit-axis-${option.testId}`"
+            @click="toggleEditAxis(option.code)"
+          >{{ option.label }}</button>
+        </div>
+        <div v-if="editAxisOptions.some((option) => option.disabled)" class="helper">
+          灰显项已完成、已排入其他批次或缺少轴向要求。
+        </div>
+      </div>
+      <div class="form-field">
+        <label for="schedule-edit-device">{{ uiText.lab }}</label>
+        <input id="schedule-edit-device" :value="editForm.device || '-'" type="text" name="device" data-testid="schedule-edit-device" disabled />
       </div>
       <div class="form-field">
         <label>{{ uiText.scheduleDate }}</label>
@@ -795,7 +774,42 @@
         </button>
       </div>
     </form>
-  </AppDrawer>
+  </AppModal>
+
+  <AppModal
+    :open="scheduleDeleteWithdrawalOpen"
+    title="确认删除排程"
+    data-testid="schedule-delete-withdrawal-confirm"
+    @close="closeScheduleDeleteWithdrawalConfirm"
+  >
+    <div class="schedule-danger-confirmation">
+      <strong>托盘正在送往该排程的目标试验间</strong>
+      <p>
+        删除排程后，系统将立即撤回运输中的托盘并恢复到发货点。
+      </p>
+      <p v-if="scheduleDeleteWithdrawalDetail?.affectedTrays?.length" data-testid="schedule-delete-withdrawal-trays">
+        涉及托盘：{{ scheduleDeleteWithdrawalDetail.affectedTrays.map((item) => item.trayCode).join("、") }}
+      </p>
+    </div>
+    <template #footer>
+      <button
+        class="action-btn secondary"
+        data-testid="schedule-delete-withdrawal-cancel"
+        type="button"
+        @click="closeScheduleDeleteWithdrawalConfirm"
+      >
+        取消
+      </button>
+      <button
+        class="action-btn danger"
+        data-testid="schedule-delete-withdrawal-confirm-ok"
+        type="button"
+        @click="confirmScheduleDeleteWithdrawal"
+      >
+        删除并撤回
+      </button>
+    </template>
+  </AppModal>
 </template>
 
 <script setup>
@@ -808,7 +822,6 @@ defineOptions({
 import { computed } from "vue";
 import { formatDateTime } from "./sharedModel";
 
-import AppDrawer from "@/components/shared/AppDrawer.vue";
 import AppFeedback from "@/components/shared/AppFeedback.vue";
 import AppModal from "@/components/shared/AppModal.vue";
 import AppNumberInput from "@/components/shared/AppNumberInput.vue";
@@ -924,7 +937,6 @@ const {
   startScheduleDrag,
   suppressDragClick,
   acknowledgeException,
-  buildEditLabOptionItems,
   cancelScheduleConflict,
   canResetGanttWindow,
   canShowPreviousGanttWindow,
@@ -934,6 +946,7 @@ const {
   closeTaskDetailModal,
   confirmScheduleConflict,
   confirmScheduleDeleteWithdrawal,
+  editAxisOptions,
   editForm,
   editCustomStartMinTime,
   editWarning,
@@ -987,9 +1000,11 @@ const {
   summaryCards,
   taskOptions,
   taskScheduledOverlays,
+  isEditAxisSelected,
   isScheduleAxisSelected,
   selectedAxisLabel,
   showAxisSelector,
+  toggleEditAxis,
   toggleScheduleAxis,
   closeGanttOverflowModal,
   resetScheduleForm,

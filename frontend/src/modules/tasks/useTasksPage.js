@@ -443,9 +443,9 @@ function useTasksPage() {
 
   const applyTaskDetailPayload = (payload, taskCode) => {
     const safePayload = payload && typeof payload === "object" ? payload : {};
-    const taskExistsOnPage = rawTasks.value.some((entry) => taskCodeOf(entry) === normalizeText(taskCode));
-    if (taskExistsOnPage && safePayload.task && typeof safePayload.task === "object") {
-      replaceTaskScopedRows(rawTasks, [safePayload.task], taskCode);
+    const pageTaskIndex = rawTasks.value.findIndex((entry) => taskCodeOf(entry) === normalizeText(taskCode));
+    if (pageTaskIndex >= 0 && safePayload.task && typeof safePayload.task === "object") {
+      rawTasks.value.splice(pageTaskIndex, 1, safePayload.task);
     }
     replaceTaskScopedRows(rawSamples, safePayload.samples, taskCode);
     replaceTaskScopedRows(rawExperiments, safePayload.experiments, taskCode);
@@ -526,10 +526,13 @@ function useTasksPage() {
     if (!taskCode) {
       return;
     }
+    const countWarning = validateTaskSampleCount(editForm.value.sample_count);
+    if (countWarning) {
+      editWarning.value = countWarning;
+      return;
+    }
     sampleCodesWarning.value = "";
-    const currentCodes = taskDetailSampleCodes.value;
-    const fallbackCodes = buildTaskSampleCodes(taskCode, editForm.value.sample_count, []);
-    sampleCodesDraft.value = (currentCodes.length > 0 ? currentCodes : fallbackCodes).join("\n");
+    sampleCodesDraft.value = taskDetailSampleCodes.value.join("\n");
     sampleCodesModal.openWith({ id: "task-sample-codes-modal", taskCode });
   };
 
@@ -652,6 +655,11 @@ function useTasksPage() {
     return originalCount !== nextCount;
   };
 
+  const hasPendingSampleCountChange = computed(() => {
+    const current = rawTasks.value.find((task) => normalizeText(task?.id) === normalizeText(editForm.value.id));
+    return Boolean(current && sampleCountChanged(current, editForm.value));
+  });
+
   const isRetentionSchedule = (schedule) => normalizeText(schedule?.device).includes("暂存间");
 
   const resolveAffectedExperimentCodes = (taskCode, nextExperimentTypes) => {
@@ -724,6 +732,7 @@ function useTasksPage() {
     confirmScheduledExperimentRemoval,
     deleteTask,
     saveSampleCodes,
+    savingSampleCodes,
     updateTask,
   } = useTaskMutationWorkflow({
     arraysEqual,
@@ -742,6 +751,11 @@ function useTasksPage() {
     rawSchedules,
     rawStreams,
     rawTasks,
+    recordSavedSampleCount: (sampleCount) => {
+      if (taskDrawer.open.value && taskDrawer.payload.value) {
+        taskDrawer.payload.value = { ...taskDrawer.payload.value, sampleCount };
+      }
+    },
     resolveScheduledExperimentRemoval,
     sampleCodesDraft,
     sampleCodesWarning,
@@ -749,7 +763,6 @@ function useTasksPage() {
     scheduledExperimentRemovalDraft,
     scheduledExperimentRemovalModal,
     taskCodeOf,
-    taskDetailSampleCodes,
     taskSampleCountLocked,
     taskStorageConfirmed,
   });
@@ -1092,10 +1105,12 @@ function useTasksPage() {
     sampleCodesDraft,
     sampleCodesModalOpen: sampleCodesModal.open,
     sampleCodesWarning,
+    hasPendingSampleCountChange,
     sanitizeEditContactInfo,
     sanitizeIntakeContactInfo,
     saveDraft,
     saveSampleCodes,
+    savingSampleCodes,
     selectedRow: taskDrawer.payload,
     selectedExternalTaskIntake,
     selectedExternalSampleCodePreview,

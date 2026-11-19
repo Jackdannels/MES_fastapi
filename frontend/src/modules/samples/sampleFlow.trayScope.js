@@ -151,12 +151,22 @@ const getSampleTrayList = (sample) => {
     .slice(0, 1);
 };
 
+const getSampleTrayForCode = (sample, trayCode) => {
+  const code = normalizeText(trayCode);
+  if (!code || !Array.isArray(sample?.trays)) return null;
+  return getSampleTrayList({
+    ...sample,
+    trays: sample.trays.filter((tray) => normalizeText(tray?.tray_code) === code),
+  })[0] || null;
+};
+
 export {
   asArray,
   compareText,
   entryMatchesTrayCode,
   entryTimeValue,
   firstNonEmptyArray,
+  getSampleTrayForCode,
   getSampleTrayList,
   mergeTrayEntriesByCode,
   parseTimeValue,

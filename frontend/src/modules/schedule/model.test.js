@@ -1552,7 +1552,7 @@ describe("schedulePageModel", () => {
     );
   });
 
-  test("updateScheduleRecord updates laboratory identity fields with the selected lab", () => {
+  test("updateScheduleRecord preserves the stored laboratory even if the edit form supplies a different lab", () => {
     const result = updateScheduleRecord({
       form: {
         device: "冲击二室",
@@ -1584,9 +1584,10 @@ describe("schedulePageModel", () => {
     expect(result.error).toBeUndefined();
     expect(result.schedules[0]).toEqual(
       expect.objectContaining({
-        device: "冲击二室",
-        lab_code: "LAB_IMPACT_2",
-        lab_id: 5,
+        device: "冲击一室",
+        lab_code: "LAB_IMPACT_1",
+        lab_id: 4,
+        start_at: "2099-03-20 12:00:00",
       }),
     );
   });
@@ -3589,7 +3590,7 @@ describe("schedulePageModel", () => {
       ],
       form: {
         id: "schedule-vibration-future",
-        device: "振动二室",
+        device: "振动一室",
         experiment_code: "SYLU-2026-06-301-V",
         planned_hours: "2",
         schedule_date: "2099-03-22",
@@ -3641,7 +3642,7 @@ describe("schedulePageModel", () => {
       expect.objectContaining({ id: "schedule-vibration-active", device: "振动一室" }),
       expect.objectContaining({
         id: "schedule-vibration-future",
-        device: "振动二室",
+        device: "振动一室",
         start_at: "2099-03-22 12:00:00",
       }),
     ]);

@@ -1,43 +1,31 @@
 <template>
-  <section class="samples-wide-head section" data-testid="samples-page-tabs">
-    <div class="samples-module-cards">
+  <nav class="samples-page-tabs" aria-label="样品和托盘信息" data-testid="samples-page-tabs">
     <button
-      v-app-icon="{ name: 'flask', placement: 'button' }"
-      class="samples-module-card is-content-centered"
-      :class="{ active: activePageTab === 'management' }"
-      data-testid="samples-page-tab-management"
+      :aria-pressed="activePageTab === 'sample-flow'"
+      data-testid="samples-tab-flow"
       type="button"
-      @click="setActivePageTab('management')"
+      @click="setActivePageTab('sample-flow')"
     >
-      <span>
-        <strong>样品信息</strong>
-      </span>
+      样品流转
     </button>
     <button
-      v-app-icon="{ name: 'box', placement: 'button' }"
-      class="samples-module-card is-content-centered"
-      :class="{ active: activePageTab === 'trays' }"
-      data-testid="samples-page-tab-trays"
+      :aria-pressed="activePageTab === 'sample-staging'"
+      data-testid="samples-tab-staging"
       type="button"
-      @click="openPageTab('trays')"
+      @click="setActivePageTab('sample-staging')"
     >
-      <span>
-        <strong>托盘信息</strong>
-      </span>
+      暂存间
     </button>
-    </div>
-  </section>
+  </nav>
 
   <SamplesManagementPanel
-    :hidden="activePageTab !== 'management'"
+    :active-tab="activePageTab"
     :samples-flow="samplesFlow"
   />
 
-  <TrayManagementPanel :hidden="activePageTab !== 'trays'" :samples-flow="samplesFlow" />
 </template>
 
 <script setup>
-import { vAppIcon } from "@/directives/appIcon";
 defineOptions({
   name: "SamplesPage",
 });
@@ -46,151 +34,9 @@ import { reactive } from "vue";
 
 import { useTabState } from "@/composables/useTabState";
 import SamplesManagementPanel from "./SamplesManagementPanel.vue";
-import TrayManagementPanel from "./TrayManagementPanel.vue";
 import { useSamplesFlow } from "./useSamplesFlow";
 
-const { activeTab: activePageTab, setActiveTab: setActivePageTab } = useTabState("management");
+const { activeTab: activePageTab, setActiveTab: setActivePageTab } = useTabState("sample-flow");
 
-const {
-  batchForm: samplesFlowBatchForm,
-  batchModalOpen: samplesFlowBatchOpen,
-  clearWarning: clearSamplesFlowWarning,
-  closeBatchModal,
-  closeDetailDrawer: closeSampleDetail,
-  currentPage: samplesFlowCurrentPage,
-  detailDrawerOpen: samplesFlowDetailOpen,
-  detailForm: samplesFlowDetailForm,
-  detailSample: samplesFlowDetailSample,
-  detailSampleTrayCode: samplesFlowDetailTrayCode,
-  detailSampleTrayFlow: samplesFlowDetailTrayFlow,
-  detailStatusOptions: samplesFlowDetailStatusOptions,
-  ensureFullSamples,
-  locationOptions: samplesFlowLocationOptions,
-  openBatchModal,
-  openDetailDrawer: openSampleDetail,
-  pageCount: samplesFlowPageCount,
-  query,
-  rawExperimentRunTrays: samplesFlowRawExperimentRunTrays,
-  rawExperimentRuns: samplesFlowRawExperimentRuns,
-  rawExperimentRunPauses: samplesFlowRawExperimentRunPauses,
-  rawExperiments: samplesFlowRawExperiments,
-  rawExperimentTrays: samplesFlowRawExperimentTrays,
-  rawSchedules: samplesFlowRawSchedules,
-  rawStagingEvents: samplesFlowRawStagingEvents,
-  rawSamples: samplesFlowRawSamples,
-  rawTasks: samplesFlowRawTasks,
-  sampleRows: samplesFlowRows,
-  saveDetail: saveSampleDetail,
-  selectedStatus: selectedFlowStatus,
-  selectedTaskCode: selectedFlowTaskCode,
-  setPage: setSamplesFlowPage,
-  setQuery,
-  setStagingPage,
-  setStagingQuery,
-  setStagingStatusFilter,
-  setStagingTaskFilter,
-  setStatusFilter,
-  setTaskFilter,
-  sortDirection: samplesFlowSortDirection,
-  sortKey: samplesFlowSortKey,
-  stagingAllSelected,
-  stagingCount,
-  stagingCurrentPage,
-  stagingForm,
-  stagingLabOptions,
-  stagingPageCount,
-  stagingQuery,
-  stagingRows,
-  stagingSelectedStatus,
-  stagingSelectedTaskCode,
-  stagingStatusOptions,
-  stagingTaskOptions,
-  statusOptions: samplesFlowStatusOptions,
-  submitStagingDispatch,
-  submitBatch: submitSamplesFlowBatch,
-  taskOptions: samplesFlowTaskOptions,
-  trayRows,
-  trayStatusOptions,
-  toggleAllStagingSelection,
-  toggleStagingSelection,
-  toggleSort: toggleSamplesFlowSort,
-  updateTrayStatusInline,
-  warning: samplesFlowWarning,
-  resetStaging,
-} = useSamplesFlow();
-
-const samplesFlow = reactive({
-  batchForm: samplesFlowBatchForm,
-  batchModalOpen: samplesFlowBatchOpen,
-  clearWarning: clearSamplesFlowWarning,
-  closeBatchModal,
-  closeSampleDetail,
-  currentPage: samplesFlowCurrentPage,
-  detailDrawerOpen: samplesFlowDetailOpen,
-  detailForm: samplesFlowDetailForm,
-  detailSample: samplesFlowDetailSample,
-  detailSampleTrayCode: samplesFlowDetailTrayCode,
-  detailSampleTrayFlow: samplesFlowDetailTrayFlow,
-  detailStatusOptions: samplesFlowDetailStatusOptions,
-  ensureFullSamples,
-  locationOptions: samplesFlowLocationOptions,
-  openBatchModal,
-  openSampleDetail,
-  pageCount: samplesFlowPageCount,
-  query,
-  rawExperimentRunTrays: samplesFlowRawExperimentRunTrays,
-  rawExperimentRuns: samplesFlowRawExperimentRuns,
-  rawExperimentRunPauses: samplesFlowRawExperimentRunPauses,
-  rawExperiments: samplesFlowRawExperiments,
-  rawExperimentTrays: samplesFlowRawExperimentTrays,
-  rawSchedules: samplesFlowRawSchedules,
-  rawStagingEvents: samplesFlowRawStagingEvents,
-  rawSamples: samplesFlowRawSamples,
-  rawTasks: samplesFlowRawTasks,
-  rows: samplesFlowRows,
-  saveSampleDetail,
-  selectedStatus: selectedFlowStatus,
-  selectedTaskCode: selectedFlowTaskCode,
-  setPage: setSamplesFlowPage,
-  setQuery,
-  setStagingPage,
-  setStagingQuery,
-  setStagingStatusFilter,
-  setStagingTaskFilter,
-  setStatusFilter,
-  setTaskFilter,
-  sortDirection: samplesFlowSortDirection,
-  sortKey: samplesFlowSortKey,
-  stagingAllSelected,
-  stagingCount,
-  stagingCurrentPage,
-  stagingForm,
-  stagingLabOptions,
-  stagingPageCount,
-  stagingQuery,
-  stagingRows,
-  stagingSelectedStatus,
-  stagingSelectedTaskCode,
-  stagingStatusOptions,
-  stagingTaskOptions,
-  statusOptions: samplesFlowStatusOptions,
-  submitSamplesFlowBatch,
-  submitStagingDispatch,
-  taskOptions: samplesFlowTaskOptions,
-  trayRows,
-  trayStatusOptions,
-  toggleAllStagingSelection,
-  toggleSamplesFlowSort,
-  toggleStagingSelection,
-  updateTrayStatusInline,
-  warning: samplesFlowWarning,
-  resetStaging,
-});
-
-const openPageTab = (tab) => {
-  setActivePageTab(tab);
-  if (tab === "trays") {
-    void ensureFullSamples();
-  }
-};
+const samplesFlow = reactive(useSamplesFlow({ groupResults: true }));
 </script>

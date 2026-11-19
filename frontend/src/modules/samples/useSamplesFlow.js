@@ -9,6 +9,7 @@ import { formatLocalDateTime } from "@/lib/dateTime.js";
 import { serverNowDate } from "@/lib/serverClock.js";
 import { readSampleDetail, readSamplePage } from "@/lib/samplesApi.js";
 import { readTasks, updateTask as updateTaskByApi } from "@/lib/tasksApi";
+import { getSampleTrayForCode } from "./sampleFlow.trayScope";
 import {
   DETAIL_STATUS_OPTIONS,
   buildTrayFlowView,
@@ -83,7 +84,7 @@ const normalizeSamplesRefreshKeys = (keys) => {
 };
 
 // 输出样品流转表格和暂存派发动作所需的响应式状态。
-function useSamplesFlow() {
+function useSamplesFlow({ groupResults = false } = {}) {
   const { loadSnapshot, persistSnapshot } = useStorageSnapshot(SAMPLES_SNAPSHOT_KEYS);
   const { loadSnapshot: loadFullSampleSnapshot } = useStorageSnapshot([STORAGE_KEYS.samples]);
 
@@ -159,7 +160,7 @@ function useSamplesFlow() {
         direction: sortDirection.value,
       },
       page: 1,
-      pageSize,
+      pageSize: groupResults ? Math.max(pageSamples.value.length, 1) : pageSize,
     }),
   );
 
@@ -180,7 +181,7 @@ function useSamplesFlow() {
       labels: DEFAULT_LABELS,
       filters: {},
       page: 1,
-      pageSize,
+      pageSize: groupResults ? Math.max(stagingPageSamples.value.length, 1) : pageSize,
       samples: stagingPageSamples.value,
       selectedCodes: stagingSelectedCodes.value,
     }),
@@ -192,7 +193,10 @@ function useSamplesFlow() {
   const stagingStatusOptions = computed(() => stagingStatusOptionItems.value);
   const stagingLabOptions = computed(() => stagingView.value.labOptions);
   const detailSample = computed(() => detailDrawer.payload.value || null);
-  const detailSampleTray = computed(() => getSampleTrayList(detailSample.value)[0] || null);
+  const detailTrayScope = ref("");
+  const detailSampleTray = computed(() =>
+    getSampleTrayForCode(detailSample.value, detailTrayScope.value) || getSampleTrayList(detailSample.value)[0] || null,
+  );
   const detailSampleTrayCode = computed(() => String(detailSampleTray.value?.tray_code || "").trim());
   const detailSampleTaskCode = computed(() => String(detailSample.value?.task_code || "").trim());
   const detailSampleTrayRow = computed(() =>
@@ -258,9 +262,26 @@ function useSamplesFlow() {
     return preserveExisting ? currentValue : [];
   };
 
+  // A tray can span API pages. Collect the filtered view before grouping its samples.
+  const readViewPage = async (options, isCurrent) => {
+    if (!groupResults) {
+      return readSamplePage(options);
+    }
+    const request = { ...options, page: 1, pageSize: 100 };
+    const first = await readSamplePage(request);
+    const summaries = Array.isArray(first.samples) ? [...first.samples] : [];
+    for (let page = 2; page <= Number(first.totalPages) && isCurrent(); page += 1) {
+      const next = await readSamplePage({ ...request, page });
+      if (Array.isArray(next.samples)) {
+        summaries.push(...next.samples);
+      }
+    }
+    return { ...first, samples: summaries };
+  };
+
   const loadSamplePage = async () => {
     const requestVersion = ++samplePageRequestVersion;
-    const payload = await readSamplePage({
+    const payload = await readViewPage({
       page: currentPage.value,
       pageSize,
       query: query.value,
@@ -268,7 +289,7 @@ function useSamplesFlow() {
       status: selectedStatus.value,
       sortKey: sortKey.value || "code",
       sortDirection: sortDirection.value,
-    });
+    }, () => requestVersion === samplePageRequestVersion);
     if (requestVersion !== samplePageRequestVersion) {
       return;
     }
@@ -288,7 +309,7 @@ function useSamplesFlow() {
 
   const loadStagingPage = async () => {
     const requestVersion = ++stagingPageRequestVersion;
-    const payload = await readSamplePage({
+    const payload = await readViewPage({
       page: stagingCurrentPage.value,
       pageSize,
       query: stagingQuery.value,
@@ -297,7 +318,7 @@ function useSamplesFlow() {
       sortKey: "code",
       sortDirection: "asc",
       view: "staging",
-    });
+    }, () => requestVersion === stagingPageRequestVersion);
     if (requestVersion !== stagingPageRequestVersion) {
       return;
     }
@@ -605,7 +626,7 @@ function useSamplesFlow() {
     flushPendingRealtimeRefresh();
   };
 
-  const openDetailDrawer = async (sampleId) => {
+  const openDetailDrawer = async (sampleId, trayCode = "") => {
     try {
       const selected = await readSampleDetail(sampleId);
       if (!selected || typeof selected !== "object") {
@@ -615,6 +636,7 @@ function useSamplesFlow() {
       detailForm.code = selected.code || "";
       detailForm.status = selected.status || "\u5230\u8D27";
       detailForm.remark = "";
+      detailTrayScope.value = String(trayCode ?? "").trim();
       detailDrawer.openWith(selected);
       warning.value = "";
     } catch (error) {
@@ -755,6 +777,7 @@ function useSamplesFlow() {
     detailSampleTrayFlow,
     detailStatusOptions: DETAIL_STATUS_OPTIONS,
     ensureFullSamples,
+    fullSamplesLoaded,
     loading,
     locationOptions,
     openBatchModal,

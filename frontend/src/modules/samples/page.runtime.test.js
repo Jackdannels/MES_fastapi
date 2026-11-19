@@ -160,24 +160,14 @@ describe("SamplesPage runtime", () => {
     const wrapper = mount(SamplesPage);
     await settle(wrapper);
 
-    expect(wrapper.find(".samples-wide-title").exists()).toBe(false);
-    expect(wrapper.find(".samples-module-cards").exists()).toBe(true);
-    expect(wrapper.findAll(".samples-module-card")).toHaveLength(2);
-    expect(wrapper.findAll(".samples-module-card b")).toHaveLength(0);
-    expect(wrapper.findAll(".samples-module-card").every((node) => node.classes().includes("is-content-centered"))).toBe(true);
-    expect(wrapper.text()).toContain("样品信息");
-    expect(wrapper.text()).toContain("托盘信息");
-    expect(wrapper.text()).not.toContain("样品管理");
-    expect(wrapper.text()).not.toContain("托盘管理");
-    expect(wrapper.text()).not.toContain("样品流转、暂存间派发");
-    expect(wrapper.text()).not.toContain("托盘状态、流程图");
-    expect(wrapper.find(".samples-submode-strip").exists()).toBe(true);
-    expect(wrapper.findAll(".samples-submode-card")).toHaveLength(2);
-    expect(wrapper.findAll(".samples-submode-card").every((node) => node.classes().includes("is-content-centered"))).toBe(true);
-    expect(wrapper.text()).not.toContain("样品管理 / 当前功能");
-    expect(wrapper.text()).not.toContain("样品管理 / 子功能");
-    expect(wrapper.text()).not.toContain("查询流转状态、批量入库");
-    expect(wrapper.text()).not.toContain("派发暂存样品至目标实验室");
+    const tabs = wrapper.get('[data-testid="samples-page-tabs"]');
+    expect(tabs.findAll("button").map((button) => button.text())).toEqual(["样品流转", "暂存间"]);
+    expect(tabs.get('[data-testid="samples-tab-flow"]').attributes("aria-pressed")).toBe("true");
+    await tabs.get('[data-testid="samples-tab-staging"]').trigger("click");
+    expect(wrapper.get('[data-testid="samples-staging-panel"]').element.style.display).not.toBe("none");
+    expect(wrapper.get('[data-testid="samples-flow-panel"]').element.style.display).toBe("none");
+    expect(wrapper.get('[data-testid="samples-management-panel"]').classes()).toContain("samples-management-panel--grouped");
+    await tabs.get('[data-testid="samples-tab-flow"]').trigger("click");
     expect(wrapper.text()).not.toContain("样品预分装");
     expect(wrapper.text()).not.toContain("总任务清单");
     expect(wrapper.text()).toContain("样品流转与状态");
@@ -251,14 +241,179 @@ describe("SamplesPage runtime", () => {
     expect(wrapper.text()).not.toContain("SYLU-2026-04-102-SP-001");
   });
 
-  test("tray task filter uses the themed search input style", async () => {
+  test("groups samples across API pages in each view and follows the selected tray and task", async () => {
+    const task = "SYLU-2026-03-021";
+    const unassignedTask = "SYLU-2026-03-022";
+    const tray = task + "-TP-001";
+    const otherTray = task + "-TP-002";
+    const stagingLocation = "恒温恒湿间（暂存间）";
+    const stored = Array.from({ length: 7 }, (_, index) => ({
+      id: "staging-" + index,
+      code: task + "-SP-00" + (index + 1),
+      task_code: task,
+      location: stagingLocation,
+      status: "已到达暂存间",
+      trayCodes: index === 0 ? [tray, otherTray] : [tray],
+    }));
+    const unassigned = {
+      id: "awaiting-tray",
+      code: unassignedTask + "-SP-001",
+      task_code: unassignedTask,
+      location: "接驳区",
+      status: "到货",
+      trayCodes: [],
+    };
+    const rawSamples = [...stored, unassigned].map((sample) => ({
+      ...sample,
+      trays: sample.trayCodes.map((code) => ({ tray_code: code, quantity: 1, status: sample.status })),
+    }));
+    const fetchSpy = vi.fn(async (input) => {
+      const url = new URL(String(input), "http://localhost");
+      let payload;
+      if (url.pathname === "/api/samples/page") {
+        const staging = url.searchParams.get("view") === "staging";
+        const page = Number(url.searchParams.get("page"));
+        const pageRows = page === 1 ? stored.slice(0, 4) : [...stored.slice(4), ...(staging ? [] : [unassigned])];
+        const taskOptions = staging ? [task] : [task, unassignedTask];
+        const query = url.searchParams.get("query");
+        payload = query
+          ? samplePageResponse([...stored, unassigned].filter((sample) => sample.code === query), taskOptions)
+          : { ...samplePageResponse(pageRows, taskOptions), currentPage: page, totalPages: 2, totalCount: staging ? 7 : 8 };
+      } else if (url.pathname === "/api/tasks") {
+        payload = [{ code: task, status: "已排程" }, { code: unassignedTask, status: "待排程" }];
+      } else if (url.pathname.startsWith("/api/storage")) {
+        payload = { "mes.samples": rawSamples };
+      } else {
+        throw new Error("Unhandled fetch: " + url);
+      }
+      return { ok: true, status: 200, json: async () => payload };
+    });
+    vi.stubGlobal("fetch", fetchSpy);
     const wrapper = mount(SamplesPage);
-    await settle(wrapper);
+    try {
+      await settle(wrapper);
+      const flow = wrapper.get('[data-testid="samples-flow-panel"]');
+      const totals = flow.get('[data-testid="samples-flow-totals"]');
+      const totalValues = () => totals.findAll("dd").map((entry) => entry.text());
+      expect(totals.findAll("dt").map((entry) => entry.text()))
+        .toEqual(["任务总数", "已分配托盘任务数", "样品总数"]);
+      expect(totalValues()).toEqual(["2", "1", "8"]);
+      expect(flow.findAll(".sample-task-choice")).toHaveLength(2);
+      expect(flow.findAll(".sample-task-choice").map((button) => button.attributes("data-assigned")))
+        .toEqual(["true", "false"]);
+      expect(flow.findAll(".sample-group-view-flow")).toHaveLength(2);
+      expect(flow.findAll(".sample-group-item")[1].find(".sample-group-view-flow").exists()).toBe(false);
+      expect(flow.findAll(".sample-group-sample-table th").map((cell) => cell.text()))
+        .toEqual(["样品编号", "当前位置", "状态"]);
+      expect(flow.find(".sample-group-sample-table tbody button").exists()).toBe(false);
+      expect(flow.get(".sample-task-choice strong").text()).toBe(task);
+      expect(flow.get(".sample-task-choice").text()).toContain("2 个托盘 · 7 件样品");
+      expect(flow.get(".sample-group-tray-choice strong").text()).toBe(tray);
+      expect(flow.findAll('[data-testid="samples-group-sample-row"]')).toHaveLength(7);
+      expect(flow.get('[data-testid="samples-group-task-step-scheduled"]').attributes("aria-current")).toBe("step");
+      expect(flow.get('[data-testid="samples-group-tray-flow"] [aria-current="step"]').text()).toContain("已到达暂存间");
+      await flow.get('[data-testid="samples-flow-search"]').setValue(stored[1].code);
+      await settle(wrapper);
+      expect(flow.get(".sample-task-choice").attributes("aria-expanded")).toBe("true");
+      expect(flow.get(".sample-task-choice").text()).toContain("1 个匹配托盘");
+      expect(flow.get('[data-testid="samples-group-sample-count"]').text()).toBe("匹配 1 条 / 全盘 7 条");
+      expect(flow.findAll('[data-testid="samples-group-sample-row"]')).toHaveLength(1);
+      const viewAll = flow.get('[data-testid="samples-group-view-all"]');
+      await viewAll.trigger("click");
+      expect(flow.findAll('[data-testid="samples-group-sample-row"]')).toHaveLength(7);
+      expect(totalValues()).toEqual(["1", "1", "1"]);
+      await viewAll.trigger("click");
+      expect(flow.findAll('[data-testid="samples-group-sample-row"]')).toHaveLength(1);
+      await flow.get('[data-testid="samples-flow-search"]').setValue("");
+      await settle(wrapper);
+      await flow.findAll(".sample-task-choice")[1].trigger("click");
+      expect(flow.get('[data-testid="samples-group-selected-code"]').text()).toBe("未关联托盘");
+      expect(flow.find('[data-testid="samples-group-tray-flow"]').exists()).toBe(false);
+      expect(flow.find('[data-testid="samples-group-task-flow"]').exists()).toBe(true);
+      expect(flow.findAll('[data-testid="samples-group-sample-row"]')).toHaveLength(1);
+      expect(totalValues()).toEqual(["2", "1", "8"]);
 
-    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
-    await settle(wrapper);
+      await flow.get('[data-testid="samples-flow-search"]').setValue(unassigned.code);
+      await settle(wrapper);
+      expect(totalValues()).toEqual(["1", "0", "1"]);
 
-    expect(wrapper.get('[data-testid="samples-trays-task-filter"]').classes()).toContain("search-input");
+      await wrapper.get('[data-testid="samples-tab-staging"]').trigger("click");
+      await settle(wrapper);
+      const staging = wrapper.get('[data-testid="samples-staging-panel"]');
+      expect(staging.find('[data-testid="samples-flow-totals"]').exists()).toBe(false);
+      expect(staging.findAll(".sample-task-choice")).toHaveLength(1);
+      expect(staging.findAll('[data-testid="samples-group-sample-row"]')).toHaveLength(7);
+      expect(staging.get(".sample-task-choice strong").text()).toBe(task);
+      expect(staging.findAll(".sample-group-tray-choice")[1].get("strong").text()).toBe(otherTray);
+      await staging.findAll(".sample-group-view-flow")[1].trigger("click");
+      expect(staging.get('[data-testid="samples-group-selected-code"]').text()).toBe(otherTray);
+      const dialog = staging.get('[data-testid="sample-tray-flow-dialog"] [role="dialog"]');
+      expect(dialog.get(".modal-header strong").text()).toBe("统一托盘流程图 · " + otherTray);
+      expect(dialog.get(".sample-flow-unified--timed").exists()).toBe(true);
+      await dialog.get(".modal-close").trigger("click");
+      expect(staging.find('[data-testid="sample-tray-flow-dialog"] [role="dialog"]').exists()).toBe(false);
+      const reads = fetchSpy.mock.calls.map(([input]) => new URL(String(input), "http://localhost"));
+      expect(reads.some((url) => url.searchParams.get("page") === "2" && url.searchParams.get("view") === "staging")).toBe(true);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  test("opens only one task at a time and finds the matching tray after searching", async () => {
+    const firstTask = "SYLUN-2026-11-001";
+    const secondTask = "SYLUN-2026-11-002";
+    const records = [firstTask, secondTask].flatMap((task, taskIndex) =>
+      [1, 2, ...(taskIndex ? [0] : [])].map((tray) => ({
+        code: `${task}-SP-00${tray || 3}`,
+        task_code: task,
+        status: "样品运输中",
+        trays: tray ? [{ tray_code: `${task}-TP-00${tray}`, quantity: 1, status: "样品运输中" }] : [],
+      })),
+    );
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = new URL(String(input), "http://localhost");
+      let body = {};
+      if (url.pathname === "/api/samples/page") {
+        const query = url.searchParams.get("query") || "";
+        const matching = records.map((sample) => ({ ...sample, trayCodes: sample.trays.map((tray) => tray.tray_code) }))
+          .filter((sample) => [sample.code, ...sample.trayCodes].some((code) => code.includes(query)));
+        body = samplePageResponse(url.searchParams.get("view") === "staging" ? [] : matching, [firstTask, secondTask]);
+      } else if (url.pathname === "/api/tasks") {
+        body = [firstTask, secondTask].map((code) => ({ code, status: "待排程" }));
+      } else if (url.pathname.startsWith("/api/storage")) {
+        body = { "mes.samples": records };
+      }
+      return { ok: true, status: 200, json: async () => body };
+    }));
+    const wrapper = mount(SamplesPage);
+    try {
+      await settle(wrapper);
+      const flow = wrapper.get('[data-testid="samples-flow-panel"]');
+      const tasks = () => flow.findAll(".sample-task-choice");
+      const expanded = () => tasks().map((button) => button.attributes("aria-expanded"));
+      expect(expanded()).toEqual(["true", "false"]);
+      await tasks()[1].trigger("click");
+      expect(expanded()).toEqual(["false", "true"]);
+      expect(tasks()[1].text()).toContain("含未分配样品");
+      const children = flow.findAll(".sample-group-item")[1].findAll(".sample-group-tray-choice");
+      expect(children[2].text()).toContain("未关联托盘");
+      await children[2].trigger("click");
+      expect(flow.get('[data-testid="samples-group-selected-code"]').text()).toBe("未关联托盘");
+      await tasks()[1].trigger("click");
+      expect(expanded()).toEqual(["false", "false"]);
+      await tasks()[1].trigger("click");
+      expect(expanded()).toEqual(["false", "true"]);
+      expect(children[2].attributes("aria-pressed")).toBe("true");
+
+      const targetTray = secondTask + "-TP-002";
+      await flow.get('[data-testid="samples-flow-search"]').setValue(targetTray);
+      await settle(wrapper);
+      expect(expanded()).toEqual(["true"]);
+      expect(flow.get('[data-testid="samples-group-selected-code"]').text()).toBe(targetTray);
+      expect(flow.get(".sample-group-tray-choice").attributes("aria-pressed")).toBe("true");
+    } finally {
+      wrapper.unmount();
+    }
   });
 
   test("tray flow receives experiment runs from the page and shows the active running experiment", async () => {
@@ -354,10 +509,10 @@ describe("SamplesPage runtime", () => {
 
     const wrapper = mount(SamplesPage);
     await settle(wrapper);
-    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
+    await wrapper.get('[data-testid="samples-flow-panel"] .sample-group-view-flow').trigger("click");
     await settle(wrapper);
 
-    const trayFlowCard = wrapper.get('[data-testid="samples-tray-flow"]');
+    const trayFlowCard = wrapper.get('[data-testid="samples-flow-panel"] .sample-tray-flow-dialog');
     const runningStep = trayFlowCard.get('[data-testid="samples-tray-flow-step-experiment-current-0"]');
     expect(runningStep.text()).toContain("冲击试验进行中");
     expect(runningStep.text()).toContain("2026-06-04 19:33:56");
@@ -365,7 +520,7 @@ describe("SamplesPage runtime", () => {
     expect(trayFlowCard.get('[data-testid="samples-tray-flow-step-route-0-5"]').classes()).toContain("reached");
   });
 
-  test("tray flow receives mid-experiment appearance events and shows the current inspection node", async () => {
+  test("mid-experiment appearance stays current and skipped staging nodes stay green without times", async () => {
     const taskCode = "SYLU-2026-10-001";
     const experimentCode = `${taskCode}-A`;
     const trayCode = `${taskCode}-TP-001`;
@@ -450,15 +605,22 @@ describe("SamplesPage runtime", () => {
 
     const wrapper = mount(SamplesPage);
     await settle(wrapper);
-    await wrapper.get('[data-testid="samples-page-tab-trays"]').trigger("click");
+    await wrapper.get('[data-testid="samples-flow-panel"] .sample-group-view-flow').trigger("click");
     await settle(wrapper);
 
-    const trayFlowCard = wrapper.get('[data-testid="samples-tray-flow"]');
+    const trayFlowCard = wrapper.get('[data-testid="samples-flow-panel"] .sample-tray-flow-dialog');
     expect(trayFlowCard.text()).toContain("盐雾试验进行中（暂停）");
     expect(trayFlowCard.text()).toContain("中途外观检测");
     expect(trayFlowCard.get('[data-testid^="samples-tray-flow-step-salt-spray-mid-appearance-"]').classes())
       .toContain("current");
-    const pausedStep = trayFlowCard.findAll('[data-testid^="samples-tray-flow-step-"]')
+    const flowSteps = trayFlowCard.findAll('[data-testid^="samples-tray-flow-step-"]');
+    for (const label of ["送至暂存间", "已到达暂存间"]) {
+      const step = flowSteps.find((entry) => entry.get(".sample-flow-label").text() === label);
+      expect(step?.classes()).toContain("reached");
+      expect(step?.get(".sample-flow-time").text()).toBe("-");
+      expect(step?.attributes("title")).toBe("推导节点，暂无实际时间记录");
+    }
+    const pausedStep = flowSteps
       .find((step) => step.text().includes("盐雾试验进行中（暂停）"));
     expect(pausedStep?.classes()).toContain("pause-reset");
     expect(pausedStep?.classes()).not.toContain("reached");

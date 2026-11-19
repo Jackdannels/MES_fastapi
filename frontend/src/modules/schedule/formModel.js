@@ -1,4 +1,5 @@
 import { serverNowDate } from "@/lib/serverClock";
+import { normalizeAxisCodes } from "@/lib/axisCodes";
 import {
   SLOT_RANGES,
   addDays,
@@ -219,7 +220,7 @@ function buildScheduleEditForm(schedule) {
   const axisCodes = schedule?.axis_codes ?? schedule?.axisCodes;
   return {
     axis_batch_no: normalizeText(schedule?.axis_batch_no ?? schedule?.axisBatchNo),
-    axis_codes: Array.isArray(axisCodes) ? [...axisCodes] : [],
+    axis_codes: normalizeAxisCodes(axisCodes),
     custom_end: endTime,
     custom_start: startTime,
     device: normalizeText(schedule?.device),
@@ -372,5 +373,6 @@ export {
   createScheduleEditForm,
   isManualScheduleSelectionLegal,
   resolveLegalManualScheduleState,
+  resolvePlannedHours,
   resolveScheduleTimes,
 };

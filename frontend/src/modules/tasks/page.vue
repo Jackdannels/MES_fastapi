@@ -545,6 +545,9 @@
 
   <AppModal
     :open="sampleCodesModalOpen"
+    :close-on-backdrop="!savingSampleCodes"
+    :close-on-esc="!savingSampleCodes"
+    :show-close="!savingSampleCodes"
     class="tasks-sample-codes-modal"
     data-testid="task-sample-codes-modal"
     title="编辑样品编号"
@@ -555,20 +558,21 @@
         <label>样品编号（换行、逗号或分号分隔）</label>
         <textarea
           v-model="sampleCodesDraft"
+          :readonly="savingSampleCodes"
           class="tasks-sample-codes-editor__textarea"
           data-testid="task-sample-codes-textarea"
           placeholder="每行一个样品编号"
         ></textarea>
         <div class="helper" data-testid="task-sample-codes-count-hint">
-          当前任务共 {{ taskDetailSampleCodes.length }} 个样品；这里只能等量修改编号，不能增加或减少样品数量。
+          请填写 {{ taskDetailSampleCodes.length }} 个样品编号。<span v-if="hasPendingSampleCountChange">保存时会一并更新样品数量。</span>
         </div>
       </div>
       <AppFeedback :message="sampleCodesWarning" tone="warning" @close="sampleCodesWarning = ''" />
     </div>
     <template #footer>
-      <button class="action-btn secondary" type="button" @click="closeSampleCodesEditor">取消</button>
-      <button class="action-btn" data-testid="task-sample-codes-confirm" type="button" @click="saveSampleCodes">
-        保存样品编号
+      <button class="action-btn secondary" type="button" :disabled="savingSampleCodes" @click="closeSampleCodesEditor">取消</button>
+      <button class="action-btn" data-testid="task-sample-codes-confirm" type="button" :disabled="savingSampleCodes" @click="saveSampleCodes">
+        {{ savingSampleCodes ? "保存中…" : hasPendingSampleCountChange ? "保存数量和编号" : "保存样品编号" }}
       </button>
     </template>
   </AppModal>
@@ -758,9 +762,11 @@ const {
   sampleCodesDraft,
   sampleCodesModalOpen,
   sampleCodesWarning,
+  hasPendingSampleCountChange,
   sanitizeEditContactInfo,
   saveDraft,
   saveSampleCodes,
+  savingSampleCodes,
   selectedExternalSampleCodePreview,
   selectedExternalTaskIntake,
   setCurrentPage,

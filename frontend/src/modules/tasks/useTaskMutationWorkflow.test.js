@@ -17,7 +17,7 @@ describe("useTaskMutationWorkflow", () => {
     mocks.updateTask.mockReset();
   });
 
-  const createSampleCodeWorkflow = (draftCodes, { storageConfirmed = false } = {}) => {
+  const createSampleCodeWorkflow = (draftCodes, { storageConfirmed = false, countLocked = false, draftCount = "2" } = {}) => {
     const originalTask = {
       id: "task-001",
       code: "SYLU-2026-07-001",
@@ -28,13 +28,19 @@ describe("useTaskMutationWorkflow", () => {
     const persistRelated = vi.fn(() => Promise.resolve());
     const loadTasksPage = vi.fn(() => Promise.resolve());
     const closeSampleCodesEditor = vi.fn();
+    const recordSavedSampleCount = vi.fn();
     const sampleCodesWarning = ref("");
-    mocks.updateTask.mockResolvedValue({ ...originalTask });
+    const editForm = ref({ ...originalTask, sample_count: draftCount });
+    mocks.updateTask.mockImplementation(async (_id, updates) => ({
+      ...originalTask,
+      sample_count: updates.sample_count ?? originalTask.sample_count,
+    }));
 
     const { saveSampleCodes } = useTaskMutationWorkflow({
       buildFailureMessage: (message) => message,
       closeSampleCodesEditor,
-      editForm: ref({ ...originalTask, sample_count: String(originalTask.sample_count) }),
+      editForm,
+      isTaskDetailLocked: ref(false),
       loadError: ref(""),
       loadTasksPage,
       persistRelated,
@@ -43,21 +49,21 @@ describe("useTaskMutationWorkflow", () => {
         { code: "SYLU-2026-07-001-SP-002", task_code: originalTask.code },
       ]),
       rawTasks,
+      recordSavedSampleCount,
+      sampleCountChanged: (original, edited) => original.sample_count !== edited.sample_count,
       sampleCodesDraft: ref(draftCodes.join("\n")),
       sampleCodesWarning,
-      taskDetailSampleCodes: ref([
-        "SYLU-2026-07-001-SP-001",
-        "SYLU-2026-07-001-SP-002",
-      ]),
-      taskSampleCountLocked: vi.fn(() => false),
+      taskSampleCountLocked: vi.fn(() => countLocked),
       taskStorageConfirmed: vi.fn(() => storageConfirmed),
     });
 
     return {
       closeSampleCodesEditor,
+      editForm,
       loadTasksPage,
       originalTask,
       persistRelated,
+      recordSavedSampleCount,
       sampleCodesWarning,
       saveSampleCodes,
     };
@@ -76,12 +82,13 @@ describe("useTaskMutationWorkflow", () => {
     expect(mocks.updateTask).toHaveBeenCalledWith(
       workflow.originalTask.id,
       expect.objectContaining({
-        sample_count: workflow.originalTask.sample_count,
         sample_codes: nextCodes,
       }),
     );
+    expect(mocks.updateTask.mock.calls[0][1]).not.toHaveProperty("sample_count");
     expect(workflow.persistRelated).not.toHaveBeenCalled();
     expect(workflow.closeSampleCodesEditor).toHaveBeenCalledTimes(1);
+    expect(workflow.recordSavedSampleCount).toHaveBeenCalledWith("2");
     expect(workflow.loadTasksPage).toHaveBeenCalledTimes(1);
   });
 
@@ -117,5 +124,46 @@ describe("useTaskMutationWorkflow", () => {
     expect(mocks.updateTask).not.toHaveBeenCalled();
     expect(workflow.closeSampleCodesEditor).not.toHaveBeenCalled();
     expect(workflow.sampleCodesWarning.value).toBe("该任务样品已在接驳间确认收货，不允许修改样品编号，请先重新入库");
+  });
+
+  test("rejects a pending quantity change when pre-allocation locks the sample count", async () => {
+    const workflow = createSampleCodeWorkflow(["CUSTOM-001", "CUSTOM-002", "CUSTOM-003"], {
+      countLocked: true,
+      draftCount: "3",
+    });
+
+    await workflow.saveSampleCodes();
+
+    expect(mocks.updateTask).not.toHaveBeenCalled();
+    expect(workflow.editForm.value.sample_count).toBe("3");
+    expect(workflow.sampleCodesWarning.value).toContain("已保存预接驳托盘");
+  });
+
+  test("uses the draft quantity in the mismatch warning and preserves it for a retry", async () => {
+    const workflow = createSampleCodeWorkflow(["CUSTOM-001", "CUSTOM-002"], { draftCount: "3" });
+
+    await workflow.saveSampleCodes();
+
+    expect(mocks.updateTask).not.toHaveBeenCalled();
+    expect(workflow.closeSampleCodesEditor).not.toHaveBeenCalled();
+    expect(workflow.editForm.value.sample_count).toBe("3");
+    expect(workflow.sampleCodesWarning.value).toBe("样品编号数量必须与样品数量一致（当前 3 个）");
+  });
+
+  test("keeps the quantity draft when the combined save fails and allows a retry", async () => {
+    const workflow = createSampleCodeWorkflow(["CUSTOM-001", "CUSTOM-002", "CUSTOM-003"], { draftCount: "3" });
+    mocks.updateTask.mockRejectedValueOnce(new Error("save failed"));
+
+    await workflow.saveSampleCodes();
+
+    expect(workflow.editForm.value.sample_count).toBe("3");
+    expect(workflow.recordSavedSampleCount).not.toHaveBeenCalled();
+    expect(workflow.closeSampleCodesEditor).not.toHaveBeenCalled();
+
+    await workflow.saveSampleCodes();
+
+    expect(mocks.updateTask).toHaveBeenCalledTimes(2);
+    expect(workflow.recordSavedSampleCount).toHaveBeenCalledWith("3");
+    expect(workflow.closeSampleCodesEditor).toHaveBeenCalledTimes(1);
   });
 });

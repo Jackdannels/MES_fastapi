@@ -21,7 +21,7 @@ const canDragSchedule = (context, scheduleId, scheduleIds = []) => {
 function buildScheduleDragPreview(context, { scheduleId, date, slot, lab }) {
   if (!canDragSchedule(context, scheduleId)) return { error: "排程已完成任务比对、进入实验流程或已被移除，不能拖拽改期。" };
   const source = context.schedules.find(row => normalizeText(row.id) === normalizeText(scheduleId));
-  if (!scheduleMatchesLab(source, lab)) return { error: "请拖到同一实验室的目标时段；更换实验室请使用排程编辑。" };
+  if (!scheduleMatchesLab(source, lab)) return { error: "请拖到同一实验室的目标时段。" };
   const range = SLOT_RANGES[slot];
   const start = range && parseDate(`${date}T${range.start}:00`);
   const slotEnd = range && parseDate(`${date}T${range.end}:00`);

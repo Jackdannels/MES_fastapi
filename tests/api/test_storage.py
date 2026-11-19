@@ -4813,6 +4813,44 @@ def test_storage_schedule_patch_rejects_concurrent_duplicate_experiment_scope(mo
     assert storage.read("mes.schedules") == [existing_schedule]
 
 
+def test_storage_schedule_patch_rejects_axes_taken_by_another_batch(monkeypatch):
+    first = {
+        "id": "axis-first",
+        "task_code": "TASK-AXIS",
+        "experiment_code": "EXP-AXIS",
+        "sub_experiment_code": "EXP-AXIS-AXIS-001",
+        "axis_batch_no": "001",
+        "axis_codes": ["x+"],
+        "device": "冲击一室",
+        "start_at": "2099-06-23 08:00",
+        "end_at": "2099-06-23 10:00",
+    }
+    second = {
+        **first,
+        "id": "axis-second",
+        "sub_experiment_code": "EXP-AXIS-AXIS-002",
+        "axis_batch_no": "002",
+        "axis_codes": ["y+"],
+        "start_at": "2099-06-23 11:00",
+        "end_at": "2099-06-23 12:00",
+    }
+    client, storage = build_client(monkeypatch, {"mes.schedules": [first, second]})
+    attempt = client.post(
+        "/api/storage/schedules/patch",
+        json={"upserts": {"mes.schedules": [{**first, "axis_codes": ["y+"]}]}},
+    )
+    assert attempt.status_code == 409
+    assert storage.read("mes.schedules") == [first, second]
+
+    updated = {**first, "axis_codes": ["z+"]}
+    response = client.post(
+        "/api/storage/schedules/patch",
+        json={"upserts": {"mes.schedules": [updated]}},
+    )
+    assert response.status_code == 200
+    assert storage.read("mes.schedules") == [updated, second]
+
+
 def test_storage_schedule_patch_rejects_schedule_inside_maintenance_window(monkeypatch):
     device = {
         "code": "高低温湿热一室",

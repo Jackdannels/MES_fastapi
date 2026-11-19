@@ -1,3 +1,4 @@
+import { ref } from "vue";
 import { collectExperimentTypes, buildExperimentTypeSummary } from "@/lib/experimentTypes";
 import { formatLocalDateTime, parseBusinessDateTimeToMs } from "@/lib/dateTime";
 import { serverNowMs } from "@/lib/serverClock";
@@ -33,6 +34,7 @@ function useTaskMutationWorkflow({
   rawSchedules,
   rawStreams,
   rawTasks,
+  recordSavedSampleCount,
   resolveScheduledExperimentRemoval,
   sampleCodesDraft,
   sampleCodesWarning,
@@ -40,10 +42,11 @@ function useTaskMutationWorkflow({
   scheduledExperimentRemovalDraft,
   scheduledExperimentRemovalModal,
   taskCodeOf,
-  taskDetailSampleCodes,
   taskSampleCountLocked,
   taskStorageConfirmed,
 }) {
+  const savingSampleCodes = ref(false);
+
   const closeScheduledExperimentRemovalConfirm = () => {
     scheduledExperimentRemovalModal.close();
     scheduledExperimentRemovalDraft.value = null;
@@ -183,8 +186,16 @@ function useTaskMutationWorkflow({
   };
 
   const saveSampleCodes = async () => {
-    const taskCode = normalizeText(editForm.value.code);
-    const taskId = normalizeText(editForm.value.id);
+    if (savingSampleCodes.value || isTaskDetailLocked.value) return;
+    const form = editForm.value;
+    const taskCode = normalizeText(form.code);
+    const taskId = normalizeText(form.id);
+    const countWarning = validateTaskSampleCount(form.sample_count);
+    if (countWarning) {
+      sampleCodesWarning.value = countWarning;
+      return;
+    }
+    const sampleCount = normalizeTaskSampleCount(form.sample_count);
     const codes = splitSampleCodeText(sampleCodesDraft.value);
     const warning = validateSampleCodeDraft({ codes, samples: rawSamples.value, taskCode });
     if (warning) {
@@ -200,25 +211,38 @@ function useTaskMutationWorkflow({
       sampleCodesWarning.value = SAMPLE_CODES_LOCKED_MESSAGE;
       return;
     }
-    const originalCount = normalizeTaskSampleCount(originalTask?.sample_count, taskDetailSampleCodes.value.length);
-    if (codes.length !== originalCount) {
-      sampleCodesWarning.value = `样品编号数量必须与样品数量一致（当前 ${originalCount} 个）`;
+    if (codes.length !== sampleCount) {
+      sampleCodesWarning.value = `样品编号数量必须与样品数量一致（当前 ${sampleCount} 个）`;
       return;
     }
-    const updatedTask = { ...originalTask, sample_count: originalCount, updated_at: formatLocalDateTime() };
+    const updateCount = sampleCountChanged(originalTask, { sample_count: sampleCount })
+      || Boolean(validateTaskSampleCount(originalTask.sample_count));
+    if (updateCount && taskSampleCountLocked(originalTask, rawSamples.value)) {
+      sampleCodesWarning.value = SAMPLE_COUNT_LOCKED_MESSAGE;
+      return;
+    }
+    const updates = {
+      updated_at: formatLocalDateTime(),
+      ...(updateCount ? { sample_count: sampleCount } : {}),
+    };
+    savingSampleCodes.value = true;
     try {
-      const savedTask = await updateTaskByApi(taskId, { ...updatedTask, sample_codes: codes });
-      const nextTask = savedTask && typeof savedTask === "object" ? savedTask : updatedTask;
+      const savedTask = await updateTaskByApi(taskId, { ...updates, sample_codes: codes });
+      const nextTask = { ...originalTask, ...updates, ...savedTask };
       rawTasks.value = rawTasks.value.map((task) => (normalizeText(task?.id) === taskId ? nextTask : task));
+      if (editForm.value === form) {
+        form.sample_count = String(nextTask.sample_count ?? sampleCount);
+        recordSavedSampleCount(form.sample_count);
+      }
     } catch (error) {
       sampleCodesWarning.value = buildFailureMessage("样品编号保存失败，请稍后重试", error);
       return;
+    } finally {
+      savingSampleCodes.value = false;
     }
-    editForm.value.sample_count = String(originalCount);
-    closeSampleCodesEditor();
+    if (editForm.value === form) closeSampleCodesEditor();
     try {
       await loadTasksPage();
-      loadError.value = "";
     } catch (error) {
       loadError.value = buildFailureMessage("样品编号已保存，但任务列表刷新失败，请刷新后确认", error);
     }
@@ -259,6 +283,7 @@ function useTaskMutationWorkflow({
     confirmScheduledExperimentRemoval,
     deleteTask,
     saveSampleCodes,
+    savingSampleCodes,
     updateTask,
   };
 }

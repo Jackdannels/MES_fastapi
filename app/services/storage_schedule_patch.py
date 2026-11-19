@@ -258,17 +258,35 @@ def schedules_duplicate_experiment_scope(left: Any, right: Any) -> bool:
     return True
 
 
-def validate_schedule_conflicts(next_schedules: list[dict[str, Any]], changed_schedules: list[dict[str, Any]]) -> None:
+def validate_schedule_conflicts(
+    next_schedules: list[dict[str, Any]],
+    changed_schedules: list[dict[str, Any]],
+    *,
+    previous_schedules: list[dict[str, Any]] | None = None,
+) -> None:
+    previous_by_id = {row_key(SCHEDULES_KEY, row): row for row in previous_schedules or []}
     for changed in changed_schedules:
         if schedule_targets_storage_area(changed) or schedule_is_completed(changed):
             continue
         changed_id = row_key(SCHEDULES_KEY, changed)
         if not changed_id:
             continue
+        new_axes = schedule_axis_codes(changed) - schedule_axis_codes(previous_by_id.get(changed_id))
         for existing in next_schedules:
             if row_key(SCHEDULES_KEY, existing) == changed_id:
                 continue
-            if schedule_targets_storage_area(existing) or schedule_is_completed(existing):
+            if schedule_targets_storage_area(existing):
+                continue
+            if (
+                new_axes
+                and schedule_task_code(changed)
+                and schedule_task_code(changed) == schedule_task_code(existing)
+                and schedule_experiment_code(changed)
+                and schedule_experiment_code(changed) == schedule_experiment_code(existing)
+                and new_axes & schedule_axis_codes(existing)
+            ):
+                raise StorageSchedulePatchError("所选轴向已排入其他批次，请刷新后再操作", status_code=409)
+            if schedule_is_completed(existing):
                 continue
             if schedules_duplicate_experiment_scope(changed, existing):
                 raise StorageSchedulePatchError("重复排程：该任务实验已存在排程，请刷新后再操作", status_code=409)
@@ -476,7 +494,11 @@ def build_schedule_patch_updates(snapshot: dict[str, Any], payload: dict[str, An
         updates[key] = apply_rows_patch(key, snapshot.get(key), upserts.get(key, []), deletes.get(key, set()))
 
     if SCHEDULES_KEY in updates:
-        validate_schedule_conflicts(updates[SCHEDULES_KEY], upserts.get(SCHEDULES_KEY, []))
+        validate_schedule_conflicts(
+            updates[SCHEDULES_KEY],
+            upserts.get(SCHEDULES_KEY, []),
+            previous_schedules=as_list(snapshot.get(SCHEDULES_KEY)),
+        )
         validate_schedule_maintenance_conflicts(
             updates[SCHEDULES_KEY],
             as_list(snapshot.get(DEVICES_KEY)),

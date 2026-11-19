@@ -1,4 +1,5 @@
 import { formatLocalDateTime } from "@/lib/dateTime";
+import { normalizeAxisCodes } from "@/lib/axisCodes";
 import { serverNowDate } from "@/lib/serverClock";
 import { scheduleMatchesLab } from "@/lib/labIdentity";
 import {
@@ -14,7 +15,7 @@ import {
   overlaps,
   parseDate,
 } from "./sharedModel";
-import { resolveScheduleTimes } from "./formModel";
+import { buildScheduleEditForm, resolvePlannedHours, resolveScheduleTimes } from "./formModel";
 import {
   STATUS_RETENTION,
   STATUS_SCHEDULED,
@@ -281,25 +282,46 @@ function updateScheduleRecord({
     return { error: RUNNING_SCHEDULE_RESCHEDULE_MESSAGE };
   }
 
-  const resolved = resolveScheduleTimes(form, now, schedules);
-  if (resolved.error) {
-    return resolved;
+  const originalForm = buildScheduleEditForm(target);
+  const { device, lab_code: labCode, lab_id: labId } = originalForm;
+  if (!device) {
+    return { error: "原排程缺少实验室" };
+  }
+  const currentAxes = normalizeAxisCodes(target.axis_codes ?? target.axisCodes);
+  const selectedAxes = normalizeAxisCodes(form?.axis_codes ?? form?.axisCodes ?? currentAxes);
+  const axesChanged = selectedAxes.length !== currentAxes.length || selectedAxes.some((axis, index) => axis !== currentAxes[index]);
+  if (axesChanged) {
+    const selection = resolveScheduledAxisSelection({
+      experimentCode: target.experiment_code, experiments, experimentRunSteps, form, schedules, ignoreId: scheduleId,
+    });
+    if (selection.error) return { error: selection.error };
+    if (!selection.axisCodes.length) return { error: "当前实验不支持修改轴向" };
   }
 
-  const device = normalizeText(form?.device);
-  if (!device) {
-    return { error: "请选择实验室" };
-  }
+  // Editing only axes reuses the original window, including one already in progress
+  // on the calendar when the laboratory has not confirmed task comparison.
+  const unchangedWindow = axesChanged
+    && normalizeText(form.schedule_date) === originalForm.schedule_date
+    && normalizeText(form.time_slot) === originalForm.time_slot
+    && (originalForm.time_slot !== "custom" || normalizeText(form.custom_start) === originalForm.custom_start)
+    && resolvePlannedHours(form) === resolvePlannedHours(originalForm);
+  const originalStartAt = unchangedWindow ? parseDate(target.start_at) : null;
+  const originalEndAt = unchangedWindow ? parseDate(target.end_at) : null;
+  const preserveWindow = originalStartAt && originalEndAt && originalEndAt > originalStartAt;
+  const resolved = preserveWindow
+    ? { startAt: originalStartAt, endAt: originalEndAt, plannedHours: resolvePlannedHours(originalForm) }
+    : resolveScheduleTimes({ ...form, device, lab_code: labCode, lab_id: labId }, now, schedules);
+  if (resolved.error) return resolved;
 
   const candidate = {
     device,
-    end_at: formatLocalDateTime(resolved.endAt),
+    end_at: preserveWindow ? target.end_at : formatLocalDateTime(resolved.endAt),
     experiment_code: normalizeText(form?.experiment_code),
-    lab_code: normalizeText(form?.lab_code ?? form?.labCode),
-    lab_id: form?.lab_id ?? form?.labId ?? "",
-    planned_hours: resolved.plannedHours,
-    start_at: formatLocalDateTime(resolved.startAt),
-    sub_experiment_code: resolveSubExperimentCode(form),
+    lab_code: labCode,
+    lab_id: labId,
+    planned_hours: preserveWindow && target.planned_hours != null ? target.planned_hours : resolved.plannedHours,
+    start_at: preserveWindow ? target.start_at : formatLocalDateTime(resolved.startAt),
+    sub_experiment_code: resolveSubExperimentCode(form) || resolveSubExperimentCode(target),
     task_code: normalizeText(form?.task_code),
   };
   const deviceRecord = findDeviceRecord(devices, device);
@@ -316,20 +338,28 @@ function updateScheduleRecord({
   }
   const conflicts = findScheduleConflicts({ candidate, experiments, experimentTrays, samples, schedules: nextSchedules, ignoreId: scheduleId });
   if (conflicts.length > 0) {
-    return { error: "排程冲突，请调整时间或实验室" };
+    return { error: "排程冲突，请调整时间" };
   }
 
   // 编辑场景直接原位覆盖目标排程记录。
-  target.device = device;
   target.start_at = candidate.start_at;
   target.end_at = candidate.end_at;
   target.experiment_code = candidate.experiment_code;
-  target.lab_code = candidate.lab_code;
-  target.lab_id = candidate.lab_id;
   target.planned_hours = candidate.planned_hours;
   target.sub_experiment_code = candidate.sub_experiment_code;
+  if (axesChanged) {
+    target.axis_codes = selectedAxes;
+    delete target.axisCodes;
+    if (!currentAxes.length && !normalizeText(target.axis_batch_no ?? target.axisBatchNo)) {
+      target.axis_batch_no = resolveNextAxisBatchNo({
+        experimentCode: target.experiment_code, schedules: nextSchedules.filter((schedule) => schedule !== target),
+        taskCode: target.task_code,
+      });
+      target.sub_experiment_code ||= deriveAxisSubExperimentCode(target.experiment_code, target.axis_batch_no);
+    }
+  }
   target.status = isRetentionDevice(device) ? STATUS_RETENTION : STATUS_SCHEDULED;
-  if (!candidate.sub_experiment_code) {
+  if (!target.sub_experiment_code) {
     delete target.sub_experiment_code;
   }
 
